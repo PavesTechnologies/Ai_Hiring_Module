@@ -1,0 +1,33 @@
+AIRS Platform — Alembic Migration Guide
+========================================
+
+Database: Aiven PostgreSQL 17.10 (pg-3434c-ai-hiring-platform1.l.aivencloud.com:14813)
+Schema:   v2.1  |  31 tables  |  pgvector enabled
+
+Common commands
+---------------
+Generate migration from model changes:
+  alembic revision --autogenerate -m "description"
+
+Apply all pending migrations:
+  alembic upgrade head
+
+Rollback one migration:
+  alembic downgrade -1
+
+Show current revision:
+  alembic current
+
+Show migration history:
+  alembic history --verbose
+
+How it works
+------------
+env.py reads all DB_* variables from .env, imports all 12 model
+modules so Base.metadata is populated, then diffs the DB against
+the models to produce a migration script.
+
+Revisions
+---------
+a41e892f4a72 — initial schema (28 tables, applied)
+(next)       — v2.1 delta: run autogenerate to capture 31-table schema
