@@ -27,10 +27,8 @@ class Settings(BaseSettings):
     # Encryption
     candidate_pii_key: str = ""
 
-    # JWT
-    jwt_secret_key: str = ""
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60
+    # UMS — User Management System (token issuer)
+    ums_url: str   # required — set UMS_URL in .env
 
     # App
     app_env: str = "development"
