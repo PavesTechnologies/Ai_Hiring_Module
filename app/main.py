@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.routes.jd_routes import router
 
 from app.core.config import settings
 
@@ -37,3 +38,5 @@ app.add_middleware(
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok", "service": "AIRS"}
+
+app.include_router(router=router, prefix="/api/v1", tags=["Job Descriptions"])
