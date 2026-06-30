@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.repositories.jd_repository import JDRepository
-from app.services.jd_service import JDService
-from app.services.hash_service import HashService
+from app.services.jd.jd_service import JDService
+from app.services.jd.hash_service import HashService
 
 
 def get_jd_repository(

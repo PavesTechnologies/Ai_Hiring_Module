@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes.jd_routes import router
+from app.routes.jd_routes import router
 
 from app.core.config import settings
-from app.core.constants import API_PREFIX
+from app.enums.constants import API_PREFIX
 
 app = FastAPI(
     title="AI Resume Screening Platform (AIRS)",

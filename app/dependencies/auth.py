@@ -16,7 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
 
 _bearer = HTTPBearer(auto_error=False)
 

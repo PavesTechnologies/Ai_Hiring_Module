@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status
 from app.dependencies.jd import get_jd_service
 from app.schemas.jd.request import CreateJDRequest
 from app.schemas.jd.repondse import CreateJDResponse
-from app.services.jd_service import JDService
+from app.services.jd.jd_service import JDService
 
 router = APIRouter(
     prefix="/job-descriptions",
@@ -23,7 +23,7 @@ def create_job_description(
     request: CreateJDRequest,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.create_jd(
+    return service.create_job(
         request=request,
         created_by=SYSTEM_USER
     )

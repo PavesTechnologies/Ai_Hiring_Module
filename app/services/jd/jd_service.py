@@ -1,15 +1,15 @@
-from app.models.job_descriptions import (
+from app.models.jd.job_descriptions import (
     JobDescription, JDSourceFormat, EmbeddingStatus
 )
 
 from app.repositories.jd_repository import JDRepository
 from app.schemas.jd.repondse import CreateJDResponse
 from app.schemas.jd.request import CreateJDRequest
-from app.services.hash_service import HashService
+from app.services.jd.hash_service import HashService
 
 class JDService:
     def __init__(self, repository: JDRepository, hash_service: HashService):
-        self.repository = repository,
+        self.repository = repository
         self.hash_service = hash_service
         
 

@@ -1,6 +1,6 @@
 from uuid import UUID
 from sqlalchemy.orm import Session
-from app.models.job_descriptions import JobDescription
+from app.models.jd.job_descriptions import JobDescription
 
 
 class JDRepository:
