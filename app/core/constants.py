@@ -34,3 +34,6 @@ EMBEDDING_DIM = 384
 # Default pagination
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE     = 100
+
+# API prefix — all routes must be registered under this
+API_PREFIX = "/airs"
