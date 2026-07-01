@@ -5,6 +5,8 @@ from typing import Optional
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from app.models.audit import ActionType, EntityType
+from sqlalchemy import Enum as SAEnum
 
 from app.db.database import Base
 
@@ -31,8 +33,8 @@ class AuditLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    action_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    action_type: Mapped[ActionType] = mapped_column(SAEnum(ActionType, name="audit_action_type_enum"), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(SAEnum(EntityType, name="audit_entity_type_enum"), nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=True)
     jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)

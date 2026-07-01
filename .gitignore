@@ -31,3 +31,6 @@ alembic/versions/*.pyc
 # OS
 .DS_Store
 Thumbs.db
+
+
+airs/

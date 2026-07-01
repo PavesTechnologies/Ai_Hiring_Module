@@ -2,8 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.jd_routes import router
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 from app.core.config import settings
 from app.core.constants import API_PREFIX
+
+from app.exceptions.duplicate_jd_exception import DuplicateJDException
 
 app = FastAPI(
     title="AI Resume Screening Platform (AIRS)",
@@ -41,3 +46,19 @@ def health():
     return {"status": "ok", "service": "AIRS"}
 
 app.include_router(router=router, prefix="/api/v1", tags=["Job Descriptions"])
+
+
+@app.exception_handler(DuplicateJDException)
+async def duplicate_jd_exception_handler(
+    request: Request,
+    exc: DuplicateJDException,
+):
+    return JSONResponse(
+        status_code=409,
+        content={
+             "message": "Duplicate Job Description found.",
+            "existing_jd_id": str(exc.existing_jd.id),
+            "title": exc.existing_jd.title,
+            "version_number": exc.existing_jd.version_number,
+        },
+    )
