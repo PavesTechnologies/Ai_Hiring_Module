@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app.models.audit import (
+from app.enums.constants import (
     ActionType,
     EntityType,
 )

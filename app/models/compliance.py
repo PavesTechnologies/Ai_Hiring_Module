@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.audit import ActionType, EntityType
+from app.enums.constants import ActionType, EntityType
 from sqlalchemy import Enum as SAEnum
 
 from app.db.database import Base
