@@ -1,4 +1,5 @@
 from enum import Enum
+import enum
 
 
 class UserRole(str, Enum):
@@ -22,6 +23,16 @@ class Jurisdiction(str, Enum):
     EU     = "EU"
     US     = "US"
     IN     = "IN"
+    
+    
+class ActionType(enum.Enum):
+    JD_CREATED= "JD_CREATED"
+    JD_UPDATED= "JD_UPDATED"
+    JD_VERSION_CREATED= "JD_VERSION_CREATED"
+    JD_CLOSED= "JD_CLOSED"
+
+class EntityType(enum.Enum):
+    JOB_DESCRIPTION= "JOB_DESCRIPTION"
 
 
 # Resume storage prefix inside the S3 bucket

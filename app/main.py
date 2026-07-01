@@ -6,7 +6,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.constants import API_PREFIX
+from app.enums.constants import API_PREFIX
 
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
 

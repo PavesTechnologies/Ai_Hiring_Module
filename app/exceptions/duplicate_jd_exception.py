@@ -1,4 +1,4 @@
-from app.models.job_descriptions import JobDescription
+from app.models.jd.job_descriptions import JobDescription
 
 
 class DuplicateJDException(Exception):

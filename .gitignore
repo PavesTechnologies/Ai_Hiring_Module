@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.so
+airs/ 
 
 # Environment & secrets
 .env

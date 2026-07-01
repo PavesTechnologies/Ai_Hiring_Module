@@ -1,12 +1,12 @@
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
-from app.models.job_descriptions import JobDescription, JDSourceFormat
+from app.models.jd.job_descriptions import JobDescription, JDSourceFormat
 from app.repositories.jd_repository import JDRepository
 from app.schemas.jd.request import CreateJDRequest
 from app.schemas.jd.repondse import CreateJDResponse
-from app.services.hash_service import HashService
+from app.services.jd.hash_service import HashService
 from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.services.audit_service import AuditService
-from app.models.audit import ActionType, EntityType
+from app.enums.constants import ActionType, EntityType
 
 
 class JDService:

@@ -10,13 +10,13 @@ import time
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-import httpx
+import http
 from fastapi import Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
 
 _bearer = HTTPBearer(auto_error=False)
 
