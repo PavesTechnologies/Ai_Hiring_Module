@@ -32,3 +32,24 @@ class GetJDResponse(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime | None
+    
+class UpdateJDResponse(BaseModel):
+    id: UUID
+    title: str
+    version_number: int
+    message: str
+    
+class JDListItem(BaseModel):
+    id: UUID
+    title: str
+    version_number: int
+    jurisdiction: str | None
+    source_format: str
+    created_at: datetime
+    
+
+class PaginatedJDResponse(BaseModel):
+    total: int
+    page: int
+    size: int
+    items: list[JDListItem]
