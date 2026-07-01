@@ -18,6 +18,7 @@ class JDSourceFormat(enum.Enum):
     PDF = "PDF"
     DOCX = "DOCX"
     TEXT = "TEXT"
+    
 
 
 class EmbeddingStatus(enum.Enum):
@@ -70,5 +71,6 @@ class JDEmbedding(Base):
     input_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     embedding_status: Mapped[EmbeddingStatus] = mapped_column(SAEnum(EmbeddingStatus, name="embedding_status_enum"), nullable=False, default=EmbeddingStatus.PENDING)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
 
 

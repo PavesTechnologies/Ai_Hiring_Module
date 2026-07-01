@@ -12,7 +12,7 @@ router = APIRouter(
 )
 
 
-SYSTEM_USER = UUID("00000000-0000-0000-0000-000000000001")
+SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
 
 @router.post(
     "",
@@ -23,7 +23,7 @@ def create_job_description(
     request: CreateJDRequest,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.create_job(
+    return service.create_jd(
         request=request,
         created_by=SYSTEM_USER
     )

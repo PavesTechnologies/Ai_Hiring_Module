@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-import httpx
+import http
 from fastapi import Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
