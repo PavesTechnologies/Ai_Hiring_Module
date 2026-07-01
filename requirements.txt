@@ -1,11 +1,43 @@
-# ── Web Framework ─────────────────────────────────────────────────────────────
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-python-multipart==0.0.9
-
-# ── Database ──────────────────────────────────────────────────────────────────
-sqlalchemy==2.0.35
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.14.1
+async-timeout==5.0.1
+bcrypt==5.0.0
+billiard==4.2.4
+catalogue==2.0.10
+certifi==2026.6.17
+charset-normalizer==3.4.7
+click==8.4.2
+cloudpathlib==0.24.0
+colorama==0.4.6
+cymem==2.0.13
+fastapi==0.138.2
+filelock==3.29.4
+fsspec==2026.6.0
+greenlet==3.5.3
+h11==0.16.0
+httptools==0.8.0
+idna==3.18
+jmespath==1.1.0
+joblib==1.5.3
+langcodes==3.5.1
+lxml==6.1.1
+MarkupSafe==3.0.3
+mdurl==0.1.2
+mpmath==1.3.0
+murmurhash==1.0.15
+narwhals==2.22.1
+networkx==3.6.1
+numpy==1.26.4
+packaging==26.2
+passlib==1.7.4
+pgvector==0.4.2
+pillow==10.4.0
+prometheus_client==0.25.0
+protobuf==5.29.6
+psycopg2==2.9.12
 psycopg2-binary==2.9.9
+<<<<<<< HEAD
 alembic==1.13.2
 pgvector==0.3.2
 
@@ -36,9 +68,41 @@ cryptography==43.0.1
 httpx==0.27.2
 
 # ── Config & Utils ────────────────────────────────────────────────────────────
+=======
+pyasn1==0.6.3
+pycparser==3.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+pydantic_core==2.46.4
+Pygments==2.20.0
+pyparsing==3.3.2
+pypdfium2==5.11.0
+>>>>>>> f2b1803687d8e6127123611434163ccc4cc13d92
 python-dotenv==1.0.1
-pydantic==2.9.2
-pydantic-settings==2.5.2
-
-# ── Monitoring ────────────────────────────────────────────────────────────────
-prometheus-fastapi-instrumentator==7.0.0
+python-multipart==0.0.9
+PyYAML==6.0.3
+regex==2026.6.28
+safetensors==0.8.0
+scipy==1.17.1
+shellingham==1.5.4
+six==1.17.0
+smart_open==7.7.1
+spacy-legacy==3.0.12
+spacy-loggers==1.0.5
+SQLAlchemy==2.0.35
+srsly==2.5.3
+starlette==1.3.1
+sympy==1.14.0
+threadpoolctl==3.6.0
+tqdm==4.68.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2026.2
+uritemplate==4.2.0
+urllib3==2.7.0
+uvicorn==0.49.0
+vine==5.1.0
+wasabi==1.1.3
+wcwidth==0.8.2
+websockets==16.0
+wrapt==2.2.2

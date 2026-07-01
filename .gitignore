@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.so
+airs/ 
 
 # Environment & secrets
 .env
@@ -31,3 +32,6 @@ alembic/versions/*.pyc
 # OS
 .DS_Store
 Thumbs.db
+
+
+airs/

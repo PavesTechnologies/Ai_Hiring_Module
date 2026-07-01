@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    debug: bool = False
+    debug: bool = True
 
     @property
     def database_url(self) -> str:
