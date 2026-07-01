@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
 
+    # CORS — list explicit origins; credentials require non-wildcard origins
+    cors_origins: list[str] = ["http://localhost:3000"]
+
     # App
     app_env: str = "development"
     debug: bool = False
