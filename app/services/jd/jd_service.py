@@ -30,7 +30,7 @@ class JDService:
     def create_jd(
         self,
         request: CreateJDRequest,
-        created_by: UUID,
+        created_by: str,
     ) -> CreateJDResponse:
 
         try:
@@ -100,6 +100,7 @@ class JDService:
                 version_number=job_description.version_number,
                 source_format=job_description.source_format.value,
                 jurisdiction=job_description.jurisdiction,
+                created_by=job_description.created_by,
             )
 
         except Exception:
@@ -171,7 +172,7 @@ class JDService:
         self,
         jd_id: UUID,
         request: UpdateJDRequest,
-        updated_by: UUID,
+        updated_by: str,
     )-> UpdateJDResponse:
         
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
@@ -218,10 +219,10 @@ class JDService:
             id= new_jd.id,
             title= new_jd.title,
             version_number= new_jd.version_number,
-            message= "Job Description updated successfully."
+            updated_by= updated_by,
         )
         
-    def deactivate_jd(self, jd_id: UUID, updated_by: UUID) -> UpdateJDResponse:
+    def deactivate_jd(self, jd_id: UUID, updated_by:str) -> UpdateJDResponse:
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
         
         if not existing_jd:
@@ -252,7 +253,7 @@ class JDService:
             id= existing_jd.id,
             title= existing_jd.title,
             version_number= existing_jd.version_number,
-            message= "Job Description deactivated successfully."
+            updated_by= updated_by,
         )
         
     def search_job_descriptions(

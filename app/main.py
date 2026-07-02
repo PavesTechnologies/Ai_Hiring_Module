@@ -118,8 +118,8 @@ async def duplicate_jd_exception_handler(
         status_code=409,
         content={
              "message": "Duplicate Job Description found.",
-            "existing_jd_id": str(exc.existing_jd.id),
-            "title": exc.existing_jd.title,
-            "version_number": exc.existing_jd.version_number,
+            "existing_jd_id": str(exc.existing_jd.existing_jd.id),
+            "title": exc.existing_jd.existing_jd.title,
+            "version_number": exc.existing_jd.existing_jd.version_number,
         },
     )

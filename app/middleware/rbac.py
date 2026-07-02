@@ -1,12 +1,15 @@
 import logging
 from dataclasses import dataclass, field
 from typing import Callable
-from uuid import UUID
 
-from fastapi import Request
+from fastapi import Depends, Request
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.enums.constants import UserRole
 from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
+from app.models.identity import User
+from app.models.identity import UserRole as LocalUserRole
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TokenUser:
-    user_id: UUID  # this platform's users.id, from the token's obs_user_uuid claim
+    user_id: str  # this platform's users.id, unwrapped from the token's user_id claim
     email: str
     roles: list[str]
     claims: dict = field(default_factory=dict)
@@ -34,26 +37,47 @@ def _get_payload(request: Request) -> dict:
 
 def _to_token_user(payload: dict) -> TokenUser:
     token_roles = payload.get("roles", [])
-    user_id = payload.get("user_id")
 
     if isinstance(token_roles, str):
         token_roles = [token_roles]
 
-    # "user_id" is the UMS's own numeric account id — not a UUID and not a
-    # foreign key into our local `users` table. "obs_user_uuid" is the id
-    # that actually maps to users.id in this platform's database.
-    # raw_id = payload.get("obs_user_uuid")
-    # try:
-    #     user_id = UUID(str(raw_id))
-    # except (TypeError, ValueError):
-    #     raise UnauthorizedError("Token missing a valid platform user id (obs_user_uuid)")
+    raw_id = payload.get("user_id")
+    if raw_id is None:
+        raise UnauthorizedError("Token missing 'user_id' claim")
 
     return TokenUser(
-        user_id=user_id,
+        user_id=str(raw_id),
         email=payload.get("email", ""),
         roles=token_roles,
         claims=payload,
     )
+
+
+# ── Local user provisioning ────────────────────────────────────────────────────
+
+def _ensure_local_user(user: TokenUser, db: Session) -> None:
+    """
+    Ensure a local `users` row exists for this token's platform user id.
+
+    The UMS is the source of truth for identity; this app only needs a
+    shadow row so created_by/updated_by/actor_id foreign keys resolve.
+    Provisions one from the token's own claims on first sight instead of
+    requiring a manual sync step.
+    """
+    if db.get(User, user.user_id) is not None:
+        return
+
+    role_name = next((r for r in user.roles if r in LocalUserRole.__members__), None)
+
+    db.add(User(
+        id=user.user_id,
+        email=user.email,
+        password_hash="EXTERNAL_AUTH",  # identity lives in the UMS, not here
+        role=LocalUserRole[role_name] if role_name else LocalUserRole.RECRUITER,
+        full_name=user.claims.get("name") or user.email,
+        is_active=True,
+    ))
+    db.commit()
 
 
 # ── Dependency factory ────────────────────────────────────────────────────────
@@ -61,13 +85,15 @@ def _to_token_user(payload: dict) -> TokenUser:
 def require_roles(*allowed_roles: UserRole) -> Callable:
     allowed = frozenset(role.value for role in allowed_roles)
 
-    def _check(request: Request) -> TokenUser:
+    def _check(request: Request, db: Session = Depends(get_db)) -> TokenUser:
         user = _to_token_user(_get_payload(request))
 
         if allowed and not any(role in allowed for role in user.roles):
             raise ForbiddenError(
                 f"Access denied. Required: {' or '.join(sorted(allowed))}"
             )
+
+        _ensure_local_user(user, db)
 
         return user
 
@@ -87,12 +113,12 @@ def get_current_user(request: Request) -> TokenUser:
     return _to_token_user(_get_payload(request))
 
 
-def get_current_user_id(request: Request):
+def get_current_user_id(request: Request) -> str:
     """
     Dependency: just the caller's platform user id, unwrapped from the JWT claims.
 
     Usage in a route:
         @router.post("/")
-        async def create(user_id: UUID = Depends(get_current_user_id)):
+        async def create(user_id: str = Depends(get_current_user_id)):
     """
     return _to_token_user(_get_payload(request)).user_id
