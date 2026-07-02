@@ -1,14 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes.jd_routes import router
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
+from app.api.routes.jd_routes import router as jd_router
+from app.api.routes.campaign_routes import router as campaign_router
 
 from app.core.config import settings
 from app.enums.constants import API_PREFIX
 
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
+from app.exceptions.campaign_exceptions import CampaignException
+from app.exception_handler.handlers import (
+    duplicate_jd_exception_handler,
+    campaign_exception_handler,
+    http_exception_handler,
+)
 
 app = FastAPI(
     title="AI Resume Screening Platform (AIRS)",
@@ -26,39 +30,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers (uncomment as routes are implemented) ─────────────────────────────
-# from app.api.routes import auth, jobs, campaigns, candidates, resumes
-# from app.api.routes import pipeline, search, analytics, skills, admin
-# app.include_router(auth.router,       prefix=f"{API_PREFIX}/auth",        tags=["Auth"])
-# app.include_router(jobs.router,       prefix=f"{API_PREFIX}/jobs",        tags=["Jobs"])
-# app.include_router(campaigns.router,  prefix=f"{API_PREFIX}/campaigns",   tags=["Campaigns"])
-# app.include_router(candidates.router, prefix=f"{API_PREFIX}/candidates",  tags=["Candidates"])
-# app.include_router(resumes.router,    prefix=f"{API_PREFIX}/resumes",     tags=["Resumes"])
-# app.include_router(pipeline.router,   prefix=f"{API_PREFIX}/pipeline",    tags=["Pipeline"])
-# app.include_router(search.router,     prefix=f"{API_PREFIX}/search",      tags=["Search"])
-# app.include_router(analytics.router,  prefix=f"{API_PREFIX}/analytics",   tags=["Analytics"])
-# app.include_router(skills.router,     prefix=f"{API_PREFIX}/skills",      tags=["Skills"])
-# app.include_router(admin.router,      prefix=f"{API_PREFIX}/admin",       tags=["Admin"])
-
 
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok", "service": "AIRS"}
 
-app.include_router(router=router, prefix="/api/v1", tags=["Job Descriptions"])
+
+app.include_router(router=jd_router, prefix=API_PREFIX, tags=["Job Descriptions"])
+app.include_router(router=campaign_router, prefix=API_PREFIX, tags=["Campaigns"])
 
 
-@app.exception_handler(DuplicateJDException)
-async def duplicate_jd_exception_handler(
-    request: Request,
-    exc: DuplicateJDException,
-):
-    return JSONResponse(
-        status_code=409,
-        content={
-             "message": "Duplicate Job Description found.",
-            "existing_jd_id": str(exc.existing_jd.id),
-            "title": exc.existing_jd.title,
-            "version_number": exc.existing_jd.version_number,
-        },
-    )
+app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
+app.add_exception_handler(CampaignException, campaign_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
