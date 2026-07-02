@@ -77,7 +77,7 @@ class SkillSuggestion(Base):
     suggested_canonical_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     suggested_parent_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=True)
     status: Mapped[SkillSuggestionStatus] = mapped_column(SAEnum(SkillSuggestionStatus, name="skill_suggestion_status_enum"), nullable=False, default=SkillSuggestionStatus.PENDING)
-    reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

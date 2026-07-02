@@ -9,7 +9,6 @@ from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.services.audit_service import AuditService
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
-from sqlalchemy.dialects.postgresql import UUID
 from uuid import UUID
 from app.exception_handler.exceptions import NotFoundError, BadRequestError
 from app.mappers.jd_mapper import JDMapper
@@ -101,6 +100,7 @@ class JDService:
                 version_number=job_description.version_number,
                 source_format=job_description.source_format.value,
                 jurisdiction=job_description.jurisdiction,
+                created_by=job_description.created_by,
             )
 
         except Exception:
@@ -219,7 +219,7 @@ class JDService:
             id= new_jd.id,
             title= new_jd.title,
             version_number= new_jd.version_number,
-            message= "Job Description updated successfully."
+            updated_by= updated_by,
         )
         
     def deactivate_jd(self, jd_id: UUID, updated_by:str) -> UpdateJDResponse:
@@ -253,7 +253,7 @@ class JDService:
             id= existing_jd.id,
             title= existing_jd.title,
             version_number= existing_jd.version_number,
-            message= "Job Description deactivated successfully."
+            updated_by= updated_by,
         )
         
     def search_job_descriptions(

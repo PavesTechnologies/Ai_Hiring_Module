@@ -127,6 +127,23 @@ app.include_router(router=jd_router, prefix=API_PREFIX, tags=["Job Descriptions"
 app.include_router(router=campaign_router, prefix=API_PREFIX, tags=["Campaigns"])
 
 
+<<<<<<< HEAD
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
+=======
+@app.exception_handler(DuplicateJDException)
+async def duplicate_jd_exception_handler(
+    request: Request,
+    exc: DuplicateJDException,
+):
+    return JSONResponse(
+        status_code=409,
+        content={
+             "message": "Duplicate Job Description found.",
+            "existing_jd_id": str(exc.existing_jd.existing_jd.id),
+            "title": exc.existing_jd.existing_jd.title,
+            "version_number": exc.existing_jd.existing_jd.version_number,
+        },
+    )
+>>>>>>> 921b020c2a66c4f20f03748838b59533fea97307

@@ -15,7 +15,9 @@ class CreateJDResponse(BaseModel):
     source_format: str
 
     jurisdiction: str
-    
+
+    created_by: str
+
 
 class GetJDResponse(BaseModel):
     id: UUID
@@ -37,13 +39,15 @@ class UpdateJDResponse(BaseModel):
     id: UUID
     title: str
     version_number: int
-    
+    updated_by: str
+
 class JDListItem(BaseModel):
     id: UUID
     title: str
     version_number: int
     jurisdiction: str | None
     source_format: str
+    created_by: str
     created_at: datetime
     
 
