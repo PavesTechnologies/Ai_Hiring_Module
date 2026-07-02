@@ -29,7 +29,7 @@ class GetJDResponse(BaseModel):
     jurisdiction: str | None
     version_number: int
     is_active_version: bool
-    created_by: UUID
+    created_by: str
     created_at: datetime
     updated_at: datetime | None
     

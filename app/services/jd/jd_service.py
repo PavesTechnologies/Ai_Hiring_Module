@@ -172,7 +172,7 @@ class JDService:
         self,
         jd_id: UUID,
         request: UpdateJDRequest,
-        updated_by: UUID,
+        updated_by: str,
     )-> UpdateJDResponse:
         
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
@@ -222,7 +222,7 @@ class JDService:
             message= "Job Description updated successfully."
         )
         
-    def deactivate_jd(self, jd_id: UUID, updated_by:UUID) -> UpdateJDResponse:
+    def deactivate_jd(self, jd_id: UUID, updated_by:str) -> UpdateJDResponse:
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
         
         if not existing_jd:
