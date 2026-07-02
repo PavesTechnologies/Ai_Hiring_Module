@@ -5,7 +5,10 @@ from app.dependencies.jd import get_jd_service
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest,  JDSearchRequest
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
+from app.schemas.response import APIResponse
 from fastapi import Query
+from app.dependencies.auth import required_roles
+from app.models.identity import UserRole
 
 router = APIRouter(
     prefix="/job-descriptions",
@@ -17,37 +20,39 @@ SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
 
 @router.post(
     "",
-    response_model=CreateJDResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(required_roles(UserRole.HR_ADMIN))],
 )
 def create_job_description(
     request: CreateJDRequest,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.create_jd(
+    response = service.create_jd(
         request=request,
         created_by=SYSTEM_USER
     )
-    
+    return APIResponse.ok(data=response, message="Job Description created successfully.")
 
 
-@router.get("/all-active-jds", response_model=list[GetJDResponse],)
+@router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
 def get_all_active_jds(
     service: JDService = Depends(get_jd_service),
 ):
-    return service.get_all_jds(is_active_version=True)
+    return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
 
-@router.get("/{jd_id}", response_model=GetJDResponse,)
+@router.get("/{jd_id}", response_model=APIResponse,)
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.get_by_id(jd_id=jd_id)
+    response = service.get_by_id(jd_id=jd_id)
+    return APIResponse.ok(data=response, message="Job Description retrieved successfully.")
 
 
 @router.put(
     "/{jd_id}",
-    response_model=UpdateJDResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     )
 def update_job_description(
@@ -55,31 +60,33 @@ def update_job_description(
     request: UpdateJDRequest,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.update_jd(
+    response = service.update_jd(
         jd_id=jd_id,
         request=request,
         updated_by=SYSTEM_USER
     )
-    
+    return APIResponse.ok(data=response, message="Job Description updated successfully.")
+
 
 @router.delete(
     "/{jd_id}",
-    response_model=UpdateJDResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK
 )
 def delete_job_description(
     jd_id: UUID,
     service: JDService = Depends(get_jd_service),
 ):
-    return service.deactivate_jd(
+    response = service.deactivate_jd(
         jd_id=jd_id,
         updated_by=SYSTEM_USER
     )
+    return APIResponse.ok(data=response, message="Job Description deactivated successfully.")
     
     
 @router.get(
     "",
-    response_model=PaginatedJDResponse,
+    response_model=APIResponse[PaginatedJDResponse],
     status_code=status.HTTP_200_OK,
 )
 def search_job_descriptions(
@@ -108,4 +115,5 @@ def search_job_descriptions(
         order=order,
     )
 
-    return service.search_job_descriptions(request)
+    response = service.search_job_descriptions(request)
+    return APIResponse.ok(data=response, message="Job Descriptions searched successfully.")

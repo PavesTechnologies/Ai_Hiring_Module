@@ -37,7 +37,6 @@ class UpdateJDResponse(BaseModel):
     id: UUID
     title: str
     version_number: int
-    message: str
     
 class JDListItem(BaseModel):
     id: UUID
