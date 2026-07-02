@@ -31,7 +31,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     actor_role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     action_type: Mapped[ActionType] = mapped_column(SAEnum(ActionType, name="audit_action_type_enum"), nullable=False)
     entity_type: Mapped[EntityType] = mapped_column(SAEnum(EntityType, name="audit_entity_type_enum"), nullable=False)

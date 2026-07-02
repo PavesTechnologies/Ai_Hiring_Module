@@ -13,5 +13,6 @@ class JDMapper:
             version_number=jd.version_number,
             jurisdiction=jd.jurisdiction,
             source_format=jd.source_format.value,
+            created_by=jd.created_by,
             created_at=jd.created_at,
         )

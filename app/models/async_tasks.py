@@ -68,7 +68,7 @@ class DeadLetterQueue(Base):
     last_attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     moved_to_dlq_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     replayed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    replayed_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    replayed_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -78,7 +78,7 @@ class BulkUploadJob(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=False)
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     queued_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

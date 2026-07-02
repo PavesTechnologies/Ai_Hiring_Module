@@ -16,7 +16,7 @@ class AuditService:
     def log(
         self,
         *,
-        actor_id: UUID,
+        actor_id: str,
         actor_role: str | None,
         action_type: str,
         entity_type: str,
