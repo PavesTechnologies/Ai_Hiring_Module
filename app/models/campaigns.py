@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (
     CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
-    Integer, Numeric, String, func,
+    Integer, Numeric, String, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,6 +26,7 @@ class HiringCampaign(Base):
             "weight_deterministic + weight_semantic + weight_ai = 100.00",
             name="chk_weights_sum_100",
         ),
+        UniqueConstraint("org_id", "name", name="uq_campaign_name_per_org"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -40,7 +41,7 @@ class HiringCampaign(Base):
     ai_threshold: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=50.00)
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    hiring_manager_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
-    created_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
+    hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
