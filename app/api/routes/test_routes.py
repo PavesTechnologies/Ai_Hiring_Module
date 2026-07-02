@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 
-from app.core.constants import UserRole
+from app.enums.constants import UserRole
 from app.middleware.rbac import TokenUser, require_roles
 
 router = APIRouter(prefix="/test", tags=["RBAC Tests"])

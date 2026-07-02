@@ -9,7 +9,6 @@ from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.services.audit_service import AuditService
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
-from sqlalchemy.dialects.postgresql import UUID
 from uuid import UUID
 from app.exception_handler.exceptions import NotFoundError, BadRequestError
 from app.mappers.jd_mapper import JDMapper
@@ -31,7 +30,7 @@ class JDService:
     def create_jd(
         self,
         request: CreateJDRequest,
-        created_by: str,
+        created_by: UUID,
     ) -> CreateJDResponse:
 
         try:
@@ -222,7 +221,7 @@ class JDService:
             message= "Job Description updated successfully."
         )
         
-    def deactivate_jd(self, jd_id: UUID, updated_by:UUID) -> UpdateJDResponse:
+    def deactivate_jd(self, jd_id: UUID, updated_by: UUID) -> UpdateJDResponse:
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
         
         if not existing_jd:

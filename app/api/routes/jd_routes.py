@@ -1,19 +1,20 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.jd import get_jd_service
+from app.enums.constants import UserRole
+from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest,  JDSearchRequest
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
-from fastapi import Query
 
 router = APIRouter(
     prefix="/job-descriptions",
     tags=["Job Descriptions"],
 )
 
-
 SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
+
 
 @router.post(
     "",
@@ -23,17 +24,19 @@ SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
 def create_job_description(
     request: CreateJDRequest,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     return service.create_jd(
         request=request,
         created_by=SYSTEM_USER
     )
-    
+
 
 
 @router.get("/all-active-jds", response_model=list[GetJDResponse],)
 def get_all_active_jds(
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return service.get_all_jds(is_active_version=True)
 
@@ -41,6 +44,7 @@ def get_all_active_jds(
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return service.get_by_id(jd_id=jd_id)
 
@@ -54,13 +58,14 @@ def update_job_description(
     jd_id: UUID,
     request: UpdateJDRequest,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     return service.update_jd(
         jd_id=jd_id,
         request=request,
         updated_by=SYSTEM_USER
     )
-    
+
 
 @router.delete(
     "/{jd_id}",
@@ -70,13 +75,14 @@ def update_job_description(
 def delete_job_description(
     jd_id: UUID,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     return service.deactivate_jd(
         jd_id=jd_id,
         updated_by=SYSTEM_USER
     )
-    
-    
+
+
 @router.get(
     "",
     response_model=PaginatedJDResponse,
@@ -84,6 +90,7 @@ def delete_job_description(
 )
 def search_job_descriptions(
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 
     search: str | None = Query(default=None),
     jurisdiction: str | None = Query(default=None),
