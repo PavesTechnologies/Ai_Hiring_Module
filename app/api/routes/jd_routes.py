@@ -7,7 +7,7 @@ from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDRes
 from app.services.jd.jd_service import JDService
 from app.schemas.response import APIResponse
 from fastapi import Query
-from app.dependencies.auth import required_roles
+from app.dependencies.auth import require_roles
 from app.models.identity import UserRole
 
 router = APIRouter(
@@ -22,7 +22,7 @@ SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
     "",
     response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(required_roles(UserRole.HR_ADMIN))],
+    dependencies=[Depends(require_roles(UserRole.HR_ADMIN))],
 )
 def create_job_description(
     request: CreateJDRequest,

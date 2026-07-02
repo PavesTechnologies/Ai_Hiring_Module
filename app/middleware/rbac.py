@@ -4,8 +4,8 @@ from typing import Callable
 
 from fastapi import Request
 
-from app.core.constants import UserRole
-from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.models.identity import UserRole
+from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
