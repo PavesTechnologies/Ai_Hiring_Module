@@ -6,6 +6,7 @@ from fastapi import (
     File,
     Form,
     Query,
+    Response,
     Security,
     UploadFile,
     status,
@@ -104,6 +105,26 @@ def get_job_description_by_id(
 ):
     response = service.get_by_id(jd_id=jd_id)
     return APIResponse.ok(data=response, message="Job Description retrieved successfully.")
+
+
+@router.get("/{jd_id}/download")
+def download_job_description_file(
+    jd_id: UUID,
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    """
+    Downloads the JD's document: the original PDF/DOCX if one was uploaded,
+    or the raw_text rendered into a DOCX on the fly if the JD is TEXT-sourced.
+    Returns the raw file bytes directly (not wrapped in APIResponse), since
+    this is a binary file download rather than a JSON API response.
+    """
+    file_bytes, filename, content_type = service.download_jd_file(jd_id=jd_id)
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.put(
