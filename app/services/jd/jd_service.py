@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 from uuid import UUID, uuid4
 
 import pypdfium2 as pdfium
@@ -250,6 +251,47 @@ class JDService:
 
     def get_all_jds(self, is_active_version: bool) -> list[JobDescription]:
         return self.repository.get_all_jds(is_active_version=is_active_version)
+
+    def download_jd_file(self, jd_id: UUID) -> tuple[bytes, str, str]:
+        """
+        Returns (file_bytes, filename, content_type) for a JD:
+          - TEXT-sourced JDs (no uploaded document) get raw_text rendered
+            into a DOCX on the fly.
+          - PDF/DOCX-sourced JDs return the original uploaded file, fetched
+            from Supabase Storage via file_path.
+        """
+        existing_jd = self.repository.get_by_id(jd_id=jd_id)
+
+        if not existing_jd:
+            raise NotFoundError(f"Job Description with ID {jd_id} not found.")
+
+        safe_title = re.sub(r"[^A-Za-z0-9 _-]", "", existing_jd.title).strip().replace(" ", "_") or "job_description"
+
+        if existing_jd.source_format == JDSourceFormat.TEXT:
+            file_bytes = self._render_docx(existing_jd.raw_text)
+            content_type = self._ALLOWED_UPLOAD_TYPES["docx"][0]
+            return file_bytes, f"{safe_title}.docx", content_type
+
+        if not existing_jd.file_path:
+            raise NotFoundError(f"No stored document found for Job Description with ID {jd_id}.")
+
+        file_bytes = self.storage_service.download_file(
+            bucket_name=self.JD_STORAGE_BUCKET,
+            file_path=existing_jd.file_path,
+        )
+        extension = existing_jd.file_path.rsplit(".", 1)[-1].lower()
+        content_type = self._ALLOWED_UPLOAD_TYPES.get(extension, (None,))[0] or "application/octet-stream"
+
+        return file_bytes, f"{safe_title}.{extension}", content_type
+
+    @staticmethod
+    def _render_docx(raw_text: str) -> bytes:
+        document = Document()
+        for line in raw_text.splitlines() or [raw_text]:
+            document.add_paragraph(line)
+        buffer = io.BytesIO()
+        document.save(buffer)
+        return buffer.getvalue()
 
 
 
