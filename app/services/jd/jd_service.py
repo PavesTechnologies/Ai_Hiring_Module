@@ -1,5 +1,12 @@
+import io
+import logging
+from uuid import UUID, uuid4
+
+import pypdfium2 as pdfium
+from docx import Document
+from fastapi import HTTPException, UploadFile
+
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
-from fastapi import HTTPException
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat
 from app.repositories.jd_repository import JDRepository
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchRequest
@@ -9,31 +16,48 @@ from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.services.audit_service import AuditService
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
-from uuid import UUID
 from app.exception_handler.exceptions import NotFoundError, BadRequestError
 from app.mappers.jd_mapper import JDMapper
+from app.core.storage_service import StorageService
 
+logger = logging.getLogger(__name__)
 
 
 class JDService:
+
+    JD_STORAGE_BUCKET = "airs-job-descriptions"
+
+    # extension -> (expected mime type, JDSourceFormat)
+    _ALLOWED_UPLOAD_TYPES = {
+        "pdf": ("application/pdf", JDSourceFormat.PDF),
+        "docx": (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            JDSourceFormat.DOCX,
+        ),
+    }
 
     def __init__(
         self,
         repository: JDRepository,
         hash_service: HashService,
-        audit_service: AuditService
+        audit_service: AuditService,
+        storage_service: StorageService,
     ):
         self.repository = repository
         self.hash_service = hash_service
         self.audit_service = audit_service
+        self.storage_service = storage_service
 
     def create_jd(
         self,
         request: CreateJDRequest,
         created_by: str,
+        file_path: str | None = None,
     ) -> CreateJDResponse:
 
         try:
+            source_format = self._resolve_source_format(file_path)
+
             # Step 1 - Generate SHA-256 Hash
             content_hash = self.hash_service.generate_hash(
                 request.raw_text
@@ -64,17 +88,19 @@ class JDService:
                 create_by=created_by,
                 version_number=1,
                 parent_jd_id=None,
-                lineage_root_id=None
+                lineage_root_id=None,
+                source_format=source_format,
+                file_path=file_path,
             )
-            
-        
+
+
 
             # Step 4 - Save
             job_description = self.repository.create_job_description(
                 job_description
             )
-            
-                        
+
+
             # Step 5 - Audit
             self.audit_service.log(
                actor_id=created_by,
@@ -106,16 +132,74 @@ class JDService:
         except Exception:
             self.repository.rollback()
             raise
-        
-    
-    
+
+    def process_uploaded_file(self, file: UploadFile, org_id: UUID | None) -> tuple[str, str]:
+        """
+        Validates, uploads to Supabase, and extracts raw text from an
+        uploaded JD document. Called by the POST /job-descriptions/from-file
+        endpoint *before* create_jd(), so create_jd() itself stays the single
+        place that owns hashing, duplicate detection, saving, and audit.
+
+        Returns (raw_text, storage_object_path).
+        """
+        extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+        allowed = self._ALLOWED_UPLOAD_TYPES.get(extension)
+
+        if allowed is None:
+            raise BadRequestError("Only PDF and DOCX files are supported for upload.")
+
+        expected_mime_type, _ = allowed
+        if file.content_type and file.content_type != expected_mime_type:
+            raise BadRequestError("Uploaded file's content type does not match its extension.")
+
+        file_content = file.file.read()
+
+        object_path = f"org_{org_id}/jd/{uuid4()}.{extension}"
+        file_path = self.storage_service.upload_file(
+            bucket_name=self.JD_STORAGE_BUCKET,
+            file_path=object_path,
+            file_content=file_content,
+            content_type=file.content_type,
+        )
+
+        raw_text = (
+            self._extract_pdf_text(file_content)
+            if extension == "pdf"
+            else self._extract_docx_text(file_content)
+        )
+
+        if not raw_text or not raw_text.strip():
+            raise BadRequestError("Could not extract any text from the uploaded document.")
+
+        return raw_text, file_path
+
+    @staticmethod
+    def _resolve_source_format(file_path: str | None) -> JDSourceFormat:
+        if not file_path:
+            return JDSourceFormat.TEXT
+        extension = file_path.rsplit(".", 1)[-1].lower()
+        return JDSourceFormat.PDF if extension == "pdf" else JDSourceFormat.DOCX
+
+    @staticmethod
+    def _extract_pdf_text(file_content: bytes) -> str:
+        pdf = pdfium.PdfDocument(file_content)
+        pages_text = [page.get_textpage().get_text_range() for page in pdf]
+        return "\n".join(pages_text)
+
+    @staticmethod
+    def _extract_docx_text(file_content: bytes) -> str:
+        document = Document(io.BytesIO(file_content))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs)
+
     def _build_job_description(self,
                                request: CreateJDRequest,
                                *,
                                create_by: str,
                                version_number: int,
                                parent_jd_id: UUID| None,
-                               lineage_root_id: UUID | None) -> JobDescription:
+                               lineage_root_id: UUID | None,
+                               source_format: JDSourceFormat = JDSourceFormat.TEXT,
+                               file_path: str | None = None) -> JobDescription:
         return JobDescription(
             title= request.title,
             raw_text= request.raw_text,
@@ -126,7 +210,8 @@ class JDService:
                 if request.education_criteria
                 else None
             ),
-            source_format= JDSourceFormat.TEXT,
+            source_format= source_format,
+            file_path= file_path,
             content_hash= self.hash_service.generate_hash(request.raw_text),
             version_number= version_number,
             is_active_version= True,
@@ -134,18 +219,18 @@ class JDService:
             lineage_root_id= lineage_root_id,
             created_by= create_by
         )
-         
-    
-        
+
+
+
     def get_by_id(self, jd_id: str) -> JobDescription | None:
         job_description = self.repository.get_by_id(jd_id=jd_id)
-        
+
         if not job_description:
             return HTTPException(
                 status_code=404,
                 detail=f"Job Description with ID {jd_id} not found."
             )
-            
+
         return GetJDResponse(
             created_at=job_description.created_at,
             created_by=job_description.created_by,
@@ -155,49 +240,62 @@ class JDService:
             min_experience_years=job_description.min_experience_years,
             raw_text=job_description.raw_text,
             required_skills=job_description.required_skills,
-            source_format=job_description.source_format.value,            
+            source_format=job_description.source_format.value,
             title=job_description.title,
             updated_at=job_description.updated_at,
             version_number=job_description.version_number,
             education_criteria=job_description.education_criteria,
             parsed_skills=job_description.parsed_skills
         )
-        
+
     def get_all_jds(self, is_active_version: bool) -> list[JobDescription]:
         return self.repository.get_all_jds(is_active_version=is_active_version)
-    
-    
-    
+
+
+
     def update_jd(
         self,
         jd_id: UUID,
         request: UpdateJDRequest,
         updated_by: str,
+        file_path: str | None = None,
     )-> UpdateJDResponse:
-        
+
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
-        
+
         if not existing_jd:
             raise NotFoundError(f"Job Description with ID {jd_id} not found.")
-            
+
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Cannot update an inactive version of the Job Description with ID {jd_id}.")
-        
+
         if existing_jd.lineage_root_id:
             lineage_root_id = existing_jd.lineage_root_id
         else:
             lineage_root_id = existing_jd.id
-            
+
+        # A newly uploaded file replaces the document; a metadata/text-only
+        # update (file_path is None) carries forward whatever document the
+        # previous active version already had.
+        if file_path is not None:
+            new_source_format = self._resolve_source_format(file_path)
+            new_file_path = file_path
+        else:
+            new_source_format = existing_jd.source_format
+            new_file_path = existing_jd.file_path
+
         self.repository.deactivate_version(existing_jd)
-        
+
         new_jd = self._build_job_description(
             request= request,
             create_by= updated_by,
             version_number= existing_jd.version_number + 1,
             parent_jd_id= existing_jd.id,
-            lineage_root_id= lineage_root_id
+            lineage_root_id= lineage_root_id,
+            source_format= new_source_format,
+            file_path= new_file_path,
         )
-        
+
         new_jd = self.repository.create_job_description(new_jd)
         self.audit_service.log(
             actor_id=updated_by,
@@ -212,27 +310,44 @@ class JDService:
                 "source_format": new_jd.source_format.value,
             }
         )
-        
+
         self.repository.commit()
-        
+
+        # The new document is safely stored and the version switch has
+        # committed - only now is it safe to remove the superseded file, so
+        # a failed update never leaves the JD without a retrievable document.
+        # A cleanup failure here must not fail an already-successful update.
+        if file_path is not None and existing_jd.file_path:
+            try:
+                self.storage_service.delete_file(
+                    bucket_name=self.JD_STORAGE_BUCKET,
+                    file_path=existing_jd.file_path,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to delete superseded JD document '%s' for JD %s.",
+                    existing_jd.file_path,
+                    existing_jd.id,
+                )
+
         return UpdateJDResponse(
             id= new_jd.id,
             title= new_jd.title,
             version_number= new_jd.version_number,
             updated_by= updated_by,
         )
-        
+
     def deactivate_jd(self, jd_id: UUID, updated_by:str) -> UpdateJDResponse:
         existing_jd = self.repository.get_by_id(jd_id=jd_id)
-        
+
         if not existing_jd:
             raise NotFoundError(f"Job Description with ID {jd_id} not found.")
-            
+
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Job Description with ID {jd_id} is already inactive.")
-        
+
         self.repository.deactivate_version(existing_jd)
-        
+
         self.audit_service.log(
             actor_id=updated_by,
             actor_role="HR_ADMIN",
@@ -246,28 +361,28 @@ class JDService:
                 "source_format": existing_jd.source_format.value,
             }
         )
-        
+
         self.repository.commit()
-        
+
         return UpdateJDResponse(
             id= existing_jd.id,
             title= existing_jd.title,
             version_number= existing_jd.version_number,
             updated_by= updated_by,
         )
-        
+
     def search_job_descriptions(
         self,
         request: JDSearchRequest,
     )-> PaginatedJDResponse:
         records, total = self.repository.search(request=request)
-        
+
         items = [JDMapper.to_list_item(jd) for jd in records]
-        
+
         return PaginatedJDResponse(
             total=total,
             page=request.page,
             size=request.size,
             items=items
         )
-        
+
