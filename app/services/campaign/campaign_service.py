@@ -36,8 +36,7 @@ class CampaignService:
         self,
         request: CampaignCreateRequest,
         org_id: UUID,
-        created_by: str,
-        actor_role: str,
+        created_by: str
     ) -> CampaignResponse:
         try:
             
@@ -52,11 +51,11 @@ class CampaignService:
                     422
                 )
 
-            # if not jd.is_active_version:
-            #     raise CampaignException(
-            #         "Invalid job description: Job description is not the active version",
-            #         422
-            #     )
+            if not jd.is_active_version:
+                raise CampaignException(
+                    "Invalid job description: Job description is not the active version",
+                    422
+                )
 
             if jd.closed_at is not None:
                 raise CampaignException(
@@ -99,7 +98,7 @@ class CampaignService:
             self.campaign_repo.commit()
 
             
-            hiring_manager_name = None
+            hiring_manager_name = request.hiring_manager_id | None
             # if campaign.hiring_manager_id:
             #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
             #     if hiring_manager:

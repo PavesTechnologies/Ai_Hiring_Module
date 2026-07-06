@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     aws_region: str = "ap-south-1"
     aws_s3_bucket: str = ""
 
+    # Supabase
+    SUPABASE_URL:str
+    SUPABASE_PUBLISHABLE_KEY:str
+    SUPABASE_SECRET_KEY:str
+    SUPABASE_JWKS_URL:str
+
     # AI / Embeddings
     gemini_api_key: str = ""
     embedding_model: str = "all-MiniLM-L6-v2"
