@@ -1,18 +1,15 @@
-<<<<<<< HEAD
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.jd_routes import router as jd_router
 from app.api.routes.campaign_routes import router as campaign_router
-=======
 import logging
 import time
 
-from fastapi import FastAPI, Request
+# from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
->>>>>>> 4dc4230925d8560255d2f7e67a875007c2b06dc8
 
 from app.core.config import settings
 from app.api.routes import test_routes
@@ -62,8 +59,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-<<<<<<< HEAD
-=======
 
 @app.middleware("http")
 async def add_timing_middleware(request: Request, call_next):
@@ -116,7 +111,6 @@ app.openapi = custom_openapi  # type: ignore[method-assign]
 
 app.include_router(test_routes.router)
 
->>>>>>> 4dc4230925d8560255d2f7e67a875007c2b06dc8
 
 @app.get("/health", tags=["Health"])
 def health():
@@ -127,11 +121,6 @@ app.include_router(router=jd_router, prefix=API_PREFIX, tags=["Job Descriptions"
 app.include_router(router=campaign_router, prefix=API_PREFIX, tags=["Campaigns"])
 
 
-<<<<<<< HEAD
-app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
-app.add_exception_handler(CampaignException, campaign_exception_handler)
-app.add_exception_handler(HTTPException, http_exception_handler)
-=======
 @app.exception_handler(DuplicateJDException)
 async def duplicate_jd_exception_handler(
     request: Request,
@@ -146,4 +135,3 @@ async def duplicate_jd_exception_handler(
             "version_number": exc.existing_jd.existing_jd.version_number,
         },
     )
->>>>>>> 921b020c2a66c4f20f03748838b59533fea97307

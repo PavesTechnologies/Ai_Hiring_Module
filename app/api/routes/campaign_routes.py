@@ -1,8 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Security, status
 
 from app.dependencies.campaign import get_campaign_service
+from app.models.identity import UserRole
+from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.schemas.response import APIResponse
@@ -39,6 +41,25 @@ def create_campaign(
     return APIResponse.ok(
         data=campaign,
         message="Campaign created successfully"
+    )
+
+
+@router.get(
+    "/all",
+    response_model=APIResponse[list[CampaignResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Get all campaigns",
+    description="Retrieve a list of all campaigns with JD and hiring manager details.",
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
+)
+def get_all_campaigns(
+    service: CampaignService = Depends(get_campaign_service),
+):
+    campaigns = service.get_all_campaigns()
+
+    return APIResponse.ok(
+        data=campaigns,
+        message="Campaigns retrieved successfully"
     )
 
 

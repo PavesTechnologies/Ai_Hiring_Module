@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
+from http.client import responses
+from http.client import responses
 from uuid import UUID
 
 from sqlalchemy import and_
@@ -30,7 +32,7 @@ class CampaignService:
         self.audit_service = audit_service
         self.db = db
 
-    def create_campaign(
+    def  create_campaign(
         self,
         request: CampaignCreateRequest,
         org_id: UUID,
@@ -151,3 +153,19 @@ class CampaignService:
             hiring_manager=hiring_manager_name,
             created_at=campaign.created_at,
         )
+    
+    def get_all_campaigns(self, user: User) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns()
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,   # ← matches the actual column name
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                created_at=c.created_at,
+            )
+            for c in campaigns
+        ]

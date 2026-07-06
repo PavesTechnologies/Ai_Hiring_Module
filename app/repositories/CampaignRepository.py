@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.campaigns import HiringCampaign
 
@@ -53,6 +53,18 @@ class CampaignRepository:
             .filter(HiringCampaign.org_id == org_id)
             .all()
         )
+    
+    def get_all_campaigns(self) -> list[HiringCampaign]:
+        stmt = (
+            select(HiringCampaign)
+            # .where(
+            #     HiringCampaign.status == "ACTIVE",
+            # )
+            .options(joinedload(HiringCampaign.job_description))
+            .order_by(HiringCampaign.created_at.desc())
+        )
+        result = self.db.execute(stmt)
+        return result.scalars().all()
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
