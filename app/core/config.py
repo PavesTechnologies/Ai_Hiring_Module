@@ -44,7 +44,7 @@ class Settings(BaseSettings):
             f"?sslmode={self.db_sslmode}"
         )
 
-    model_config = {"env_file": ".env", "case_sensitive": False}
+    model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
 
 
 settings = Settings()
