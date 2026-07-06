@@ -65,6 +65,30 @@ class CampaignRepository:
         )
         result = self.db.execute(stmt)
         return result.scalars().all()
+    
+    def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[HiringCampaign]:
+        stmt = (
+            select(HiringCampaign)
+            .where(
+                HiringCampaign.created_by == manager_id,
+            )
+            .options(joinedload(HiringCampaign.job_description))
+            .order_by(HiringCampaign.created_at.desc())
+        )
+        result = self.db.execute(stmt)
+        return result.scalars().all()
+
+    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[HiringCampaign]:
+        stmt = (
+            select(HiringCampaign)
+            .where(
+                HiringCampaign.hiring_manager_id == manager_id,
+            )
+            .options(joinedload(HiringCampaign.job_description))
+            .order_by(HiringCampaign.created_at.desc())
+        )
+        result = self.db.execute(stmt)
+        return result.scalars().all()
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
