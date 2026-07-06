@@ -19,6 +19,7 @@ from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDR
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
 from app.schemas.response import APIResponse
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(
     prefix="/job-descriptions",
@@ -88,6 +89,35 @@ def create_job_description_from_file(
         file_path=file_path,
     )
     return APIResponse.ok(data=response, message="Job Description created successfully from uploaded document.")
+
+@router.get("/export")
+def export_job_descriptions(
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(
+        require_roles(
+            UserRole.HR_ADMIN,
+        )
+    ),
+    search: str | None = Query(default=None),
+    jurisdiction: str | None = Query(default=None),
+    active: bool | None = Query(default=True),
+    source_format: str | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    order: str = Query(default="desc"),
+):
+
+    request = JDSearchRequest(
+        search=search,
+        jurisdiction=jurisdiction,
+        active=active,
+        source_format=source_format,
+        page=1,
+        size=1,
+        sort_by=sort_by,
+        order=order,
+    )
+
+    return service.export_jd_list(request)
 
 
 @router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
@@ -243,3 +273,4 @@ def search_job_descriptions(
 
     response = service.search_job_descriptions(request)
     return APIResponse.ok(data=response, message="Job Descriptions searched successfully.")
+

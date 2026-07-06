@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+from urllib import request
 from uuid import UUID, uuid4
 
 import pypdfium2 as pdfium
@@ -20,6 +21,9 @@ from app.schemas.jd.response import GetJDResponse
 from app.exception_handler.exceptions import NotFoundError, BadRequestError
 from app.mappers.jd_mapper import JDMapper
 from app.core.storage_service import StorageService
+from fastapi.responses import StreamingResponse
+from datetime import datetime
+from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
 
@@ -426,5 +430,26 @@ class JDService:
             page=request.page,
             size=request.size,
             items=items
+        )
+    
+    def export_jd_list(
+        self,
+        request: JDSearchRequest,
+    ):
+        records = self.repository.export_jd_list(request)
+
+        excel_file = ExcelExport.export_jd_list(records)
+
+        filename = (
+            f"JD_List_Export_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
         )
 

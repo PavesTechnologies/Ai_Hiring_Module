@@ -104,6 +104,50 @@ class JDRepository:
     def rollback(self)->None:
         self.db.rollback()
     
-    
+    def export_jd_list(
+        self,
+        request: JDSearchRequest,
+    ) -> list[JobDescription]:
+
+        query = self.db.query(JobDescription)
+
+        if request.search:
+            query = query.filter(
+                JobDescription.title.ilike(f"%{request.search}%")
+            )
+
+        if request.jurisdiction:
+            query = query.filter(
+                JobDescription.jurisdiction == request.jurisdiction
+            )
+
+        if request.active is not None:
+            query = query.filter(
+                JobDescription.is_active_version == request.active
+            )
+
+        if request.source_format:
+            query = query.filter(
+                JobDescription.source_format == request.source_format
+            )
+
+        sort_columns = {
+            "title": JobDescription.title,
+            "created_at": JobDescription.created_at,
+            "version_number": JobDescription.version_number,
+        }
+
+        sort_column = sort_columns.get(
+            request.sort_by,
+            JobDescription.created_at,
+        )
+
+        if request.order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column)
+
+        return query.all()
         
-    
+            
+        
