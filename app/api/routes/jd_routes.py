@@ -117,7 +117,27 @@ def export_job_descriptions(
         order=order,
     )
 
-    return service.export_jd_list(request)
+    return service.export_jd_list(
+        request=request,
+        exported_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+
+@router.get("/{jd_id}/export")
+def export_single_job_description(
+    jd_id: UUID,
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(
+        require_roles(
+            UserRole.HR_ADMIN,
+        )
+    ),
+):
+    return service.export_single_jd(
+        jd_id=jd_id,
+        exported_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
 
 
 @router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
@@ -126,6 +146,7 @@ def get_all_active_jds(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
+
 
 @router.get("/{jd_id}", response_model=APIResponse,)
 def get_job_description_by_id(
@@ -157,11 +178,7 @@ def download_job_description_file(
     )
 
 
-@router.put(
-    "/{jd_id}",
-    response_model=APIResponse,
-    status_code=status.HTTP_200_OK,
-    )
+@router.put("/{jd_id}",response_model=APIResponse, status_code=status.HTTP_200_OK,)
 def update_job_description(
     jd_id: UUID,
     request: UpdateJDRequest,
