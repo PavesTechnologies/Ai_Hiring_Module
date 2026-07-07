@@ -96,7 +96,7 @@ class CampaignService:
             self.campaign_repo.commit()
 
             
-            hiring_manager_name = request.hiring_manager_id | None
+            hiring_manager_name = request.hiring_manager_id 
             # if campaign.hiring_manager_id:
             #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
             #     if hiring_manager:

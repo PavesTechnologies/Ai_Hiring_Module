@@ -213,6 +213,7 @@ def delete_job_description(
     "",
     response_model=APIResponse[PaginatedJDResponse],
     status_code=status.HTTP_200_OK,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def search_job_descriptions(
     service: JDService = Depends(get_jd_service),

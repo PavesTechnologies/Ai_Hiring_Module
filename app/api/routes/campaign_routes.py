@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Security, status
 
 from app.dependencies.campaign import get_campaign_service
 from app.schemas.campaign.campaign_response import CampaignResponse
@@ -27,9 +27,10 @@ SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
 def create_campaign(
     request: CampaignCreateRequest,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     org_id = SYSTEM_ORG
-    created_by = get_current_user().user_id  # Assuming you have a way to get the current user``
+    created_by = user.user_id
 
     campaign = service.create_campaign(
         request=request,
@@ -47,8 +48,7 @@ def create_campaign(
     "/{campaign_id}",
     response_model=APIResponse[CampaignResponse],
     status_code=status.HTTP_200_OK,
-    summary="Get campaign by ID",
-    description="Retrieve a campaign by its ID with JD and hiring manager details.",
+    dependencies=[Depends(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def get_campaign(
     campaign_id: UUID,
