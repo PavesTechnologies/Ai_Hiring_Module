@@ -16,6 +16,8 @@ class CampaignResponse(BaseModel):
 
     jd_version: int
 
+    max_candidates: int
+
     hiring_manager: str | None
 
     deadline: datetime | None
