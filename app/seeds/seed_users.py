@@ -15,7 +15,7 @@ try:
     db.flush()
     
     user = User(
-        id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
+        id="22222222-2222-2222-2222-222222222222",
         org_id=org.id,
         email="admin@paves.com",
         password_hash="dummy-password",

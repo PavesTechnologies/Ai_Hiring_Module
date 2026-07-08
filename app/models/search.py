@@ -13,7 +13,7 @@ class SearchQuery(Base):
     __tablename__ = "search_queries"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    queried_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    queried_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=True)
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     query_embedding_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

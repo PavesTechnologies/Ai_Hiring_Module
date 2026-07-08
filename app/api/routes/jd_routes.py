@@ -1,13 +1,15 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.jd import get_jd_service
+from app.enums.constants import UserRole
+from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest,  JDSearchRequest
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
 from app.schemas.response import APIResponse
 from fastapi import Query
-from app.dependencies.auth import require_roles
+from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 
 router = APIRouter(
@@ -16,21 +18,19 @@ router = APIRouter(
 )
 
 
-SYSTEM_USER = UUID("22222222-2222-2222-2222-222222222222")
-
 @router.post(
     "",
     response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(UserRole.HR_ADMIN))],
 )
 def create_job_description(
     request: CreateJDRequest,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     response = service.create_jd(
         request=request,
-        created_by=SYSTEM_USER
+        created_by=user.user_id
     )
     return APIResponse.ok(data=response, message="Job Description created successfully.")
 
@@ -38,6 +38,7 @@ def create_job_description(
 @router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
 def get_all_active_jds(
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
 
@@ -45,6 +46,7 @@ def get_all_active_jds(
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     response = service.get_by_id(jd_id=jd_id)
     return APIResponse.ok(data=response, message="Job Description retrieved successfully.")
@@ -59,11 +61,12 @@ def update_job_description(
     jd_id: UUID,
     request: UpdateJDRequest,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     response = service.update_jd(
         jd_id=jd_id,
         request=request,
-        updated_by=SYSTEM_USER
+        updated_by=user.user_id
     )
     return APIResponse.ok(data=response, message="Job Description updated successfully.")
 
@@ -76,14 +79,15 @@ def update_job_description(
 def delete_job_description(
     jd_id: UUID,
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     response = service.deactivate_jd(
         jd_id=jd_id,
-        updated_by=SYSTEM_USER
+        updated_by=user.user_id
     )
     return APIResponse.ok(data=response, message="Job Description deactivated successfully.")
-    
-    
+
+
 @router.get(
     "",
     response_model=APIResponse[PaginatedJDResponse],
@@ -91,6 +95,7 @@ def delete_job_description(
 )
 def search_job_descriptions(
     service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 
     search: str | None = Query(default=None),
     jurisdiction: str | None = Query(default=None),

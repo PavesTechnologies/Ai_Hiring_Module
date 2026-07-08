@@ -1,3 +1,7 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.routes.jd_routes import router as jd_router
+from app.api.routes.campaign_routes import router as campaign_router
 import logging
 import time
 
@@ -13,6 +17,12 @@ from app.api.routes.jd_routes import router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
+from app.exceptions.campaign_exceptions import CampaignException
+from app.exception_handler.handlers import (
+    duplicate_jd_exception_handler,
+    campaign_exception_handler,
+    http_exception_handler,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,7 +116,9 @@ app.include_router(test_routes.router)
 def health():
     return {"status": "ok", "service": "AIRS"}
 
-app.include_router(router=router, prefix="/api/v1", tags=["Job Descriptions"])
+
+app.include_router(router=jd_router, prefix=API_PREFIX, tags=["Job Descriptions"])
+app.include_router(router=campaign_router, prefix=API_PREFIX, tags=["Campaigns"])
 
 
 @app.exception_handler(DuplicateJDException)
@@ -118,8 +130,8 @@ async def duplicate_jd_exception_handler(
         status_code=409,
         content={
              "message": "Duplicate Job Description found.",
-            "existing_jd_id": str(exc.existing_jd.id),
-            "title": exc.existing_jd.title,
-            "version_number": exc.existing_jd.version_number,
+            "existing_jd_id": str(exc.existing_jd.existing_jd.id),
+            "title": exc.existing_jd.existing_jd.title,
+            "version_number": exc.existing_jd.existing_jd.version_number,
         },
     )
