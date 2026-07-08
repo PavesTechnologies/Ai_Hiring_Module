@@ -7,6 +7,7 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.jd_repository import JDRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_service import CampaignService
+from app.services.campaign.campaign_scheduler_service import CampaignSchedulerService
 
 
 def get_campaign_repository(
@@ -44,4 +45,13 @@ def get_campaign_service(
         jd_repo=jd_repo,
         audit_service=audit_service,
         db=db,
+    )
+
+def get_campaign_scheduler_service(
+    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> CampaignSchedulerService:
+    return CampaignSchedulerService(
+        campaign_repo=campaign_repo,
+        audit_service=audit_service,
     )

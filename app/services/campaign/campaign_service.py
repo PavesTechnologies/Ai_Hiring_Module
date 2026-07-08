@@ -113,6 +113,8 @@ class CampaignService:
                 jd_title=jd.title,
                 jd_version=jd.version_number,
                 hiring_manager=hiring_manager_name,
+                max_candidates=campaign.max_candidates,
+                deadline=campaign.deadline,
                 created_at=campaign.created_at,
             )
 

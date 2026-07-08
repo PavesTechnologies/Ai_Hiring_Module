@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
 
+
+    CELERY_BROKER_URL: str
+    CELERY_RESULT_BACKEND: str
     @property
     def database_url(self) -> str:
         return (
