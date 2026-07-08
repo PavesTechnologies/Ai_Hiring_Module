@@ -8,6 +8,8 @@ from app.services.jd.hash_service import HashService
 
 from app.repositories.audit_repository import AuditRepository
 from app.services.audit_service import AuditService
+from app.dependencies.storage import get_storage_service
+from app.core.storage_service import StorageService
 
 
 def get_jd_repository(
@@ -35,10 +37,13 @@ def get_jd_service(
     repository: JDRepository = Depends(get_jd_repository),
     hash_service: HashService = Depends(get_hash_service),
     audit_service: AuditService = Depends(get_audit_service),
-)-> JDService:
+    storage_service: StorageService = Depends(get_storage_service),
+) -> JDService:
+
     return JDService(
         repository=repository,
         hash_service=hash_service,
         audit_service=audit_service,
+        storage_service=storage_service,
     )
     

@@ -58,9 +58,15 @@ _FKS = [
 ]
 
 
+def _drop_fk_if_exists(table: str, constraint_name: str) -> None:
+    op.execute(
+        f'ALTER TABLE "{table}" DROP CONSTRAINT IF EXISTS "{constraint_name}"'
+    )
+
+
 def upgrade() -> None:
     for constraint_name, table, _column in _FKS:
-        op.drop_constraint(constraint_name, table, type_='foreignkey')
+        _drop_fk_if_exists(table, constraint_name)
 
     op.alter_column(
         'users', 'id',
@@ -81,7 +87,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:    
     for constraint_name, table, _column in _FKS:
-        op.drop_constraint(constraint_name, table, type_='foreignkey')
+        _drop_fk_if_exists(table, constraint_name)
 
     op.alter_column(
         'users', 'id',

@@ -2,15 +2,14 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-
 from sqlalchemy import (
     CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
     Integer, Numeric, String, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
+from app.models.jd.job_descriptions import JobDescription  # adjust import path to wherever JobDescription actually lives
 
 
 class CampaignStatus(enum.Enum):
@@ -28,7 +27,6 @@ class HiringCampaign(Base):
         ),
         UniqueConstraint("org_id", "name", name="uq_campaign_name_per_org"),
     )
-
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
@@ -45,3 +43,10 @@ class HiringCampaign(Base):
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # 👇 New relationship — many-to-one, HiringCampaign.jd_id -> JobDescription.id
+    job_description: Mapped["JobDescription"] = relationship(
+        "JobDescription",
+        foreign_keys=[jd_id],
+        lazy="joined",   # sets the default; repository can still override per-query with joinedload/selectinload
+    )
