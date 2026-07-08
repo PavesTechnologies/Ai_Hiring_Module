@@ -99,13 +99,12 @@ class CampaignService:
             self.campaign_repo.commit()
 
             
-            hiring_manager_name = request.hiring_manager_id | None
-            # if campaign.hiring_manager_id:
-            #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-            #     if hiring_manager:
-            #         hiring_manager_name = hiring_manager.full_name
+            hiring_manager_name = None
+            if campaign.hiring_manager_id:
+                hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+                if hiring_manager:
+                    hiring_manager_name = hiring_manager.full_name
 
-            
             return CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
@@ -113,6 +112,7 @@ class CampaignService:
                 jd_title=jd.title,
                 jd_version=jd.version_number,
                 hiring_manager=hiring_manager_name,
+                deadline=campaign.deadline,
                 created_at=campaign.created_at,
             )
 
@@ -139,10 +139,10 @@ class CampaignService:
             )
 
         hiring_manager_name = None
-        # if campaign.hiring_manager_id:
-        #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-        #     if hiring_manager:
-        #         hiring_manager_name = hiring_manager.full_name
+        if campaign.hiring_manager_id:
+            hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+            if hiring_manager:
+                hiring_manager_name = hiring_manager.full_name
 
         return CampaignResponse(
             id=campaign.id,
@@ -151,10 +151,11 @@ class CampaignService:
             jd_title=jd.title,
             jd_version=jd.version_number,
             hiring_manager=hiring_manager_name,
+            deadline=campaign.deadline,
             created_at=campaign.created_at,
         )
     
-    def get_all_campaigns(self, user: User) -> list[CampaignResponse]:
+    def get_all_campaigns(self) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns()
         return [
             CampaignResponse(

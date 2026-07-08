@@ -24,14 +24,14 @@ SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
     "",
     response_model=APIResponse[CampaignResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(UserRole.HR_ADMIN))],
 )
 def create_campaign(
     request: CampaignCreateRequest,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     org_id = SYSTEM_ORG
-    created_by = get_current_user().user_id  # Assuming you have a way to get the current user``
+    created_by = user.user_id  # Assuming you have a way to get the current user``
 
     campaign = service.create_campaign(
         request=request,
