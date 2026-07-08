@@ -3,8 +3,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.campaigns import HiringCampaign
-
+from app.models.campaigns import CampaignStatus, HiringCampaign
+from datetime import datetime, timezone
 
 class CampaignRepository:
 
@@ -101,3 +101,27 @@ class CampaignRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
+
+
+    def get_expired_campaigns(self) -> list[HiringCampaign]:
+        """
+        Returns all ACTIVE campaigns whose deadline has passed.
+        """
+        return (
+            self.db.query(HiringCampaign)
+            .filter(
+                HiringCampaign.status == CampaignStatus.ACTIVE,
+                HiringCampaign.deadline.isnot(None),
+                HiringCampaign.deadline < datetime.now(timezone.utc),
+            )
+            .all()
+        )
+    
+    def close_campaign(self, campaign: HiringCampaign) -> HiringCampaign:
+        campaign.status = CampaignStatus.CLOSED
+        campaign.updated_at = datetime.now(timezone.utc)
+
+        self.db.flush()
+        self.db.refresh(campaign)
+
+        return campaign
