@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+from urllib import request
 from uuid import UUID, uuid4
 
 import pypdfium2 as pdfium
@@ -20,6 +21,9 @@ from app.schemas.jd.response import GetJDResponse
 from app.exception_handler.exceptions import NotFoundError, BadRequestError
 from app.mappers.jd_mapper import JDMapper
 from app.core.storage_service import StorageService
+from fastapi.responses import StreamingResponse
+from datetime import datetime
+from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,11 @@ logger = logging.getLogger(__name__)
 class JDService:
 
     JD_STORAGE_BUCKET = "airs-job-descriptions"
+    MAX_JD_EXPORT_RECORDS = 5000
+    EXPORT_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
+    EXPORT_FAILED_MESSAGE = (
+        "Export failed. Please try again. If the issue persists, contact support."
+    )
 
     # extension -> (expected mime type, JDSourceFormat)
     _ALLOWED_UPLOAD_TYPES = {
@@ -227,7 +236,7 @@ class JDService:
         job_description = self.repository.get_by_id(jd_id=jd_id)
 
         if not job_description:
-            return HTTPException(
+            raise HTTPException(
                 status_code=404,
                 detail=f"Job Description with ID {jd_id} not found."
             )
@@ -427,4 +436,275 @@ class JDService:
             size=request.size,
             items=items
         )
+    
+    # def export_jd_list(
+    #     self,
+    #     request: JDSearchRequest,
+    # ):
+    #     records = self.repository.export_jd_list(request)
 
+    #     excel_file = ExcelExport.export_jd_list(records)
+
+    #     filename = (
+    #         f"JD_List_Export_"
+    #         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    #     )
+
+    #     return StreamingResponse(
+    #         excel_file,
+    #         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    #         headers={
+    #             "Content-Disposition": f'attachment; filename="{filename}"'
+    #         },
+    #     )
+
+    def export_jd_list(
+        self,
+        request: JDSearchRequest,
+        exported_by: str,
+        actor_role: str | None,
+    ):
+        total_records = self.repository.count_export_jd_list(request)
+        details = self._build_export_audit_details(
+            request=request,
+            total_exported_records=0,
+        )
+
+        if total_records > self.MAX_JD_EXPORT_RECORDS:
+            details["status"] = "FAILED"
+            details["failure_reason"] = "EXPORT_LIMIT_EXCEEDED"
+            details["matched_records"] = total_records
+            self._log_jd_export(
+                actor_id=exported_by,
+                actor_role=actor_role,
+                entity_id=self.EXPORT_AUDIT_ENTITY_ID,
+                jurisdiction=request.jurisdiction,
+                details=details,
+            )
+            self.repository.commit()
+            raise BadRequestError(
+                f"Export limit exceeded. Apply filters before exporting. "
+                f"Maximum allowed records: {self.MAX_JD_EXPORT_RECORDS}."
+            )
+
+        try:
+            records = self.repository.export_jd_list(request)
+
+            user_names = {}
+
+            for jd in records:
+
+                # Created By Full Name
+                if jd.created_by not in user_names:
+                    user_names[jd.created_by] = (
+                        self.repository.get_user_full_name(
+                            jd.created_by
+                        )
+                    )
+
+                # Flatten Education Criteria
+                education = jd.education_criteria or {}
+
+                degree = education.get("degree", "")
+                field = education.get("field", "")
+
+                jd.education_display = " - ".join(
+                    filter(None, [degree, field])
+                )
+
+                # Linked Campaign Count
+                jd.linked_campaign_count = (
+                    self.repository.get_linked_campaign_count(
+                        jd.id
+                    )
+                )
+
+            excel_file = ExcelExport.export_jd_list(
+                records,
+                user_names,
+            )
+        except Exception:
+            logger.exception("Failed to generate JD list export.")
+            details["status"] = "FAILED"
+            details["matched_records"] = total_records
+            self._log_jd_export(
+                actor_id=exported_by,
+                actor_role=actor_role,
+                entity_id=self.EXPORT_AUDIT_ENTITY_ID,
+                jurisdiction=request.jurisdiction,
+                details=details,
+            )
+            self.repository.commit()
+            raise HTTPException(
+                status_code=500,
+                detail=self.EXPORT_FAILED_MESSAGE,
+            )
+
+        details = self._build_export_audit_details(
+            request=request,
+            total_exported_records=len(records),
+        )
+        details["status"] = "SUCCESS"
+        self._log_jd_export(
+            actor_id=exported_by,
+            actor_role=actor_role,
+            entity_id=self.EXPORT_AUDIT_ENTITY_ID,
+            jurisdiction=request.jurisdiction,
+            details=details,
+        )
+        self.repository.commit()
+
+        filename = (
+            f"JD_List_Export_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition":
+                f'attachment; filename="{filename}"'
+            },
+        )
+    def export_single_jd(
+        self,
+        jd_id: UUID,
+        exported_by: str,
+        actor_role: str | None,
+    ):
+        # Get JD
+        jd = self.repository.export_single_jd(jd_id)
+
+        if not jd:
+            self._log_jd_export(
+                actor_id=exported_by,
+                actor_role=actor_role,
+                entity_id=self.EXPORT_AUDIT_ENTITY_ID,
+                jurisdiction=None,
+                details={
+                    "filters": {
+                        "jd_id": str(jd_id),
+                    },
+                    "total_exported_records": 0,
+                    "status": "FAILED",
+                    "failure_reason": "JD_NOT_FOUND",
+                },
+            )
+            self.repository.commit()
+            raise NotFoundError(
+                f"Job Description with ID {jd_id} not found."
+            )
+
+        # Determine lineage root
+        lineage_root_id = (
+            jd.lineage_root_id
+            if jd.lineage_root_id
+            else jd.id
+        )
+
+        # Get version history
+        version_history = self.repository.get_version_history(
+            lineage_root_id
+        )
+        created_by_name = self.repository.get_user_full_name(
+            jd.created_by
+        )
+
+        linked_campaigns = self.repository.get_linked_campaigns(
+            jd.id
+        )
+
+        try:
+            # Generate Excel
+            excel_file = ExcelExport.export_single_jd(
+                jd,
+                version_history,
+                created_by_name=created_by_name,
+                linked_campaigns=linked_campaigns,
+            )
+        except Exception:
+            logger.exception("Failed to generate single JD export for JD %s.", jd_id)
+            self._log_jd_export(
+                actor_id=exported_by,
+                actor_role=actor_role,
+                entity_id=jd.id,
+                jurisdiction=jd.jurisdiction,
+                details={
+                    "filters": {
+                        "jd_id": str(jd_id),
+                    },
+                    "total_exported_records": 0,
+                    "status": "FAILED",
+                },
+            )
+            self.repository.commit()
+            raise HTTPException(
+                status_code=500,
+                detail=self.EXPORT_FAILED_MESSAGE,
+            )
+
+        self._log_jd_export(
+            actor_id=exported_by,
+            actor_role=actor_role,
+            entity_id=jd.id,
+            jurisdiction=jd.jurisdiction,
+            details={
+                "filters": {
+                    "jd_id": str(jd_id),
+                },
+                "total_exported_records": 1,
+                "status": "SUCCESS",
+            },
+        )
+        self.repository.commit()
+
+        filename = (
+            f"{jd.title.replace(' ', '_')}_"
+            f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition":
+                f'attachment; filename="{filename}"'
+            },
+        )
+
+    def _build_export_audit_details(
+        self,
+        request: JDSearchRequest,
+        total_exported_records: int,
+    ) -> dict:
+        return {
+            "filters": {
+                "search": request.search,
+                "jurisdiction": request.jurisdiction,
+                "active": request.active,
+                "source_format": request.source_format,
+                "sort_by": request.sort_by,
+                "order": request.order,
+            },
+            "total_exported_records": total_exported_records,
+        }
+
+    def _log_jd_export(
+        self,
+        *,
+        actor_id: str,
+        actor_role: str | None,
+        entity_id: UUID,
+        jurisdiction: str | None,
+        details: dict,
+    ) -> None:
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.JD_EXPORTED,
+            entity_type=EntityType.JOB_DESCRIPTION,
+            entity_id=entity_id,
+            jurisdiction=jurisdiction,
+            details=details,
+        )
