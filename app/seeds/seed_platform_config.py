@@ -38,6 +38,18 @@ try:
             value="50.00",
             description="Default AI scoring threshold for candidate screening (0 to 100)",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CAMPAIGN_AUTO_CLOSE_HOUR",
+            value="0",
+            description="Hour when Celery Beat automatically closes expired campaigns",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CAMPAIGN_AUTO_CLOSE_MINUTE",
+            value="0",
+            description="Minute when Celery Beat automatically closes expired campaigns",
+        ),
     ]
 
     for config in configs:
