@@ -11,7 +11,7 @@ class CampaignCreateRequest(BaseModel):
 
     jd_id: UUID
 
-    max_candidates: Optional[int] = Field(default=None, gt=0)
+    max_candidates: Optional[int] = Field(default=None, gt=0, le=100000)
 
     deadline: Optional[datetime] = None
 

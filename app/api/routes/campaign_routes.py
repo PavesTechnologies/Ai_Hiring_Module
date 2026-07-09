@@ -24,7 +24,6 @@ SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
     "",
     response_model=APIResponse[CampaignResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles(UserRole.HR_ADMIN))],
 )
 def create_campaign(
     request: CampaignCreateRequest,
@@ -52,7 +51,7 @@ def create_campaign(
     status_code=status.HTTP_200_OK,
     summary="Get all campaigns",
     description="Retrieve a list of all campaigns with JD and hiring manager details.",
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.HIRING_MANAGER))]
 )
 def get_all_campaigns(
     service: CampaignService = Depends(get_campaign_service),

@@ -19,6 +19,7 @@ from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDR
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
 from app.schemas.response import APIResponse
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(
     prefix="/job-descriptions",
@@ -89,6 +90,55 @@ def create_job_description_from_file(
     )
     return APIResponse.ok(data=response, message="Job Description created successfully from uploaded document.")
 
+@router.get("/export")
+def export_job_descriptions(
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(
+        require_roles(
+            UserRole.HR_ADMIN,
+        )
+    ),
+    search: str | None = Query(default=None),
+    jurisdiction: str | None = Query(default=None),
+    active: bool | None = Query(default=True),
+    source_format: str | None = Query(default=None),
+    sort_by: str = Query(default="created_at"),
+    order: str = Query(default="desc"),
+):
+
+    request = JDSearchRequest(
+        search=search,
+        jurisdiction=jurisdiction,
+        active=active,
+        source_format=source_format,
+        page=1,
+        size=1,
+        sort_by=sort_by,
+        order=order,
+    )
+
+    return service.export_jd_list(
+        request=request,
+        exported_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+
+@router.get("/{jd_id}/export")
+def export_single_job_description(
+    jd_id: UUID,
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(
+        require_roles(
+            UserRole.HR_ADMIN,
+        )
+    ),
+):
+    return service.export_single_jd(
+        jd_id=jd_id,
+        exported_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+
 
 @router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
 def get_all_active_jds(
@@ -96,6 +146,7 @@ def get_all_active_jds(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
+
 
 @router.get("/{jd_id}", response_model=APIResponse,)
 def get_job_description_by_id(
@@ -127,11 +178,7 @@ def download_job_description_file(
     )
 
 
-@router.put(
-    "/{jd_id}",
-    response_model=APIResponse,
-    status_code=status.HTTP_200_OK,
-    )
+@router.put("/{jd_id}",response_model=APIResponse, status_code=status.HTTP_200_OK,)
 def update_job_description(
     jd_id: UUID,
     request: UpdateJDRequest,
@@ -244,3 +291,4 @@ def search_job_descriptions(
 
     response = service.search_job_descriptions(request)
     return APIResponse.ok(data=response, message="Job Descriptions searched successfully.")
+

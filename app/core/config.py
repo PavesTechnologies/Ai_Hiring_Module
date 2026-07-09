@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
 
+
+    CELERY_BROKER_URL: str
+    CELERY_RESULT_BACKEND: str
     @property
     def database_url(self) -> str:
         return (
@@ -51,7 +54,7 @@ class Settings(BaseSettings):
             f"?sslmode={self.db_sslmode}"
         )
 
-    model_config = {"env_file": ".env", "case_sensitive": False}
+    model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
 
 
 settings = Settings()
