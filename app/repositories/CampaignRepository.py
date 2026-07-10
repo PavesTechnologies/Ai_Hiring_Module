@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timezone
 
 from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
-from app.models.pipeline import CampaignCandidate
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
 from app.models.identity import User, UserRole
 
 class CampaignRepository:
@@ -145,3 +146,32 @@ class CampaignRepository:
         )
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
+
+    def get_stage_counts(self, campaign_id) -> dict[str, int]:
+        rows = (
+            self.db.query(CampaignCandidate.pipeline_stage, func.count())
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CampaignCandidate.pipeline_stage)
+            .all()
+        )
+        return {stage.value: count for stage, count in rows}
+
+    def get_audit_entries(self, campaign_id) -> list[AuditLog]:
+        return (
+            self.db.query(AuditLog)
+            .filter(AuditLog.campaign_id == campaign_id)
+            .order_by(AuditLog.created_at.desc())
+            .all()
+        )
+
+    def get_stage_history(self, campaign_id) -> list[CampaignCandidateStageHistory]:
+        return (
+            self.db.query(CampaignCandidateStageHistory)
+            .join(
+                CampaignCandidate,
+                CampaignCandidateStageHistory.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .order_by(CampaignCandidateStageHistory.changed_at.desc())
+            .all()
+        )
