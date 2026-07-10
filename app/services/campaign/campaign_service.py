@@ -4,11 +4,12 @@ from http.client import responses
 from http.client import responses
 from unicodedata import name
 from uuid import UUID
+from app.middleware.rbac import TokenUser
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import ActionType, EntityType, UserRole
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.identity import User
@@ -17,6 +18,14 @@ from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.services.audit_service import AuditService
+from app.schemas.campaign.campaign_detail_response import (
+    CampaignDetailResponse,
+    CampaignInfoSection,
+    JDConfigSection,
+    ScoringConfigSection,
+    PipelineLimitsSection,
+    HiringManagerSection,
+)
 
 
 class CampaignService:
@@ -152,10 +161,11 @@ class CampaignService:
             jd_title=jd.title,
             jd_version=jd.version_number,
             hiring_manager=hiring_manager_name,
+            max_candidates=campaign.max_candidates,
             deadline=campaign.deadline,
             created_at=campaign.created_at,
         )
-    
+
     def get_all_campaigns(self) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns()
         return [
@@ -166,6 +176,7 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,   # ← matches the actual column name
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
             )
@@ -182,6 +193,7 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
             )
@@ -198,8 +210,66 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
             )
             for c in campaigns
         ]
+
+    def get_campaign_details(self,campaign_id: UUID, user:TokenUser) -> CampaignDetailResponse:
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found",404)
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        if not jd:
+            raise CampaignException("Associated job description not found", 404)
+
+        creator = self.campaign_repo.get_user(campaign.created_by)
+        manager = (
+            self.campaign_repo.get_user(campaign.hiring_manager_id)
+            if campaign.hiring_manager_id
+            else None
+        )
+
+        is_hiring_manager_only = (
+            UserRole.HIRING_MANAGER.value in user.roles
+            and UserRole.HR_ADMIN.value not in user.roles
+            and UserRole.RECRUITER.value not in user.roles
+        )
+
+        return CampaignDetailResponse(
+            id=campaign.id,
+            campaign_info=CampaignInfoSection(
+                name=campaign.name,
+                status=campaign.status.value,
+                created_by_name=creator.full_name if creator else None,
+                created_at=campaign.created_at,
+                updated_at=campaign.updated_at,
+            ),
+            jd_configuration=JDConfigSection(
+                jd_id=jd.id,
+                jd_title=jd.title,
+                version_number=jd.version_number,
+                jurisdiction=jd.jurisdiction,
+                mandatory_skill_count=self.campaign_repo.get_mandatory_skill_count(jd.id),
+            ),
+            # role gate: spec says HM must NOT see weights or manager contact
+            scoring_configuration=None if is_hiring_manager_only else ScoringConfigSection(
+                weight_deterministic=campaign.weight_deterministic,
+                weight_semantic=campaign.weight_semantic,
+                weight_ai=campaign.weight_ai,
+                semantic_threshold=campaign.semantic_threshold,
+                ai_threshold=campaign.ai_threshold,
+            ),
+            pipeline_limits=PipelineLimitsSection(
+                max_candidates=campaign.max_candidates,
+                current_candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                deadline=campaign.deadline,
+            ),
+            hiring_manager=(None if is_hiring_manager_only else (HiringManagerSection(
+                full_name=manager.full_name,
+                email=manager.email,
+            ) if manager else None)),
+        )
