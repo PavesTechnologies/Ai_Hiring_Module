@@ -85,7 +85,7 @@ def upgrade() -> None:
         op.create_foreign_key(constraint_name, table, 'users', [column], ['id'])
 
 
-def downgrade() -> None:
+def downgrade() -> None:    
     for constraint_name, table, _column in _FKS:
         _drop_fk_if_exists(table, constraint_name)
 
