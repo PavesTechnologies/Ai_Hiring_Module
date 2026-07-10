@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
+from app.api.routes.campaign_candidate import router as campaign_candidate_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -120,7 +121,7 @@ def health():
 
 app.include_router(router=router, prefix=API_PREFIX, tags=["Job Descriptions"])
 app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Campaigns"])
-
+app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)
