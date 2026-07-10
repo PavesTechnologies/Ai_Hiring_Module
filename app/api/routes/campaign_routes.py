@@ -9,7 +9,7 @@ from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles, get_current_user
@@ -179,5 +179,30 @@ def get_campaign_timeline(
         offset=offset,
         event_type=event_type,
     )
-    return APIResponse.ok(data=timeline, message="Campaign timeline retrieved successfully.")   
+    return APIResponse.ok(data=timeline, message="Campaign timeline retrieved successfully.")
+
+
+@router.patch(
+    "/{campaign_id}",
+    response_model=APIResponse[CampaignResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Edit campaign configuration",
+    description=(
+        "Update name, deadline, candidate cap, or scoring configuration. "
+        "Closed campaigns are read-only. Scoring changes on an ACTIVE campaign "
+        "require confirm_scoring_change=true."
+    ),
+)
+def update_campaign(
+    campaign_id: UUID,
+    request: CampaignUpdateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    campaign = service.update_campaign(
+        campaign_id=campaign_id,
+        request=request,
+        updated_by=user.user_id,
+    )
+    return APIResponse.ok(data=campaign, message="Campaign updated successfully.")   
     

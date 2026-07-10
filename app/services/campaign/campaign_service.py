@@ -16,7 +16,7 @@ from app.models.identity import User
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_response import CampaignResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_detail_response import (
     CampaignDetailResponse,
@@ -366,3 +366,146 @@ class CampaignService:
             return "System"
         user = self.campaign_repo.get_user(actor_id)
         return user.full_name if user else "System"
+
+    _SCORING_FIELDS = (
+        "weight_deterministic",
+        "weight_semantic",
+        "weight_ai",
+        "semantic_threshold",
+        "ai_threshold",
+    )
+
+    def update_campaign(
+        self,
+        campaign_id: UUID,
+        request: CampaignUpdateRequest,
+        updated_by: str,
+    ) -> CampaignResponse:
+        try:
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+            # ── S07-T03: closed campaigns are read-only ──────────────────
+            if campaign.status == CampaignStatus.CLOSED:
+                raise CampaignException(
+                    "Closed campaigns cannot be edited. Reopen the campaign to make changes.",
+                    403,
+                )
+
+            changes: dict[str, dict] = {}  # field -> {"before": ..., "after": ...}
+
+            # name / deadline / candidate cap ─────────────────
+            if request.name is not None and request.name != campaign.name:
+                duplicate = self.campaign_repo.get_by_name(campaign.org_id, request.name)
+                if duplicate and duplicate.id != campaign.id:
+                    raise CampaignException(
+                        f"Campaign name '{request.name}' already exists in this organization",
+                        409,
+                    )
+                changes["name"] = {"before": campaign.name, "after": request.name}
+                campaign.name = request.name
+
+            if request.clear_max_candidates:
+                if campaign.max_candidates is not None:
+                    changes["max_candidates"] = {"before": campaign.max_candidates, "after": None}
+                    campaign.max_candidates = None
+            elif request.max_candidates is not None and request.max_candidates != campaign.max_candidates:
+                current_count = self.campaign_repo.get_candidate_count(campaign.id)
+                if request.max_candidates < current_count:
+                    raise CampaignException(
+                        f"Cannot set candidate cap to {request.max_candidates}: the campaign "
+                        f"already has {current_count} candidates.",
+                        422,
+                    )
+                changes["max_candidates"] = {
+                    "before": campaign.max_candidates,
+                    "after": request.max_candidates,
+                }
+                campaign.max_candidates = request.max_candidates
+
+            if request.clear_deadline:
+                if campaign.deadline is not None:
+                    changes["deadline"] = {"before": str(campaign.deadline), "after": None}
+                    campaign.deadline = None
+            elif request.deadline is not None and request.deadline != campaign.deadline:
+                if request.deadline <= datetime.now(timezone.utc):
+                    raise CampaignException("Campaign deadline must be a future date", 422)
+                changes["deadline"] = {
+                    "before": str(campaign.deadline) if campaign.deadline else None,
+                    "after": str(request.deadline),
+                }
+                campaign.deadline = request.deadline
+
+            # ── S07-T02: scoring config gate on ACTIVE campaigns ─────────
+            scoring_changes = {
+                field: getattr(request, field)
+                for field in self._SCORING_FIELDS
+                if getattr(request, field) is not None
+                and Decimal(str(getattr(campaign, field))) != getattr(request, field)
+            }
+
+            if scoring_changes:
+                if campaign.status == CampaignStatus.ACTIVE and not request.confirm_scoring_change:
+                    raise CampaignException(
+                        "Changing scoring configuration will only affect candidates submitted "
+                        "after this change. Existing candidate scores will not be recalculated. "
+                        "Re-submit with confirm_scoring_change=true to proceed.",
+                        422,
+                    )
+
+                merged_weights = {
+                    field: scoring_changes.get(field, Decimal(str(getattr(campaign, field))))
+                    for field in ("weight_deterministic", "weight_semantic", "weight_ai")
+                }
+                if sum(merged_weights.values()) != Decimal("100.00"):
+                    raise CampaignException("Scoring weights must sum to 100.00", 422)
+
+                for field, new_value in scoring_changes.items():
+                    changes[field] = {
+                        "before": str(getattr(campaign, field)),
+                        "after": str(new_value),
+                    }
+                    setattr(campaign, field, float(new_value))
+
+            if not changes:
+                raise CampaignException("No changes supplied", 422)
+
+            campaign.updated_at = datetime.now(timezone.utc)
+            campaign = self.campaign_repo.update(campaign)
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=(
+                    ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED
+                    if scoring_changes
+                    else ActionType.CAMPAIGN_UPDATED
+                ),
+                entity_type=EntityType.CAMPAIGN,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' updated",
+                    "changes": changes,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            jd = self.jd_repo.get_by_id(campaign.jd_id)
+            return CampaignResponse(
+                id=campaign.id,
+                name=campaign.name,
+                status=campaign.status.value,
+                jd_title=jd.title if jd else "",
+                jd_version=jd.version_number if jd else 0,
+                hiring_manager=self._resolve_actor(campaign.hiring_manager_id),
+                max_candidates=campaign.max_candidates,
+                deadline=campaign.deadline,
+                created_at=campaign.created_at,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
