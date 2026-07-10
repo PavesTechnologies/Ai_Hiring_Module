@@ -3,8 +3,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.campaigns import CampaignStatus, HiringCampaign
 from datetime import datetime, timezone
+
+from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.skills import JDSkill
+from app.models.pipeline import CampaignCandidate
+from app.models.identity import User, UserRole
 
 class CampaignRepository:
 
@@ -125,3 +129,19 @@ class CampaignRepository:
         self.db.refresh(campaign)
 
         return campaign
+
+    def get_mandatory_skill_count(self, jd_id) -> int:
+        return (
+            self.db.query(JDSkill)
+            .filter(JDSkill.jd_id == jd_id, JDSkill.mandatory == True)
+            .count()
+        )
+    
+    def get_candidate_count(self,campaign_id) -> int:
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .count()
+        )
+    def get_user(self, user_id: str) -> User | None:
+        return self.db.get(User, user_id)
