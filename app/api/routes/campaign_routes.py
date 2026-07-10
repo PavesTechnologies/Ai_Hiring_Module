@@ -1,12 +1,14 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Security, status
+from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
 from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
+from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
+from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
@@ -137,5 +139,45 @@ def get_campaign_details(
     return APIResponse.ok(
         data=campaign_details,
         message="Campaign details retrieved successfully"
-    )   
+    )
+
+
+@router.get(
+    "/{campaign_id}/pipeline-summary",
+    response_model=APIResponse[PipelineSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get campaign pipeline funnel summary",
+    description="Candidate counts per pipeline stage with drop-off percentages.",
+)
+def get_pipeline_summary(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    summary = service.get_pipeline_summary(campaign_id)
+    return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
+
+
+@router.get(
+    "/{campaign_id}/timeline",
+    response_model=APIResponse[CampaignTimelineResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get campaign activity timeline",
+    description="Chronological feed of campaign events merged from the audit log and candidate stage history.",
+)
+def get_campaign_timeline(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    event_type: str | None = Query(default=None),
+):
+    timeline = service.get_campaign_timeline(
+        campaign_id=campaign_id,
+        limit=limit,
+        offset=offset,
+        event_type=event_type,
+    )
+    return APIResponse.ok(data=timeline, message="Campaign timeline retrieved successfully.")   
     

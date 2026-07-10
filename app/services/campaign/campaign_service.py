@@ -26,6 +26,9 @@ from app.schemas.campaign.campaign_detail_response import (
     PipelineLimitsSection,
     HiringManagerSection,
 )
+from app.models.pipeline import PipelineStage
+from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
+from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 
 
 class CampaignService:
@@ -104,7 +107,21 @@ class CampaignService:
             
             campaign = self.campaign_repo.create_campaign(campaign)
 
-            
+            # Same transaction as the campaign itself: rolled back together on
+            # failure. campaign_id is what the activity timeline filters on.
+            self.audit_service.log(
+                actor_id=created_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_CREATED,
+                entity_type=EntityType.CAMPAIGN,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' created",
+                    "jd_id": str(campaign.jd_id),
+                },
+            )
+
             self.campaign_repo.commit()
 
             
@@ -192,7 +209,6 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
-                max_candidates=c.max_candidates,
                 hiring_manager=c.hiring_manager_id,
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
@@ -274,3 +290,79 @@ class CampaignService:
                 email=manager.email,
             ) if manager else None)),
         )
+
+    def get_pipeline_summary(self, campaign_id: UUID) -> PipelineSummaryResponse:
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        counts = self.campaign_repo.get_stage_counts(campaign_id)
+
+        stages: list[StageStat] = []
+        prev_count = None
+
+        for stage in PipelineStage:            # enum declaration order = funnel order
+            count = counts.get(stage.value, 0)
+
+            drop_off = None
+            if prev_count is not None and prev_count > 0:
+                drop_off = round((prev_count - count) / prev_count * 100, 1)
+
+            stages.append(StageStat(stage=stage.value, count=count, drop_off_pct=drop_off))
+            prev_count = count
+
+        return PipelineSummaryResponse(
+            campaign_id=campaign_id,
+            total_candidates=sum(counts.values()),
+            stages=stages,
+        )
+
+    def get_campaign_timeline(
+        self,
+        campaign_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+        event_type: str | None = None,
+    ) -> CampaignTimelineResponse:
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        entries: list[TimelineEntry] = []
+
+        for log in self.campaign_repo.get_audit_entries(campaign_id):
+            detail = log.detail or {}
+            entries.append(TimelineEntry(
+                timestamp=log.created_at,
+                event_type=log.action_type.value,
+                actor_name=self._resolve_actor(log.actor_id),
+                description=detail.get("title") or log.action_type.value.replace("_", " ").title(),
+            ))
+
+        for h in self.campaign_repo.get_stage_history(campaign_id):
+            from_stage = h.from_stage.value if h.from_stage else "START"
+            entries.append(TimelineEntry(
+                timestamp=h.changed_at,
+                event_type=f"CANDIDATE_{h.to_stage.value}",
+                actor_name=self._resolve_actor(h.changed_by),
+                description=f"Candidate moved {from_stage} → {h.to_stage.value}",
+            ))
+
+        if event_type:
+            entries = [e for e in entries if e.event_type == event_type]
+
+        entries.sort(key=lambda e: e.timestamp, reverse=True)
+
+        return CampaignTimelineResponse(
+            campaign_id=campaign_id,
+            total_events=len(entries),
+            limit=limit,
+            offset=offset,
+            events=entries[offset: offset + limit],
+        )
+
+    def _resolve_actor(self, actor_id: str | None) -> str:
+        if not actor_id:
+            return "System"
+        user = self.campaign_repo.get_user(actor_id)
+        return user.full_name if user else "System"
