@@ -23,6 +23,7 @@ class CampaignCreateRequest(BaseModel):
     ai_threshold: Decimal = Decimal("50.00")
 
     hiring_manager_id: str
+    recruiter_id: str
 
     @field_validator("name")
     @classmethod

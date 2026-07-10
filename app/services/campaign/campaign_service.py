@@ -89,6 +89,7 @@ class CampaignService:
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 hiring_manager_id=request.hiring_manager_id,
+                recruiter_id=request.recruiter_id,
                 created_by=created_by,
             )
 
