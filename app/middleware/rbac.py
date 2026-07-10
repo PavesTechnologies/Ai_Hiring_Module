@@ -5,12 +5,12 @@ from typing import Callable
 from fastapi import Depends, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
-from app.enums.constants import UserRole
+from app.models.identity import UserRole as LocalUserRole
+
+from app.models.identity import UserRole
 from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
 from app.models.identity import User
-from app.models.identity import UserRole as LocalUserRole
 
 logger = logging.getLogger(__name__)
 
