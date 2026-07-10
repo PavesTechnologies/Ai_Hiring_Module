@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     aws_region: str = "ap-south-1"
     aws_s3_bucket: str = ""
 
+    # Supabase
+    SUPABASE_URL:str
+    SUPABASE_PUBLISHABLE_KEY:str
+    SUPABASE_SECRET_KEY:str
+    SUPABASE_JWKS_URL:str
+
     # AI / Embeddings
     gemini_api_key: str = ""
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -27,15 +33,19 @@ class Settings(BaseSettings):
     # Encryption
     candidate_pii_key: str = ""
 
-    # JWT
-    jwt_secret_key: str = ""
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60
+    # UMS — User Management System (token issuer)
+    ums_url: str   # required — set UMS_URL in .env
+
+    # CORS — list explicit origins; credentials require non-wildcard origins
+    cors_origins: list[str] = ["http://localhost:5173"]
 
     # App
     app_env: str = "development"
     debug: bool = True
 
+
+    CELERY_BROKER_URL: str
+    CELERY_RESULT_BACKEND: str
     @property
     def database_url(self) -> str:
         return (
@@ -44,7 +54,7 @@ class Settings(BaseSettings):
             f"?sslmode={self.db_sslmode}"
         )
 
-    model_config = {"env_file": ".env", "case_sensitive": False}
+    model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
 
 
 settings = Settings()

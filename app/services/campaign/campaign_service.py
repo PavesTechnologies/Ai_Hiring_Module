@@ -1,0 +1,775 @@
+from datetime import datetime, timezone
+from decimal import Decimal
+from urllib import request
+from uuid import UUID
+from datetime import timedelta
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
+from app.enums.constants import ActionType, EntityType
+from app.exceptions.campaign_exceptions import CampaignException
+from app.models.campaign_weight_preset import CampaignWeightPreset
+from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.identity import User
+from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.config_repository import ConfigRepository
+from app.repositories.jd_repository import JDRepository
+from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest
+from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
+from app.services.audit_service import AuditService
+from app.schemas.campaign.campaign_response import (
+    CampaignWeightHistoryResponse,
+    WeightHistoryItemResponse,
+)
+from app.repositories.campaign_weight_preset_repository import (
+    CampaignWeightPresetRepository,
+)
+
+
+class CampaignService:
+
+    def __init__(
+        self,
+        campaign_repo: CampaignRepository,
+        jd_repo: JDRepository,
+        audit_service: AuditService,
+        config_repo: ConfigRepository,
+        preset_repo: CampaignWeightPresetRepository,
+        db: Session,
+
+    ):
+        self.campaign_repo = campaign_repo
+        self.jd_repo = jd_repo
+        self.audit_service = audit_service
+        self.config_repo = config_repo
+        self.preset_repo = preset_repo
+        self.db = db
+
+    def _is_approaching_cap(
+        self,
+        candidate_count: int,
+        max_candidates: int | None,
+    ) -> bool:
+        """
+        Returns True if campaign has reached 80% of its candidate cap.
+        """
+        if not max_candidates:
+            return False
+
+        return candidate_count >= (max_candidates * 0.8)
+
+
+    def _is_deadline_soon(
+        self,
+        deadline: datetime | None,
+        warning_days: int = 3,
+    ) -> bool:
+        """
+        Returns True if campaign deadline is within the warning period.
+        """
+        if deadline is None:
+            return False
+
+        now = datetime.now(timezone.utc)
+
+        return now <= deadline <= now + timedelta(days=warning_days)
+
+    def  create_campaign(
+        self,
+        request: CampaignCreateRequest,
+        org_id: UUID,
+        created_by: str
+    ) -> CampaignResponse:
+        try:
+            
+            total_weight = request.weight_deterministic + request.weight_semantic + request.weight_ai
+            if total_weight != Decimal("100.00"):
+                raise CampaignException("Scoring weights must sum to 100.00", 422)
+
+            jd = self.jd_repo.get_by_id(request.jd_id)
+            if not jd:
+                raise CampaignException(
+                    "Invalid job description: Job description not found",
+                    422
+                )
+
+            if not jd.is_active_version:
+                raise CampaignException(
+                    "Invalid job description: Job description is not the active version",
+                    422
+                )
+
+            if jd.closed_at is not None:
+                raise CampaignException(
+                    "Invalid job description: Job description is closed",
+                    422
+                )
+
+
+            existing_campaign = self.campaign_repo.get_by_name(org_id, request.name)
+            if existing_campaign:
+                raise CampaignException(
+                    f"Campaign name '{existing_campaign.name}' already exists in this organization",
+                    409)
+
+
+            if request.deadline:
+                if request.deadline <= datetime.now(timezone.utc):
+                    raise CampaignException("Campaign deadline must be a future date", 422)
+
+            campaign = HiringCampaign(
+                org_id=org_id,
+                jd_id=request.jd_id,
+                name=request.name.strip(),
+                status=CampaignStatus.ACTIVE,
+                weight_deterministic=float(request.weight_deterministic),
+                weight_semantic=float(request.weight_semantic),
+                weight_ai=float(request.weight_ai),
+                semantic_threshold=float(request.semantic_threshold),
+                ai_threshold=float(request.ai_threshold),
+                max_candidates=request.max_candidates,
+                deadline=request.deadline,
+                hiring_manager_id=request.hiring_manager_id,
+                created_by=created_by,
+            )
+
+            
+            campaign = self.campaign_repo.create_campaign(campaign)
+
+            
+            self.campaign_repo.commit()
+
+            hiring_manager_name = None
+
+            if request.hiring_manager_id:
+                hiring_manager_name = request.hiring_manager_id
+
+            
+            return CampaignResponse(
+                id=campaign.id,
+                name=campaign.name,
+                status=campaign.status.value,
+                jd_title=jd.title,
+                jd_version=jd.version_number,
+                hiring_manager=hiring_manager_name,
+                max_candidates=campaign.max_candidates,
+                deadline=campaign.deadline,
+                created_at=campaign.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(campaign.id),
+                    campaign.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    campaign.deadline,
+                )
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
+    
+    def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
+
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(
+                f"Campaign with ID '{campaign_id}' not found",
+                404,
+                None
+            )
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        if not jd:
+            raise CampaignException(
+                "Associated job description not found",
+                404,
+                None
+            )
+
+        hiring_manager_name = None
+        # if campaign.hiring_manager_id:
+        #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+        #     if hiring_manager:
+        #         hiring_manager_name = hiring_manager.full_name
+
+        return CampaignResponse(
+            id=campaign.id,
+            name=campaign.name,
+            status=campaign.status.value,
+            jd_title=jd.title,
+            jd_version=jd.version_number,
+            hiring_manager=hiring_manager_name,
+            created_at=campaign.created_at,
+            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+            approaching_cap=self._is_approaching_cap(
+                self.campaign_repo.get_candidate_count(campaign.id),
+                campaign.max_candidates,
+            ),
+            deadline_soon=self._is_deadline_soon(
+                campaign.deadline,
+            )
+        )
+    
+    def get_scoring_configuration(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignScoringConfigurationResponse:
+
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+
+        if not campaign:
+            raise CampaignException(
+                f"Campaign with ID '{campaign_id}' not found",
+                404,
+                None,
+            )
+
+        configs = self.config_repo.get_configs_by_keys(
+            [
+                "DEFAULT_WEIGHT_DETERMINISTIC",
+                "DEFAULT_WEIGHT_SEMANTIC",
+                "DEFAULT_WEIGHT_AI",
+                "DEFAULT_SEMANTIC_THRESHOLD",
+                "DEFAULT_AI_THRESHOLD",
+            ]
+        )
+        formula = "((det × w_det) + (sem × 100 × w_sem) + (eff_ai × w_ai)) / 100"
+        layers = [
+            ScoringLayerExplanationResponse(
+                layer="Deterministic",
+                weight=campaign.weight_deterministic,
+                threshold=None,
+                description="Mandatory skill, experience and education validation.",
+                ),
+                ScoringLayerExplanationResponse(
+                    layer="Semantic",
+                    weight=campaign.weight_semantic,
+                    threshold=campaign.semantic_threshold,
+                    description="Contextual similarity between Job Description and Resume.",
+                ),
+                ScoringLayerExplanationResponse(
+                    layer="AI Evaluation",
+                    weight=campaign.weight_ai,
+                    threshold=campaign.ai_threshold,
+                    description="LLM generated ATS evaluation score.",
+                ),
+            ]
+        
+
+        total_weight = (
+            campaign.weight_deterministic
+            + campaign.weight_semantic
+            + campaign.weight_ai
+        )
+
+        return CampaignScoringConfigurationResponse(
+            weight_deterministic=campaign.weight_deterministic,
+            weight_semantic=campaign.weight_semantic,
+            weight_ai=campaign.weight_ai,
+            semantic_threshold=campaign.semantic_threshold,
+            ai_threshold=campaign.ai_threshold,
+            total_weight=total_weight,
+            formula=formula,
+            layers=layers,
+            defaults=CampaignScoringDefaultsResponse(
+                weight_deterministic=float(
+                    configs["DEFAULT_WEIGHT_DETERMINISTIC"]
+                ),
+                weight_semantic=float(
+                    configs["DEFAULT_WEIGHT_SEMANTIC"]
+                ),
+                weight_ai=float(
+                    configs["DEFAULT_WEIGHT_AI"]
+                ),
+                semantic_threshold=float(
+                    configs["DEFAULT_SEMANTIC_THRESHOLD"]
+                ),
+                ai_threshold=float(
+                    configs["DEFAULT_AI_THRESHOLD"]
+                ),
+            ),
+        )
+    
+    def get_scoring_history(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignWeightHistoryResponse:
+
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+
+        if not campaign:
+            raise CampaignException(
+                f"Campaign with ID '{campaign_id}' not found",
+                404,
+                None,
+            )
+
+        history = self.audit_service.get_campaign_scoring_history(
+            campaign_id
+        )
+
+        history_items = []
+
+        for record in history:
+
+            detail = record.detail or {}
+
+            history_items.append(
+                WeightHistoryItemResponse(
+                    changed_by=str(record.actor_id),
+                    changed_at=record.created_at,
+                    before=detail.get("before", {}),
+                    after=detail.get("after", {}),
+                )
+            )
+
+        return CampaignWeightHistoryResponse(
+            history=history_items
+        )
+    def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,   # ← matches the actual column name
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                max_candidates=c.max_candidates,
+                created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
+                
+            )
+            for c in campaigns
+        ]
+    
+    def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns_for_hrAdmin(manager_id)
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                max_candidates=c.max_candidates,
+                created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
+            )
+            for c in campaigns
+        ]
+    
+    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id)
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                max_candidates=c.max_candidates,
+                created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
+            )
+            for c in campaigns
+        ]
+    
+   
+    def search_campaigns(
+        self,
+        filters: CampaignFilterRequest,
+    ) -> list[CampaignResponse]:
+
+        campaigns = self.campaign_repo.search_campaigns(filters)
+
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                max_candidates=c.max_candidates,
+                created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
+            )
+            for c in campaigns
+        ]
+
+    def update_scoring_configuration(
+        self,
+        campaign_id: UUID,
+        request: CampaignScoringUpdateRequest,
+    ) -> CampaignScoringConfigurationResponse:
+
+        campaign = self.campaign_repo.get_by_id(
+            campaign_id
+        )
+
+        if not campaign:
+            raise CampaignException(
+                f"Campaign with ID '{campaign_id}' not found",
+                404,
+                None,
+            )
+
+        total_weight = (
+            request.weight_deterministic
+            + request.weight_semantic
+            + request.weight_ai
+        )
+
+        if total_weight != Decimal("100.00"):
+            raise CampaignException(
+                "Total scoring weight must equal 100%.",
+                400,
+                None,
+            )
+
+        configs = self.config_repo.get_configs_by_keys(
+            [
+                "MIN_LAYER_WEIGHT",
+            ]
+        )
+
+        min_layer_weight = Decimal(
+            configs.get(
+                "MIN_LAYER_WEIGHT",
+                "5.00",
+            )
+        )
+
+        if (
+            request.weight_deterministic < min_layer_weight
+            or request.weight_semantic < min_layer_weight
+            or request.weight_ai < min_layer_weight
+        ):
+            raise CampaignException(
+                f"Each scoring layer must be at least {min_layer_weight}%.",
+                400,
+                None,
+            )
+
+        campaign = (
+            self.campaign_repo.update_scoring_configuration(
+                campaign,
+                request,
+            )
+        )
+
+        self.campaign_repo.commit()
+
+        return self.get_scoring_configuration(
+            campaign.id
+        )
+    
+    def get_weight_presets(
+        self,
+        org_id: UUID,
+    ) -> list[CampaignWeightPresetResponse]:
+
+        system_presets = [
+            CampaignWeightPresetResponse(
+                id=UUID("00000000-0000-0000-0000-000000000001"),
+                name="Technical Role",
+                description="Emphasises skill matching.",
+                weight_deterministic=Decimal("40.00"),
+                weight_semantic=Decimal("40.00"),
+                weight_ai=Decimal("20.00"),
+                semantic_threshold=Decimal("65.00"),
+                ai_threshold=Decimal("50.00"),
+                created_by="SYSTEM",
+                created_at=datetime.now(timezone.utc),
+            ),
+            CampaignWeightPresetResponse(
+                id=UUID("00000000-0000-0000-0000-000000000002"),
+                name="Managerial Role",
+                description="Emphasises AI reasoning.",
+                weight_deterministic=Decimal("20.00"),
+                weight_semantic=Decimal("30.00"),
+                weight_ai=Decimal("50.00"),
+                semantic_threshold=Decimal("65.00"),
+                ai_threshold=Decimal("50.00"),
+                created_by="SYSTEM",
+                created_at=datetime.now(timezone.utc),
+            ),
+            CampaignWeightPresetResponse(
+                id=UUID("00000000-0000-0000-0000-000000000003"),
+                name="Balanced",
+                description="Platform default.",
+                weight_deterministic=Decimal("30.00"),
+                weight_semantic=Decimal("40.00"),
+                weight_ai=Decimal("30.00"),
+                semantic_threshold=Decimal("65.00"),
+                ai_threshold=Decimal("50.00"),
+                created_by="SYSTEM",
+                created_at=datetime.now(timezone.utc),
+            ),
+            CampaignWeightPresetResponse(
+                id=UUID("00000000-0000-0000-0000-000000000004"),
+                name="Entry Level",
+                description="Emphasises contextual fit.",
+                weight_deterministic=Decimal("20.00"),
+                weight_semantic=Decimal("50.00"),
+                weight_ai=Decimal("30.00"),
+                semantic_threshold=Decimal("65.00"),
+                ai_threshold=Decimal("50.00"),
+                created_by="SYSTEM",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ]
+
+        custom_presets = self.preset_repo.get_all_by_org(
+            org_id
+        )
+
+        preset_responses = [
+            CampaignWeightPresetResponse.model_validate(
+                preset
+            )
+            for preset in custom_presets
+        ]
+
+        return system_presets + preset_responses
+    
+    def create_weight_preset(
+        self,
+        request: CampaignWeightPresetCreateRequest,
+        org_id: UUID,
+        created_by: str,
+    ) -> CampaignWeightPresetResponse:
+
+        existing_preset = self.preset_repo.get_by_name(
+            org_id=org_id,
+            name=request.name,
+        )
+
+        if existing_preset:
+            raise CampaignException(
+                f"Preset '{request.name}' already exists.",
+                400,
+                None,
+            )
+
+        total_weight = (
+            request.weight_deterministic
+            + request.weight_semantic
+            + request.weight_ai
+        )
+
+        if total_weight != Decimal("100.00"):
+            raise CampaignException(
+                "Total scoring weight must equal 100.",
+                400,
+                None,
+            )
+
+        preset = CampaignWeightPreset(
+            org_id=org_id,
+            name=request.name.strip(),
+            description=request.description,
+            weight_deterministic=request.weight_deterministic,
+            weight_semantic=request.weight_semantic,
+            weight_ai=request.weight_ai,
+            semantic_threshold=request.semantic_threshold,
+            ai_threshold=request.ai_threshold,
+            created_by=created_by,
+        )
+
+        preset = self.preset_repo.create(preset)
+
+        self.preset_repo.commit()
+
+        self.audit_service.log(
+            actor_id=created_by,
+            actor_role=None,
+            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=preset.id,
+            details={
+                "message": f"Created campaign weight preset '{preset.name}'"
+            },
+            campaign_id=None,
+            jurisdiction=None,
+            ip_address=None,
+            session_id=None,
+            request_id=None,
+        )
+        self.audit_service.repository.save()
+        return CampaignWeightPresetResponse.model_validate(
+            preset
+        )
+    
+    def update_weight_preset(
+        self,
+        preset_id: UUID,
+        request: CampaignWeightPresetUpdateRequest,
+        org_id: UUID,
+        updated_by: str,
+    ) -> CampaignWeightPresetResponse:
+        
+
+        preset = self.preset_repo.get_by_id(
+            preset_id
+        )
+
+        if not preset:
+            raise CampaignException(
+                "Weight preset not found.",
+                404,
+                None,
+            )
+
+        if preset.org_id != org_id:
+            raise CampaignException(
+                "Weight preset not found.",
+                404,
+                None,
+            )
+
+        duplicate = self.preset_repo.get_by_name(
+            org_id=org_id,
+            name=request.name,
+        )
+
+        if duplicate and duplicate.id != preset.id:
+            raise CampaignException(
+                f"Preset '{request.name}' already exists.",
+                400,
+                None,
+            )
+
+        total_weight = (
+            request.weight_deterministic
+            + request.weight_semantic
+            + request.weight_ai
+        )
+
+        if total_weight != Decimal("100.00"):
+            raise CampaignException(
+                "Total scoring weight must equal 100.",
+                400,
+                None,
+            )
+
+        preset.name = request.name.strip()
+        preset.description = request.description
+        preset.weight_deterministic = request.weight_deterministic
+        preset.weight_semantic = request.weight_semantic
+        preset.weight_ai = request.weight_ai
+        preset.semantic_threshold = request.semantic_threshold
+        preset.ai_threshold = request.ai_threshold
+
+        preset = self.preset_repo.update(
+            preset
+        )
+
+        self.preset_repo.commit()
+
+        self.audit_service.log(
+            actor_id=updated_by,
+            actor_role=None,
+            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=preset.id,
+            details={
+                "message": f"Updated preset '{preset.name}'"
+            },
+        )
+
+        self.audit_service.repository.save()
+
+        return CampaignWeightPresetResponse.model_validate(
+            preset
+        )
+    
+    def delete_weight_preset(
+        self,
+        preset_id: UUID,
+        org_id: UUID,
+        deleted_by: str,
+    ) -> None:
+
+        preset = self.preset_repo.get_by_id(
+            preset_id
+        )
+
+        if not preset:
+            raise CampaignException(
+                "Weight preset not found.",
+                404,
+                None,
+            )
+
+        if preset.org_id != org_id:
+            raise CampaignException(
+                "Weight preset not found.",
+                404,
+                None,
+            )
+
+        self.preset_repo.delete(
+            preset
+        )
+
+        self.preset_repo.commit()
+
+        self.audit_service.log(
+            actor_id=deleted_by,
+            actor_role=None,
+            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=preset.id,
+            details={
+                "message": f"Deleted preset '{preset.name}'"
+            },
+        )
+
+        self.audit_service.repository.save()

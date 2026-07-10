@@ -16,7 +16,7 @@ class AuditService:
     def log(
         self,
         *,
-        actor_id: UUID,
+        actor_id: str,
         actor_role: str | None,
         action_type: str,
         entity_type: str,
@@ -41,3 +41,11 @@ class AuditService:
             request_id=request_id,
             )
         return self.repository.create(audit)
+    
+    def get_campaign_scoring_history(
+        self,
+        campaign_id: UUID,
+    ):
+        return self.repository.get_campaign_scoring_history(
+            campaign_id
+        )
