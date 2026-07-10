@@ -192,6 +192,7 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
+                max_candidates=c.max_candidates,
                 hiring_manager=c.hiring_manager_id,
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
