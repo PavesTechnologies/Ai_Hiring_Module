@@ -19,6 +19,9 @@ from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDR
 from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.jd_service import JDService
 from app.schemas.response import APIResponse
+from fastapi import Query
+from app.middleware.rbac import TokenUser, require_roles
+from app.models.identity import UserRole
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(
