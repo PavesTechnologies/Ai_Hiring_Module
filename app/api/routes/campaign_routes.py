@@ -1,16 +1,17 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Security, status
-
+from fastapi import Query
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles, get_current_user
-from app.enums.constants import UserRole
+from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
+from app.models.campaigns import CampaignStatus
+
 
 router = APIRouter(
     prefix="/campaigns",
@@ -45,24 +46,55 @@ def create_campaign(
     )
 
 
+# @router.get(
+#     "/all",
+#     response_model=APIResponse[list[CampaignResponse]],
+#     status_code=status.HTTP_200_OK,
+#     summary="Get all campaigns",
+#     description="Retrieve a list of all campaigns with JD and hiring manager details.",
+#     dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
+# )
+# def get_all_campaigns(
+#     show_closed: bool = Query(default=False),
+#     user: TokenUser = Depends(get_current_user),
+#     service: CampaignService = Depends(get_campaign_service),
+# ):
+#     campaigns = service.get_all_campaigns(user=user, show_closed=show_closed)
+
+#     return APIResponse.ok(
+#         data=campaigns,
+#         message="Campaigns retrieved successfully"
+#     )
+
 @router.get(
     "/all",
     response_model=APIResponse[list[CampaignResponse]],
-    status_code=status.HTTP_200_OK,
-    summary="Get all campaigns",
-    description="Retrieve a list of all campaigns with JD and hiring manager details.",
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
+    summary="Get/Search Campaigns",
 )
 def get_all_campaigns(
+    search: str | None = Query(None),
+    status: CampaignStatus | None = Query(None),
+    hiring_manager_id: str | None = Query(None),
+    jd_id: UUID | None = Query(None),
+    has_deadline: bool | None = Query(None),
+    show_closed: bool = Query(False),
     service: CampaignService = Depends(get_campaign_service),
 ):
-    campaigns = service.get_all_campaigns()
+    filters = CampaignFilterRequest(
+        search=search,
+        status=status,
+        hiring_manager_id=hiring_manager_id,
+        jd_id=jd_id,
+        has_deadline=has_deadline,
+        show_closed=show_closed,
+    )
+
+    campaigns = service.search_campaigns(filters)
 
     return APIResponse.ok(
         data=campaigns,
-        message="Campaigns retrieved successfully"
+        message="Campaigns retrieved successfully",
     )
-
 
 @router.get(
     "/hr_admin",
@@ -119,3 +151,4 @@ def get_campaign(
         data=campaign,
         message="Campaign retrieved successfully"
     )
+

@@ -4,7 +4,7 @@ from http.client import responses
 from http.client import responses
 from unicodedata import name
 from uuid import UUID
-
+from datetime import timedelta
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.identity import User
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.jd_repository import JDRepository
+from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.schemas.campaign.campaign_response import CampaignResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.services.audit_service import AuditService
@@ -32,6 +33,35 @@ class CampaignService:
         self.jd_repo = jd_repo
         self.audit_service = audit_service
         self.db = db
+
+    def _is_approaching_cap(
+        self,
+        candidate_count: int,
+        max_candidates: int | None,
+    ) -> bool:
+        """
+        Returns True if campaign has reached 80% of its candidate cap.
+        """
+        if not max_candidates:
+            return False
+
+        return candidate_count >= (max_candidates * 0.8)
+
+
+    def _is_deadline_soon(
+        self,
+        deadline: datetime | None,
+        warning_days: int = 3,
+    ) -> bool:
+        """
+        Returns True if campaign deadline is within the warning period.
+        """
+        if deadline is None:
+            return False
+
+        now = datetime.now(timezone.utc)
+
+        return now <= deadline <= now + timedelta(days=warning_days)
 
     def  create_campaign(
         self,
@@ -116,6 +146,15 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(campaign.id),
+                    campaign.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    campaign.deadline,
+                )
             )
 
         except Exception:
@@ -154,10 +193,19 @@ class CampaignService:
             jd_version=jd.version_number,
             hiring_manager=hiring_manager_name,
             created_at=campaign.created_at,
+            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+            approaching_cap=self._is_approaching_cap(
+                self.campaign_repo.get_candidate_count(campaign.id),
+                campaign.max_candidates,
+            ),
+            deadline_soon=self._is_deadline_soon(
+                campaign.deadline,
+            )
         )
     
-    def get_all_campaigns(self, user: User) -> list[CampaignResponse]:
-        campaigns = self.campaign_repo.get_all_campaigns()
+    def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         return [
             CampaignResponse(
                 id=c.id,
@@ -167,7 +215,17 @@ class CampaignService:
                 jd_version=c.job_description.version_number,   # ← matches the actual column name
                 hiring_manager=c.hiring_manager_id,
                 deadline=c.deadline,
+                max_candidates=c.max_candidates,
                 created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
             )
             for c in campaigns
         ]
@@ -183,7 +241,17 @@ class CampaignService:
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
                 deadline=c.deadline,
+                max_candidates=c.max_candidates,
                 created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
             )
             for c in campaigns
         ]
@@ -199,7 +267,49 @@ class CampaignService:
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
                 deadline=c.deadline,
+                max_candidates=c.max_candidates,
                 created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
+            )
+            for c in campaigns
+        ]
+    
+   
+    def search_campaigns(
+        self,
+        filters: CampaignFilterRequest,
+    ) -> list[CampaignResponse]:
+
+        campaigns = self.campaign_repo.search_campaigns(filters)
+
+        return [
+            CampaignResponse(
+                id=c.id,
+                name=c.name,
+                status=c.status.value,
+                jd_title=c.job_description.title,
+                jd_version=c.job_description.version_number,
+                hiring_manager=c.hiring_manager_id,
+                deadline=c.deadline,
+                max_candidates=c.max_candidates,
+                created_at=c.created_at,
+                candidate_count=self.campaign_repo.get_candidate_count(c.id),
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
+                approaching_cap=self._is_approaching_cap(
+                    self.campaign_repo.get_candidate_count(c.id),
+                    c.max_candidates,
+                ),
+                deadline_soon=self._is_deadline_soon(
+                    c.deadline,
+                )
             )
             for c in campaigns
         ]
