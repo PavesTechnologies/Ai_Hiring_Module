@@ -1,6 +1,8 @@
 from uuid import UUID
 import uuid
 
+from app.dependencies import campaign
+from app.dependencies import campaign
 from app.enums.constants import ActionType, EntityType
 from app.enums.constants import EntityType
 from app.exceptions.campaign_exceptions import CampaignException
@@ -82,17 +84,41 @@ class CampaignCandidateService:
             # Max Candidate Validation
             # -----------------------------
             current_count = (
-                self.campaign_candidate_repo.get_candidate_count(
-                    request.campaign_id
-                )
+            self.campaign_candidate_repo.get_candidate_count(
+                request.campaign_id
+            )
             )
 
+            # --------------------------------------------------
+            # Auto Close Campaign when Candidate Cap is Reached
+            # --------------------------------------------------
             if (
                 campaign.max_candidates
                 and current_count >= campaign.max_candidates
             ):
+
+                campaign.status = CampaignStatus.CLOSED
+
+                self.campaign_repo.update(campaign)
+                self.campaign_repo.commit()
+
+                # Audit Log
+                self.audit_service.log(
+                    actor_id="SYSTEM",
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "reason": "Maximum candidate limit reached",
+                        "max_candidates": campaign.max_candidates,
+                        "current_candidates": current_count,
+                    },
+                )
+
                 raise CampaignException(
-                    "Maximum candidate limit reached.",
+                    "This campaign has reached its maximum candidate limit and is now closed.",
                     409,
                 )
 
@@ -161,3 +187,47 @@ class CampaignCandidateService:
             CampaignCandidateResponse.model_validate(candidate)
             for candidate in candidates
         ]
+
+    def delete_campaign_candidate(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """
+        Delete a campaign candidate.
+        """
+
+        try:
+
+            candidate = (
+                self.campaign_candidate_repo.get_by_id(
+                    campaign_candidate_id
+                )
+            )
+
+            if not candidate:
+                raise CampaignException(
+                    "Campaign candidate not found.",
+                    404,
+                )
+
+            self.campaign_candidate_repo.delete(candidate)
+
+            self.campaign_candidate_repo.commit()
+
+            # Audit Log
+            self.audit_service.log(
+                actor_id="SYSTEM",      # Replace with logged-in user later
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CANDIDATE_REMOVED,
+                entity_type=EntityType.CAMPAIGN_CANDIDATE,
+                entity_id=candidate.id,
+                campaign_id=candidate.campaign_id,
+                details={
+                    "candidate_id": str(candidate.candidate_id),
+                    "resume_id": str(candidate.resume_id),
+                },
+            )
+
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise

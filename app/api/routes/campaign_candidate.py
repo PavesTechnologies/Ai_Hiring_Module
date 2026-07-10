@@ -63,3 +63,24 @@ def get_campaign_candidates(
         data=candidates,
         message="Campaign candidates retrieved successfully.",
     )
+
+@router.delete(
+    "/{campaign_candidate_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+    summary="Delete Campaign Candidate",
+    description="Delete a candidate from a campaign.",
+)
+def delete_campaign_candidate(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+):
+    service.delete_campaign_candidate(
+        campaign_candidate_id
+    )
+
+    return APIResponse.ok(
+        message="Campaign candidate deleted successfully.",
+    )
