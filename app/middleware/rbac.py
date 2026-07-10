@@ -68,7 +68,7 @@ def _ensure_local_user(user: TokenUser, db: Session) -> None:
         return
 
     role_name = next((r for r in user.roles if r in LocalUserRole.__members__), None)
-
+   
     db.add(User(
         id=user.user_id,
         email=user.email,

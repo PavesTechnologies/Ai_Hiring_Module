@@ -7,6 +7,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from datetime import datetime, timezone, timedelta
 
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
+from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 
 class CampaignRepository:
 
@@ -32,6 +33,18 @@ class CampaignRepository:
             .first()
         )
 
+    def get_scoring_configuration(
+        self,
+        campaign_id: UUID,
+    ) -> HiringCampaign | None:
+        """
+        Fetch campaign scoring configuration.
+        """
+        return (
+            self.db.query(HiringCampaign)
+            .filter(HiringCampaign.id == campaign_id)
+            .first()
+        )
     def get_by_name(
         self,
         org_id: UUID,
@@ -239,3 +252,23 @@ class CampaignRepository:
         now = datetime.now(timezone.utc)
 
         return now <= campaign.deadline <= now + timedelta(days=warning_days)
+    
+    def update_scoring_configuration(
+        self,
+        campaign: HiringCampaign,
+        request: CampaignScoringUpdateRequest,
+    ) -> HiringCampaign:
+
+        campaign.weight_deterministic = request.weight_deterministic
+        campaign.weight_semantic = request.weight_semantic
+        campaign.weight_ai = request.weight_ai
+
+        campaign.semantic_threshold = request.semantic_threshold
+        campaign.ai_threshold = request.ai_threshold
+
+        campaign.updated_at = datetime.now(timezone.utc)
+
+        self.db.flush()
+        self.db.refresh(campaign)
+
+        return campaign

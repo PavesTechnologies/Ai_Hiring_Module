@@ -19,3 +19,37 @@ class CampaignResponse(BaseModel):
     created_at: datetime
     approaching_cap: bool = False
     deadline_soon: bool = False
+
+class CampaignScoringDefaultsResponse(BaseModel):
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    semantic_threshold: float
+    ai_threshold: float
+
+class ScoringLayerExplanationResponse(BaseModel):
+    layer: str
+    weight: float
+    threshold: float | None
+    description: str
+
+class CampaignScoringConfigurationResponse(BaseModel):
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+
+    semantic_threshold: float
+    ai_threshold: float
+    total_weight: float
+    formula:str
+    layers: list[ScoringLayerExplanationResponse]
+    defaults: CampaignScoringDefaultsResponse
+
+class WeightHistoryItemResponse(BaseModel):
+    changed_by: str
+    changed_at: datetime
+    before: dict
+    after: dict
+
+class CampaignWeightHistoryResponse(BaseModel):
+    history: list[WeightHistoryItemResponse]
