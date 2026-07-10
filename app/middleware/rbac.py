@@ -3,13 +3,14 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from fastapi import Depends, Request
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
-from app.enums.constants import UserRole
+from app.models.identity import UserRole as LocalUserRole
+
+from app.models.identity import UserRole
 from app.exception_handler.exceptions import ForbiddenError, UnauthorizedError
 from app.models.identity import User
-from app.models.identity import UserRole as LocalUserRole
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,57 @@ def _to_token_user(payload: dict) -> TokenUser:
 
 # ── Local user provisioning ────────────────────────────────────────────────────
 
+# Every FK column in the schema that references users.id, discovered live so
+# the re-key logic below never goes stale when new tables are added.
+_USER_FK_REFS_SQL = text("""
+    SELECT tc.table_name, kcu.column_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name
+    JOIN information_schema.constraint_column_usage ccu
+        ON ccu.constraint_name = tc.constraint_name
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND ccu.table_name = 'users' AND ccu.column_name = 'id'
+""")
+
+
+def _new_user_from_token(user: TokenUser) -> User:
+    role_name = next((r for r in user.roles if r in LocalUserRole.__members__), None)
+
+    return User(
+        id=user.user_id,
+        email=user.email,
+        password_hash="EXTERNAL_AUTH",  # identity lives in the UMS, not here
+        role=LocalUserRole[role_name] if role_name else LocalUserRole.RECRUITER,
+        full_name=user.claims.get("name") or user.email,
+        is_active=True,
+    )
+
+
+def _rekey_local_user(db: Session, old_id: str, user: TokenUser) -> None:
+    """
+    Same email arrived with a new UMS id (the auth service was switched or
+    re-issued its ids). Move the shadow row and every row referencing it to
+    the new id so attribution history survives instead of colliding with the
+    users.email UNIQUE constraint.
+    """
+    logger.info("Re-keying local user %s -> %s (%s)", old_id, user.user_id, user.email)
+
+    # Free the unique email, insert the new identity, repoint every FK, drop the old row.
+    db.execute(
+        text("UPDATE users SET email = email || '.superseded.' || id WHERE id = :old"),
+        {"old": old_id},
+    )
+    db.add(_new_user_from_token(user))
+    db.flush()
+    for table, column in db.execute(_USER_FK_REFS_SQL).all():
+        db.execute(
+            text(f'UPDATE "{table}" SET "{column}" = :new WHERE "{column}" = :old'),
+            {"new": user.user_id, "old": old_id},
+        )
+    db.execute(text("DELETE FROM users WHERE id = :old"), {"old": old_id})
+
+
 def _ensure_local_user(user: TokenUser, db: Session) -> None:
     """
     Ensure a local `users` row exists for this token's platform user id.
@@ -67,16 +119,12 @@ def _ensure_local_user(user: TokenUser, db: Session) -> None:
     if db.get(User, user.user_id) is not None:
         return
 
-    role_name = next((r for r in user.roles if r in LocalUserRole.__members__), None)
-   
-    db.add(User(
-        id=user.user_id,
-        email=user.email,
-        password_hash="EXTERNAL_AUTH",  # identity lives in the UMS, not here
-        role=LocalUserRole[role_name] if role_name else LocalUserRole.RECRUITER,
-        full_name=user.claims.get("name") or user.email,
-        is_active=True,
-    ))
+    existing = db.query(User).filter(User.email == user.email).first()
+    if existing is not None:
+        _rekey_local_user(db, existing.id, user)
+    else:
+        db.add(_new_user_from_token(user))
+
     db.commit()
 
 

@@ -3,10 +3,12 @@ from decimal import Decimal
 from urllib import request
 from uuid import UUID
 from datetime import timedelta
+from app.middleware.rbac import TokenUser
+
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import ActionType, EntityType, UserRole
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
 from app.models.campaigns import CampaignStatus, HiringCampaign
@@ -16,7 +18,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_response import (
@@ -26,6 +28,17 @@ from app.schemas.campaign.campaign_response import (
 from app.repositories.campaign_weight_preset_repository import (
     CampaignWeightPresetRepository,
 )
+from app.schemas.campaign.campaign_detail_response import (
+    CampaignDetailResponse,
+    CampaignInfoSection,
+    JDConfigSection,
+    ScoringConfigSection,
+    PipelineLimitsSection,
+    HiringManagerSection,
+)
+from app.models.pipeline import PipelineStage
+from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
+from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 
 
 class CampaignService:
@@ -132,21 +145,37 @@ class CampaignService:
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 hiring_manager_id=request.hiring_manager_id,
+                recruiter_id=request.recruiter_id,
                 created_by=created_by,
             )
 
             
             campaign = self.campaign_repo.create_campaign(campaign)
 
-            
+            # Same transaction as the campaign itself: rolled back together on
+            # failure. campaign_id is what the activity timeline filters on.
+            self.audit_service.log(
+                actor_id=created_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_CREATED,
+                entity_type=EntityType.CAMPAIGN,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' created",
+                    "jd_id": str(campaign.jd_id),
+                },
+            )
+
             self.campaign_repo.commit()
 
-            hiring_manager_name = None
-
-            if request.hiring_manager_id:
-                hiring_manager_name = request.hiring_manager_id
-
             
+            hiring_manager_name = None
+            if campaign.hiring_manager_id:
+                hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+                if hiring_manager:
+                    hiring_manager_name = hiring_manager.full_name
+
             return CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
@@ -192,10 +221,10 @@ class CampaignService:
             )
 
         hiring_manager_name = None
-        # if campaign.hiring_manager_id:
-        #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-        #     if hiring_manager:
-        #         hiring_manager_name = hiring_manager.full_name
+        if campaign.hiring_manager_id:
+            hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+            if hiring_manager:
+                hiring_manager_name = hiring_manager.full_name
 
         return CampaignResponse(
             id=campaign.id,
@@ -204,6 +233,8 @@ class CampaignService:
             jd_title=jd.title,
             jd_version=jd.version_number,
             hiring_manager=hiring_manager_name,
+            max_candidates=campaign.max_candidates,
+            deadline=campaign.deadline,
             created_at=campaign.created_at,
             candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
@@ -342,6 +373,7 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,   # ← matches the actual column name
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 max_candidates=c.max_candidates,
                 created_at=c.created_at,
@@ -369,6 +401,7 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 max_candidates=c.max_candidates,
                 created_at=c.created_at,
@@ -395,6 +428,7 @@ class CampaignService:
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
                 hiring_manager=c.hiring_manager_id,
+                max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 max_candidates=c.max_candidates,
                 created_at=c.created_at,

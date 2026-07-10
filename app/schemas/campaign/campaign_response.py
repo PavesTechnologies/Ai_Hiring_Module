@@ -11,6 +11,8 @@ class CampaignResponse(BaseModel):
     status: str
     jd_title: str
     jd_version: int
+
+    max_candidates: int
     hiring_manager: str | None
     max_candidates: int | None
     candidate_count: int 

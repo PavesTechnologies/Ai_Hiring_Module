@@ -7,8 +7,11 @@ engine = create_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    # Shared team dev instance with a small connection cap — keep each
+    # developer's footprint minimal (was 5 + 10, i.e. 15 slots per person).
+    pool_size=2,
+    max_overflow=3,
+    pool_recycle=1800,
 )
 
 
