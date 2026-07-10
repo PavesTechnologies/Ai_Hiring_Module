@@ -6,6 +6,7 @@ from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
 from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_response import CampaignResponse
+from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
@@ -118,3 +119,22 @@ def get_campaign(
         data=campaign,
         message="Campaign retrieved successfully"
     )
+
+@router.get("/{campaign_id}/details",
+    response_model=APIResponse[CampaignDetailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get campaign details by ID",
+    description="Retrieve detailed information about a specific campaign.",
+)
+def get_campaign_details(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.HIRING_MANAGER, UserRole.RECRUITER)),
+):
+    campaign_details = service.get_campaign_details(campaign_id, user)
+
+    return APIResponse.ok(
+        data=campaign_details,
+        message="Campaign details retrieved successfully"
+    )   
+    
