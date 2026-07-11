@@ -4,21 +4,6 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class CreateJDResponse(BaseModel):
-
-    id: UUID
-
-    title: str
-
-    version_number: int
-
-    source_format: str
-
-    jurisdiction: str
-
-    created_by: str
-
-
 class GetJDResponse(BaseModel):
     id: UUID
     title: str
@@ -56,3 +41,24 @@ class PaginatedJDResponse(BaseModel):
     page: int
     size: int
     items: list[JDListItem]
+
+
+class JDProcessingAcceptedResponse(BaseModel):
+    task_id: UUID
+    status: str
+
+
+class StageProgress(BaseModel):
+    stage: str
+    status: str
+    error_message: str | None
+    duration_ms: int | None
+
+
+class JDProcessingStatusResponse(BaseModel):
+    task_id: UUID
+    overall_status: str
+    current_stage: str | None
+    stages: list[StageProgress]
+    jd_id: UUID | None
+    error_message: str | None

@@ -90,7 +90,38 @@ class JDSkill(Base):
     jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
     canonical_skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=False)
     mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Business-set importance for scoring (e.g. HR weighting this skill
+    # higher for the deterministic/semantic scoring layers) — never
+    # populated by the automated pipeline, which has no business-weight
+    # source of its own. Distinct from confidence below.
     weight: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    # How confident the normalization match was (1.0 for exact/alias/case/
+    # rule-based, fuzzy_score/100 for RapidFuzz matches) — matches the
+    # existing CandidateSkill.confidence column (same table family, resume
+    # side), kept separate from `weight` rather than overloading one column.
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Which of the normalization tiers produced this match (EXACT/ALIAS/
+    # CASE_INSENSITIVE/RULE_BASED/FUZZY/SEMANTIC) — matches the existing
+    # CandidateSkill.match_tier column (same table family, resume side).
+    match_tier: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class JDUnknownSkill(Base):
+    """
+    Traces a specific JD's occurrence of an otherwise-globally-deduped
+    UnknownSkill row. UnknownSkill itself stays deduped by raw_text with an
+    org-wide frequency counter (one row can originate from many JDs); this
+    join table is what makes "which JDs produced this unknown skill"
+    queryable without changing that dedup design.
+    """
+
+    __tablename__ = "jd_unknown_skills"
+    __table_args__ = (UniqueConstraint("jd_id", "unknown_skill_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
+    unknown_skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("unknown_skills.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

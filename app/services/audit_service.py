@@ -41,3 +41,11 @@ class AuditService:
             request_id=request_id,
             )
         return self.repository.create(audit)
+    
+    def get_campaign_scoring_history(
+        self,
+        campaign_id: UUID,
+    ):
+        return self.repository.get_campaign_scoring_history(
+            campaign_id
+        )
