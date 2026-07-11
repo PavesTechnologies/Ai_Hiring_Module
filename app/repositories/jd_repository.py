@@ -1,7 +1,7 @@
 from uuid import UUID
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
-from app.models.campaigns import HiringCampaign
+from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.embeddings import EmbeddingModelVersion
 from app.models.jd.job_descriptions import JDEmbedding, JobDescription
 from app.models.jd.job_descriptions import EmbeddingStatus
@@ -49,7 +49,42 @@ class JDRepository:
         
     def deactivate_version(self, job_description: JobDescription) -> None:
         job_description.is_active_version = False
-        
+
+    def get_duplicate_excluding_lineage(
+        self,
+        content_hash: str,
+        lineage_root_id: UUID,
+    ) -> JobDescription | None:
+        """
+        Finds another JD (outside this lineage family) sharing the same
+        content_hash. A JD belongs to the family identified by
+        `lineage_root_id` if its own lineage_root_id matches it, or - for
+        the root version itself, whose lineage_root_id is NULL - if its id
+        matches it.
+        """
+        return (
+            self.db.query(JobDescription)
+            .filter(
+                JobDescription.content_hash == content_hash,
+                ~or_(
+                    JobDescription.lineage_root_id == lineage_root_id,
+                    JobDescription.id == lineage_root_id,
+                ),
+            )
+            .first()
+        )
+
+    def has_active_campaign(self, jd_id: UUID) -> bool:
+        return (
+            self.db.query(HiringCampaign.id)
+            .filter(
+                HiringCampaign.jd_id == jd_id,
+                HiringCampaign.status == CampaignStatus.ACTIVE,
+            )
+            .first()
+            is not None
+        )
+
     def get_latest_version(self, lineage_id: UUID) -> JobDescription | None:
         return (
             self.db.query(JobDescription)

@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+from datetime import timezone
 from urllib import request
 from uuid import UUID, uuid4
 
@@ -19,7 +20,9 @@ from app.services.document_processing.text_extraction_service import TextExtract
 from app.services.audit_service import AuditService
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
-from app.exception_handler.exceptions import NotFoundError, BadRequestError
+from app.exception_handler.exceptions import NotFoundError, BadRequestError, ConflictError
+from app.exceptions.duplicate_jd_exception import DuplicateJDException
+from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.mappers.jd_mapper import JDMapper
 from app.core.storage_service import StorageService
 from fastapi.responses import StreamingResponse
@@ -349,10 +352,38 @@ class JDService:
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Cannot update an inactive version of the Job Description with ID {jd_id}.")
 
+        if self.repository.has_active_campaign(jd_id):
+            raise ConflictError(
+                f"Cannot update Job Description with ID {jd_id}: it has an active hiring campaign assigned."
+            )
+
         if existing_jd.lineage_root_id:
             lineage_root_id = existing_jd.lineage_root_id
         else:
             lineage_root_id = existing_jd.id
+
+        # Duplicate check against every OTHER JD lineage - a match within
+        # this same lineage (e.g. resubmitting unchanged text) is not a
+        # duplicate, it's just this JD being updated.
+        if request.raw_text:
+            content_hash = self.hash_service.generate_hash(request.raw_text)
+            duplicate_jd = self.repository.get_duplicate_excluding_lineage(
+                content_hash=content_hash,
+                lineage_root_id=lineage_root_id,
+            )
+            if duplicate_jd:
+                raise DuplicateJDException(
+                    DuplicateJDInfo(
+                        message="Duplicate job description found.",
+                        existing_jd=ExistingJDInfo(
+                            id=duplicate_jd.id,
+                            title=duplicate_jd.title,
+                            version_number=duplicate_jd.version_number,
+                            created_at=duplicate_jd.created_at,
+                        ),
+                        actions=["View Existing", "Create New Version"],
+                    )
+                )
 
         # A newly uploaded file replaces the document; a metadata/text-only
         # update (file_path is None) carries forward whatever document the
@@ -426,7 +457,15 @@ class JDService:
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Job Description with ID {jd_id} is already inactive.")
 
+        if self.repository.has_active_campaign(jd_id):
+            raise ConflictError(
+                f"Cannot delete Job Description with ID {jd_id}: it has an active hiring campaign assigned."
+            )
+
         self.repository.deactivate_version(existing_jd)
+        # Soft delete: the row stays for history/audit, closed_at marks it
+        # as no longer usable (checked by CampaignService.create_campaign).
+        existing_jd.closed_at = datetime.now(timezone.utc)
 
         self.audit_service.log(
             actor_id=updated_by,
