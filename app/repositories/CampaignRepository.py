@@ -2,12 +2,16 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
+from app.models.pipeline import CampaignCandidate, PipelineStage
+from datetime import datetime, timezone, timedelta
 
-from datetime import datetime, timezone
+from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
+from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 
 from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
-from app.models.pipeline import CampaignCandidate
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
 from app.models.identity import User, UserRole
 
 class CampaignRepository:
@@ -34,6 +38,18 @@ class CampaignRepository:
             .first()
         )
 
+    def get_scoring_configuration(
+        self,
+        campaign_id: UUID,
+    ) -> HiringCampaign | None:
+        """
+        Fetch campaign scoring configuration.
+        """
+        return (
+            self.db.query(HiringCampaign)
+            .filter(HiringCampaign.id == campaign_id)
+            .first()
+        )
     def get_by_name(
         self,
         org_id: UUID,
@@ -58,7 +74,7 @@ class CampaignRepository:
             .all()
         )
     
-    def get_all_campaigns(self) -> list[HiringCampaign]:
+    def get_all_campaigns(self, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
             # .where(
@@ -67,6 +83,10 @@ class CampaignRepository:
             .options(joinedload(HiringCampaign.job_description))
             .order_by(HiringCampaign.created_at.desc())
         )
+        if not show_closed:
+            stmt = stmt.where(
+                HiringCampaign.status != CampaignStatus.CLOSED
+            )
         result = self.db.execute(stmt)
         return result.scalars().all()
     
@@ -93,6 +113,39 @@ class CampaignRepository:
         )
         result = self.db.execute(stmt)
         return result.scalars().all()
+    
+    def get_candidate_count(
+        self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        Returns total candidates in a campaign.
+        """
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+            )
+            .scalar()
+            or 0
+        )
+    
+    def get_shortlisted_count(
+        self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        Returns total shortlisted candidates in a campaign.
+        """
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SHORTLISTED,
+            )
+            .scalar()
+            or 0
+        )
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
@@ -129,6 +182,101 @@ class CampaignRepository:
         self.db.refresh(campaign)
 
         return campaign
+    
+    def search_campaigns(
+        self,
+        filters: CampaignFilterRequest,
+    ) -> list[HiringCampaign]:
+
+        stmt = (
+            select(HiringCampaign)
+            .options(
+                joinedload(HiringCampaign.job_description),
+            )
+        )
+
+        # Hide closed campaigns by default
+        if not filters.show_closed:
+            stmt = stmt.where(
+                HiringCampaign.status != CampaignStatus.CLOSED
+            )
+
+        # Search by campaign name
+        if filters.search:
+            stmt = stmt.where(
+                HiringCampaign.name.ilike(f"%{filters.search}%")
+            )
+
+        # Filter by status
+        if filters.status:
+            stmt = stmt.where(
+                HiringCampaign.status == filters.status
+            )
+
+        # Filter by Hiring Manager
+        if filters.hiring_manager_id:
+            stmt = stmt.where(
+                HiringCampaign.hiring_manager_id
+                == filters.hiring_manager_id
+            )
+
+        # Filter by JD
+        if filters.jd_id:
+            stmt = stmt.where(
+                HiringCampaign.jd_id == filters.jd_id
+            )
+
+        # Filter by deadline
+        if filters.has_deadline is True:
+            stmt = stmt.where(
+                HiringCampaign.deadline.is_not(None)
+            )
+
+        elif filters.has_deadline is False:
+            stmt = stmt.where(
+                HiringCampaign.deadline.is_(None)
+            )
+
+        stmt = stmt.order_by(
+            HiringCampaign.created_at.desc()
+        )
+
+        result = self.db.execute(stmt)
+
+        return result.scalars().all()
+    
+    def is_deadline_soon(
+        self,
+        campaign: HiringCampaign,
+        warning_days: int = 3,
+    ) -> bool:
+
+        if campaign.deadline is None:
+            return False
+
+        now = datetime.now(timezone.utc)
+
+        return now <= campaign.deadline <= now + timedelta(days=warning_days)
+    
+    def update_scoring_configuration(
+        self,
+        campaign: HiringCampaign,
+        request: CampaignScoringUpdateRequest,
+    ) -> HiringCampaign:
+
+        campaign.weight_deterministic = request.weight_deterministic
+        campaign.weight_semantic = request.weight_semantic
+        campaign.weight_ai = request.weight_ai
+
+        campaign.semantic_threshold = request.semantic_threshold
+        campaign.ai_threshold = request.ai_threshold
+
+        campaign.updated_at = datetime.now(timezone.utc)
+
+        self.db.flush()
+        self.db.refresh(campaign)
+
+        return campaign
 
     def get_mandatory_skill_count(self, jd_id) -> int:
         return (
@@ -145,3 +293,32 @@ class CampaignRepository:
         )
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
+
+    def get_stage_counts(self, campaign_id) -> dict[str, int]:
+        rows = (
+            self.db.query(CampaignCandidate.pipeline_stage, func.count())
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CampaignCandidate.pipeline_stage)
+            .all()
+        )
+        return {stage.value: count for stage, count in rows}
+
+    def get_audit_entries(self, campaign_id) -> list[AuditLog]:
+        return (
+            self.db.query(AuditLog)
+            .filter(AuditLog.campaign_id == campaign_id)
+            .order_by(AuditLog.created_at.desc())
+            .all()
+        )
+
+    def get_stage_history(self, campaign_id) -> list[CampaignCandidateStageHistory]:
+        return (
+            self.db.query(CampaignCandidateStageHistory)
+            .join(
+                CampaignCandidate,
+                CampaignCandidateStageHistory.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .order_by(CampaignCandidateStageHistory.changed_at.desc())
+            .all()
+        )
