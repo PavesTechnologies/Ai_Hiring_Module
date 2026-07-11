@@ -175,3 +175,12 @@ class CampaignRepository:
             .order_by(CampaignCandidateStageHistory.changed_at.desc())
             .all()
         )
+
+    # def pause_campaign(self, campaign_status: CampaignStatus, campaign_id: UUID) -> HiringCampaign:
+    #     campaign = self.db.query(HiringCampaign).filter(HiringCampaign.id == campaign_id).first()
+    #     if not campaign:
+    #         return None
+    #     campaign.status = campaign_status
+    #     self.db.commit()
+    #     self.db.refresh(campaign)
+    #     return campaign

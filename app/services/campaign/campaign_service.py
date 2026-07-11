@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from http.client import responses
-from http.client import responses
+from fastapi import HTTPException
 from unicodedata import name
 from uuid import UUID
 from app.middleware.rbac import TokenUser
@@ -510,3 +509,14 @@ class CampaignService:
         except Exception:
             self.campaign_repo.rollback()
             raise
+
+    
+    # def pause_campaign(self, campaign_id: UUID) -> HiringCampaign:
+    #     campaign = self.campaign_repo.get_by_id(campaign_id)  # or a small read-only lookup
+    #     if not campaign:
+    #         raise HTTPException(status_code=404, detail="Campaign not found")
+    #     if campaign.status != CampaignStatus.ACTIVE:
+    #         raise HTTPException(status_code=400, detail="Campaign is not active and cannot be paused")
+
+    #     campaign = self.campaign_repo.pause_campaign(CampaignStatus.PAUSED, campaign_id)
+    #     return campaign

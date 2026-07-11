@@ -105,6 +105,21 @@ def get_campaigns_by_hiring_manager(
         message="Campaigns retrieved successfully"
     )
 
+# @router.put(
+#     "/{campaign_id}/pause",
+#     response_model=APIResponse[CampaignResponse],
+#     status_code=status.HTTP_200_OK,
+#     summary="Pause a campaign",
+#     description="Pause a campaign by setting its status to PAUSED.",
+#     dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+# )
+# def pause_campaign(
+#     campaign_id: UUID,
+#     service: CampaignService = Depends(get_campaign_service),
+# ):
+#     campaign = service.pause_campaign(campaign_id=campaign_id)
+#     return APIResponse.ok(data=campaign, message="Campaign paused successfully.")
+
 @router.get(
     "/{campaign_id}",
     response_model=APIResponse[CampaignResponse],
