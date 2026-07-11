@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (
     DateTime, Enum as SAEnum, ForeignKey, Integer,
-    SmallInteger, String, Text, func,
+    SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,6 +31,31 @@ class BulkUploadStatus(enum.Enum):
     FAILED = "FAILED"
 
 
+class DocumentType(enum.Enum):
+    JD = "JD"
+    RESUME = "RESUME"
+
+
+class ProcessingStage(enum.Enum):
+    VALIDATION = "VALIDATION"
+    STORAGE = "STORAGE"
+    TEXT_EXTRACTION = "TEXT_EXTRACTION"
+    TEXT_CLEANING = "TEXT_CLEANING"
+    AI_EXTRACTION = "AI_EXTRACTION"
+    JSON_VALIDATION = "JSON_VALIDATION"
+    SKILL_NORMALIZATION = "SKILL_NORMALIZATION"
+    EMBEDDING_GENERATION = "EMBEDDING_GENERATION"
+    PERSISTENCE = "PERSISTENCE"
+
+
+class StageExecutionStatus(enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+
+
 class CeleryTaskLog(Base):
     __tablename__ = "celery_task_log"
 
@@ -40,6 +65,7 @@ class CeleryTaskLog(Base):
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
     resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=True)
     campaign_candidate_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=True)
+    jd_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)
     status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus, name="task_status_enum"), nullable=False, default=TaskStatus.QUEUED)
     retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     worker_hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -89,3 +115,27 @@ class BulkUploadJob(Base):
     error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DocumentProcessingStageExecution(Base):
+    """
+    Per-stage progress log for an async document-processing pipeline run,
+    grouped by `task_id` (the Celery task_id, shared with CeleryTaskLog).
+    Document-type-agnostic so a future Resume pipeline reuses it as-is.
+    """
+
+    __tablename__ = "document_processing_stage_executions"
+    __table_args__ = (UniqueConstraint("task_id", "stage", "attempt_number"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    document_type: Mapped[DocumentType] = mapped_column(SAEnum(DocumentType, name="document_type_enum"), nullable=False)
+    document_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    stage: Mapped[ProcessingStage] = mapped_column(SAEnum(ProcessingStage, name="processing_stage_enum"), nullable=False)
+    status: Mapped[StageExecutionStatus] = mapped_column(SAEnum(StageExecutionStatus, name="stage_execution_status_enum"), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

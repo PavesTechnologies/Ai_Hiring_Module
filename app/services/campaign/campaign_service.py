@@ -170,11 +170,11 @@ class CampaignService:
             self.campaign_repo.commit()
 
             
-            hiring_manager_name = None
-            if campaign.hiring_manager_id:
-                hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-                if hiring_manager:
-                    hiring_manager_name = hiring_manager.full_name
+            hiring_manager_name = request.hiring_manager_id 
+            # if campaign.hiring_manager_id:
+            #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
+            #     if hiring_manager:
+            #         hiring_manager_name = hiring_manager.full_name
 
             return CampaignResponse(
                 id=campaign.id,
@@ -375,7 +375,6 @@ class CampaignService:
                 hiring_manager=c.hiring_manager_id,
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
-                max_candidates=c.max_candidates,
                 created_at=c.created_at,
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
@@ -403,7 +402,6 @@ class CampaignService:
                 hiring_manager=c.hiring_manager_id,
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
-                max_candidates=c.max_candidates,
                 created_at=c.created_at,
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
@@ -430,7 +428,6 @@ class CampaignService:
                 hiring_manager=c.hiring_manager_id,
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
-                max_candidates=c.max_candidates,
                 created_at=c.created_at,
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),

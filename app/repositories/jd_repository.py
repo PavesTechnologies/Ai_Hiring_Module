@@ -1,8 +1,10 @@
 from uuid import UUID
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
-from app.models.campaigns import HiringCampaign
-from app.models.jd.job_descriptions import JobDescription
+from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.embeddings import EmbeddingModelVersion
+from app.models.jd.job_descriptions import JDEmbedding, JobDescription
+from app.models.jd.job_descriptions import EmbeddingStatus
 from app.schemas.jd.request import JDSearchRequest
 from app.models.identity import User
 
@@ -47,7 +49,42 @@ class JDRepository:
         
     def deactivate_version(self, job_description: JobDescription) -> None:
         job_description.is_active_version = False
-        
+
+    def get_duplicate_excluding_lineage(
+        self,
+        content_hash: str,
+        lineage_root_id: UUID,
+    ) -> JobDescription | None:
+        """
+        Finds another JD (outside this lineage family) sharing the same
+        content_hash. A JD belongs to the family identified by
+        `lineage_root_id` if its own lineage_root_id matches it, or - for
+        the root version itself, whose lineage_root_id is NULL - if its id
+        matches it.
+        """
+        return (
+            self.db.query(JobDescription)
+            .filter(
+                JobDescription.content_hash == content_hash,
+                ~or_(
+                    JobDescription.lineage_root_id == lineage_root_id,
+                    JobDescription.id == lineage_root_id,
+                ),
+            )
+            .first()
+        )
+
+    def has_active_campaign(self, jd_id: UUID) -> bool:
+        return (
+            self.db.query(HiringCampaign.id)
+            .filter(
+                HiringCampaign.jd_id == jd_id,
+                HiringCampaign.status == CampaignStatus.ACTIVE,
+            )
+            .first()
+            is not None
+        )
+
     def get_latest_version(self, lineage_id: UUID) -> JobDescription | None:
         return (
             self.db.query(JobDescription)
@@ -241,3 +278,32 @@ class JDRepository:
             .order_by(HiringCampaign.created_at.desc())
             .all()
         )
+
+    def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
+        version = (
+            self.db.query(EmbeddingModelVersion)
+            .filter(EmbeddingModelVersion.is_active.is_(True))
+            .first()
+        )
+        if not version:
+            raise RuntimeError("No active embedding model version is configured.")
+        return version
+
+    def create_jd_embedding(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        input_text_hash: str,
+    ) -> JDEmbedding:
+        jd_embedding = JDEmbedding(
+            jd_id=jd_id,
+            embedding=embedding,
+            embedding_model_version_id=embedding_model_version_id,
+            input_text_hash=input_text_hash,
+            embedding_status=EmbeddingStatus.READY,
+        )
+        self.db.add(jd_embedding)
+        self.db.flush()
+        self.db.refresh(jd_embedding)
+        return jd_embedding

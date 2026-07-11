@@ -1,5 +1,5 @@
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,12 +12,32 @@ from fastapi import (
     status,
 )
 
-from app.dependencies.jd import get_jd_service
+from app.dependencies.jd import (
+    get_hash_service,
+    get_jd_processing_status_service,
+    get_jd_repository,
+    get_jd_service,
+    get_stage_tracker,
+)
 from app.enums.constants import UserRole
+from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.middleware.rbac import TokenUser, require_roles
+from app.models.async_tasks import DocumentType, ProcessingStage
+from app.repositories.jd_repository import JDRepository
+from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDRequest, JDSearchRequest
-from app.schemas.jd.response import CreateJDResponse, GetJDResponse, UpdateJDResponse, PaginatedJDResponse
+from app.schemas.jd.response import (
+    GetJDResponse,
+    JDProcessingAcceptedResponse,
+    JDProcessingStatusResponse,
+    PaginatedJDResponse,
+    UpdateJDResponse,
+)
+from app.services.document_processing.stage_execution_service import StageExecutionService
+from app.services.jd.hash_service import HashService
+from app.services.jd.jd_processing_status_service import JDProcessingStatusService
 from app.services.jd.jd_service import JDService
+from app.tasks.jd_processing_tasks import process_jd_document
 from app.schemas.response import APIResponse
 from fastapi import Query
 from app.middleware.rbac import TokenUser, require_roles
@@ -34,27 +54,75 @@ router = APIRouter(
 SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
 
 
+def _raise_if_duplicate(jd_repository: JDRepository, content_hash: str) -> None:
+    existing_jd = jd_repository.get_by_content_hash(content_hash)
+    if existing_jd:
+        raise DuplicateJDException(
+            DuplicateJDInfo(
+                message="Duplicate job description found.",
+                existing_jd=ExistingJDInfo(
+                    id=existing_jd.id,
+                    title=existing_jd.title,
+                    version_number=existing_jd.version_number,
+                    created_at=existing_jd.created_at,
+                ),
+                actions=["View Existing", "Create New Version"],
+            )
+        )
+
+
 @router.post(
     "",
-    response_model=APIResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=APIResponse[JDProcessingAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
 def create_job_description(
     request: CreateJDRequest,
-    service: JDService = Depends(get_jd_service),
+    jd_repository: JDRepository = Depends(get_jd_repository),
+    hash_service: HashService = Depends(get_hash_service),
+    stage_tracker: StageExecutionService = Depends(get_stage_tracker),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
-    response = service.create_jd(
-        request=request,
-        created_by=user.user_id
+    """
+    Validation runs synchronously (raw_text is already in hand, so the
+    duplicate pre-check is cheap and gives an immediate 409). The rest of
+    the pipeline — Text Cleaning through Persistence — runs in the
+    background; the JobDescription row itself is only created there.
+    """
+    content_hash = hash_service.generate_hash(request.raw_text)
+    _raise_if_duplicate(jd_repository, content_hash)
+
+    task_id = uuid4()
+    stage_tracker.run_stage(str(task_id), DocumentType.JD, ProcessingStage.VALIDATION, lambda: None)
+
+    process_jd_document.apply_async(
+        kwargs={
+            "task_id": str(task_id),
+            "raw_text": request.raw_text,
+            "file_path": None,
+            "title": request.title,
+            "jurisdiction": request.jurisdiction,
+            "min_experience_years": request.min_experience_years,
+            "education_criteria": (
+                request.education_criteria.model_dump() if request.education_criteria else None
+            ),
+            "created_by": user.user_id,
+        },
+        task_id=str(task_id),
     )
-    return APIResponse.ok(data=response, message="Job Description created successfully.")
+
+    return APIResponse.ok(
+        data=JDProcessingAcceptedResponse(task_id=task_id, status="QUEUED"),
+        message="Job Description submitted for processing.",
+    )
 
 
 @router.post(
     "/from-file",
-    response_model=APIResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=APIResponse[JDProcessingAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def create_job_description_from_file(
     title: str = Form(..., min_length=1, max_length=255),
@@ -64,36 +132,69 @@ def create_job_description_from_file(
     education_field: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
+    stage_tracker: StageExecutionService = Depends(get_stage_tracker),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
-    PDF/DOCX upload counterpart to create_job_description(). Validates and
-    stores the file, extracts its text, then delegates to the same
-    JDService.create_jd() used by the JSON endpoint for hashing, duplicate
-    detection, saving, and audit — no business logic is duplicated here.
+    PDF/DOCX upload counterpart to create_job_description(). Validation and
+    Storage run synchronously here (the file must be safely stored before
+    the response returns); Text Extraction through Persistence — including
+    the file-path duplicate check — run in the background.
     """
-    raw_text, file_path = service.process_uploaded_file(file=file, org_id=SYSTEM_ORG)
-
-    jd_request = CreateJDRequest(
-        title=title,
-        raw_text=raw_text,
-        jurisdiction=jurisdiction,
-        min_experience_years=min_experience_years,
-        education_criteria=(
-            EducationCriteria(degree=education_degree, field=education_field)
-            if education_degree or education_field
-            else None
-        ),
+    task_id = uuid4()
+    stage_tracker.run_stage(
+        str(task_id), DocumentType.JD, ProcessingStage.VALIDATION,
+        lambda: service.validate_upload_type(file),
     )
 
-    response = service.create_jd(
-        request=jd_request,
-        created_by=user.user_id,
-        file_path=file_path,
+    file_path = stage_tracker.run_stage(
+        str(task_id), DocumentType.JD, ProcessingStage.STORAGE,
+        lambda: service.validate_and_store_file(file=file, org_id=SYSTEM_ORG),
     )
-    return APIResponse.ok(data=response, message="Job Description created successfully from uploaded document.")
 
-@router.get("/export")
+    education_criteria = (
+        {"degree": education_degree, "field": education_field}
+        if education_degree or education_field
+        else None
+    )
+
+    process_jd_document.apply_async(
+        kwargs={
+            "task_id": str(task_id),
+            "raw_text": None,
+            "file_path": file_path,
+            "title": title,
+            "jurisdiction": jurisdiction,
+            "min_experience_years": min_experience_years,
+            "education_criteria": education_criteria,
+            "created_by": user.user_id,
+        },
+        task_id=str(task_id),
+    )
+
+    return APIResponse.ok(
+        data=JDProcessingAcceptedResponse(task_id=task_id, status="QUEUED"),
+        message="Job Description document submitted for processing.",
+    )
+
+
+@router.get(
+    "/processing-status/{task_id}",
+    response_model=APIResponse[JDProcessingStatusResponse],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def get_jd_processing_status(
+    task_id: UUID,
+    service: JDProcessingStatusService = Depends(get_jd_processing_status_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    return APIResponse.ok(
+        data=service.get_status(task_id),
+        message="Processing status retrieved successfully.",
+    )
+
+@router.get("/export", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def export_job_descriptions(
     service: JDService = Depends(get_jd_service),
     user: TokenUser = Security(
@@ -126,7 +227,7 @@ def export_job_descriptions(
         actor_role=user.roles[0] if user.roles else None,
     )
 
-@router.get("/{jd_id}/export")
+@router.get("/{jd_id}/export", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def export_single_job_description(
     jd_id: UUID,
     service: JDService = Depends(get_jd_service),
@@ -143,7 +244,7 @@ def export_single_job_description(
     )
 
 
-@router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],)
+@router.get("/all-active-jds", response_model=APIResponse[list[GetJDResponse]],dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def get_all_active_jds(
     service: JDService = Depends(get_jd_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
@@ -151,7 +252,7 @@ def get_all_active_jds(
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
 
 
-@router.get("/{jd_id}", response_model=APIResponse,)
+@router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),
@@ -161,11 +262,10 @@ def get_job_description_by_id(
     return APIResponse.ok(data=response, message="Job Description retrieved successfully.")
 
 
-@router.get("/{jd_id}/download")
+@router.get("/{jd_id}/download", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def download_job_description_file(
     jd_id: UUID,
-    service: JDService = Depends(get_jd_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    service: JDService = Depends(get_jd_service)
 ):
     """
     Downloads the JD's document: the original PDF/DOCX if one was uploaded,
@@ -186,7 +286,7 @@ def update_job_description(
     jd_id: UUID,
     request: UpdateJDRequest,
     service: JDService = Depends(get_jd_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     response = service.update_jd(
         jd_id=jd_id,
@@ -210,7 +310,7 @@ def update_job_description_from_file(
     education_field: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """
     PDF/DOCX upload counterpart to update_job_description(). Validates and
@@ -263,11 +363,10 @@ def delete_job_description(
     "",
     response_model=APIResponse[PaginatedJDResponse],
     status_code=status.HTTP_200_OK,
-    # dependencies=[Security(require_roles(UserRole.RECRUITER))]
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def search_job_descriptions(
     service: JDService = Depends(get_jd_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 
     search: str | None = Query(default=None),
     jurisdiction: str | None = Query(default=None),

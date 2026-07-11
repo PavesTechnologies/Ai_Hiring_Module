@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignWeightHistoryResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
-from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest, CampaignUpdateRequest
+from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles, get_current_user
@@ -36,7 +36,7 @@ def create_campaign(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     org_id = SYSTEM_ORG
-    created_by = user.user_id  # Assuming you have a way to get the current user``
+    created_by = user.user_id
 
     campaign = service.create_campaign(
         request=request,
@@ -161,8 +161,7 @@ def get_weight_presets(
     "/{campaign_id}",
     response_model=APIResponse[CampaignResponse],
     status_code=status.HTTP_200_OK,
-    summary="Get campaign by ID",
-    description="Retrieve a campaign by its ID with JD and hiring manager details.",
+    dependencies=[Depends(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def get_campaign(
     campaign_id: UUID,

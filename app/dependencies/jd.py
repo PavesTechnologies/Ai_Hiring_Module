@@ -11,6 +11,11 @@ from app.services.audit_service import AuditService
 from app.dependencies.storage import get_storage_service
 from app.core.storage_service import StorageService
 
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.services.document_processing.stage_execution_service import StageExecutionService
+from app.services.jd.jd_processing_status_service import JDProcessingStatusService
+
 
 def get_jd_repository(
     db: Session = Depends(get_db),
@@ -46,4 +51,31 @@ def get_jd_service(
         audit_service=audit_service,
         storage_service=storage_service,
     )
-    
+
+
+def get_document_processing_repository(
+    db: Session = Depends(get_db),
+) -> DocumentProcessingRepository:
+    return DocumentProcessingRepository(db)
+
+
+def get_stage_tracker(
+    repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
+) -> StageExecutionService:
+    return StageExecutionService(repository)
+
+
+def get_celery_task_log_repository(
+    db: Session = Depends(get_db),
+) -> CeleryTaskLogRepository:
+    return CeleryTaskLogRepository(db)
+
+
+def get_jd_processing_status_service(
+    task_log_repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    stage_repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
+) -> JDProcessingStatusService:
+    return JDProcessingStatusService(
+        task_log_repository=task_log_repository,
+        stage_repository=stage_repository,
+    )

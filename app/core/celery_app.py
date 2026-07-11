@@ -16,6 +16,7 @@ celery_app.conf.update(
 
 celery_app.conf.imports = (
     "app.tasks.campaign_tasks",
+    "app.tasks.jd_processing_tasks",
 )
 
 celery_app.conf.beat_schedule = {
