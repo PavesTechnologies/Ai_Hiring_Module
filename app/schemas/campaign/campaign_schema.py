@@ -34,6 +34,43 @@ class CampaignCreateRequest(BaseModel):
             raise ValueError("Campaign name cannot be empty.")
 
         return value
+    
+class CampaignScoringUpdateRequest(BaseModel):
+
+    weight_deterministic: Decimal = Field(
+        ...,
+        ge=0,
+        le=100,
+        decimal_places=2,
+    )
+
+    weight_semantic: Decimal = Field(
+        ...,
+        ge=0,
+        le=100,
+        decimal_places=2,
+    )
+
+    weight_ai: Decimal = Field(
+        ...,
+        ge=0,
+        le=100,
+        decimal_places=2,
+    )
+
+    semantic_threshold: Decimal = Field(
+        ...,
+        ge=0,
+        le=100,
+        decimal_places=2,
+    )
+
+    ai_threshold: Decimal = Field(
+        ...,
+        ge=0,
+        le=100,
+        decimal_places=2,
+    )
 
 
 class CampaignUpdateRequest(BaseModel):

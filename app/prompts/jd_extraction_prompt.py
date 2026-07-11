@@ -67,7 +67,7 @@ If the Job Description contains sections such as:
 
 Extract only those skills into:
 
-preferred_skills = []
+required_skills
 
 PREFERRED SKILLS
 ----------------
@@ -158,7 +158,7 @@ Return an empty object unless additional structured information is explicitly re
 Return ONLY the following JSON structure.
 
 {
-    "skills": [],
+    "required_skills": [],
     "preferred_skills": [],
     "responsibilities": [],
     "certifications": [],

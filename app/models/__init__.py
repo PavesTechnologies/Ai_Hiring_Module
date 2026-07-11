@@ -22,4 +22,18 @@ from .async_tasks import (
     CeleryTaskLog,
     DeadLetterQueue,
     BulkUploadJob,
+    DocumentProcessingStageExecution,
+    DocumentType,
+    ProcessingStage,
+    StageExecutionStatus,
+)
+
+# Skill ontology models
+from .skills import (
+    SkillOntology,
+    UnknownSkill,
+    SkillSuggestion,
+    JDSkill,
+    JDUnknownSkill,
+    CandidateSkill,
 )

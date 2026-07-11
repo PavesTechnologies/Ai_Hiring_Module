@@ -1,24 +1,28 @@
 import io
 import logging
 import re
+from datetime import timezone
 from urllib import request
 from uuid import UUID, uuid4
 
-import pypdfium2 as pdfium
 from docx import Document
 from fastapi import HTTPException, UploadFile
 
-from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat
 from app.repositories.jd_repository import JDRepository
+from app.repositories.skill_repository import SkillRepository
+from app.schemas.ai.jd_extraction_response import JDExtractionResponse
+from app.services.skills.skill_normalization_service import SkillMatchResult
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchRequest
-from app.schemas.jd.response import CreateJDResponse, UpdateJDResponse, JDListItem, PaginatedJDResponse
+from app.schemas.jd.response import UpdateJDResponse, JDListItem, PaginatedJDResponse
 from app.services.jd.hash_service import HashService
-from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
+from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.audit_service import AuditService
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
-from app.exception_handler.exceptions import NotFoundError, BadRequestError
+from app.exception_handler.exceptions import NotFoundError, BadRequestError, ConflictError
+from app.exceptions.duplicate_jd_exception import DuplicateJDException
+from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.mappers.jd_mapper import JDMapper
 from app.core.storage_service import StorageService
 from fastapi.responses import StreamingResponse
@@ -58,86 +62,101 @@ class JDService:
         self.audit_service = audit_service
         self.storage_service = storage_service
 
-    def create_jd(
+    def persist_processed_jd(
         self,
-        request: CreateJDRequest,
+        *,
+        title: str,
+        raw_text: str,
+        jurisdiction: str,
+        min_experience_years: float | None,
+        education_criteria: dict | None,
+        source_format: JDSourceFormat,
+        file_path: str | None,
         created_by: str,
-        file_path: str | None = None,
-    ) -> CreateJDResponse:
-
+        content_hash: str,
+        extraction: JDExtractionResponse,
+        skill_repository: SkillRepository,
+        skill_matches: list[SkillMatchResult],
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        input_text_hash: str,
+    ) -> UUID | None:
+        """
+        The Persistence stage of the async JD processing pipeline: writes
+        JobDescription + JDSkill + UnknownSkill + JDEmbedding + audit log in
+        one transaction. Returns the new jd_id, or None if a duplicate was
+        detected right before insert (final safety net against the race
+        widened by asynchronous processing).
+        """
         try:
-            source_format = self._resolve_source_format(file_path)
+            if self.repository.get_by_content_hash(content_hash):
+                return None
 
-            # Step 1 - Generate SHA-256 Hash
-            content_hash = self.hash_service.generate_hash(
-                request.raw_text
-            )
-
-            # Step 2 - Check for duplicate JD
-            existing_jd = self.repository.get_by_content_hash(
-                content_hash
-            )
-
-            if existing_jd:
-                raise DuplicateJDException(
-                    DuplicateJDInfo(
-                        message="Duplicate job description found.",
-                        existing_jd=ExistingJDInfo(
-                            id=existing_jd.id,
-                            title=existing_jd.title,
-                            version_number=existing_jd.version_number,
-                            created_at=existing_jd.created_at
-                        ),
-                        actions=["View Existing", "Create New Version"]
-                    )
-                )
-
-            # Step 3 - Create Job Description
-            job_description = self._build_job_description(
-                request=request,
-                create_by=created_by,
-                version_number=1,
-                parent_jd_id=None,
-                lineage_root_id=None,
+            job_description = JobDescription(
+                title=title,
+                raw_text=raw_text,
+                jurisdiction=jurisdiction,
+                min_experience_years=min_experience_years,
+                education_criteria=education_criteria,
                 source_format=source_format,
                 file_path=file_path,
+                content_hash=content_hash,
+                version_number=1,
+                is_active_version=True,
+                parent_jd_id=None,
+                lineage_root_id=None,
+                created_by=created_by,
+                # parsed_skills: the full AI-parsed JD JSON, as extracted
+                # (pre-normalization) — required_skills: just the two skill
+                # lists, kept separately for quick access without parsing
+                # the larger blob.
+                parsed_skills=extraction.model_dump(mode="json"),
+                required_skills={
+                    "required": extraction.required_skills,
+                    "preferred": extraction.preferred_skills,
+                },
+            )
+            job_description = self.repository.create_job_description(job_description)
+
+            for match in skill_matches:
+                if match.canonical_skill_id:
+                    skill_repository.create_jd_skill(
+                        jd_id=job_description.id,
+                        canonical_skill_id=match.canonical_skill_id,
+                        mandatory=match.mandatory,
+                        match_tier=match.match_tier.value,
+                        confidence=match.confidence,
+                        # weight is reserved for future business-set scoring
+                        # input, not populated by the automated pipeline.
+                    )
+                    skill_repository.bump_occurrence_count(match.canonical_skill_id)
+                else:
+                    unknown_skill = skill_repository.upsert_unknown_skill(match.raw_text)
+                    skill_repository.link_unknown_skill_to_jd(job_description.id, unknown_skill.id)
+
+            self.repository.create_jd_embedding(
+                jd_id=job_description.id,
+                embedding=embedding,
+                embedding_model_version_id=embedding_model_version_id,
+                input_text_hash=input_text_hash,
             )
 
-
-
-            # Step 4 - Save
-            job_description = self.repository.create_job_description(
-                job_description
-            )
-
-
-            # Step 5 - Audit
             self.audit_service.log(
-               actor_id=created_by,
-               actor_role="HR_ADMIN",
-               action_type= ActionType.JD_CREATED,
-               entity_type= EntityType.JOB_DESCRIPTION,
-               entity_id=job_description.id,
-               jurisdiction=job_description.jurisdiction,
-               details={
-                   "title": job_description.title,
-                   "version_number": job_description.version_number,
-                   "source_format": job_description.source_format.value,
-                   },
-               )
-
+                actor_id=created_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.JD_CREATED,
+                entity_type=EntityType.JOB_DESCRIPTION,
+                entity_id=job_description.id,
+                jurisdiction=job_description.jurisdiction,
+                details={
+                    "title": job_description.title,
+                    "version_number": job_description.version_number,
+                    "source_format": job_description.source_format.value,
+                },
+            )
 
             self.repository.commit()
-
-            # Step 6 - Response
-            return CreateJDResponse(
-                id=job_description.id,
-                title=job_description.title,
-                version_number=job_description.version_number,
-                source_format=job_description.source_format.value,
-                jurisdiction=job_description.jurisdiction,
-                created_by=job_description.created_by,
-            )
+            return job_description.id
 
         except Exception:
             self.repository.rollback()
@@ -146,22 +165,13 @@ class JDService:
     def process_uploaded_file(self, file: UploadFile, org_id: UUID | None) -> tuple[str, str]:
         """
         Validates, uploads to Supabase, and extracts raw text from an
-        uploaded JD document. Called by the POST /job-descriptions/from-file
-        endpoint *before* create_jd(), so create_jd() itself stays the single
+        uploaded JD document. Called by the PUT /job-descriptions/{id}/from-file
+        endpoint *before* update_jd(), so update_jd() itself stays the single
         place that owns hashing, duplicate detection, saving, and audit.
 
         Returns (raw_text, storage_object_path).
         """
-        extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
-        allowed = self._ALLOWED_UPLOAD_TYPES.get(extension)
-
-        if allowed is None:
-            raise BadRequestError("Only PDF and DOCX files are supported for upload.")
-
-        expected_mime_type, _ = allowed
-        if file.content_type and file.content_type != expected_mime_type:
-            raise BadRequestError("Uploaded file's content type does not match its extension.")
-
+        extension = self.validate_upload_type(file)
         file_content = file.file.read()
 
         object_path = f"org_{org_id}/jd/{uuid4()}.{extension}"
@@ -173,9 +183,9 @@ class JDService:
         )
 
         raw_text = (
-            self._extract_pdf_text(file_content)
+            TextExtractionService.extract_pdf_text(file_content)
             if extension == "pdf"
-            else self._extract_docx_text(file_content)
+            else TextExtractionService.extract_docx_text(file_content)
         )
 
         if not raw_text or not raw_text.strip():
@@ -183,23 +193,45 @@ class JDService:
 
         return raw_text, file_path
 
+    def validate_and_store_file(self, file: UploadFile, org_id: UUID | None) -> str:
+        """
+        Validation + Storage stages for the async JD processing pipeline:
+        validates the upload and stores it in Supabase, synchronously, in
+        the request. Text extraction happens later, in the pipeline's own
+        Text Extraction stage, so a slow parse never blocks the response.
+
+        Returns the storage object path.
+        """
+        extension = self.validate_upload_type(file)
+        file_content = file.file.read()
+
+        object_path = f"org_{org_id}/jd/{uuid4()}.{extension}"
+        return self.storage_service.upload_file(
+            bucket_name=self.JD_STORAGE_BUCKET,
+            file_path=object_path,
+            file_content=file_content,
+            content_type=file.content_type,
+        )
+
+    def validate_upload_type(self, file: UploadFile) -> str:
+        extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+        allowed = self._ALLOWED_UPLOAD_TYPES.get(extension)
+
+        if allowed is None:
+            raise BadRequestError("Only PDF and DOCX files are supported for upload.")
+
+        expected_mime_type, _ = allowed
+        if file.content_type and file.content_type != expected_mime_type:
+            raise BadRequestError("Uploaded file's content type does not match its extension.")
+
+        return extension
+
     @staticmethod
     def _resolve_source_format(file_path: str | None) -> JDSourceFormat:
         if not file_path:
             return JDSourceFormat.TEXT
         extension = file_path.rsplit(".", 1)[-1].lower()
         return JDSourceFormat.PDF if extension == "pdf" else JDSourceFormat.DOCX
-
-    @staticmethod
-    def _extract_pdf_text(file_content: bytes) -> str:
-        pdf = pdfium.PdfDocument(file_content)
-        pages_text = [page.get_textpage().get_text_range() for page in pdf]
-        return "\n".join(pages_text)
-
-    @staticmethod
-    def _extract_docx_text(file_content: bytes) -> str:
-        document = Document(io.BytesIO(file_content))
-        return "\n".join(paragraph.text for paragraph in document.paragraphs)
 
     def _build_job_description(self,
                                request: CreateJDRequest,
@@ -320,10 +352,38 @@ class JDService:
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Cannot update an inactive version of the Job Description with ID {jd_id}.")
 
+        if self.repository.has_active_campaign(jd_id):
+            raise ConflictError(
+                f"Cannot update Job Description with ID {jd_id}: it has an active hiring campaign assigned."
+            )
+
         if existing_jd.lineage_root_id:
             lineage_root_id = existing_jd.lineage_root_id
         else:
             lineage_root_id = existing_jd.id
+
+        # Duplicate check against every OTHER JD lineage - a match within
+        # this same lineage (e.g. resubmitting unchanged text) is not a
+        # duplicate, it's just this JD being updated.
+        if request.raw_text:
+            content_hash = self.hash_service.generate_hash(request.raw_text)
+            duplicate_jd = self.repository.get_duplicate_excluding_lineage(
+                content_hash=content_hash,
+                lineage_root_id=lineage_root_id,
+            )
+            if duplicate_jd:
+                raise DuplicateJDException(
+                    DuplicateJDInfo(
+                        message="Duplicate job description found.",
+                        existing_jd=ExistingJDInfo(
+                            id=duplicate_jd.id,
+                            title=duplicate_jd.title,
+                            version_number=duplicate_jd.version_number,
+                            created_at=duplicate_jd.created_at,
+                        ),
+                        actions=["View Existing", "Create New Version"],
+                    )
+                )
 
         # A newly uploaded file replaces the document; a metadata/text-only
         # update (file_path is None) carries forward whatever document the
@@ -397,7 +457,15 @@ class JDService:
         if not existing_jd.is_active_version:
             raise BadRequestError(f"Job Description with ID {jd_id} is already inactive.")
 
+        if self.repository.has_active_campaign(jd_id):
+            raise ConflictError(
+                f"Cannot delete Job Description with ID {jd_id}: it has an active hiring campaign assigned."
+            )
+
         self.repository.deactivate_version(existing_jd)
+        # Soft delete: the row stays for history/audit, closed_at marks it
+        # as no longer usable (checked by CampaignService.create_campaign).
+        existing_jd.closed_at = datetime.now(timezone.utc)
 
         self.audit_service.log(
             actor_id=updated_by,
