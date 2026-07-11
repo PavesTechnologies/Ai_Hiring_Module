@@ -9,6 +9,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
+from app.models.async_tasks import BulkUploadJob
 from app.models.identity import User, UserRole
 
 class CampaignRepository:
@@ -173,5 +174,13 @@ class CampaignRepository:
             )
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .order_by(CampaignCandidateStageHistory.changed_at.desc())
+            .all()
+        )
+
+    def get_bulk_upload_events(self, campaign_id) -> list[BulkUploadJob]:
+        return (
+            self.db.query(BulkUploadJob)
+            .filter(BulkUploadJob.campaign_id == campaign_id)
+            .order_by(BulkUploadJob.created_at.desc())
             .all()
         )

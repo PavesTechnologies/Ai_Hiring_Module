@@ -292,6 +292,26 @@ class CampaignService:
             ) if manager else None)),
         )
 
+    # The true sequential funnel: a candidate normally passes through these in
+    # order, so "drop-off between each stage" is meaningful here.
+    _FUNNEL_STAGES = (
+        PipelineStage.UPLOADED,
+        PipelineStage.SCREENING,
+        PipelineStage.SHORTLISTED,
+        PipelineStage.HM_REVIEW,
+        PipelineStage.INTERVIEW,
+        PipelineStage.SELECTED,
+    )
+    # Side buckets a candidate can land in from any funnel stage, not a "next
+    # step" after the one before it — comparing counts across these produces
+    # meaningless percentages (e.g. REJECTED vs SELECTED), so they're reported
+    # with a count only, no drop_off_pct.
+    _BUCKET_STAGES = (
+        PipelineStage.HOLD,
+        PipelineStage.REJECTED,
+        PipelineStage.FRAUD_REVIEW,
+    )
+
     def get_pipeline_summary(self, campaign_id: UUID) -> PipelineSummaryResponse:
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
@@ -302,7 +322,7 @@ class CampaignService:
         stages: list[StageStat] = []
         prev_count = None
 
-        for stage in PipelineStage:            # enum declaration order = funnel order
+        for stage in self._FUNNEL_STAGES:
             count = counts.get(stage.value, 0)
 
             drop_off = None
@@ -311,6 +331,9 @@ class CampaignService:
 
             stages.append(StageStat(stage=stage.value, count=count, drop_off_pct=drop_off))
             prev_count = count
+
+        for stage in self._BUCKET_STAGES:
+            stages.append(StageStat(stage=stage.value, count=counts.get(stage.value, 0), drop_off_pct=None))
 
         return PipelineSummaryResponse(
             campaign_id=campaign_id,
@@ -347,6 +370,24 @@ class CampaignService:
                 event_type=f"CANDIDATE_{h.to_stage.value}",
                 actor_name=self._resolve_actor(h.changed_by),
                 description=f"Candidate moved {from_stage} → {h.to_stage.value}",
+            ))
+
+        for job in self.campaign_repo.get_bulk_upload_events(campaign_id):
+            if job.status.value == "COMPLETED":
+                job_event = "BULK_UPLOAD_COMPLETED"
+                summary = f"Bulk upload '{job.original_filename}' completed — {job.processed_count}/{job.total_files} processed"
+            elif job.status.value in ("FAILED", "PARTIAL_FAILURE"):
+                job_event = "BULK_UPLOAD_FAILED"
+                summary = f"Bulk upload '{job.original_filename}' failed — {job.failed_count}/{job.total_files} failed"
+            else:
+                job_event = "BULK_UPLOAD_STARTED"
+                summary = f"Bulk upload '{job.original_filename}' started — {job.total_files} files"
+
+            entries.append(TimelineEntry(
+                timestamp=job.completed_at or job.created_at,
+                event_type=job_event,
+                actor_name=self._resolve_actor(job.uploaded_by),
+                description=summary,
             ))
 
         if event_type:
@@ -389,6 +430,23 @@ class CampaignService:
 
             # ── S07-T03: closed campaigns are read-only ──────────────────
             if campaign.status == CampaignStatus.CLOSED:
+                # Log the blocked attempt itself (spec requirement), then commit
+                # immediately — the raise below triggers this method's own
+                # rollback, which would otherwise erase this audit row too.
+                self.audit_service.log(
+                    actor_id=updated_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.CAMPAIGN_EDIT_BLOCKED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"Blocked edit attempt on closed campaign '{campaign.name}'",
+                        "attempted_changes": request.model_dump(exclude_unset=True),
+                    },
+                )
+                self.campaign_repo.commit()
+
                 raise CampaignException(
                     "Closed campaigns cannot be edited. Reopen the campaign to make changes.",
                     403,
