@@ -2,7 +2,9 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.campaigns import HiringCampaign
-from app.models.jd.job_descriptions import JobDescription
+from app.models.embeddings import EmbeddingModelVersion
+from app.models.jd.job_descriptions import JDEmbedding, JobDescription
+from app.models.jd.job_descriptions import EmbeddingStatus
 from app.schemas.jd.request import JDSearchRequest
 from app.models.identity import User
 
@@ -241,3 +243,32 @@ class JDRepository:
             .order_by(HiringCampaign.created_at.desc())
             .all()
         )
+
+    def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
+        version = (
+            self.db.query(EmbeddingModelVersion)
+            .filter(EmbeddingModelVersion.is_active.is_(True))
+            .first()
+        )
+        if not version:
+            raise RuntimeError("No active embedding model version is configured.")
+        return version
+
+    def create_jd_embedding(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        input_text_hash: str,
+    ) -> JDEmbedding:
+        jd_embedding = JDEmbedding(
+            jd_id=jd_id,
+            embedding=embedding,
+            embedding_model_version_id=embedding_model_version_id,
+            input_text_hash=input_text_hash,
+            embedding_status=EmbeddingStatus.READY,
+        )
+        self.db.add(jd_embedding)
+        self.db.flush()
+        self.db.refresh(jd_embedding)
+        return jd_embedding
