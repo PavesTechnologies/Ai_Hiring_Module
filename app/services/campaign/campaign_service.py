@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib import request
+from fastapi import HTTPException
 from uuid import UUID
 from datetime import timedelta
 from app.middleware.rbac import TokenUser
@@ -1138,3 +1139,17 @@ class CampaignService:
         except Exception:
             self.campaign_repo.rollback()
             raise
+
+    
+    def update_campaign_status(self, campaign_id: UUID, status: CampaignStatus) -> HiringCampaign:
+        campaign = self.campaign_repo.get_by_id(campaign_id)  # or a small read-only lookup
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        if campaign.status == CampaignStatus.CLOSED:
+            raise HTTPException(status_code=400, detail="Cannot change status of a closed campaign")
+        if campaign.status == CampaignStatus.ACTIVE:
+            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.PAUSED, campaign_id)
+        elif status == CampaignStatus.PAUSED:
+            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.ACTIVE, campaign_id)
+
+        return campaign
