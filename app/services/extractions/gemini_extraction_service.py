@@ -1,5 +1,5 @@
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
-from google import genai
+from app.core.config import settings
 from pydantic import ValidationError
 import json
 
@@ -11,9 +11,7 @@ from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 class GeminiExtractionService:
     
     def __init__(self):
-        self.client = genai.Client(
-            api_key=settings.gemini_api_key,
-        )
+        self.client = settings.gemini_api_key
     
     def extract_raw(self, normalized_text: str) -> dict:
         """
