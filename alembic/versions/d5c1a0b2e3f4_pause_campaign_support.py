@@ -22,6 +22,7 @@ transactional_ddl = False
 
 def upgrade() -> None:
     op.execute("ALTER TYPE task_status_enum ADD VALUE IF NOT EXISTS 'PAUSED'")
+    op.execute("ALTER TYPE audit_action_type_enum ADD VALUE IF NOT EXISTS 'CAMPAIGN_RESUMED'")
 
 
 def downgrade() -> None:

@@ -22,7 +22,7 @@ from app.schemas.campaign.campaign_response import CampaignResponse, CampaignSco
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
-from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse
+from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
 from app.schemas.campaign.campaign_response import (
     CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
@@ -1026,18 +1026,26 @@ class CampaignService:
 
             changes: dict[str, dict] = {}  # field -> {"before": ..., "after": ...}
 
+            # S01/S02: pause & resume via status change (ACTIVE ⇄ PAUSED)
             paused_now = False
+            resumed_now = False
             if request.status is not None and request.status != campaign.status:
-                if not (campaign.status == CampaignStatus.ACTIVE
+                if (campaign.status == CampaignStatus.ACTIVE
                         and request.status == CampaignStatus.PAUSED):
+                    changes["status"] = {"before": "ACTIVE", "after": "PAUSED"}
+                    campaign.status = CampaignStatus.PAUSED
+                    paused_now = True
+                elif (campaign.status == CampaignStatus.PAUSED
+                        and request.status == CampaignStatus.ACTIVE):
+                    changes["status"] = {"before": "PAUSED", "after": "ACTIVE"}
+                    campaign.status = CampaignStatus.ACTIVE
+                    resumed_now = True
+                else:
                     raise CampaignException(
                         f"Unsupported status transition "
                         f"{campaign.status.value} → {request.status.value}.",
                         422,
                     )
-                changes["status"] = {"before": campaign.status.value, "after": "PAUSED"}
-                campaign.status = CampaignStatus.PAUSED
-                paused_now = True
 
             # name / deadline / candidate cap ─────────────────
             if request.name is not None and request.name != campaign.name:
@@ -1118,14 +1126,21 @@ class CampaignService:
             campaign.updated_at = datetime.now(timezone.utc)
             campaign = self.campaign_repo.update(campaign)
 
-            # S01-T02: soft-cancel QUEUED tasks (RUNNING finish naturally);
-            # uploads are blocked immediately by the PAUSED status guard.
             detail = {"title": f"Campaign '{campaign.name}' updated", "changes": changes}
             if paused_now:
+                # S01-T02: soft-cancel QUEUED tasks (RUNNING finish naturally);
+                # uploads are blocked immediately by the PAUSED status guard.
                 detail["title"] = f"Campaign '{campaign.name}' paused"
                 detail["tasks_suspended"] = self.campaign_repo.suspend_queued_tasks(campaign.id)
                 detail["in_flight_bulk_jobs"] = self.campaign_repo.count_processing_bulk_jobs(campaign.id)
                 action_type = ActionType.CAMPAIGN_PAUSED
+            elif resumed_now:
+                # S02-T02: re-queue suspended tasks (PAUSED → QUEUED); uploads are
+                # re-permitted immediately by the ACTIVE status.
+                detail["title"] = f"Campaign '{campaign.name}' resumed"
+                detail["tasks_requeued"] = self.campaign_repo.requeue_suspended_tasks(campaign.id)
+                detail["resumes_enqueued"] = self.campaign_repo.count_pending_resumes(campaign.id)
+                action_type = ActionType.CAMPAIGN_RESUMED
             elif scoring_changes:
                 action_type = ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED
             else:
@@ -1197,5 +1212,35 @@ class CampaignService:
             candidate_count=self.campaign_repo.get_candidate_count(campaign_id),
             queued_task_count=self.campaign_repo.count_active_queue_tasks(campaign_id),
             processing_bulk_job_count=self.campaign_repo.count_processing_bulk_jobs(campaign_id),
+        )
+
+    # ── S02 — Resume a Paused Campaign ──────────────────────────────────────
+
+    def get_resume_summary(
+        self,
+        campaign_id: UUID,
+    ) -> ResumeSummaryResponse:
+        """
+        S02-T01: read-only data for the resume confirmation dialog. HR_ADMIN only
+        (enforced at the route). Only a PAUSED campaign can be resumed.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status != CampaignStatus.PAUSED:
+            raise CampaignException(
+                "Only a paused campaign can be resumed.", 409
+            )
+
+        paused = self.campaign_repo.count_paused_tasks(campaign_id)
+        pending = self.campaign_repo.count_pending_resumes(campaign_id)
+        AVG_SECONDS_PER_ITEM = 45  # rough estimate for the "expected load" hint
+        total = paused + pending
+
+        return ResumeSummaryResponse(
+            paused_task_count=paused,
+            pending_resume_count=pending,
+            estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
 
