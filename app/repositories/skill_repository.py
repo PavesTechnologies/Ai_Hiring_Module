@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import func
+from sqlalchemy import text as sql_text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.skills import (
@@ -51,10 +53,18 @@ class SkillRepository:
             .first()
         )
 
-    def upsert_unknown_skill(self, raw_text: str, normalized_key: str | None = None) -> UnknownSkill:
-        # Dedup stays keyed on raw_text (unchanged) — normalized_key is
-        # informational only (e.g. for grouping near-duplicates in the HR
-        # review queue), not a new uniqueness rule.
+    def upsert_unknown_skill(
+        self, raw_text: str, normalized_key: str | None = None
+    ) -> tuple[UnknownSkill, bool]:
+        """
+        Returns (unknown_skill, was_created) — was_created distinguishes a
+        brand-new row from a frequency-bump of an existing one, so the
+        caller can audit-log creation exactly once.
+
+        Dedup stays keyed on raw_text (unchanged) — normalized_key is
+        informational only (e.g. for grouping near-duplicates in the HR
+        review queue), not a new uniqueness rule.
+        """
         existing = (
             self.db.query(UnknownSkill)
             .filter(UnknownSkill.raw_text == raw_text)
@@ -64,13 +74,32 @@ class SkillRepository:
             existing.frequency += 1
             existing.last_seen = datetime.now(timezone.utc)
             self.db.flush()
-            return existing
+            return existing, False
 
-        unknown_skill = UnknownSkill(raw_text=raw_text, normalized_key=normalized_key)
-        self.db.add(unknown_skill)
-        self.db.flush()
+        # Two JDs processed concurrently can both see "no existing row" for
+        # the same never-before-seen raw_text and both attempt an insert —
+        # raw_text is unique, so the loser's flush raises IntegrityError.
+        # A SAVEPOINT scopes the rollback to just this insert attempt,
+        # leaving the rest of this (much larger) persistence transaction
+        # untouched, then falls back to the row the winner just committed.
+        try:
+            with self.db.begin_nested():
+                unknown_skill = UnknownSkill(raw_text=raw_text, normalized_key=normalized_key)
+                self.db.add(unknown_skill)
+                self.db.flush()
+        except IntegrityError:
+            existing = (
+                self.db.query(UnknownSkill)
+                .filter(UnknownSkill.raw_text == raw_text)
+                .first()
+            )
+            existing.frequency += 1
+            existing.last_seen = datetime.now(timezone.utc)
+            self.db.flush()
+            return existing, False
+
         self.db.refresh(unknown_skill)
-        return unknown_skill
+        return unknown_skill, True
 
     def bump_occurrence_count(self, skill_id: UUID) -> None:
         (
@@ -173,16 +202,38 @@ class SkillRepository:
         """
         Case-insensitive lookup used to guard alias uniqueness: a candidate
         alias must not already be a canonical name, and must not already
-        belong to a different canonical skill's alias list.
+        belong to a different canonical skill's alias list — "ReactJS" and
+        "reactjs" must be treated as the same alias.
+
+        Postgres ARRAY columns have no case-insensitive containment
+        operator, so this compares in Python over the full ontology table —
+        the same approach the matching pipeline's own case-insensitive tier
+        already uses, and the table is small enough that this is cheap; the
+        prior SQL-only version compared canonical_name case-insensitively
+        but aliases case-sensitively, letting a case-variant duplicate slip
+        through.
         """
         lowered = text.lower()
-        return (
-            self.db.query(SkillOntology)
-            .filter(
-                (func.lower(SkillOntology.canonical_name) == lowered)
-                | SkillOntology.aliases.any(text)
-            )
-            .first()
+        for skill in self.db.query(SkillOntology).all():
+            if skill.canonical_name.lower() == lowered:
+                return skill
+            if any((alias or "").lower() == lowered for alias in (skill.aliases or [])):
+                return skill
+        return None
+
+    def acquire_alias_lock(self, alias: str) -> None:
+        """
+        Transaction-scoped advisory lock keyed by the lowered alias text.
+        Aliases have no DB-level uniqueness constraint of their own (ARRAY
+        column), so two concurrent "add this alias" calls targeting
+        different canonical skills would otherwise both pass a
+        find_skill_by_name_or_alias check before either commits. Callers
+        must acquire this before re-validating and appending; it releases
+        automatically at commit/rollback, no explicit unlock needed.
+        """
+        self.db.execute(
+            sql_text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": alias.lower()},
         )
 
     def append_alias(self, skill: SkillOntology, alias: str) -> SkillOntology:

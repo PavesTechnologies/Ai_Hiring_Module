@@ -181,6 +181,9 @@ def test_mandatory_and_preferred_are_both_tagged_correctly():
         (SkillMatchTier.RULE_BASED, JDSkillVerificationStatus.AUTO_VERIFIED),
         (SkillMatchTier.FUZZY, JDSkillVerificationStatus.PENDING_REVIEW),
         (SkillMatchTier.SEMANTIC, JDSkillVerificationStatus.PENDING_REVIEW),
+        # FIX 7: a human decision is at least as trustworthy as a
+        # deterministic string match — must not be classified PENDING_REVIEW.
+        (SkillMatchTier.MANUAL_HR, JDSkillVerificationStatus.AUTO_VERIFIED),
     ],
 )
 def test_verification_status_for_tier(tier, expected):

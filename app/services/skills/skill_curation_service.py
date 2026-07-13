@@ -187,6 +187,12 @@ class SkillCurationService:
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
 
     def _append_alias_validated(self, skill: SkillOntology, alias: str, actor_id: str) -> None:
+        # Acquire before validating: aliases have no DB uniqueness
+        # constraint, so two concurrent "add this alias" calls for
+        # different skills could otherwise both pass the collision check
+        # before either commits. Held for the rest of this transaction.
+        self.skill_repository.acquire_alias_lock(alias)
+
         collision = self.skill_repository.find_skill_by_name_or_alias(alias)
         if collision and collision.id != skill.id:
             raise BadRequestError(

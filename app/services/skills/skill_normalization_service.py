@@ -32,6 +32,7 @@ _AUTO_VERIFIED_TIERS = {
     SkillMatchTier.ALIAS,
     SkillMatchTier.CASE_INSENSITIVE,
     SkillMatchTier.RULE_BASED,
+    SkillMatchTier.MANUAL_HR,
 }
 
 

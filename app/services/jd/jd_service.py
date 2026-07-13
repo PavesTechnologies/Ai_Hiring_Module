@@ -134,6 +134,17 @@ class JDService:
                 return None
 
             if is_reprocess:
+                # Re-check now, immediately before mutating anything: the
+                # synchronous pre-check in update_jd() can go stale during
+                # the time this task spent queued + on Gemini/embedding
+                # calls, and a campaign may have been attached in that
+                # window. No writes have happened yet in this call, so
+                # aborting here leaves nothing to roll back.
+                if self.repository.has_active_campaign(existing_jd_id):
+                    raise ConflictError(
+                        f"Cannot complete reprocessing for Job Description with ID "
+                        f"{existing_jd_id}: it has an active hiring campaign assigned."
+                    )
                 existing_jd = self.repository.get_by_id(jd_id=existing_jd_id)
                 self.repository.deactivate_version(existing_jd)
 
@@ -177,25 +188,52 @@ class JDService:
             )
             job_description = self.repository.create_job_description(job_description)
 
+            # Two raw strings (e.g. "Python" in required, "PYTHON" in
+            # preferred) can resolve to the same canonical_skill_id via the
+            # case/rule/fuzzy tiers — jd_skills has a (jd_id, canonical_skill_id)
+            # unique constraint, so a second create_jd_skill() for the same
+            # skill would fail the whole transaction. Collapse to one match
+            # per canonical skill before persisting; mandatory wins on
+            # conflict since "required" in any form should not be lost.
+            matched_by_skill: dict[UUID, SkillMatchResult] = {}
+            for match in skill_matches:
+                if not match.canonical_skill_id:
+                    continue
+                existing_match = matched_by_skill.get(match.canonical_skill_id)
+                if existing_match is None or (match.mandatory and not existing_match.mandatory):
+                    matched_by_skill[match.canonical_skill_id] = match
+
+            for match in matched_by_skill.values():
+                skill_repository.create_jd_skill(
+                    jd_id=job_description.id,
+                    canonical_skill_id=match.canonical_skill_id,
+                    mandatory=match.mandatory,
+                    match_tier=match.match_tier.value,
+                    verification_status=verification_status_for_tier(match.match_tier),
+                    confidence=match.confidence,
+                    # weight is reserved for future business-set scoring
+                    # input, not populated by the automated pipeline.
+                )
+                skill_repository.bump_occurrence_count(match.canonical_skill_id)
+
             for match in skill_matches:
                 if match.canonical_skill_id:
-                    skill_repository.create_jd_skill(
-                        jd_id=job_description.id,
-                        canonical_skill_id=match.canonical_skill_id,
-                        mandatory=match.mandatory,
-                        match_tier=match.match_tier.value,
-                        verification_status=verification_status_for_tier(match.match_tier),
-                        confidence=match.confidence,
-                        # weight is reserved for future business-set scoring
-                        # input, not populated by the automated pipeline.
-                    )
-                    skill_repository.bump_occurrence_count(match.canonical_skill_id)
-                else:
-                    unknown_skill = skill_repository.upsert_unknown_skill(
-                        match.raw_text, normalized_key=match.normalized_text
-                    )
-                    skill_repository.link_unknown_skill_to_jd(
-                        job_description.id, unknown_skill.id, mandatory=match.mandatory
+                    continue
+                unknown_skill, was_created = skill_repository.upsert_unknown_skill(
+                    match.raw_text, normalized_key=match.normalized_text
+                )
+                skill_repository.link_unknown_skill_to_jd(
+                    job_description.id, unknown_skill.id, mandatory=match.mandatory
+                )
+                if was_created:
+                    self.audit_service.log(
+                        actor_id=created_by,
+                        actor_role="HR_ADMIN",
+                        action_type=ActionType.UNKNOWN_SKILL_CREATED,
+                        entity_type=EntityType.UNKNOWN_SKILL,
+                        entity_id=unknown_skill.id,
+                        jurisdiction=job_description.jurisdiction,
+                        details={"raw_text": unknown_skill.raw_text},
                     )
 
             self.repository.create_jd_embedding(
@@ -276,10 +314,17 @@ class JDService:
                                lineage_root_id: UUID | None,
                                source_format: JDSourceFormat = JDSourceFormat.TEXT,
                                file_path: str | None = None,
-                               fallback_raw_text: str | None = None) -> JobDescription:
+                               fallback_raw_text: str | None = None,
+                               fallback_extracted_json: dict | None = None,
+                               fallback_required_skills: dict | None = None,
+                               fallback_is_verified: JDVerificationStatus | None = None) -> JobDescription:
         # A metadata-only update omits raw_text entirely (raw_text is
         # optional on UpdateJDRequest) — raw_text is NOT NULL on the model,
-        # so the previous version's text carries forward unchanged.
+        # so the previous version's text carries forward unchanged. Same
+        # reasoning for extracted_json/required_skills/is_verified: nothing
+        # about the JD's actual content changed, so the previous version's
+        # already-computed values carry forward rather than being reset to
+        # None/NOT_VERIFIED — this method never re-runs extraction/matching.
         raw_text = request.raw_text or fallback_raw_text
         return JobDescription(
             title= request.title,
@@ -298,7 +343,10 @@ class JDService:
             is_active_version= True,
             parent_jd_id= parent_jd_id,
             lineage_root_id= lineage_root_id,
-            created_by= create_by
+            created_by= create_by,
+            extracted_json= fallback_extracted_json,
+            required_skills= fallback_required_skills,
+            is_verified= fallback_is_verified or JDVerificationStatus.NOT_VERIFIED,
         )
 
 
@@ -476,6 +524,9 @@ class JDService:
             source_format= existing_jd.source_format,
             file_path= existing_jd.file_path,
             fallback_raw_text= existing_jd.raw_text,
+            fallback_extracted_json= existing_jd.extracted_json,
+            fallback_required_skills= existing_jd.required_skills,
+            fallback_is_verified= existing_jd.is_verified,
         )
 
         new_jd = self.repository.create_job_description(new_jd)
