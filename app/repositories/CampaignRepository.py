@@ -13,6 +13,7 @@ from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
+from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
 
 class CampaignRepository:
@@ -396,6 +397,61 @@ class CampaignRepository:
                 CeleryTaskLog.status == TaskStatus.QUEUED,
             )
             .values(status=TaskStatus.PAUSED)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    # ── S02 Resume a Paused Campaign ────────────────────────────────────────
+
+    def count_paused_tasks(self, campaign_id: UUID) -> int:
+        """T01: Celery tasks suspended during the pause (status = PAUSED)."""
+        return (
+            self.db.query(func.count(CeleryTaskLog.id))
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CeleryTaskLog.status == TaskStatus.PAUSED,
+            )
+            .scalar()
+            or 0
+        )
+
+    def count_pending_resumes(self, campaign_id: UUID) -> int:
+        """
+        T01: resumes uploaded but not yet queued for processing — parse_status =
+        PENDING, linked to this campaign via campaign_candidates.
+        """
+        return (
+            self.db.query(func.count(func.distinct(Resume.id)))
+            .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                Resume.parse_status == ParseStatus.PENDING,
+            )
+            .scalar()
+            or 0
+        )
+
+    def requeue_suspended_tasks(self, campaign_id: UUID) -> int:
+        """
+        T02: re-queue suspended tasks by flipping PAUSED → QUEUED for this
+        campaign. Mirror of suspend_queued_tasks. Returns the number re-queued.
+        """
+        candidate_ids = (
+            select(CampaignCandidate.id)
+            .where(CampaignCandidate.campaign_id == campaign_id)
+            .scalar_subquery()
+        )
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(
+                CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
+                CeleryTaskLog.status == TaskStatus.PAUSED,
+            )
+            .values(status=TaskStatus.QUEUED)
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0
