@@ -10,6 +10,7 @@ from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
+from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles, get_current_user
@@ -155,6 +156,26 @@ def update_campaign_status(
 ):
     campaign = service.update_campaign_status(campaign_id=campaign_id, status=CampaignStatus.PAUSED)
     return APIResponse.ok(data=None, message="Campaign status updated successfully.")
+
+
+# ── S01 — Pause an Active Campaign ──────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/pause-summary",
+    response_model=APIResponse[PauseImpactSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Pause impact summary",
+    description="Impact summary shown in the pause confirmation dialog (HR_ADMIN).",
+)
+def get_pause_summary(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_pause_impact_summary(campaign_id),
+        message="Pause impact summary retrieved successfully",
+    )
 
 @router.get(
     "/scoring-presets",
