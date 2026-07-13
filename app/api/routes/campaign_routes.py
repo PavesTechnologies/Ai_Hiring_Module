@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignWeightHistoryResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignWeightHistoryResponse, HiringCampaignResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
@@ -119,6 +119,21 @@ def get_campaigns_by_hiring_manager(
         data=campaigns,
         message="Campaigns retrieved successfully"
     )
+
+@router.put(
+    "/{campaign_id}/status/update",
+    response_model=APIResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Update campaign status",
+    description="Update the status of a campaign.",
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def update_campaign_status(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+):
+    campaign = service.update_campaign_status(campaign_id=campaign_id, status=CampaignStatus.PAUSED)
+    return APIResponse.ok(data=None, message="Campaign status updated successfully.")
 
 @router.get(
     "/scoring-presets",
