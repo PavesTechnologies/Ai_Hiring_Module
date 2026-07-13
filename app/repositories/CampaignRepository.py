@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from datetime import datetime, timezone, timedelta
@@ -12,7 +12,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
-from app.models.async_tasks import BulkUploadJob
+from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
 from app.models.identity import User, UserRole
 
 class CampaignRepository:
@@ -340,3 +340,62 @@ class CampaignRepository:
         self.db.commit()
         self.db.refresh(campaign)
         return campaign
+
+    # ── S01 Pause an Active Campaign ────────────────────────────────────────
+
+    def count_active_queue_tasks(self, campaign_id: UUID) -> int:
+        """
+        T01 impact summary: resumes currently in the Celery processing queue for
+        this campaign — celery_task_log with status IN (QUEUED, RUNNING) linked
+        via campaign_candidate_id.
+        """
+        return (
+            self.db.query(func.count(CeleryTaskLog.id))
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CeleryTaskLog.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING]),
+            )
+            .scalar()
+            or 0
+        )
+
+    def count_processing_bulk_jobs(self, campaign_id: UUID) -> int:
+        """T01/T03: bulk_upload_jobs in PROCESSING state for this campaign."""
+        return (
+            self.db.query(func.count(BulkUploadJob.id))
+            .filter(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status == BulkUploadStatus.PROCESSING,
+            )
+            .scalar()
+            or 0
+        )
+
+    def suspend_queued_tasks(self, campaign_id: UUID) -> int:
+        """
+        T02: soft-cancel QUEUED Celery tasks for this campaign by flipping them
+        to PAUSED. RUNNING tasks are intentionally left untouched so they finish
+        naturally. Returns the number of tasks suspended.
+
+        Bulk UPDATE (no row hydration) — the subquery scopes to this campaign's
+        candidates.
+        """
+        candidate_ids = (
+            select(CampaignCandidate.id)
+            .where(CampaignCandidate.campaign_id == campaign_id)
+            .scalar_subquery()
+        )
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(
+                CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
+                CeleryTaskLog.status == TaskStatus.QUEUED,
+            )
+            .values(status=TaskStatus.PAUSED)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
