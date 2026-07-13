@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from docx import Document
 from fastapi import HTTPException, UploadFile
 
-from app.models.jd.job_descriptions import JobDescription, JDSourceFormat
+from app.models.jd.job_descriptions import JobDescription, JDSourceFormat, JDVerificationStatus
 from app.repositories.jd_repository import JDRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
@@ -92,6 +92,19 @@ class JDService:
             if self.repository.get_by_content_hash(content_hash):
                 return None
 
+            # A JD only ever reaches persistence after every prior stage
+            # (extraction, JSON validation, skill normalization, embedding)
+            # has already succeeded - so by this point the pipeline itself
+            # is done. Whether it's fully or only partially verified comes
+            # down to skill_matches: any raw skill that didn't resolve to a
+            # canonical_skill_id has a jd_unknown_skills row below, so this
+            # JD can only be VERIFIED once none of them do.
+            is_verified = (
+                JDVerificationStatus.VERIFIED
+                if all(match.canonical_skill_id for match in skill_matches)
+                else JDVerificationStatus.PARTIALLY_VERIFIED
+            )
+
             job_description = JobDescription(
                 title=title,
                 raw_text=raw_text,
@@ -106,15 +119,16 @@ class JDService:
                 parent_jd_id=None,
                 lineage_root_id=None,
                 created_by=created_by,
-                # parsed_skills: the full AI-parsed JD JSON, as extracted
+                # extracted_json: the full AI-parsed JD JSON, as extracted
                 # (pre-normalization) — required_skills: just the two skill
                 # lists, kept separately for quick access without parsing
                 # the larger blob.
-                parsed_skills=extraction.model_dump(mode="json"),
+                extracted_json=extraction.model_dump(mode="json"),
                 required_skills={
                     "required": extraction.required_skills,
                     "preferred": extraction.preferred_skills,
                 },
+                is_verified=is_verified,
             )
             job_description = self.repository.create_job_description(job_description)
 
@@ -277,9 +291,11 @@ class JDService:
             created_at=job_description.created_at,
             created_by=job_description.created_by,
             id=job_description.id,
+            job_id=job_description.job_id,
             is_active_version=job_description.is_active_version,
             jurisdiction=job_description.jurisdiction,
             min_experience_years=job_description.min_experience_years,
+            notice_period=job_description.notice_period,
             raw_text=job_description.raw_text,
             required_skills=job_description.required_skills,
             source_format=job_description.source_format.value,
@@ -287,7 +303,8 @@ class JDService:
             updated_at=job_description.updated_at,
             version_number=job_description.version_number,
             education_criteria=job_description.education_criteria,
-            parsed_skills=job_description.parsed_skills
+            extracted_json=job_description.extracted_json,
+            is_verified=job_description.is_verified.value,
         )
 
     def get_all_jds(self, is_active_version: bool) -> list[JobDescription]:

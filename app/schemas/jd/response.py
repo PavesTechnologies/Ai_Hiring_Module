@@ -6,20 +6,23 @@ from datetime import datetime
 
 class GetJDResponse(BaseModel):
     id: UUID
+    job_id: str
     title: str
     raw_text: str
-    parsed_skills: dict | None
+    extracted_json: dict | None
     required_skills: dict | None
     min_experience_years: float | None
+    notice_period: int | None
     education_criteria: dict | None
     source_format: str
     jurisdiction: str | None
     version_number: int
     is_active_version: bool
+    is_verified: str
     created_by: str
     created_at: datetime
     updated_at: datetime | None
-    
+
 class UpdateJDResponse(BaseModel):
     id: UUID
     title: str
@@ -28,10 +31,12 @@ class UpdateJDResponse(BaseModel):
 
 class JDListItem(BaseModel):
     id: UUID
+    job_id: str
     title: str
     version_number: int
     jurisdiction: str | None
     source_format: str
+    is_verified: str
     created_by: str
     created_at: datetime
     
