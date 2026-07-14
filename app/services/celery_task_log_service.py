@@ -61,3 +61,16 @@ class CeleryTaskLogService:
         self.repository.commit()          # <-- IMPORTANT
 
         return log
+
+    def mark_retry(
+        self,
+        log: CeleryTaskLog,
+    ) -> CeleryTaskLog:
+
+        log.status = TaskStatus.RETRY
+        log.retry_count += 1
+
+        log = self.repository.update(log)
+        self.repository.commit()          # <-- IMPORTANT
+
+        return log

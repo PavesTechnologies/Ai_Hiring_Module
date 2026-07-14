@@ -10,9 +10,11 @@ from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.jd import context_serializer
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_context import JDProcessingContext
 from app.services.jd.jd_service import JDService
+from app.services.document_processing.retry_policy import STAGE_ORDER
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
 
@@ -51,6 +53,7 @@ class JDProcessingPipeline:
         jd_repository: JDRepository,
         skill_repository: SkillRepository,
         stage_tracker: StageExecutionService,
+        checkpoint_repo,
     ):
         self.preprocessing_service = preprocessing_service
         self.extraction_service = extraction_service
@@ -62,6 +65,7 @@ class JDProcessingPipeline:
         self.jd_repository = jd_repository
         self.skill_repository = skill_repository
         self.stage_tracker = stage_tracker
+        self.checkpoint_repo = checkpoint_repo
 
     def run(
         self,
@@ -80,6 +84,7 @@ class JDProcessingPipeline:
         version_number: int = 1,
         parent_jd_id: UUID | None = None,
         lineage_root_id: UUID | None = None,
+        attempt_number: int = 1,
     ) -> UUID | None:
         context = JDProcessingContext(
             task_id=task_id,
@@ -100,58 +105,108 @@ class JDProcessingPipeline:
         context.source_format = self._resolve_source_format(file_path)
         is_reprocess = existing_jd_id is not None
 
+        checkpoint = self.checkpoint_repo.get(task_id)
+        resume_point = None
+        if checkpoint is not None:
+            context = context_serializer.from_dict(checkpoint.context_data)
+            resume_point = checkpoint.failed_at_stage
+
         if context.raw_text is not None:
             # JSON-body submissions already passed a synchronous duplicate
             # pre-check in the route before this task was even queued.
-            self.stage_tracker.skip_stage(context.task_id, context.document_type, ProcessingStage.TEXT_EXTRACTION)
+            if self._should_skip_stage(resume_point, ProcessingStage.TEXT_EXTRACTION):
+                self.stage_tracker.skip_stage(
+                    context.task_id,
+                    context.document_type,
+                    ProcessingStage.TEXT_EXTRACTION,
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
+            else:
+                self.stage_tracker.run_stage(
+                    context.task_id,
+                    context.document_type,
+                    ProcessingStage.TEXT_EXTRACTION,
+                    lambda: self._run_text_extraction(context),
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
             context.text = context.raw_text
         else:
-            self.stage_tracker.run_stage(
-                context.task_id, context.document_type, ProcessingStage.TEXT_EXTRACTION,
-                lambda: self._run_text_extraction(context),
-            )
+            if self._should_skip_stage(resume_point, ProcessingStage.TEXT_EXTRACTION):
+                self.stage_tracker.skip_stage(
+                    context.task_id,
+                    context.document_type,
+                    ProcessingStage.TEXT_EXTRACTION,
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
+            else:
+                self.stage_tracker.run_stage(
+                    context.task_id,
+                    context.document_type,
+                    ProcessingStage.TEXT_EXTRACTION,
+                    lambda: self._run_text_extraction(context),
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
 
-            context.content_hash = self.hash_service.generate_hash(context.text)
+            if context.content_hash is None:
+                context.content_hash = self.hash_service.generate_hash(context.text)
             duplicate = (
                 self.jd_repository.get_duplicate_excluding_lineage(
                     content_hash=context.content_hash, lineage_root_id=lineage_root_id,
                 )
-                if is_reprocess
+                    if is_reprocess
                 else self.jd_repository.get_by_content_hash(context.content_hash)
             )
             if duplicate:
-                self._skip_remaining_after_text_extraction(context)
-                return None
+                    self._skip_remaining_after_text_extraction(context)
+                    return None
 
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.TEXT_CLEANING,
-            lambda: self._run_text_cleaning(context),
-        )
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.AI_EXTRACTION,
-            lambda: self._run_ai_extraction(context),
-        )
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.JSON_VALIDATION,
-            lambda: self._run_json_validation(context),
-        )
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.SKILL_NORMALIZATION,
-            lambda: self._run_skill_normalization(context),
-        )
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.EMBEDDING_GENERATION,
-            lambda: self._run_embedding_generation(context),
-        )
-        self.stage_tracker.run_stage(
-            context.task_id, context.document_type, ProcessingStage.PERSISTENCE,
-            lambda: self._run_persistence(context),
-        )
+        for stage, fn in (
+            (ProcessingStage.TEXT_CLEANING, lambda: self._run_text_cleaning(context)),
+            (ProcessingStage.AI_EXTRACTION, lambda: self._run_ai_extraction(context)),
+            (ProcessingStage.JSON_VALIDATION, lambda: self._run_json_validation(context)),
+            (ProcessingStage.SKILL_NORMALIZATION, lambda: self._run_skill_normalization(context)),
+            (ProcessingStage.EMBEDDING_GENERATION, lambda: self._run_embedding_generation(context)),
+            (ProcessingStage.PERSISTENCE, lambda: self._run_persistence(context)),
+        ):
+            if self._should_skip_stage(resume_point, stage):
+                self.stage_tracker.skip_stage(
+                    context.task_id,
+                    context.document_type,
+                    stage,
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
+            else:
+                self.stage_tracker.run_stage(
+                    context.task_id,
+                    context.document_type,
+                    stage,
+                    fn,
+                    attempt_number=attempt_number,
+                    context=context,
+                    checkpoint_repo=self.checkpoint_repo,
+                )
 
         if context.jd_id:
             self.stage_tracker.link_document_id(context.task_id, context.jd_id)
 
         return context.jd_id
+
+    @staticmethod
+    def _stage_order_index(stage: ProcessingStage) -> int:
+        return STAGE_ORDER.index(stage)
+
+    def _should_skip_stage(self, resume_point: ProcessingStage | None, stage: ProcessingStage) -> bool:
+        return resume_point is not None and self._stage_order_index(stage) < self._stage_order_index(resume_point)
 
     def _run_text_extraction(self, context: JDProcessingContext) -> None:
         file_content = self.storage_service.download_file(
