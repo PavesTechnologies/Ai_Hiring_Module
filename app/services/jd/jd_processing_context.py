@@ -24,6 +24,8 @@ class JDProcessingContext:
     title: str
     jurisdiction: str
     min_experience_years: float | None
+    max_experience_years: float | None
+    notice_period: int | None
     education_criteria: dict | None
     created_by: str
     file_path: str | None

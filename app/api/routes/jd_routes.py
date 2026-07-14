@@ -70,6 +70,8 @@ def _queue_reprocess(
             "title": result.title,
             "jurisdiction": result.jurisdiction,
             "min_experience_years": result.min_experience_years,
+            "max_experience_years": result.max_experience_years,
+            "notice_period": result.notice_period,
             "education_criteria": result.education_criteria,
             "created_by": result.updated_by,
             "existing_jd_id": str(result.existing_jd_id),
@@ -138,9 +140,9 @@ def create_job_description(
             "title": request.title,
             "jurisdiction": request.jurisdiction,
             "min_experience_years": request.min_experience_years,
-            "education_criteria": (
-                request.education_criteria.model_dump() if request.education_criteria else None
-            ),
+            "max_experience_years": request.max_experience_years,
+            "notice_period": request.notice_period,
+            "education_criteria": request.education_criteria.model_dump(),
             "created_by": user.user_id,
         },
         task_id=str(task_id),
@@ -161,7 +163,9 @@ def create_job_description(
 def create_job_description_from_file(
     title: str = Form(..., min_length=1, max_length=255),
     jurisdiction: str = Form(...),
-    min_experience_years: Optional[float] = Form(default=None),
+    min_experience_years: float = Form(...),
+    max_experience_years: float = Form(...),
+    notice_period: int = Form(...),
     education_degree: Optional[str] = Form(default=None),
     education_field: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
@@ -186,11 +190,7 @@ def create_job_description_from_file(
         lambda: service.validate_and_store_file(file=file, org_id=SYSTEM_ORG),
     )
 
-    education_criteria = (
-        {"degree": education_degree, "field": education_field}
-        if education_degree or education_field
-        else None
-    )
+    education_criteria = {"degree": education_degree, "field": education_field}
 
     process_jd_document.apply_async(
         kwargs={
@@ -200,6 +200,8 @@ def create_job_description_from_file(
             "title": title,
             "jurisdiction": jurisdiction,
             "min_experience_years": min_experience_years,
+            "max_experience_years": max_experience_years,
+            "notice_period": notice_period,
             "education_criteria": education_criteria,
             "created_by": user.user_id,
         },
@@ -348,7 +350,9 @@ def update_job_description_from_file(
     response: Response,
     title: str = Form(..., min_length=1, max_length=255),
     jurisdiction: str = Form(...),
-    min_experience_years: Optional[float] = Form(default=None),
+    min_experience_years: float = Form(...),
+    max_experience_years: float = Form(...),
+    notice_period: int = Form(...),
     education_degree: Optional[str] = Form(default=None),
     education_field: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
@@ -371,11 +375,9 @@ def update_job_description_from_file(
         raw_text=None,
         jurisdiction=jurisdiction,
         min_experience_years=min_experience_years,
-        education_criteria=(
-            EducationCriteria(degree=education_degree, field=education_field)
-            if education_degree or education_field
-            else None
-        ),
+        max_experience_years=max_experience_years,
+        notice_period=notice_period,
+        education_criteria=EducationCriteria(degree=education_degree, field=education_field),
     )
 
     result = service.update_jd(
