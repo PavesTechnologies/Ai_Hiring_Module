@@ -20,6 +20,30 @@ class SkillSuggestionStatus(enum.Enum):
     REJECTED = "REJECTED"
 
 
+class JDSkillVerificationStatus(enum.Enum):
+    # Deterministic tiers (exact/alias/case/rule) are trusted outright.
+    AUTO_VERIFIED = "AUTO_VERIFIED"
+    # Fuzzy and semantic tiers are similarity guesses, not certainties -
+    # surfaced to HR for confirmation before being treated as ground truth.
+    PENDING_REVIEW = "PENDING_REVIEW"
+
+
+class UnknownSkillStatus(enum.Enum):
+    PENDING = "PENDING"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    MAPPED_TO_EXISTING = "MAPPED_TO_EXISTING"
+    PROMOTED_TO_CANONICAL = "PROMOTED_TO_CANONICAL"
+    DISMISSED = "DISMISSED"
+
+
+class JDUnknownSkillStatus(enum.Enum):
+    # Still awaiting resolution of the UnknownSkill it points to.
+    PENDING = "PENDING"
+    # The linked UnknownSkill was mapped or promoted, and a JDSkill row
+    # for this JD has been created as a result.
+    RESOLVED = "RESOLVED"
+
+
 class SkillOntology(Base):
     __tablename__ = "skill_ontology"
     __table_args__ = (
@@ -62,7 +86,11 @@ class UnknownSkill(Base):
         ForeignKey("skill_suggestions.id", use_alter=True, name="fk_unknown_skill_suggestion_id"),
         nullable=True,
     )
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="PENDING")
+    status: Mapped[UnknownSkillStatus] = mapped_column(
+        SAEnum(UnknownSkillStatus, name="unknown_skill_status_enum"),
+        nullable=False,
+        default=UnknownSkillStatus.PENDING,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -90,20 +118,14 @@ class JDSkill(Base):
     jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
     canonical_skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=False)
     mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # Business-set importance for scoring (e.g. HR weighting this skill
-    # higher for the deterministic/semantic scoring layers) — never
-    # populated by the automated pipeline, which has no business-weight
-    # source of its own. Distinct from confidence below.
     weight: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
-    # How confident the normalization match was (1.0 for exact/alias/case/
-    # rule-based, fuzzy_score/100 for RapidFuzz matches) — matches the
-    # existing CandidateSkill.confidence column (same table family, resume
-    # side), kept separate from `weight` rather than overloading one column.
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    # Which of the normalization tiers produced this match (EXACT/ALIAS/
-    # CASE_INSENSITIVE/RULE_BASED/FUZZY/SEMANTIC) — matches the existing
-    # CandidateSkill.match_tier column (same table family, resume side).
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)
+    verification_status: Mapped[JDSkillVerificationStatus] = mapped_column(
+        SAEnum(JDSkillVerificationStatus, name="jd_skill_verification_status_enum"),
+        nullable=False,
+        default=JDSkillVerificationStatus.PENDING_REVIEW,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -122,6 +144,16 @@ class JDUnknownSkill(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
     unknown_skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("unknown_skills.id"), nullable=False)
+    # Carries forward whether this raw skill was required or preferred on
+    # this JD, since that's otherwise only known transiently during
+    # extraction — needed so that promoting/mapping the linked UnknownSkill
+    # later can set the retroactively-created JDSkill.mandatory correctly.
+    mandatory: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    status: Mapped[JDUnknownSkillStatus] = mapped_column(
+        SAEnum(JDUnknownSkillStatus, name="jd_unknown_skill_status_enum"),
+        nullable=False,
+        default=JDUnknownSkillStatus.PENDING,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

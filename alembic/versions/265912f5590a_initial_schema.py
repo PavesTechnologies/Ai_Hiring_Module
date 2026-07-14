@@ -1,19 +1,19 @@
-"""initial_schema
+"""Initial schema
 
-Revision ID: a41e892f4a72
+Revision ID: 265912f5590a
 Revises: 
-Create Date: 2026-06-24 19:28:40.360980
+Create Date: 2026-07-13 12:36:37.949486
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import pgvector.sqlalchemy
 from sqlalchemy.dialects import postgresql
+from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
-revision: str = 'a41e892f4a72'
+revision: str = '265912f5590a'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -56,6 +56,22 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('service_name')
     )
+    op.create_table('document_processing_stage_executions',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('task_id', sa.String(length=255), nullable=False),
+    sa.Column('document_type', sa.Enum('JD', 'RESUME', name='document_type_enum'), nullable=False),
+    sa.Column('document_id', sa.UUID(), nullable=True),
+    sa.Column('stage', sa.Enum('VALIDATION', 'STORAGE', 'TEXT_EXTRACTION', 'TEXT_CLEANING', 'AI_EXTRACTION', 'JSON_VALIDATION', 'SKILL_NORMALIZATION', 'EMBEDDING_GENERATION', 'PERSISTENCE', name='processing_stage_enum'), nullable=False),
+    sa.Column('status', sa.Enum('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'SKIPPED', name='stage_execution_status_enum'), nullable=False),
+    sa.Column('attempt_number', sa.SmallInteger(), nullable=False),
+    sa.Column('error_message', sa.Text(), nullable=True),
+    sa.Column('duration_ms', sa.Integer(), nullable=True),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('task_id', 'stage', 'attempt_number')
+    )
     op.create_table('embedding_model_versions',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('model_name', sa.String(length=100), nullable=False),
@@ -68,9 +84,22 @@ def upgrade() -> None:
     sa.Column('notes', sa.Text(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('uq_embedding_model_versions_active', 'embedding_model_versions', ['is_active'], unique=True, postgresql_where=sa.text('is_active = TRUE'))
     op.create_table('organizations',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('resume_embeddings',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('resume_id', sa.UUID(), nullable=False),
+    sa.Column('candidate_id', sa.UUID(), nullable=False),
+    sa.Column('embedding', Vector(dim=384), nullable=False),
+    sa.Column('embedding_model_version_id', sa.UUID(), nullable=False),
+    sa.Column('input_text_hash', sa.String(length=64), nullable=False),
+    sa.Column('is_anonymized', sa.Boolean(), nullable=False),
+    sa.Column('is_talent_pool_eligible', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -82,27 +111,47 @@ def upgrade() -> None:
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('policy_version', sa.Integer(), nullable=False),
     sa.Column('last_enforced_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('entity_type', 'jurisdiction')
     )
-    op.create_table('skills',
+    op.create_table('skill_ontology',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('canonical_name', sa.String(length=100), nullable=False),
-    sa.Column('aliases', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('category', sa.String(length=100), nullable=True),
+    sa.Column('canonical_name', sa.Text(), nullable=False),
+    sa.Column('aliases', postgresql.ARRAY(sa.String()), nullable=True),
+    sa.Column('category', sa.Text(), nullable=True),
     sa.Column('parent_skill_id', sa.UUID(), nullable=True),
+    sa.Column('embedding', Vector(dim=384), nullable=True),
+    sa.Column('confidence', sa.Text(), nullable=False),
+    sa.Column('source', sa.Text(), nullable=True),
+    sa.Column('embedding_updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('occurrence_count', sa.Integer(), nullable=False),
     sa.Column('last_seen_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['parent_skill_id'], ['skills.id'], ),
+    sa.ForeignKeyConstraint(['parent_skill_id'], ['skill_ontology.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('canonical_name')
     )
-    op.create_table('users',
+    op.create_index('idx_skill_ontology_aliases', 'skill_ontology', ['aliases'], unique=False, postgresql_using='gin')
+    op.create_index('idx_skill_ontology_embedding', 'skill_ontology', ['embedding'], unique=False, postgresql_using='ivfflat', postgresql_ops={'embedding': 'vector_cosine_ops'})
+    op.create_table('unknown_skills',
     sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('raw_text', sa.Text(), nullable=False),
+    sa.Column('frequency', sa.Integer(), nullable=False),
+    sa.Column('first_seen', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('last_seen', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('normalized_key', sa.String(length=200), nullable=True),
+    sa.Column('skill_suggestion_id', sa.UUID(), nullable=True),
+    sa.Column('status', sa.Enum('PENDING', 'UNDER_REVIEW', 'MAPPED_TO_EXISTING', 'PROMOTED_TO_CANONICAL', 'DISMISSED', name='unknown_skill_status_enum'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['skill_suggestion_id'], ['skill_suggestions.id'], name='fk_unknown_skill_suggestion_id', use_alter=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('raw_text')
+    )
+    op.create_table('users',
+    sa.Column('id', sa.String(length=255), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=True),
     sa.Column('email', sa.String(length=255), nullable=False),
     sa.Column('password_hash', sa.String(), nullable=False),
@@ -127,19 +176,26 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('rotated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('retired_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('created_by', sa.UUID(), nullable=True),
+    sa.Column('created_by', sa.String(length=255), nullable=True),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('key_alias')
     )
+    op.execute("""
+CREATE SEQUENCE IF NOT EXISTS job_descriptions_job_id_seq
+START WITH 1
+INCREMENT BY 1;
+""")
     op.create_table('job_descriptions',
     sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('job_id', sa.String(length=50), server_default=sa.text("'JOB_' || nextval('job_descriptions_job_id_seq')"), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=True),
     sa.Column('title', sa.String(length=255), nullable=False),
     sa.Column('raw_text', sa.Text(), nullable=False),
-    sa.Column('parsed_skills', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('extracted_json', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('required_skills', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('min_experience_years', sa.Numeric(precision=4, scale=1), nullable=True),
+    sa.Column('notice_period', sa.Integer(), nullable=True),
     sa.Column('education_criteria', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('source_format', sa.Enum('PDF', 'DOCX', 'TEXT', name='jd_source_format_enum'), nullable=False),
     sa.Column('file_path', sa.Text(), nullable=True),
@@ -149,21 +205,25 @@ def upgrade() -> None:
     sa.Column('lineage_root_id', sa.UUID(), nullable=True),
     sa.Column('parent_jd_id', sa.UUID(), nullable=True),
     sa.Column('closed_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('created_by', sa.UUID(), nullable=False),
+    sa.Column('jurisdiction', sa.String(length=10), nullable=True),
+    sa.Column('created_by', sa.String(length=255), nullable=False),
+    sa.Column('is_verified', sa.Enum('NOT_VERIFIED', 'PARTIALLY_VERIFIED', 'VERIFIED', name='jd_verification_status_enum'), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['lineage_root_id'], ['job_descriptions.id'], ),
     sa.ForeignKeyConstraint(['org_id'], ['organizations.id'], ),
     sa.ForeignKeyConstraint(['parent_jd_id'], ['job_descriptions.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('job_id')
     )
+    op.create_index('uq_jd_active_lineage_version', 'job_descriptions', ['lineage_root_id'], unique=True, postgresql_where=sa.text('is_active_version = TRUE'))
     op.create_table('platform_config',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('key', sa.String(length=100), nullable=False),
-    sa.Column('value', sa.Text(), nullable=False),
-    sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('updated_by', sa.UUID(), nullable=True),
+    sa.Column('value', sa.String(), nullable=False),
+    sa.Column('description', sa.String(), nullable=True),
+    sa.Column('updated_by', sa.String(length=255), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -179,24 +239,29 @@ def upgrade() -> None:
     sa.Column('max_tokens', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('notes', sa.Text(), nullable=True),
-    sa.Column('created_by', sa.UUID(), nullable=True),
+    sa.Column('created_by', sa.String(length=255), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('task_type', 'content_hash'),
     sa.UniqueConstraint('task_type', 'version_number')
     )
+    op.create_index('uq_prompt_versions_active_per_task', 'prompt_versions', ['task_type'], unique=True, postgresql_where=sa.text('is_active = TRUE'))
     op.create_table('skill_suggestions',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('raw_skill_text', sa.String(length=200), nullable=False),
     sa.Column('normalized_text', sa.String(length=200), nullable=True),
     sa.Column('occurrence_count', sa.Integer(), nullable=False),
+    sa.Column('unknown_skill_id', sa.UUID(), nullable=True),
     sa.Column('suggested_canonical_name', sa.String(length=100), nullable=True),
+    sa.Column('suggested_parent_skill_id', sa.UUID(), nullable=True),
     sa.Column('status', sa.Enum('PENDING', 'APPROVED', 'REJECTED', name='skill_suggestion_status_enum'), nullable=False),
-    sa.Column('reviewed_by', sa.UUID(), nullable=True),
+    sa.Column('reviewed_by', sa.String(length=255), nullable=True),
     sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['suggested_parent_skill_id'], ['skill_ontology.id'], ),
+    sa.ForeignKeyConstraint(['unknown_skill_id'], ['unknown_skills.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('hiring_campaigns',
@@ -212,21 +277,21 @@ def upgrade() -> None:
     sa.Column('ai_threshold', sa.Numeric(precision=5, scale=2), nullable=False),
     sa.Column('max_candidates', sa.Integer(), nullable=True),
     sa.Column('deadline', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('hiring_manager_id', sa.UUID(), nullable=True),
-    sa.Column('created_by', sa.UUID(), nullable=False),
+    sa.Column('hiring_manager_id', sa.String(length=36), nullable=False),
+    sa.Column('recruiter_id', sa.String(length=36), nullable=False),
+    sa.Column('created_by', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.CheckConstraint('weight_deterministic + weight_semantic + weight_ai = 100', name='chk_weights_sum_100'),
-    sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
-    sa.ForeignKeyConstraint(['hiring_manager_id'], ['users.id'], ),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint('weight_deterministic + weight_semantic + weight_ai = 100.00', name='chk_weights_sum_100'),
     sa.ForeignKeyConstraint(['jd_id'], ['job_descriptions.id'], ),
     sa.ForeignKeyConstraint(['org_id'], ['organizations.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('org_id', 'name', name='uq_campaign_name_per_org')
     )
     op.create_table('jd_embeddings',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('jd_id', sa.UUID(), nullable=False),
-    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(dim=384), nullable=False),
+    sa.Column('embedding', Vector(dim=384), nullable=False),
     sa.Column('embedding_model_version_id', sa.UUID(), nullable=False),
     sa.Column('input_text_hash', sa.String(length=64), nullable=False),
     sa.Column('embedding_status', sa.Enum('PENDING', 'GENERATING', 'READY', 'FAILED', name='embedding_status_enum'), nullable=False),
@@ -236,12 +301,39 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('jd_id')
     )
+    op.create_table('jd_skills',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('jd_id', sa.UUID(), nullable=False),
+    sa.Column('canonical_skill_id', sa.UUID(), nullable=False),
+    sa.Column('mandatory', sa.Boolean(), nullable=False),
+    sa.Column('weight', sa.Numeric(precision=5, scale=2), nullable=True),
+    sa.Column('confidence', sa.Float(), nullable=True),
+    sa.Column('match_tier', sa.Text(), nullable=False),
+    sa.Column('verification_status', sa.Enum('AUTO_VERIFIED', 'PENDING_REVIEW', name='jd_skill_verification_status_enum'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['canonical_skill_id'], ['skill_ontology.id'], ),
+    sa.ForeignKeyConstraint(['jd_id'], ['job_descriptions.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('jd_id', 'canonical_skill_id')
+    )
+    op.create_table('jd_unknown_skills',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('jd_id', sa.UUID(), nullable=False),
+    sa.Column('unknown_skill_id', sa.UUID(), nullable=False),
+    sa.Column('mandatory', sa.Boolean(), nullable=True),
+    sa.Column('status', sa.Enum('PENDING', 'RESOLVED', name='jd_unknown_skill_status_enum'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['jd_id'], ['job_descriptions.id'], ),
+    sa.ForeignKeyConstraint(['unknown_skill_id'], ['unknown_skills.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('jd_id', 'unknown_skill_id')
+    )
     op.create_table('audit_log',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('actor_id', sa.UUID(), nullable=True),
+    sa.Column('actor_id', sa.String(length=255), nullable=True),
     sa.Column('actor_role', sa.String(length=50), nullable=True),
-    sa.Column('action_type', sa.String(length=100), nullable=False),
-    sa.Column('entity_type', sa.String(length=100), nullable=False),
+    sa.Column('action_type', sa.Enum('JD_CREATED', 'JD_UPDATED', 'JD_VERSION_CREATED', 'JD_CLOSED', 'JD_EXPORTED', 'CAMPAIGN_CREATED', 'CAMPAIGN_UPDATED', 'CAMPAIGN_SCORING_CONFIG_CHANGED', 'CAMPAIGN_PAUSED', 'CAMPAIGN_CLOSED', 'CAMPAIGN_ACTIVATED', 'CAMPAIGN_AUTO_CLOSED', 'CAMPAIGN_EDIT_BLOCKED', 'CANDIDATE_ADDED', 'CANDIDATE_UPDATED', 'CANDIDATE_REMOVED', 'JD_REPROCESSED', 'UNKNOWN_SKILL_CREATED', 'UNKNOWN_SKILL_MAPPED', 'UNKNOWN_SKILL_PROMOTED', 'UNKNOWN_SKILL_DISMISSED', 'JD_SKILL_REMAPPED', 'ALIAS_ADDED', name='audit_action_type_enum'), nullable=False),
+    sa.Column('entity_type', sa.Enum('JOB_DESCRIPTION', 'CAMPAIGN', 'CAMPAIGN_CANDIDATE', 'SKILL_ONTOLOGY', 'UNKNOWN_SKILL', 'JD_SKILL', name='audit_entity_type_enum'), nullable=False),
     sa.Column('entity_id', sa.UUID(), nullable=False),
     sa.Column('campaign_id', sa.UUID(), nullable=True),
     sa.Column('jurisdiction', sa.String(length=10), nullable=True),
@@ -257,7 +349,7 @@ def upgrade() -> None:
     op.create_table('bulk_upload_jobs',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('campaign_id', sa.UUID(), nullable=False),
-    sa.Column('uploaded_by', sa.UUID(), nullable=False),
+    sa.Column('uploaded_by', sa.String(length=255), nullable=False),
     sa.Column('original_filename', sa.String(length=500), nullable=False),
     sa.Column('total_files', sa.Integer(), nullable=False),
     sa.Column('queued_count', sa.Integer(), nullable=False),
@@ -299,7 +391,7 @@ def upgrade() -> None:
     )
     op.create_table('search_queries',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('queried_by', sa.UUID(), nullable=True),
+    sa.Column('queried_by', sa.String(length=255), nullable=True),
     sa.Column('campaign_id', sa.UUID(), nullable=True),
     sa.Column('query_text', sa.Text(), nullable=False),
     sa.Column('query_embedding_hash', sa.String(length=64), nullable=True),
@@ -342,7 +434,7 @@ def upgrade() -> None:
     sa.Column('page_count', sa.SmallInteger(), nullable=True),
     sa.Column('parse_duration_ms', sa.Integer(), nullable=True),
     sa.Column('ocr_used', sa.Boolean(), nullable=False),
-    sa.Column('uploaded_by', sa.UUID(), nullable=False),
+    sa.Column('uploaded_by', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['candidate_id'], ['candidates.id'], ),
@@ -375,7 +467,7 @@ def upgrade() -> None:
     sa.Column('rejection_reason', sa.Text(), nullable=True),
     sa.Column('rejection_layer', sa.Enum('DETERMINISTIC', 'SEMANTIC', 'AI', 'MANUAL', 'FRAUD', name='rejection_layer_enum'), nullable=True),
     sa.Column('hr_override', sa.Boolean(), nullable=False),
-    sa.Column('hr_override_by', sa.UUID(), nullable=True),
+    sa.Column('hr_override_by', sa.String(length=255), nullable=True),
     sa.Column('hr_override_reason', sa.Text(), nullable=True),
     sa.Column('hr_override_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('recruiter_notes', sa.Text(), nullable=True),
@@ -391,21 +483,23 @@ def upgrade() -> None:
     sa.UniqueConstraint('campaign_id', 'candidate_id', 'resume_id'),
     sa.UniqueConstraint('idempotency_key')
     )
-    op.create_table('resume_embeddings',
+    op.create_table('candidate_skills',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('resume_id', sa.UUID(), nullable=False),
     sa.Column('candidate_id', sa.UUID(), nullable=False),
-    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(dim=384), nullable=False),
-    sa.Column('embedding_model_version_id', sa.UUID(), nullable=False),
-    sa.Column('input_text_hash', sa.String(length=64), nullable=False),
-    sa.Column('is_anonymized', sa.Boolean(), nullable=False),
-    sa.Column('is_talent_pool_eligible', sa.Boolean(), nullable=False),
+    sa.Column('resume_id', sa.UUID(), nullable=False),
+    sa.Column('canonical_skill_id', sa.UUID(), nullable=True),
+    sa.Column('raw_extracted_text', sa.Text(), nullable=False),
+    sa.Column('confidence', sa.Float(), nullable=True),
+    sa.Column('match_tier', sa.Text(), nullable=False),
+    sa.Column('scoring_weight', sa.Numeric(precision=4, scale=3), nullable=False),
+    sa.Column('status', sa.Text(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['candidate_id'], ['candidates.id'], ),
-    sa.ForeignKeyConstraint(['embedding_model_version_id'], ['embedding_model_versions.id'], ),
+    sa.ForeignKeyConstraint(['canonical_skill_id'], ['skill_ontology.id'], ),
     sa.ForeignKeyConstraint(['resume_id'], ['resumes.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('uq_candidate_skills_resume_canonical', 'candidate_skills', ['resume_id', 'canonical_skill_id'], unique=True, postgresql_where=sa.text('canonical_skill_id IS NOT NULL'))
     op.create_table('resume_parse_attempts',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('resume_id', sa.UUID(), nullable=False),
@@ -427,7 +521,7 @@ def upgrade() -> None:
     sa.Column('campaign_candidate_id', sa.UUID(), nullable=False),
     sa.Column('from_stage', sa.Enum('UPLOADED', 'SCREENING', 'SHORTLISTED', 'HOLD', 'HM_REVIEW', 'INTERVIEW', 'SELECTED', 'REJECTED', 'FRAUD_REVIEW', name='pipeline_stage_enum'), nullable=True),
     sa.Column('to_stage', sa.Enum('UPLOADED', 'SCREENING', 'SHORTLISTED', 'HOLD', 'HM_REVIEW', 'INTERVIEW', 'SELECTED', 'REJECTED', 'FRAUD_REVIEW', name='pipeline_stage_enum'), nullable=False),
-    sa.Column('changed_by', sa.UUID(), nullable=True),
+    sa.Column('changed_by', sa.String(length=255), nullable=True),
     sa.Column('change_reason', sa.Text(), nullable=True),
     sa.Column('transition_source', sa.Enum('SYSTEM', 'MANUAL', 'TRIGGER', 'OVERRIDE', name='transition_source_enum'), nullable=False),
     sa.Column('scores_snapshot', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
@@ -442,7 +536,7 @@ def upgrade() -> None:
     sa.Column('rejection_layer', sa.Enum('DETERMINISTIC', 'SEMANTIC', 'AI', 'MANUAL', 'FRAUD', name='rejection_layer_enum'), nullable=False),
     sa.Column('rejection_reason', sa.Text(), nullable=False),
     sa.Column('rejection_detail', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('rejected_by', sa.UUID(), nullable=True),
+    sa.Column('rejected_by', sa.String(length=255), nullable=True),
     sa.Column('rejected_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['campaign_candidate_id'], ['campaign_candidates.id'], ),
     sa.ForeignKeyConstraint(['rejected_by'], ['users.id'], ),
@@ -455,6 +549,7 @@ def upgrade() -> None:
     sa.Column('task_type', sa.String(length=100), nullable=False),
     sa.Column('resume_id', sa.UUID(), nullable=True),
     sa.Column('campaign_candidate_id', sa.UUID(), nullable=True),
+    sa.Column('jd_id', sa.UUID(), nullable=True),
     sa.Column('status', sa.Enum('QUEUED', 'RUNNING', 'SUCCESS', 'FAILURE', 'RETRY', 'DEAD', name='task_status_enum'), nullable=False),
     sa.Column('retry_count', sa.SmallInteger(), nullable=False),
     sa.Column('worker_hostname', sa.String(length=255), nullable=True),
@@ -466,6 +561,7 @@ def upgrade() -> None:
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['campaign_candidate_id'], ['campaign_candidates.id'], ),
+    sa.ForeignKeyConstraint(['jd_id'], ['job_descriptions.id'], ),
     sa.ForeignKeyConstraint(['resume_id'], ['resumes.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('task_id')
@@ -484,7 +580,7 @@ def upgrade() -> None:
     sa.Column('last_attempted_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('moved_to_dlq_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('replayed_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('replayed_by', sa.UUID(), nullable=True),
+    sa.Column('replayed_by', sa.String(length=255), nullable=True),
     sa.Column('resolved_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('resolution_notes', sa.Text(), nullable=True),
     sa.ForeignKeyConstraint(['campaign_candidate_id'], ['campaign_candidates.id'], ),
@@ -504,7 +600,8 @@ def downgrade() -> None:
     op.drop_table('candidate_rejections')
     op.drop_table('campaign_candidate_stage_history')
     op.drop_table('resume_parse_attempts')
-    op.drop_table('resume_embeddings')
+    op.drop_index('uq_candidate_skills_resume_canonical', table_name='candidate_skills', postgresql_where=sa.text('canonical_skill_id IS NOT NULL'))
+    op.drop_table('candidate_skills')
     op.drop_table('campaign_candidates')
     op.drop_table('resumes')
     op.drop_table('candidate_consent')
@@ -512,18 +609,28 @@ def downgrade() -> None:
     op.drop_table('candidates')
     op.drop_table('bulk_upload_jobs')
     op.drop_table('audit_log')
+    op.drop_table('jd_unknown_skills')
+    op.drop_table('jd_skills')
     op.drop_table('jd_embeddings')
     op.drop_table('hiring_campaigns')
     op.drop_table('skill_suggestions')
+    op.drop_index('uq_prompt_versions_active_per_task', table_name='prompt_versions', postgresql_where=sa.text('is_active = TRUE'))
     op.drop_table('prompt_versions')
     op.drop_table('platform_config')
+    op.drop_index('uq_jd_active_lineage_version', table_name='job_descriptions', postgresql_where=sa.text('is_active_version = TRUE'))
     op.drop_table('job_descriptions')
     op.drop_table('encryption_keys')
     op.drop_table('users')
-    op.drop_table('skills')
+    op.drop_table('unknown_skills')
+    op.drop_index('idx_skill_ontology_embedding', table_name='skill_ontology', postgresql_using='ivfflat', postgresql_ops={'embedding': 'vector_cosine_ops'})
+    op.drop_index('idx_skill_ontology_aliases', table_name='skill_ontology', postgresql_using='gin')
+    op.drop_table('skill_ontology')
     op.drop_table('retention_policies')
+    op.drop_table('resume_embeddings')
     op.drop_table('organizations')
+    op.drop_index('uq_embedding_model_versions_active', table_name='embedding_model_versions', postgresql_where=sa.text('is_active = TRUE'))
     op.drop_table('embedding_model_versions')
+    op.drop_table('document_processing_stage_executions')
     op.drop_table('circuit_breaker_state')
     op.drop_table('api_rate_limit_buckets')
     op.drop_table('allowed_transitions')
