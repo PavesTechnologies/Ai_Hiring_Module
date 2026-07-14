@@ -1,11 +1,21 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EducationCriteria(BaseModel):
     degree: Optional[str] = None
     field: Optional[str] = None
+
+
+def _validate_experience_range(request: BaseModel) -> BaseModel:
+    if (
+        request.min_experience_years is not None
+        and request.max_experience_years is not None
+        and request.min_experience_years > request.max_experience_years
+    ):
+        raise ValueError("min_experience_years cannot exceed max_experience_years")
+    return request
 
 
 class CreateJDRequest(BaseModel):
@@ -23,17 +33,27 @@ class CreateJDRequest(BaseModel):
 
     jurisdiction: str
 
-    min_experience_years: Optional[float] = None
+    min_experience_years: float = Field(...)
 
-    education_criteria: Optional[EducationCriteria] = None
+    max_experience_years: float = Field(...)
+
+    notice_period: int = Field(...)
+
+    education_criteria: EducationCriteria = Field(...)
+
+    _validate_experience_range = model_validator(mode="after")(_validate_experience_range)
 
 
 class UpdateJDRequest(BaseModel):
     title: Optional[str] =Field(..., max_length=255)
     raw_text: Optional[str] = None
     jurisdiction: str
-    min_experience_years: Optional[float] = None
-    education_criteria: Optional[EducationCriteria] = None
+    min_experience_years: float = Field(...)
+    max_experience_years: float = Field(...)
+    notice_period: int = Field(...)
+    education_criteria: EducationCriteria = Field(...)
+
+    _validate_experience_range = model_validator(mode="after")(_validate_experience_range)
 
 class JDSearchRequest(BaseModel):
     search: Optional[str] | None

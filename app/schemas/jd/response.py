@@ -12,6 +12,7 @@ class GetJDResponse(BaseModel):
     extracted_json: dict | None
     required_skills: dict | None
     min_experience_years: float | None
+    max_experience_years: float | None
     notice_period: int | None
     education_criteria: dict | None
     source_format: str

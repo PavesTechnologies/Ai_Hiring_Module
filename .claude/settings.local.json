@@ -4,7 +4,8 @@
       "Bash(tree:*)",
       "Bash(python app/seeds/seed_platform_config.py:*)",
       "Bash(python -c:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(venv/Scripts/python.exe -c ' *)"
     ],
     "deny": [],
     "ask": []
