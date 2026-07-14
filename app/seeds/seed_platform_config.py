@@ -50,6 +50,12 @@ try:
             value="0",
             description="Minute when Celery Beat automatically closes expired campaigns",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SKILL_SIMILARITY_THRESHOLD",
+            value="90.00",
+            description="RapidFuzz similarity score (0-100) above which a newly created skill is flagged as similar to an existing one",
+        ),
     ]
 
     for config in configs:

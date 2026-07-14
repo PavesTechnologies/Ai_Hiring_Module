@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.models.skills import SkillOntology
+from app.models.skills import CandidateSkill, SkillOntology
 
 ParentSkill = aliased(SkillOntology)
 
@@ -137,6 +137,30 @@ class SkillOntologyRepository:
 
     def get_by_canonical_name_exact(self, name: str) -> Optional[SkillOntology]:
         return self.db.query(SkillOntology).filter(SkillOntology.canonical_name == name).first()
+
+    def find_skill_by_alias(self, alias: str, *, exclude_id: UUID) -> Optional[SkillOntology]:
+        """Finds another skill (not exclude_id) whose aliases array already contains this exact alias."""
+        return (
+            self.db.query(SkillOntology)
+            .filter(SkillOntology.aliases.any(alias), SkillOntology.id != exclude_id)
+            .first()
+        )
+
+    def count_candidate_matches_by_alias(self, alias: str) -> int:
+        """
+        Historical candidate_skills rows that matched this exact alias
+        (match_tier='alias'). Read-only impact preview for S04-T02 — never
+        used to mutate candidate_skills, which must stay untouched.
+        """
+        return (
+            self.db.query(func.count(CandidateSkill.id))
+            .filter(
+                func.lower(CandidateSkill.match_tier) == "alias",
+                CandidateSkill.raw_extracted_text == alias,
+            )
+            .scalar()
+            or 0
+        )
 
     def get_skills_for_export(
         self,

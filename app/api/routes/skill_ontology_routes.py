@@ -165,7 +165,12 @@ def update_skill_ontology(
     service: SkillOntologyService = Depends(get_skill_ontology_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    updated = service.update_skill(skill_id, request)
+    updated = service.update_skill(
+        skill_id,
+        request,
+        updated_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
     return APIResponse.ok(data=updated, message="Skill updated successfully.")
 
 

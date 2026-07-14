@@ -88,6 +88,16 @@ class SkillOntologyResponse(BaseModel):
     is_active: bool
     created_at: datetime
     children: list[SkillOntologyChildResponse]
+    embedding_status: str
+
+
+class SimilarSkillResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    canonical_name: str
+    category: Optional[str]
+    similarity_score: int
 
 
 class SkillCreateResponse(BaseModel):
@@ -103,6 +113,8 @@ class SkillCreateResponse(BaseModel):
     is_active: bool
     occurrence_count: int
     created_at: datetime
+    skill_created: bool = True
+    similar_skills: list[SimilarSkillResponse] = []
 
 
 class ParentSkillResponse(BaseModel):
