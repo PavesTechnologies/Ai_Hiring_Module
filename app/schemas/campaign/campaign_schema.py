@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.campaigns import CampaignStatus
+
 
 class CampaignCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -81,6 +83,9 @@ class CampaignUpdateRequest(BaseModel):
     requires deadline/cap to be explicitly removable.
     """
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+
+    # Lifecycle transition (S01 pause / resume). Only ACTIVE⇄PAUSED is allowed.
+    status: Optional[CampaignStatus] = None
 
     deadline: Optional[datetime] = None
     clear_deadline: bool = False
