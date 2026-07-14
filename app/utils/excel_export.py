@@ -140,6 +140,66 @@ class ExcelExport:
     
 
     @staticmethod
+    def export_skill_ontology(records):
+        """records: iterable of (SkillOntology, parent_canonical_name | None) tuples."""
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Skill Ontology"
+
+        ws.append([
+            "Canonical Name",
+            "Aliases",
+            "Category",
+            "Parent Skill",
+            "Confidence",
+            "Source",
+            "Status",
+            "Occurrences",
+            "Created At",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for skill, parent_name in records:
+            ws.append([
+                skill.canonical_name,
+                ", ".join(skill.aliases or []),
+                skill.category or "",
+                parent_name or "",
+                skill.confidence,
+                skill.source or "",
+                "Active" if skill.is_active else "Inactive",
+                skill.occurrence_count,
+                skill.created_at.strftime("%d-%b-%Y %I:%M %p"),
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
     def export_single_jd(
         jd,
         version_history,
@@ -294,20 +354,20 @@ class ExcelExport:
         cell.fill = section_fill
         row += 1
 
-        if jd.parsed_skills:
+        if jd.extracted_json:
 
-            if isinstance(jd.parsed_skills, dict):
+            if isinstance(jd.extracted_json, dict):
 
-                for key, value in jd.parsed_skills.items():
+                for key, value in jd.extracted_json.items():
 
                     ws.cell(row=row, column=1).value = key
                     ws.cell(row=row, column=2).value = str(value)
 
                     row += 1
 
-            elif isinstance(jd.parsed_skills, list):
+            elif isinstance(jd.extracted_json, list):
 
-                for skill in jd.parsed_skills:
+                for skill in jd.extracted_json:
 
                     ws.cell(row=row, column=1).value = str(skill)
 

@@ -1,12 +1,14 @@
 import re
+import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID
 
 from rapidfuzz import fuzz, process
 
-from app.models.skills import SkillOntology
-from app.repositories.skill_repository import SkillRepository
+from app.models.skills import JDSkillVerificationStatus, SkillOntology
+from app.repositories.skill_repository import SEMANTIC_SIMILARITY_THRESHOLD, SkillRepository
+from app.services.ai.embedding_service import EmbeddingService
 
 
 class SkillMatchTier(str, Enum):
@@ -17,6 +19,29 @@ class SkillMatchTier(str, Enum):
     FUZZY = "FUZZY"
     SEMANTIC = "SEMANTIC"
     UNKNOWN = "UNKNOWN"
+    # Not produced by normalize_skills() itself — set directly by HR-driven
+    # actions (JDSkill remap, unknown-skill mapping) via SkillRepository.
+    MANUAL_HR = "MANUAL_HR"
+
+
+# Tiers whose match is a deterministic string comparison are trusted
+# outright; similarity-based tiers (fuzzy, semantic) are guesses and start
+# out needing HR confirmation.
+_AUTO_VERIFIED_TIERS = {
+    SkillMatchTier.EXACT,
+    SkillMatchTier.ALIAS,
+    SkillMatchTier.CASE_INSENSITIVE,
+    SkillMatchTier.RULE_BASED,
+    SkillMatchTier.MANUAL_HR,
+}
+
+
+def verification_status_for_tier(tier: SkillMatchTier) -> JDSkillVerificationStatus:
+    return (
+        JDSkillVerificationStatus.AUTO_VERIFIED
+        if tier in _AUTO_VERIFIED_TIERS
+        else JDSkillVerificationStatus.PENDING_REVIEW
+    )
 
 
 @dataclass
@@ -26,20 +51,27 @@ class SkillMatchResult:
     canonical_skill_id: UUID | None
     match_tier: SkillMatchTier
     confidence: float | None
+    # Cleaned form used for matching (unicode/whitespace-normalized) — also
+    # what gets stored as UnknownSkill.normalized_key when unmatched.
+    normalized_text: str = ""
 
 
 class SkillNormalizationService:
     """
     Matches raw JD skill strings against the skill ontology, in order:
-    exact -> alias -> case-insensitive -> rule-based -> RapidFuzz ->
-    semantic (deferred) -> unknown. Read-only: never mutates raw skill
-    text, never discards an unmatched skill, never calls AI.
+    exact canonical -> exact alias -> case-insensitive canonical -> case-
+    insensitive alias -> rule-based canonical -> rule-based alias ->
+    fuzzy canonical -> semantic canonical -> unknown. Fuzzy and semantic
+    search canonical names only — alias lookup is deterministic-tier only.
+    Read-only: never mutates raw skill text, never discards an unmatched
+    skill, never calls AI (embeddings are a local model, see EmbeddingService).
     """
 
     FUZZY_SCORE_THRESHOLD = 85.0
 
-    def __init__(self, skill_repository: SkillRepository):
+    def __init__(self, skill_repository: SkillRepository, embedding_service: EmbeddingService):
         self.skill_repository = skill_repository
+        self.embedding_service = embedding_service
 
     def normalize_skills(self, required_skills: list[str], preferred_skills: list[str]) -> list[SkillMatchResult]:
         catalog = self.skill_repository.list_active_skills()
@@ -48,28 +80,62 @@ class SkillNormalizationService:
         return results
 
     def _match_skill(self, raw_text: str, catalog: list[SkillOntology], mandatory: bool) -> SkillMatchResult:
-        exact = self._match_exact(raw_text, catalog)
+        normalized_text = self._normalize(raw_text)
+
+        exact = self._match_exact(normalized_text, catalog)
         if exact:
-            return SkillMatchResult(raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0)
+            return SkillMatchResult(raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0, normalized_text)
 
-        alias = self._match_alias(raw_text, catalog)
+        alias = self._match_alias(normalized_text, catalog)
         if alias:
-            return SkillMatchResult(raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0)
+            return SkillMatchResult(raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0, normalized_text)
 
-        case_insensitive = self._match_case_insensitive(raw_text, catalog)
+        case_insensitive = self._match_case_insensitive(normalized_text, catalog)
         if case_insensitive:
-            return SkillMatchResult(raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0)
+            return SkillMatchResult(
+                raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0, normalized_text
+            )
 
-        rule_based = self._match_rule_based(raw_text, catalog)
+        rule_based = self._match_rule_based(normalized_text, catalog)
         if rule_based:
-            return SkillMatchResult(raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0)
+            return SkillMatchResult(
+                raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0, normalized_text
+            )
 
-        fuzzy_skill, fuzzy_score = self._match_fuzzy(raw_text, catalog)
+        fuzzy_skill, fuzzy_score = self._match_fuzzy(normalized_text, catalog)
         if fuzzy_skill and fuzzy_score >= self.FUZZY_SCORE_THRESHOLD:
-            return SkillMatchResult(raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100)
+            return SkillMatchResult(
+                raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100, normalized_text
+            )
 
-        # Semantic (embedding-similarity) matching is explicitly deferred.
-        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None)
+        semantic_skill, similarity = self._match_semantic(normalized_text)
+        if semantic_skill and similarity >= SEMANTIC_SIMILARITY_THRESHOLD:
+            return SkillMatchResult(
+                raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity, normalized_text
+            )
+
+        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None, normalized_text)
+
+    @staticmethod
+    def _normalize(raw_text: str) -> str:
+        """
+        Unicode/whitespace cleanup shared by every tier below. Deliberately
+        does NOT lowercase here: Exact Canonical/Exact Alias need to stay
+        case-sensitive, or Case Canonical/Case Alias — the very next tier —
+        would never be reachable. Case-folding happens inside the case-
+        insensitive/fuzzy/semantic comparisons themselves, same as today.
+        """
+        if not raw_text:
+            return ""
+        text = unicodedata.normalize("NFKC", raw_text).strip()
+        return re.sub(r"\s+", " ", text)
+
+    def _match_semantic(self, normalized_text: str) -> tuple[SkillOntology | None, float]:
+        embedding = self.embedding_service.generate_embedding(normalized_text)
+        result = self.skill_repository.find_by_embedding(embedding)
+        if result is None:
+            return None, 0.0
+        return result
 
     @staticmethod
     def _match_exact(raw_text: str, catalog: list[SkillOntology]) -> SkillOntology | None:
@@ -107,11 +173,11 @@ class SkillNormalizationService:
 
     @staticmethod
     def _match_fuzzy(raw_text: str, catalog: list[SkillOntology]) -> tuple[SkillOntology | None, float]:
-        choices: dict[str, SkillOntology] = {}
-        for skill in catalog:
-            choices.setdefault(skill.canonical_name, skill)
-            for alias in (skill.aliases or []):
-                choices.setdefault(alias, skill)
+        # Canonical names only — fuzzy alias matching is intentionally not
+        # part of the finalized pipeline (aliases are exact/case/rule only).
+        choices: dict[str, SkillOntology] = {
+            skill.canonical_name: skill for skill in catalog
+        }
 
         if not choices:
             return None, 0.0

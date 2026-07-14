@@ -1,15 +1,23 @@
 from .identity import User, Organization
 
+from .embeddings import EmbeddingModelVersion, ResumeEmbedding
+
 from .jd.job_descriptions import JobDescription, JDEmbedding
 
 from .campaigns import HiringCampaign
 
 from .compliance import AuditLog
 
-# Candidate models
-from .candidates import Candidate, Resume, ResumeParseAttempt
+from .ai_pipeline import PromptVersion
 
-# Pipeline models
+from app.models.config import *
+
+from .candidates import (
+    Candidate,
+    Resume,
+    ResumeParseAttempt,
+)
+
 from .pipeline import (
     CampaignCandidate,
     AllowedTransition,
@@ -17,7 +25,6 @@ from .pipeline import (
     CandidateRejection,
 )
 
-# Async task models
 from .async_tasks import (
     CeleryTaskLog,
     DeadLetterQueue,
@@ -28,7 +35,6 @@ from .async_tasks import (
     StageExecutionStatus,
 )
 
-# Skill ontology models
 from .skills import (
     SkillOntology,
     UnknownSkill,

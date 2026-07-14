@@ -74,6 +74,13 @@ class CampaignCandidateService:
             # -----------------------------
             # Campaign must be ACTIVE
             # -----------------------------
+            if campaign.status == CampaignStatus.PAUSED:
+                # S01-T02: uploads are blocked immediately while paused, with a
+                # message distinct from the closed case.
+                raise CampaignException(
+                    "This campaign is currently paused — uploads are not accepted.",
+                    409,
+                )
             if campaign.status != CampaignStatus.ACTIVE:
                 raise CampaignException(
                     "Campaign is closed. Resume uploads are not allowed.",

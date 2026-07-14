@@ -1,4 +1,5 @@
 import logging
+from uuid import UUID
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
@@ -40,12 +41,25 @@ def process_jd_document(
     min_experience_years: float | None,
     education_criteria: dict | None,
     created_by: str,
+    existing_jd_id: str | None = None,
+    version_number: int = 1,
+    parent_jd_id: str | None = None,
+    lineage_root_id: str | None = None,
+    old_file_path: str | None = None,
 ) -> None:
     """
     Background leg of the JD processing pipeline (everything after
     Validation/Storage, which already ran synchronously in the route):
     Text Extraction -> Text Cleaning -> AI Extraction -> JSON Validation ->
     Skill Normalization -> Embedding Generation -> Persistence.
+
+    existing_jd_id/version_number/parent_jd_id/lineage_root_id are only set
+    for an update-triggered reprocess (JDService.update_jd() returned
+    JDReprocessRequired) — absent, this is a normal create run. old_file_path
+    is the document a reprocess is replacing, deleted only after the new
+    version has successfully persisted (mirrors the cleanup update_jd()
+    used to do synchronously, moved here since persistence itself is now
+    async for this path too).
 
     Stage tracking runs on its own session (`stage_db`), separate from the
     business-write session (`db`). StageExecutionService commits once at
@@ -92,6 +106,12 @@ def process_jd_document(
             storage_service=StorageService(),
         )
 
+        # One EmbeddingService instance shared by the pipeline's own JD-level
+        # embedding stage and by skill-level semantic matching — the
+        # underlying sentence-transformer model is a class-level singleton
+        # either way, but there's no reason to instantiate the wrapper twice.
+        embedding_service = EmbeddingService()
+
         checkpoint_repo = CheckpointRepository(stage_db)
         stage_failure_log_repo = StageFailureLogRepository(stage_db)
         dead_letter_queue_repo = DeadLetterQueueRepository(db)
@@ -108,8 +128,8 @@ def process_jd_document(
             extraction_service=GeminiExtractionService(),
             hash_service=HashService(),
             storage_service=StorageService(),
-            skill_normalization_service=SkillNormalizationService(skill_repo),
-            embedding_service=EmbeddingService(),
+            skill_normalization_service=SkillNormalizationService(skill_repo, embedding_service),
+            embedding_service=embedding_service,
             jd_service=jd_service,
             jd_repository=jd_repo,
             skill_repository=skill_repo,
@@ -127,6 +147,10 @@ def process_jd_document(
             min_experience_years=min_experience_years,
             education_criteria=education_criteria,
             created_by=created_by,
+            existing_jd_id=UUID(existing_jd_id) if existing_jd_id else None,
+            version_number=version_number,
+            parent_jd_id=UUID(parent_jd_id) if parent_jd_id else None,
+            lineage_root_id=UUID(lineage_root_id) if lineage_root_id else None,
             attempt_number=attempt_number,
         )
 
@@ -139,7 +163,21 @@ def process_jd_document(
             task_log.jd_id = jd_id
             task_log_repo.update(task_log)
             task_log_repo.commit()
-            task_log_service.mark_success(task_log, summary=f"JD {jd_id} created.")
+            task_log_service.mark_success(
+                task_log,
+                summary=f"JD {jd_id} reprocessed." if existing_jd_id else f"JD {jd_id} created.",
+            )
+            if existing_jd_id and file_path and old_file_path:
+                try:
+                    jd_service.storage_service.delete_file(
+                        bucket_name=jd_service.JD_STORAGE_BUCKET,
+                        file_path=old_file_path,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to delete superseded JD document '%s' for JD %s.",
+                        old_file_path, jd_id,
+                    )
         else:
             task_log_service.mark_success(task_log, summary="Duplicate job description; no new JD created.")
 

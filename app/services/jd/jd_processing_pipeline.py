@@ -78,6 +78,10 @@ class JDProcessingPipeline:
         min_experience_years: float | None,
         education_criteria: dict | None,
         created_by: str,
+        existing_jd_id: UUID | None = None,
+        version_number: int = 1,
+        parent_jd_id: UUID | None = None,
+        lineage_root_id: UUID | None = None,
         attempt_number: int = 1,
     ) -> UUID | None:
         context = JDProcessingContext(
@@ -89,8 +93,13 @@ class JDProcessingPipeline:
             created_by=created_by,
             file_path=file_path,
             raw_text=raw_text,
+            existing_jd_id=existing_jd_id,
+            version_number=version_number,
+            parent_jd_id=parent_jd_id,
+            lineage_root_id=lineage_root_id,
         )
         context.source_format = self._resolve_source_format(file_path)
+        is_reprocess = existing_jd_id is not None
 
         checkpoint = self.checkpoint_repo.get(task_id)
         resume_point = None
@@ -144,7 +153,14 @@ class JDProcessingPipeline:
 
             if context.content_hash is None:
                 context.content_hash = self.hash_service.generate_hash(context.text)
-                if self.jd_repository.get_by_content_hash(context.content_hash):
+            duplicate = (
+                self.jd_repository.get_duplicate_excluding_lineage(
+                    content_hash=context.content_hash, lineage_root_id=lineage_root_id,
+                )
+                    if is_reprocess
+                else self.jd_repository.get_by_content_hash(context.content_hash)
+            )
+            if duplicate:
                     self._skip_remaining_after_text_extraction(context)
                     return None
 
@@ -239,6 +255,10 @@ class JDProcessingPipeline:
             embedding=context.embedding,
             embedding_model_version_id=context.embedding_model_version_id,
             input_text_hash=context.input_text_hash,
+            existing_jd_id=context.existing_jd_id,
+            version_number=context.version_number,
+            parent_jd_id=context.parent_jd_id,
+            lineage_root_id=context.lineage_root_id,
         )
 
     def _skip_remaining_after_text_extraction(self, context: JDProcessingContext) -> None:

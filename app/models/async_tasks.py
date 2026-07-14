@@ -16,6 +16,7 @@ from app.db.database import Base
 class TaskStatus(enum.Enum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
+    PAUSED = "PAUSED"        # soft-cancelled while the parent campaign is paused (S01-T02)
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
     RETRY = "RETRY"
