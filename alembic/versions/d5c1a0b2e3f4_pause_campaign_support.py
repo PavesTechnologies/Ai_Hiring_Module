@@ -6,13 +6,13 @@ soft-cancelled when a campaign is paused (M04-E03 S01-T02).
 CAMPAIGN_PAUSED already exists in audit_action_type_enum, so no audit DDL.
 
 Revision ID: d5c1a0b2e3f4
-Revises: c8f2a4d6e910
+Revises: 265912f5590a
 Create Date: 2026-07-13
 """
 from alembic import op
 
 revision = "d5c1a0b2e3f4"
-down_revision = "c8f2a4d6e910"
+down_revision = "265912f5590a"
 branch_labels = None
 depends_on = None
 

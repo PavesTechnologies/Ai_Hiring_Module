@@ -81,3 +81,23 @@ class JDExtractionResponse(BaseModel):
             skill for skill in self.preferred_skills if skill not in required_set
         ]
         return self
+
+
+class JDExtractionGenerationSchema(BaseModel):
+    """
+    Same shape as JDExtractionResponse minus `metadata` - Gemini's Developer
+    API mode rejects open-ended dict fields (they compile to a JSON Schema
+    `additionalProperties`, which that mode doesn't support) when used as a
+    response_schema for structured output. metadata is always {} per the
+    prompt anyway, and JDExtractionResponse.metadata defaults to {} when the
+    key is absent, so dropping it here only affects generation, not parsing.
+    """
+    required_skills: list[str] = Field(default_factory=list)
+    preferred_skills: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+    experience: Experience | None = None
+    education: Education | None = None
+    employment_type: str | None = None
+    work_mode: str | None = None
+    location: str | None = None

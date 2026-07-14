@@ -5,18 +5,7 @@
       "Bash(python app/seeds/seed_platform_config.py:*)",
       "Bash(python -c:*)",
       "Bash(pip install:*)",
-      "Bash(python -c ' *)",
-      "Bash(pip show *)",
-      "Bash(python -m alembic heads)",
-      "Bash(python -m alembic history)",
-      "Bash(where alembic *)",
-      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
-      "Read(//c//**)",
-      "Bash(pip install *)",
-      "Bash(python -m alembic upgrade head)",
-      "Bash(python tmp_check_alembic.py)",
-      "Bash(cd c:/AIRS/Ai_Hiring_Module && rm -f tmp_check_alembic.py 2>&1; git status --porcelain tmp_check_alembic.py)",
-      "Bash(python -c \"import alembic; print\\(alembic.__version__\\)\")"
+      "Bash(venv/Scripts/python.exe -c ' *)"
     ],
     "deny": [],
     "ask": []

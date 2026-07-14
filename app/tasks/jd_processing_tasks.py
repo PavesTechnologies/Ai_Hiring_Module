@@ -41,6 +41,8 @@ def process_jd_document(
     min_experience_years: float | None,
     education_criteria: dict | None,
     created_by: str,
+    max_experience_years: float | None = None,
+    notice_period: int | None = None,
     existing_jd_id: str | None = None,
     version_number: int = 1,
     parent_jd_id: str | None = None,
@@ -145,6 +147,8 @@ def process_jd_document(
             title=title,
             jurisdiction=jurisdiction,
             min_experience_years=min_experience_years,
+            max_experience_years=max_experience_years,
+            notice_period=notice_period,
             education_criteria=education_criteria,
             created_by=created_by,
             existing_jd_id=UUID(existing_jd_id) if existing_jd_id else None,
@@ -197,6 +201,11 @@ def process_jd_document(
             logger.exception("JD document processing task failed for task_id %s", task_id)
             raise stage_exc.original
     except Exception as ex:
+        # A DB-level failure inside pipeline.run() leaves `db`'s transaction
+        # aborted; mark_failure reuses the same session, so without this
+        # rollback its own read/write dies with InFailedSqlTransaction and
+        # masks the real error above.
+        db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         logger.exception("JD document processing task failed for task_id %s", task_id)

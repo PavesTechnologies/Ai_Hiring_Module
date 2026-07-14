@@ -49,6 +49,8 @@ class JDReprocessRequired:
     title: str
     jurisdiction: str
     min_experience_years: float | None
+    max_experience_years: float | None
+    notice_period: int | None
     education_criteria: dict | None
     raw_text: str | None
     file_path: str | None
@@ -98,6 +100,8 @@ class JDService:
         file_path: str | None,
         created_by: str,
         content_hash: str,
+        max_experience_years: float | None = None,
+        notice_period: int | None = None,
         extraction: JDExtractionResponse,
         skill_repository: SkillRepository,
         skill_matches: list[SkillMatchResult],
@@ -166,6 +170,8 @@ class JDService:
                 raw_text=raw_text,
                 jurisdiction=jurisdiction,
                 min_experience_years=min_experience_years,
+                max_experience_years=max_experience_years,
+                notice_period=notice_period,
                 education_criteria=education_criteria,
                 source_format=source_format,
                 file_path=file_path,
@@ -331,11 +337,9 @@ class JDService:
             raw_text= raw_text,
             jurisdiction= request.jurisdiction,
             min_experience_years= request.min_experience_years,
-            education_criteria= (
-                request.education_criteria.model_dump()
-                if request.education_criteria
-                else None
-            ),
+            max_experience_years= request.max_experience_years,
+            notice_period= request.notice_period,
+            education_criteria= request.education_criteria.model_dump(),
             source_format= source_format,
             file_path= file_path,
             content_hash= self.hash_service.generate_hash(raw_text),
@@ -368,6 +372,7 @@ class JDService:
             is_active_version=job_description.is_active_version,
             jurisdiction=job_description.jurisdiction,
             min_experience_years=job_description.min_experience_years,
+            max_experience_years=job_description.max_experience_years,
             notice_period=job_description.notice_period,
             raw_text=job_description.raw_text,
             required_skills=job_description.required_skills,
@@ -490,9 +495,7 @@ class JDService:
         file_replaced = file_path is not None
 
         if raw_text_changed or file_replaced:
-            education_criteria = (
-                request.education_criteria.model_dump() if request.education_criteria else None
-            )
+            education_criteria = request.education_criteria.model_dump()
             return JDReprocessRequired(
                 existing_jd_id=existing_jd.id,
                 version_number=existing_jd.version_number + 1,
@@ -501,6 +504,8 @@ class JDService:
                 title=request.title,
                 jurisdiction=request.jurisdiction,
                 min_experience_years=request.min_experience_years,
+                max_experience_years=request.max_experience_years,
+                notice_period=request.notice_period,
                 education_criteria=education_criteria,
                 # Only one of these is set: raw_text for the JSON-body path,
                 # file_path for the file-upload path — the pipeline's own
