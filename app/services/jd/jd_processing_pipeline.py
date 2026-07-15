@@ -149,22 +149,12 @@ class JDProcessingPipeline:
                     context.task_id,
                     context.document_type,
                     ProcessingStage.TEXT_EXTRACTION,
-                    lambda: self._run_text_extraction(context),
+                    lambda: self._run_text_extraction_and_check_duplicate(context, is_reprocess, lineage_root_id),
                     attempt_number=attempt_number,
                     context=context,
                     checkpoint_repo=self.checkpoint_repo,
                 )
-
-            if context.content_hash is None:
-                context.content_hash = self.hash_service.generate_hash(context.text)
-            duplicate = (
-                self.jd_repository.get_duplicate_excluding_lineage(
-                    content_hash=context.content_hash, lineage_root_id=lineage_root_id,
-                )
-                    if is_reprocess
-                else self.jd_repository.get_by_content_hash(context.content_hash)
-            )
-            if duplicate:
+                if context.is_duplicate:
                     self._skip_remaining_after_text_extraction(context)
                     return None
 
@@ -214,6 +204,35 @@ class JDProcessingPipeline:
             file_path=context.file_path,
         )
         context.text = TextExtractionService.extract(file_content, context.source_format)
+
+    def _run_text_extraction_and_check_duplicate(
+        self, context: JDProcessingContext, is_reprocess: bool, lineage_root_id: UUID | None,
+    ) -> None:
+        """
+        File-path branch's TEXT_EXTRACTION stage: extraction plus the
+        content-hash duplicate lookup that immediately follows it, folded
+        into one stage function so a transient failure in either half (e.g.
+        a DB blip on the duplicate query) goes through the same
+        retry/checkpoint/dead-letter handling as every other stage, instead
+        of bypassing it the way a bare post-stage DB call would.
+
+        is_reprocess/lineage_root_id are taken as arguments (the run()
+        call's own locals) rather than read off context, since context can
+        be rebuilt from a checkpoint on retry and context_serializer does
+        not round-trip existing_jd_id/lineage_root_id — the Celery task's
+        original kwargs are the reliable source on every attempt.
+        """
+        self._run_text_extraction(context)
+        if context.content_hash is None:
+            context.content_hash = self.hash_service.generate_hash(context.text)
+        duplicate = (
+            self.jd_repository.get_duplicate_excluding_lineage(
+                content_hash=context.content_hash, lineage_root_id=lineage_root_id,
+            )
+            if is_reprocess
+            else self.jd_repository.get_by_content_hash(context.content_hash)
+        )
+        context.is_duplicate = duplicate is not None
 
     def _run_text_cleaning(self, context: JDProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.text)

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     db_name: str
     db_driver: str = "postgresql+psycopg2"
     db_sslmode: str = "require"
+    db_pool_size: int = 1
+    db_max_overflow: int = 2
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

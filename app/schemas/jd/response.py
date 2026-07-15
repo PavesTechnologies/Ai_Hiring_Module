@@ -68,3 +68,14 @@ class JDProcessingStatusResponse(BaseModel):
     stages: list[StageProgress]
     jd_id: UUID | None
     error_message: str | None
+
+
+class JDUploadSummary(BaseModel):
+    task_id: UUID
+    title: str | None
+    status: str
+    current_stage: str | None
+    stages: list[StageProgress]
+    jd_id: UUID | None
+    error_message: str | None
+    queued_at: datetime

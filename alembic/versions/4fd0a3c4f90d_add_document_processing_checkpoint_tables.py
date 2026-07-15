@@ -20,17 +20,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # document_type_enum / processing_stage_enum already exist — created by
+    # the initial_schema baseline for celery_task_log and
+    # document_processing_stage_executions — so these columns must reuse
+    # them (create_type=False) rather than trying to CREATE TYPE again.
+    document_type_enum = postgresql.ENUM('JD', 'RESUME', name='document_type_enum', create_type=False)
+    processing_stage_enum = postgresql.ENUM(
+        'VALIDATION', 'STORAGE', 'TEXT_EXTRACTION', 'TEXT_CLEANING',
+        'AI_EXTRACTION', 'JSON_VALIDATION', 'SKILL_NORMALIZATION',
+        'EMBEDDING_GENERATION', 'PERSISTENCE',
+        name='processing_stage_enum', create_type=False,
+    )
+
     op.create_table(
         'document_processing_checkpoints',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('task_id', sa.String(length=255), nullable=False),
-        sa.Column('document_type', sa.Enum('JD', 'RESUME', name='document_type_enum'), nullable=False),
-        sa.Column('failed_at_stage', sa.Enum(
-            'VALIDATION', 'STORAGE', 'TEXT_EXTRACTION', 'TEXT_CLEANING',
-            'AI_EXTRACTION', 'JSON_VALIDATION', 'SKILL_NORMALIZATION',
-            'EMBEDDING_GENERATION', 'PERSISTENCE',
-            name='processing_stage_enum',
-        ), nullable=True),
+        sa.Column('document_type', document_type_enum, nullable=False),
+        sa.Column('failed_at_stage', processing_stage_enum, nullable=True),
         sa.Column('context_data', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -42,12 +49,7 @@ def upgrade() -> None:
         'stage_failure_logs',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('task_id', sa.String(length=255), nullable=False),
-        sa.Column('stage', sa.Enum(
-            'VALIDATION', 'STORAGE', 'TEXT_EXTRACTION', 'TEXT_CLEANING',
-            'AI_EXTRACTION', 'JSON_VALIDATION', 'SKILL_NORMALIZATION',
-            'EMBEDDING_GENERATION', 'PERSISTENCE',
-            name='processing_stage_enum',
-        ), nullable=False),
+        sa.Column('stage', processing_stage_enum, nullable=False),
         sa.Column('attempt_number', sa.SmallInteger(), nullable=False),
         sa.Column('exception_type', sa.String(length=255), nullable=False),
         sa.Column('message', sa.Text(), nullable=False),
