@@ -13,6 +13,7 @@ from fastapi import (
 )
 
 from app.dependencies.jd import (
+    get_celery_task_log_service,
     get_hash_service,
     get_jd_processing_status_service,
     get_jd_repository,
@@ -30,9 +31,11 @@ from app.schemas.jd.response import (
     GetJDResponse,
     JDProcessingAcceptedResponse,
     JDProcessingStatusResponse,
+    JDUploadSummary,
     PaginatedJDResponse,
     UpdateJDResponse,
 )
+from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_status_service import JDProcessingStatusService
@@ -58,9 +61,16 @@ def _queue_reprocess(
     result: JDReprocessRequired,
     response: Response,
     stage_tracker: StageExecutionService,
+    task_log_service: CeleryTaskLogService,
 ) -> APIResponse:
     task_id = uuid4()
     stage_tracker.run_stage(str(task_id), DocumentType.JD, ProcessingStage.VALIDATION, lambda: None)
+    task_log_service.create_log(
+        task_id=str(task_id),
+        task_type="JD_DOCUMENT_PROCESSING",
+        created_by=result.updated_by,
+        title=result.title,
+    )
 
     process_jd_document.apply_async(
         kwargs={
@@ -118,6 +128,7 @@ def create_job_description(
     jd_repository: JDRepository = Depends(get_jd_repository),
     hash_service: HashService = Depends(get_hash_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
+    task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
@@ -131,6 +142,12 @@ def create_job_description(
 
     task_id = uuid4()
     stage_tracker.run_stage(str(task_id), DocumentType.JD, ProcessingStage.VALIDATION, lambda: None)
+    task_log_service.create_log(
+        task_id=str(task_id),
+        task_type="JD_DOCUMENT_PROCESSING",
+        created_by=user.user_id,
+        title=request.title,
+    )
 
     process_jd_document.apply_async(
         kwargs={
@@ -171,6 +188,7 @@ def create_job_description_from_file(
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
+    task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
@@ -188,6 +206,12 @@ def create_job_description_from_file(
     file_path = stage_tracker.run_stage(
         str(task_id), DocumentType.JD, ProcessingStage.STORAGE,
         lambda: service.validate_and_store_file(file=file, org_id=SYSTEM_ORG),
+    )
+    task_log_service.create_log(
+        task_id=str(task_id),
+        task_type="JD_DOCUMENT_PROCESSING",
+        created_by=user.user_id,
+        title=title,
     )
 
     education_criteria = {"degree": education_degree, "field": education_field}
@@ -229,6 +253,29 @@ def get_jd_processing_status(
         data=service.get_status(task_id),
         message="Processing status retrieved successfully.",
     )
+
+
+@router.get(
+    "/my-uploads",
+    response_model=APIResponse[list[JDUploadSummary]],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def get_my_jd_uploads(
+    service: JDProcessingStatusService = Depends(get_jd_processing_status_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    """
+    Every JD create/reprocess task the current user has submitted, newest
+    first — lets a user check back later whether an upload succeeded,
+    is still processing, or failed, without needing to hold onto its
+    task_id (which /processing-status/{task_id} otherwise requires).
+    """
+    return APIResponse.ok(
+        data=service.get_recent_uploads(user.user_id),
+        message="Recent uploads retrieved successfully.",
+    )
+
 
 @router.get("/export", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
 def export_job_descriptions(
@@ -324,6 +371,7 @@ def update_job_description(
     response: Response,
     service: JDService = Depends(get_jd_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
+    task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """
@@ -335,7 +383,7 @@ def update_job_description(
     result = service.update_jd(jd_id=jd_id, request=request, updated_by=user.user_id)
 
     if isinstance(result, JDReprocessRequired):
-        return _queue_reprocess(result, response, stage_tracker)
+        return _queue_reprocess(result, response, stage_tracker, task_log_service)
 
     return APIResponse.ok(data=result, message="Job Description updated successfully.")
 
@@ -358,6 +406,7 @@ def update_job_description_from_file(
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
+    task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """
@@ -388,7 +437,7 @@ def update_job_description_from_file(
     )
     # file_path is always set here, so update_jd() always returns
     # JDReprocessRequired for this route — never the synchronous shape.
-    return _queue_reprocess(result, response, stage_tracker)
+    return _queue_reprocess(result, response, stage_tracker, task_log_service)
 
 
 @router.delete(

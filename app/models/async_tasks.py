@@ -95,6 +95,8 @@ class CeleryTaskLog(Base):
     task_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=True)
     campaign_candidate_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=True)
     jd_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)

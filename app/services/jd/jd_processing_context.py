@@ -51,6 +51,7 @@ class JDProcessingContext:
     extraction: JDExtractionResponse | None = None
     skill_matches: list[SkillMatchResult] | None = None
     content_hash: str | None = None
+    is_duplicate: bool = False
     embedding_text: str | None = None
     embedding: list[float] | None = None
     embedding_model_version_id: UUID | None = None
