@@ -101,6 +101,14 @@ class SkillCreateRequest(BaseModel, ConfidenceSourceNormalizationMixin):
 
 
 class SkillStatusUpdateRequest(BaseModel):
-    """PATCH body for activating/deactivating a skill (soft delete)."""
+    """
+    PATCH body for activating/deactivating a skill (soft delete). If the
+    skill being deactivated has children, child_handling is required:
+    'PROMOTE' (children move up to this skill's own parent), 'ROOT'
+    (children become root skills), or 'CANCEL' (abort — nothing changes,
+    including is_active). Ignored when reactivating or when the skill has
+    no children.
+    """
 
     is_active: bool
+    child_handling: Optional[Literal["PROMOTE", "ROOT", "CANCEL"]] = None

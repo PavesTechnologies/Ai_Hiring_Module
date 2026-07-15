@@ -56,6 +56,35 @@ class SkillRepository:
         self.db.refresh(unknown_skill)
         return unknown_skill
 
+    def _apply_unknown_skill_filters(self, query, *, search: str | None, status: str | None):
+        if search:
+            query = query.filter(UnknownSkill.raw_text.ilike(f"%{search.strip()}%"))
+        if status:
+            query = query.filter(UnknownSkill.status == status)
+        return query
+
+    def count_unknown_skills(self, *, search: str | None = None, status: str | None = None) -> int:
+        query = self._apply_unknown_skill_filters(
+            self.db.query(func.count(UnknownSkill.id)), search=search, status=status
+        )
+        return query.scalar() or 0
+
+    def list_unknown_skills(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> list[UnknownSkill]:
+        query = self._apply_unknown_skill_filters(self.db.query(UnknownSkill), search=search, status=status)
+        return (
+            query.order_by(UnknownSkill.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
     def bump_occurrence_count(self, skill_id: UUID) -> None:
         (
             self.db.query(SkillOntology)

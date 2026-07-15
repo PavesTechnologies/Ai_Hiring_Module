@@ -51,6 +51,15 @@ class SkillSeedService:
 
                 canonical_name = skill["canonical_name"]
 
+                # The reader no longer filters these out itself (bulk-import
+                # validation needs to see and report them) — the seed script
+                # still just skips them, counted as failed rather than
+                # silently vanishing.
+                if not canonical_name:
+                    failed += 1
+                    logger.warning("Skipping row with missing canonical_name.")
+                    continue
+
                 # Skip duplicate skills
                 if canonical_name in existing_names:
                     skipped += 1
@@ -67,7 +76,7 @@ class SkillSeedService:
                     new_skill = SkillOntology(
                         id=uuid.uuid4(),
                         canonical_name=canonical_name,
-                        aliases=skill["aliases"],
+                        aliases=[alias for alias in skill["aliases"] if alias],
                         category=skill["category"],
                         parent_skill_id=parent_skill_id,
                         confidence=skill["confidence"],
