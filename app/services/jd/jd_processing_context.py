@@ -29,6 +29,7 @@ class JDProcessingContext:
     education_criteria: dict | None
     created_by: str
     file_path: str | None
+    original_filename: str | None
     raw_text: str | None
     document_type: DocumentType = DocumentType.JD
 

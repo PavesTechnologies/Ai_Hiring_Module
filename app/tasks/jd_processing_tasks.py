@@ -48,6 +48,7 @@ def process_jd_document(
     parent_jd_id: str | None = None,
     lineage_root_id: str | None = None,
     old_file_path: str | None = None,
+    original_filename: str | None = None,
 ) -> None:
     """
     Background leg of the JD processing pipeline (everything after
@@ -144,6 +145,7 @@ def process_jd_document(
             task_id=task_id,
             raw_text=raw_text,
             file_path=file_path,
+            original_filename=original_filename,
             title=title,
             jurisdiction=jurisdiction,
             min_experience_years=min_experience_years,
