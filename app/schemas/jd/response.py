@@ -16,6 +16,7 @@ class GetJDResponse(BaseModel):
     notice_period: int | None
     education_criteria: dict | None
     source_format: str
+    original_filename: str | None
     jurisdiction: str | None
     version_number: int
     is_active_version: bool
