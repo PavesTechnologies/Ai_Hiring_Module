@@ -16,6 +16,7 @@ from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
 from app.api.routes.campaign_candidate import router as campaign_candidate_router
+from app.api.routes.skill_routes import router as skill_router
 from app.api.routes import skill_ontology_routes
 from app.api.routes import unknown_skill_routes
 from app.middleware.jwt_middleware import JWTMiddleware
@@ -124,6 +125,7 @@ def health():
 app.include_router(router=router, prefix=API_PREFIX, tags=["Job Descriptions"])
 app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Campaigns"])
 app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
+app.include_router(router=skill_router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 

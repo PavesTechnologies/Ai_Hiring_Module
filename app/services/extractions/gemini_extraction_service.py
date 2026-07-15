@@ -1,3 +1,4 @@
+from google import genai
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 from app.core.config import settings
 from pydantic import ValidationError
@@ -5,13 +6,13 @@ import json
 
 from app.core.config import settings
 from app.prompts.jd_extraction_prompt import SYSTEM_PROMPT
-from app.schemas.ai.jd_extraction_response import JDExtractionResponse
+from app.schemas.ai.jd_extraction_response import JDExtractionResponse, JDExtractionGenerationSchema
 
 
 class GeminiExtractionService:
-    
+
     def __init__(self):
-        self.client = settings.gemini_api_key
+        self.client = genai.Client(api_key=settings.gemini_api_key)
     
     def extract_raw(self, normalized_text: str) -> dict:
         """
@@ -28,10 +29,11 @@ class GeminiExtractionService:
         """
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.gemini_model,
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
+                "response_schema": JDExtractionGenerationSchema,
             }
         )
 

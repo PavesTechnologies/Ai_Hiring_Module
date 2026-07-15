@@ -24,11 +24,24 @@ class JDProcessingContext:
     title: str
     jurisdiction: str
     min_experience_years: float | None
+    max_experience_years: float | None
+    notice_period: int | None
     education_criteria: dict | None
     created_by: str
     file_path: str | None
     raw_text: str | None
     document_type: DocumentType = DocumentType.JD
+
+    # Update/reprocess runs only — absent (existing_jd_id is None) means this
+    # is a normal create run, exactly as before. When present, Persistence
+    # deactivates existing_jd_id and inserts the new version row with this
+    # version_number/parent_jd_id/lineage_root_id instead of hardcoded
+    # 1/None/None, and the duplicate-hash check is scoped to exclude
+    # lineage_root_id rather than checking every JD.
+    existing_jd_id: UUID | None = None
+    version_number: int = 1
+    parent_jd_id: UUID | None = None
+    lineage_root_id: UUID | None = None
 
     # Populated progressively, one stage at a time.
     source_format: JDSourceFormat | None = None

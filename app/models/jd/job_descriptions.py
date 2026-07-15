@@ -28,6 +28,18 @@ class EmbeddingStatus(enum.Enum):
     FAILED = "FAILED"
 
 
+class JDVerificationStatus(enum.Enum):
+    # Default until the async processing pipeline finishes.
+    NOT_VERIFIED = "NOT_VERIFIED"
+    # All pipeline stages (extraction through persistence) succeeded, but
+    # at least one extracted skill didn't match the skill ontology (it has
+    # a row in jd_unknown_skills).
+    PARTIALLY_VERIFIED = "PARTIALLY_VERIFIED"
+    # All pipeline stages succeeded AND every extracted skill matched a
+    # known canonical skill - no unknown skills for this JD.
+    VERIFIED = "VERIFIED"
+
+
 class JobDescription(Base):
     __tablename__ = "job_descriptions"
     __table_args__ = (
@@ -40,13 +52,21 @@ class JobDescription(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+        server_default=text("'JOB_' || nextval('job_descriptions_job_id_seq')"),
+    )
     org_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    parsed_skills: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    required_skills: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    min_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
-    education_criteria: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extracted_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
+    required_skills: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
+    min_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=False)
+    max_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=False)
+    notice_period: Mapped[Optional[int]] = mapped_column(Integer, nullable=False)
+    education_criteria: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
     source_format: Mapped[JDSourceFormat] = mapped_column(SAEnum(JDSourceFormat, name="jd_source_format_enum"), nullable=False)
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -57,6 +77,11 @@ class JobDescription(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
+    is_verified: Mapped[JDVerificationStatus] = mapped_column(
+        SAEnum(JDVerificationStatus, name="jd_verification_status_enum"),
+        nullable=False,
+        default=JDVerificationStatus.NOT_VERIFIED,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

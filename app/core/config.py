@@ -1,4 +1,8 @@
-from pydantic_settings import BaseSettings
+import json
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 
 class Settings(BaseSettings):
@@ -28,6 +32,7 @@ class Settings(BaseSettings):
 
     # AI / Embeddings
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "all-MiniLM-L6-v2"
 
     # Encryption
@@ -37,7 +42,7 @@ class Settings(BaseSettings):
     ums_url: str   # required — set UMS_URL in .env
 
     # CORS — list explicit origins; credentials require non-wildcard origins
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: Annotated[list[str], NoDecode]
 
     # App
     app_env: str = "development"
@@ -46,6 +51,43 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, list):
+            return value
+
+        value = value.strip()
+        if not value:
+            return []
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = None
+
+        if isinstance(parsed, list):
+            return [str(origin).strip() for origin in parsed if str(origin).strip()]
+
+        if value.startswith("[") and value.endswith("]"):
+            value = value[1:-1]
+
+        return [origin.strip().strip('"').strip("'") for origin in value.split(",") if origin.strip()]
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug(cls, value: str | bool) -> bool | str:
+        if isinstance(value, bool):
+            return value
+
+        value = value.strip().lower()
+        if value in {"release", "production", "prod"}:
+            return False
+        if value in {"development", "dev", "local"}:
+            return True
+        return value
+
     @property
     def database_url(self) -> str:
         return (

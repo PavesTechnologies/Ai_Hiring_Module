@@ -9,10 +9,12 @@ class JDMapper:
     def to_list_item(jd: JobDescription) -> JDListItem:
         return JDListItem(
             id=jd.id,
+            job_id=jd.job_id,
             title=jd.title,
             version_number=jd.version_number,
             jurisdiction=jd.jurisdiction,
             source_format=jd.source_format.value,
+            is_verified=jd.is_verified.value,
             created_by=jd.created_by,
             created_at=jd.created_at,
         )

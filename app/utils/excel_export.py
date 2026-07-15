@@ -414,20 +414,20 @@ class ExcelExport:
         cell.fill = section_fill
         row += 1
 
-        if jd.parsed_skills:
+        if jd.extracted_json:
 
-            if isinstance(jd.parsed_skills, dict):
+            if isinstance(jd.extracted_json, dict):
 
-                for key, value in jd.parsed_skills.items():
+                for key, value in jd.extracted_json.items():
 
                     ws.cell(row=row, column=1).value = key
                     ws.cell(row=row, column=2).value = str(value)
 
                     row += 1
 
-            elif isinstance(jd.parsed_skills, list):
+            elif isinstance(jd.extracted_json, list):
 
-                for skill in jd.parsed_skills:
+                for skill in jd.extracted_json:
 
                     ws.cell(row=row, column=1).value = str(skill)
 

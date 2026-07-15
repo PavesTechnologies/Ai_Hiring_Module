@@ -1,19 +1,25 @@
 import logging
+from uuid import UUID
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 
+from app.models.async_tasks import DocumentType, TaskStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.checkpoint_repository import CheckpointRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.skill_repository import SkillRepository
+from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.services.document_processing.stage_execution_service import StageExecutionService
+from app.services.document_processing.retry_driver import RetryDriver
+from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_pipeline import JDProcessingPipeline
@@ -24,8 +30,9 @@ from app.core.storage_service import StorageService
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="jd.process_document")
+@celery_app.task(name="jd.process_document", bind=True)
 def process_jd_document(
+    self,
     task_id: str,
     raw_text: str | None,
     file_path: str | None,
@@ -34,12 +41,27 @@ def process_jd_document(
     min_experience_years: float | None,
     education_criteria: dict | None,
     created_by: str,
+    max_experience_years: float | None = None,
+    notice_period: int | None = None,
+    existing_jd_id: str | None = None,
+    version_number: int = 1,
+    parent_jd_id: str | None = None,
+    lineage_root_id: str | None = None,
+    old_file_path: str | None = None,
 ) -> None:
     """
     Background leg of the JD processing pipeline (everything after
     Validation/Storage, which already ran synchronously in the route):
     Text Extraction -> Text Cleaning -> AI Extraction -> JSON Validation ->
     Skill Normalization -> Embedding Generation -> Persistence.
+
+    existing_jd_id/version_number/parent_jd_id/lineage_root_id are only set
+    for an update-triggered reprocess (JDService.update_jd() returned
+    JDReprocessRequired) — absent, this is a normal create run. old_file_path
+    is the document a reprocess is replacing, deleted only after the new
+    version has successfully persisted (mirrors the cleanup update_jd()
+    used to do synchronously, moved here since persistence itself is now
+    async for this path too).
 
     Stage tracking runs on its own session (`stage_db`), separate from the
     business-write session (`db`). StageExecutionService commits once at
@@ -54,6 +76,9 @@ def process_jd_document(
     db = SessionLocal()
     stage_db = SessionLocal()
     task_log = None
+    checkpoint_repo = None
+    retry_driver = None
+    attempt_number = 1
     try:
         jd_repo = JDRepository(db)
         skill_repo = SkillRepository(db)
@@ -65,10 +90,16 @@ def process_jd_document(
         task_log_service = CeleryTaskLogService(task_log_repo)
         stage_tracker = StageExecutionService(stage_repo)
 
-        task_log = task_log_service.create_log(
-            task_id=task_id,
-            task_type="JD_DOCUMENT_PROCESSING",
-        )
+        existing_task_log = task_log_repo.get_by_task_id(task_id)
+        if existing_task_log is not None:
+            existing_task_log.status = TaskStatus.RUNNING
+            task_log = task_log_repo.update(existing_task_log)
+            task_log_repo.commit()
+        else:
+            task_log = task_log_service.create_log(
+                task_id=task_id,
+                task_type="JD_DOCUMENT_PROCESSING",
+            )
 
         jd_service = JDService(
             repository=jd_repo,
@@ -77,19 +108,38 @@ def process_jd_document(
             storage_service=StorageService(),
         )
 
+        # One EmbeddingService instance shared by the pipeline's own JD-level
+        # embedding stage and by skill-level semantic matching — the
+        # underlying sentence-transformer model is a class-level singleton
+        # either way, but there's no reason to instantiate the wrapper twice.
+        embedding_service = EmbeddingService()
+
+        checkpoint_repo = CheckpointRepository(stage_db)
+        stage_failure_log_repo = StageFailureLogRepository(stage_db)
+        dead_letter_queue_repo = DeadLetterQueueRepository(db)
+        retry_driver = RetryDriver(
+            checkpoint_repo,
+            stage_failure_log_repo,
+            dead_letter_queue_repo,
+            task_log_service,
+            task_log,
+        )
+
         pipeline = JDProcessingPipeline(
             preprocessing_service=PreprocessingService(),
             extraction_service=GeminiExtractionService(),
             hash_service=HashService(),
             storage_service=StorageService(),
-            skill_normalization_service=SkillNormalizationService(skill_repo),
-            embedding_service=EmbeddingService(),
+            skill_normalization_service=SkillNormalizationService(skill_repo, embedding_service),
+            embedding_service=embedding_service,
             jd_service=jd_service,
             jd_repository=jd_repo,
             skill_repository=skill_repo,
             stage_tracker=stage_tracker,
+            checkpoint_repo=checkpoint_repo,
         )
 
+        attempt_number = self.request.retries + 1
         jd_id = pipeline.run(
             task_id=task_id,
             raw_text=raw_text,
@@ -97,19 +147,65 @@ def process_jd_document(
             title=title,
             jurisdiction=jurisdiction,
             min_experience_years=min_experience_years,
+            max_experience_years=max_experience_years,
+            notice_period=notice_period,
             education_criteria=education_criteria,
             created_by=created_by,
+            existing_jd_id=UUID(existing_jd_id) if existing_jd_id else None,
+            version_number=version_number,
+            parent_jd_id=UUID(parent_jd_id) if parent_jd_id else None,
+            lineage_root_id=UUID(lineage_root_id) if lineage_root_id else None,
+            attempt_number=attempt_number,
         )
+
+        active_checkpoint = checkpoint_repo.get(task_id)
+        if active_checkpoint is not None:
+            checkpoint_repo.delete(task_id)
+            checkpoint_repo.commit()
 
         if jd_id:
             task_log.jd_id = jd_id
             task_log_repo.update(task_log)
             task_log_repo.commit()
-            task_log_service.mark_success(task_log, summary=f"JD {jd_id} created.")
+            task_log_service.mark_success(
+                task_log,
+                summary=f"JD {jd_id} reprocessed." if existing_jd_id else f"JD {jd_id} created.",
+            )
+            if existing_jd_id and file_path and old_file_path:
+                try:
+                    jd_service.storage_service.delete_file(
+                        bucket_name=jd_service.JD_STORAGE_BUCKET,
+                        file_path=old_file_path,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to delete superseded JD document '%s' for JD %s.",
+                        old_file_path, jd_id,
+                    )
         else:
             task_log_service.mark_success(task_log, summary="Duplicate job description; no new JD created.")
 
+    except StageExecutionError as stage_exc:
+        should_retry = False
+        if retry_driver is not None:
+            should_retry = retry_driver.handle_failure(
+                self,
+                task_id,
+                DocumentType.JD,
+                stage_exc,
+                attempt_number,
+            )
+        if not should_retry:
+            if task_log:
+                task_log_service.mark_failure(task_log, str(stage_exc.original))
+            logger.exception("JD document processing task failed for task_id %s", task_id)
+            raise stage_exc.original
     except Exception as ex:
+        # A DB-level failure inside pipeline.run() leaves `db`'s transaction
+        # aborted; mark_failure reuses the same session, so without this
+        # rollback its own read/write dies with InFailedSqlTransaction and
+        # masks the real error above.
+        db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         logger.exception("JD document processing task failed for task_id %s", task_id)

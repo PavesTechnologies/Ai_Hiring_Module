@@ -50,27 +50,6 @@ def create_campaign(
         message="Campaign created successfully"
     )
 
-
-# @router.get(
-#     "/all",
-#     response_model=APIResponse[list[CampaignResponse]],
-#     status_code=status.HTTP_200_OK,
-#     summary="Get all campaigns",
-#     description="Retrieve a list of all campaigns with JD and hiring manager details.",
-#     dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
-# )
-# def get_all_campaigns(
-#     show_closed: bool = Query(default=False),
-#     user: TokenUser = Depends(get_current_user),
-#     service: CampaignService = Depends(get_campaign_service),
-# ):
-#     campaigns = service.get_all_campaigns(user=user, show_closed=show_closed)
-
-#     return APIResponse.ok(
-#         data=campaigns,
-#         message="Campaigns retrieved successfully"
-#     )
-
 @router.get(
     "/all",
     response_model=APIResponse[list[CampaignResponse]],
