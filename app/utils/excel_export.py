@@ -200,6 +200,66 @@ class ExcelExport:
         return output
 
     @staticmethod
+    def export_bulk_import_errors(failures):
+        """
+        S07-T03: failures is an iterable of dicts with the original uploaded
+        columns (canonical_name, aliases, category, parent_skill, confidence)
+        plus a reason — one row per failed record from a bulk import run, so
+        HR_ADMIN can correct and re-upload via the existing import endpoint.
+        """
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Import Errors"
+
+        ws.append([
+            "Canonical Name",
+            "Aliases",
+            "Category",
+            "Parent Skill",
+            "Confidence",
+            "Reason",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for failure in failures:
+            aliases = failure.get("aliases") or []
+            ws.append([
+                failure.get("canonical_name") or "",
+                ", ".join(aliases) if isinstance(aliases, list) else str(aliases),
+                failure.get("category") or "",
+                failure.get("parent_skill") or "",
+                failure.get("confidence") or "",
+                failure.get("reason") or "",
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
     def export_single_jd(
         jd,
         version_history,
