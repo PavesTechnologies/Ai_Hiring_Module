@@ -49,9 +49,12 @@ class JDReprocessRequired:
     title: str
     jurisdiction: str
     min_experience_years: float | None
+    max_experience_years: float | None
+    notice_period: int | None
     education_criteria: dict | None
     raw_text: str | None
     file_path: str | None
+    original_filename: str | None
     old_file_path: str | None
     updated_by: str
 
@@ -98,6 +101,9 @@ class JDService:
         file_path: str | None,
         created_by: str,
         content_hash: str,
+        original_filename: str | None = None,
+        max_experience_years: float | None = None,
+        notice_period: int | None = None,
         extraction: JDExtractionResponse,
         skill_repository: SkillRepository,
         skill_matches: list[SkillMatchResult],
@@ -166,9 +172,12 @@ class JDService:
                 raw_text=raw_text,
                 jurisdiction=jurisdiction,
                 min_experience_years=min_experience_years,
+                max_experience_years=max_experience_years,
+                notice_period=notice_period,
                 education_criteria=education_criteria,
                 source_format=source_format,
                 file_path=file_path,
+                original_filename=original_filename,
                 content_hash=content_hash,
                 version_number=version_number,
                 is_active_version=True,
@@ -265,25 +274,32 @@ class JDService:
             self.repository.rollback()
             raise
 
-    def validate_and_store_file(self, file: UploadFile, org_id: UUID | None) -> str:
+    def validate_and_store_file(self, file: UploadFile, org_id: UUID | None) -> tuple[str, str]:
         """
         Validation + Storage stages for the async JD processing pipeline:
         validates the upload and stores it in Supabase, synchronously, in
         the request. Text extraction happens later, in the pipeline's own
         Text Extraction stage, so a slow parse never blocks the response.
 
-        Returns the storage object path.
+        Storage always writes under a generated uuid4() name (never the
+        original filename) to avoid collisions across uploads, so the
+        original name is returned alongside the storage path purely for
+        display/download purposes - it's carried through to JobDescription.
+        original_filename rather than reconstructed from the storage path.
+
+        Returns (storage object path, original filename).
         """
         extension = self.validate_upload_type(file)
         file_content = file.file.read()
 
         object_path = f"org_{org_id}/jd/{uuid4()}.{extension}"
-        return self.storage_service.upload_file(
+        stored_path = self.storage_service.upload_file(
             bucket_name=self.JD_STORAGE_BUCKET,
             file_path=object_path,
             file_content=file_content,
             content_type=file.content_type,
         )
+        return stored_path, file.filename
 
     def validate_upload_type(self, file: UploadFile) -> str:
         extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
@@ -314,6 +330,7 @@ class JDService:
                                lineage_root_id: UUID | None,
                                source_format: JDSourceFormat = JDSourceFormat.TEXT,
                                file_path: str | None = None,
+                               original_filename: str | None = None,
                                fallback_raw_text: str | None = None,
                                fallback_extracted_json: dict | None = None,
                                fallback_required_skills: dict | None = None,
@@ -331,13 +348,12 @@ class JDService:
             raw_text= raw_text,
             jurisdiction= request.jurisdiction,
             min_experience_years= request.min_experience_years,
-            education_criteria= (
-                request.education_criteria.model_dump()
-                if request.education_criteria
-                else None
-            ),
+            max_experience_years= request.max_experience_years,
+            notice_period= request.notice_period,
+            education_criteria= request.education_criteria.model_dump(),
             source_format= source_format,
             file_path= file_path,
+            original_filename= original_filename,
             content_hash= self.hash_service.generate_hash(raw_text),
             version_number= version_number,
             is_active_version= True,
@@ -368,10 +384,12 @@ class JDService:
             is_active_version=job_description.is_active_version,
             jurisdiction=job_description.jurisdiction,
             min_experience_years=job_description.min_experience_years,
+            max_experience_years=job_description.max_experience_years,
             notice_period=job_description.notice_period,
             raw_text=job_description.raw_text,
             required_skills=job_description.required_skills,
             source_format=job_description.source_format.value,
+            original_filename=job_description.original_filename,
             title=job_description.title,
             updated_at=job_description.updated_at,
             version_number=job_description.version_number,
@@ -413,7 +431,8 @@ class JDService:
         extension = existing_jd.file_path.rsplit(".", 1)[-1].lower()
         content_type = self._ALLOWED_UPLOAD_TYPES.get(extension, (None,))[0] or "application/octet-stream"
 
-        return file_bytes, f"{safe_title}.{extension}", content_type
+        filename = existing_jd.original_filename or f"{safe_title}.{extension}"
+        return file_bytes, filename, content_type
 
     @staticmethod
     def _render_docx(raw_text: str) -> bytes:
@@ -432,6 +451,7 @@ class JDService:
         request: UpdateJDRequest,
         updated_by: str,
         file_path: str | None = None,
+        original_filename: str | None = None,
     ) -> UpdateJDResponse | JDReprocessRequired:
         """
         Metadata-only changes (title/jurisdiction/min_experience_years/
@@ -490,9 +510,7 @@ class JDService:
         file_replaced = file_path is not None
 
         if raw_text_changed or file_replaced:
-            education_criteria = (
-                request.education_criteria.model_dump() if request.education_criteria else None
-            )
+            education_criteria = request.education_criteria.model_dump()
             return JDReprocessRequired(
                 existing_jd_id=existing_jd.id,
                 version_number=existing_jd.version_number + 1,
@@ -501,12 +519,15 @@ class JDService:
                 title=request.title,
                 jurisdiction=request.jurisdiction,
                 min_experience_years=request.min_experience_years,
+                max_experience_years=request.max_experience_years,
+                notice_period=request.notice_period,
                 education_criteria=education_criteria,
                 # Only one of these is set: raw_text for the JSON-body path,
                 # file_path for the file-upload path — the pipeline's own
                 # TEXT_EXTRACTION stage handles the file case, same as create.
                 raw_text=request.raw_text if raw_text_changed else None,
                 file_path=file_path,
+                original_filename=original_filename if file_replaced else existing_jd.original_filename,
                 old_file_path=existing_jd.file_path,
                 updated_by=updated_by,
             )
@@ -523,6 +544,7 @@ class JDService:
             lineage_root_id= lineage_root_id,
             source_format= existing_jd.source_format,
             file_path= existing_jd.file_path,
+            original_filename= existing_jd.original_filename,
             fallback_raw_text= existing_jd.raw_text,
             fallback_extracted_json= existing_jd.extracted_json,
             fallback_required_skills= existing_jd.required_skills,

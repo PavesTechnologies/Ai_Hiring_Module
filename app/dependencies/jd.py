@@ -13,6 +13,7 @@ from app.core.storage_service import StorageService
 
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.jd.jd_processing_status_service import JDProcessingStatusService
 
@@ -69,6 +70,12 @@ def get_celery_task_log_repository(
     db: Session = Depends(get_db),
 ) -> CeleryTaskLogRepository:
     return CeleryTaskLogRepository(db)
+
+
+def get_celery_task_log_service(
+    repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+) -> CeleryTaskLogService:
+    return CeleryTaskLogService(repository)
 
 
 def get_jd_processing_status_service(

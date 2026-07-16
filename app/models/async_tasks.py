@@ -63,6 +63,37 @@ class StageExecutionStatus(enum.Enum):
     SKIPPED = "SKIPPED"
 
 
+class FailureClassification(enum.Enum):
+    TRANSIENT = "TRANSIENT"
+    PERMANENT = "PERMANENT"
+    UNKNOWN = "UNKNOWN"
+
+
+class DocumentProcessingCheckpoint(Base):
+    __tablename__ = "document_processing_checkpoints"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    document_type: Mapped[DocumentType] = mapped_column(SAEnum(DocumentType, name="document_type_enum"), nullable=False)
+    failed_at_stage: Mapped[Optional[ProcessingStage]] = mapped_column(SAEnum(ProcessingStage, name="processing_stage_enum"), nullable=True)
+    context_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class StageFailureLog(Base):
+    __tablename__ = "stage_failure_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    stage: Mapped[ProcessingStage] = mapped_column(SAEnum(ProcessingStage, name="processing_stage_enum"), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    exception_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    classification: Mapped[FailureClassification] = mapped_column(SAEnum(FailureClassification, name="failure_classification_enum"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class CeleryTaskLog(Base):
     __tablename__ = "celery_task_log"
 
@@ -70,6 +101,8 @@ class CeleryTaskLog(Base):
     task_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     task_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=True)
     campaign_candidate_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=True)
     jd_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)

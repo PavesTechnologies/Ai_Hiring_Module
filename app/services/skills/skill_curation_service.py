@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from app.enums.constants import ActionType, EntityType
@@ -10,7 +11,10 @@ from app.models.skills import (
 )
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
+from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
 from app.services.skills.skill_normalization_service import SkillMatchTier
+
+logger = logging.getLogger(__name__)
 
 
 class SkillCurationService:
@@ -24,12 +28,26 @@ class SkillCurationService:
     resolves an unknown skill after the fact.
     """
 
-    def __init__(self, skill_repository: SkillRepository, audit_service: AuditService):
+    def __init__(
+        self,
+        skill_repository: SkillRepository,
+        audit_service: AuditService,
+        embedding_queue_service: EmbeddingQueueService,
+    ):
         self.skill_repository = skill_repository
         self.audit_service = audit_service
+        self.embedding_queue_service = embedding_queue_service
 
     def list_pending_unknown_skills(self) -> list[UnknownSkill]:
         return self.skill_repository.get_pending_unknown_skills()
+
+    def list_jd_skills(self, jd_id: UUID):
+        """Resolved (canonical) skills matched for a JD."""
+        return self.skill_repository.get_jd_skills_by_jd_id(jd_id)
+
+    def list_jd_unknown_skills(self, jd_id: UUID):
+        """Unknown-skill occurrences recorded for a JD, resolved or not."""
+        return self.skill_repository.get_jd_unknown_skills_by_jd_id(jd_id)
 
     def map_to_existing_skill(
         self,
@@ -112,6 +130,18 @@ class SkillCurationService:
             details={"raw_text": unknown_skill.raw_text, "canonical_skill_id": str(new_skill.id)},
         )
         self.skill_repository.commit()
+
+        # Fire-and-forget: the promotion has already committed above, so a
+        # broker outage here must never undo it or fail this call — only
+        # logged. The Missing Skill Embedding Recovery utility picks up
+        # anything left un-queued.
+        try:
+            self.embedding_queue_service.queue_skill_embedding(new_skill.id)
+        except EmbeddingQueueError:
+            logger.exception(
+                "Failed to enqueue embedding generation for promoted skill '%s'.", new_skill.id,
+            )
+
         return new_skill
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:

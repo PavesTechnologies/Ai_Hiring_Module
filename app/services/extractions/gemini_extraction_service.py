@@ -6,7 +6,7 @@ import json
 
 from app.core.config import settings
 from app.prompts.jd_extraction_prompt import SYSTEM_PROMPT
-from app.schemas.ai.jd_extraction_response import JDExtractionResponse
+from app.schemas.ai.jd_extraction_response import JDExtractionResponse, JDExtractionGenerationSchema
 
 
 class GeminiExtractionService:
@@ -33,6 +33,7 @@ class GeminiExtractionService:
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
+                "response_schema": JDExtractionGenerationSchema,
             }
         )
 

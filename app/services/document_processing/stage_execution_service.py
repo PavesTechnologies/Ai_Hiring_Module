@@ -9,8 +9,16 @@ from app.models.async_tasks import (
     StageExecutionStatus,
 )
 from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.services.jd import context_serializer
 
 T = TypeVar("T")
+
+
+class StageExecutionError(Exception):
+    def __init__(self, stage: ProcessingStage, original: Exception):
+        self.stage = stage
+        self.original = original
+        super().__init__(str(original))
 
 
 class StageExecutionService:
@@ -51,6 +59,8 @@ class StageExecutionService:
         document_type: DocumentType,
         stage: ProcessingStage,
         attempt_number: int = 1,
+        context=None,
+        checkpoint_repo=None,
     ) -> None:
         execution = self.repository.start_stage(task_id, document_type, stage, attempt_number)
         self.repository.complete_stage(execution, StageExecutionStatus.SKIPPED)
@@ -63,6 +73,8 @@ class StageExecutionService:
         stage: ProcessingStage,
         fn: Callable[[], T],
         attempt_number: int = 1,
+        context=None,
+        checkpoint_repo=None,
     ) -> T:
         execution = self.start_stage(task_id, document_type, stage, attempt_number)
         started = time.monotonic()
@@ -71,7 +83,15 @@ class StageExecutionService:
         except Exception as exc:
             duration_ms = int((time.monotonic() - started) * 1000)
             self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms)
-            raise
+            if context is not None and checkpoint_repo is not None:
+                checkpoint_repo.upsert(
+                    task_id,
+                    document_type,
+                    failed_at_stage=stage,
+                    context_data=context_serializer.to_dict(context),
+                )
+                checkpoint_repo.commit()
+            raise StageExecutionError(stage, exc) from exc
         duration_ms = int((time.monotonic() - started) * 1000)
         self.complete_stage(execution, StageExecutionStatus.SUCCESS, duration_ms=duration_ms)
         return result

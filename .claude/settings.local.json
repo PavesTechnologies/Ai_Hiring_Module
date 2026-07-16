@@ -4,7 +4,10 @@
       "Bash(tree:*)",
       "Bash(python app/seeds/seed_platform_config.py:*)",
       "Bash(python -c:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(venv/Scripts/python.exe -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/routes/skill_routes.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/repositories/skill_repository.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/services/skills/skill_curation_service.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/schemas/skills/curation.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -m alembic heads)"
     ],
     "deny": [],
     "ask": []

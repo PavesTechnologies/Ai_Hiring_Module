@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     db_name: str
     db_driver: str = "postgresql+psycopg2"
     db_sslmode: str = "require"
+    db_pool_size: int = 1
+    db_max_overflow: int = 2
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -32,7 +34,7 @@ class Settings(BaseSettings):
 
     # AI / Embeddings
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "all-MiniLM-L6-v2"
 
     # Encryption

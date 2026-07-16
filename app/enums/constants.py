@@ -70,6 +70,11 @@ class ActionType(enum.Enum):
     # are usable immediately, unlike the Resume Intake entries above.
     BULK_UPLOAD_CANCELLED = "BULK_UPLOAD_CANCELLED"
     BULK_UPLOAD_HISTORY_EXPORTED = "BULK_UPLOAD_HISTORY_EXPORTED"
+    SKILL_UPDATED = "SKILL_UPDATED"
+    ALIAS_DUPLICATE_DETECTED = "ALIAS_DUPLICATE_DETECTED"
+    SKILL_PARENT_UPDATED = "SKILL_PARENT_UPDATED"
+    SKILL_DEACTIVATED = "SKILL_DEACTIVATED"
+    SKILL_REACTIVATED = "SKILL_REACTIVATED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
@@ -78,17 +83,6 @@ class EntityType(enum.Enum):
     SKILL_ONTOLOGY = "SKILL_ONTOLOGY"
     UNKNOWN_SKILL = "UNKNOWN_SKILL"
     JD_SKILL = "JD_SKILL"
-    # Resume Intake (M05) — same DB-enum caveat as ActionType above applies
-    # to audit_entity_type_enum.
-    CANDIDATE = "CANDIDATE"
-    RESUME = "RESUME"
-    CONSENT = "CONSENT"
-    # Resume Intake (M05) Phase 11 — same DB-enum caveat as above applies to
-    # audit_entity_type_enum.
-    CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
-    # Bulk ZIP Upload (M05-E02) Phase B0 — same as above, added via this
-    # migration, immediately usable.
-    BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
 
 
 # Resume storage prefix inside the S3 bucket

@@ -1,10 +1,12 @@
 import logging
 import uuid
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models.skills import SkillOntology
+from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +20,18 @@ class SkillSeedService:
     - Future Bulk Import feature
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, embedding_queue_service: EmbeddingQueueService | None = None):
         self.db = db
+        self.embedding_queue_service = embedding_queue_service or EmbeddingQueueService()
 
     def seed_skills(self, skills: list[dict[str, Any]]) -> dict[str, int]:
         inserted = 0
         skipped = 0
         failed = 0
+        new_active_skill_ids: list[UUID] = []
 
         try:
+            logger.info("Starting Skill Seed Import")
             logger.info("Loading existing skills...")
 
             # Load all existing canonical names once
@@ -51,6 +56,15 @@ class SkillSeedService:
 
                 canonical_name = skill["canonical_name"]
 
+                # The reader no longer filters these out itself (bulk-import
+                # validation needs to see and report them) — the seed script
+                # still just skips them, counted as failed rather than
+                # silently vanishing.
+                if not canonical_name:
+                    failed += 1
+                    logger.warning("Skipping row with missing canonical_name.")
+                    continue
+
                 # Skip duplicate skills
                 if canonical_name in existing_names:
                     skipped += 1
@@ -67,7 +81,7 @@ class SkillSeedService:
                     new_skill = SkillOntology(
                         id=uuid.uuid4(),
                         canonical_name=canonical_name,
-                        aliases=skill["aliases"],
+                        aliases=[alias for alias in skill["aliases"] if alias],
                         category=skill["category"],
                         parent_skill_id=parent_skill_id,
                         confidence=skill["confidence"],
@@ -82,6 +96,9 @@ class SkillSeedService:
                     existing_names.add(canonical_name)
                     parent_lookup[canonical_name] = new_skill.id
 
+                    if new_skill.is_active:
+                        new_active_skill_ids.append(new_skill.id)
+
                     inserted += 1
 
                 except Exception:
@@ -95,6 +112,25 @@ class SkillSeedService:
 
             self.db.commit()
 
+            logger.info("Inserted %s skills", inserted)
+            logger.info("Commit Successful")
+
+            # The transaction is already durable at this point — a Redis/
+            # Celery outage below must never roll back a successful import,
+            # so each skill is queued independently and a failure here is
+            # only logged. The Missing Skill Embedding Recovery utility
+            # picks up anything left un-queued.
+            if new_active_skill_ids:
+                logger.info("Queueing %s embedding jobs", len(new_active_skill_ids))
+                for skill_id in new_active_skill_ids:
+                    try:
+                        self.embedding_queue_service.queue_skill_embedding(skill_id)
+                    except EmbeddingQueueError:
+                        logger.exception(
+                            "Failed to queue embedding generation for skill '%s'.", skill_id,
+                        )
+                logger.info("Queue Completed")
+
             logger.info(
                 "Skill ontology seed completed. "
                 "Inserted=%s Skipped=%s Failed=%s",
@@ -102,6 +138,7 @@ class SkillSeedService:
                 skipped,
                 failed,
             )
+            logger.info("Seed Import Completed")
 
         except Exception:
             self.db.rollback()

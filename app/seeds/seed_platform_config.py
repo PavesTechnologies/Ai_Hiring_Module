@@ -122,6 +122,12 @@ try:
                 "default given ZIP_MAX_SIZE_MB=500 and typical resume file sizes."
             ),
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SKILL_SIMILARITY_THRESHOLD",
+            value="90.00",
+            description="RapidFuzz similarity score (0-100) above which a newly created skill is flagged as similar to an existing one",
+        ),
     ]
 
     for config in configs:

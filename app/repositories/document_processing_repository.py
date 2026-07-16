@@ -81,6 +81,21 @@ class DocumentProcessingRepository:
             .all()
         )
 
+    def get_by_task_ids(self, task_ids: list[str]) -> list[DocumentProcessingStageExecution]:
+        """
+        Batched counterpart to get_by_task_id — one query for a whole page
+        of tasks (e.g. a "my uploads" list) instead of one query per task.
+        Caller groups the flat result by task_id.
+        """
+        if not task_ids:
+            return []
+        return (
+            self.db.query(DocumentProcessingStageExecution)
+            .filter(DocumentProcessingStageExecution.task_id.in_(task_ids))
+            .order_by(DocumentProcessingStageExecution.task_id, DocumentProcessingStageExecution.created_at)
+            .all()
+        )
+
     def link_document_id(self, task_id: str, document_id: UUID) -> None:
         (
             self.db.query(DocumentProcessingStageExecution)

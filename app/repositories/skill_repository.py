@@ -101,6 +101,35 @@ class SkillRepository:
         self.db.refresh(unknown_skill)
         return unknown_skill, True
 
+    def _apply_unknown_skill_filters(self, query, *, search: str | None, status: str | None):
+        if search:
+            query = query.filter(UnknownSkill.raw_text.ilike(f"%{search.strip()}%"))
+        if status:
+            query = query.filter(UnknownSkill.status == status)
+        return query
+
+    def count_unknown_skills(self, *, search: str | None = None, status: str | None = None) -> int:
+        query = self._apply_unknown_skill_filters(
+            self.db.query(func.count(UnknownSkill.id)), search=search, status=status
+        )
+        return query.scalar() or 0
+
+    def list_unknown_skills(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str | None = None,
+        status: str | None = None,
+    ) -> list[UnknownSkill]:
+        query = self._apply_unknown_skill_filters(self.db.query(UnknownSkill), search=search, status=status)
+        return (
+            query.order_by(UnknownSkill.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
     def bump_occurrence_count(self, skill_id: UUID) -> None:
         (
             self.db.query(SkillOntology)
@@ -142,6 +171,26 @@ class SkillRepository:
 
     def get_jd_skill_by_id(self, jd_skill_id: UUID) -> JDSkill | None:
         return self.db.query(JDSkill).filter(JDSkill.id == jd_skill_id).first()
+
+    def get_jd_skills_by_jd_id(self, jd_id: UUID) -> list[tuple[JDSkill, SkillOntology]]:
+        """Resolved (canonical) skills for a JD, paired with their SkillOntology row for display."""
+        return (
+            self.db.query(JDSkill, SkillOntology)
+            .join(SkillOntology, JDSkill.canonical_skill_id == SkillOntology.id)
+            .filter(JDSkill.jd_id == jd_id)
+            .order_by(JDSkill.created_at)
+            .all()
+        )
+
+    def get_jd_unknown_skills_by_jd_id(self, jd_id: UUID) -> list[tuple[JDUnknownSkill, UnknownSkill]]:
+        """Not-yet-resolved (or resolved) unknown-skill occurrences for a JD, paired with the deduped UnknownSkill row."""
+        return (
+            self.db.query(JDUnknownSkill, UnknownSkill)
+            .join(UnknownSkill, JDUnknownSkill.unknown_skill_id == UnknownSkill.id)
+            .filter(JDUnknownSkill.jd_id == jd_id)
+            .order_by(JDUnknownSkill.created_at)
+            .all()
+        )
 
     def remap_jd_skill(self, jd_skill: JDSkill, new_canonical_skill_id: UUID) -> JDSkill:
         """
