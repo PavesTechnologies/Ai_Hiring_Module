@@ -8,6 +8,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
+from app.services.embedding_queue_service import EmbeddingQueueService
 from app.services.skills.SkillOntologyService import SkillOntologyService
 
 
@@ -47,6 +48,10 @@ def get_celery_task_log_repository(
     return CeleryTaskLogRepository(db)
 
 
+def get_embedding_queue_service() -> EmbeddingQueueService:
+    return EmbeddingQueueService()
+
+
 def get_skill_ontology_service(
     repository: SkillOntologyRepository = Depends(get_skill_ontology_repository),
     db: Session = Depends(get_db),
@@ -54,6 +59,7 @@ def get_skill_ontology_service(
     config_repository: ConfigRepository = Depends(get_config_repository),
     audit_service: AuditService = Depends(get_audit_service),
     celery_task_log_repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    embedding_queue_service: EmbeddingQueueService = Depends(get_embedding_queue_service),
 ) -> SkillOntologyService:
     return SkillOntologyService(
         repository=repository,
@@ -62,4 +68,5 @@ def get_skill_ontology_service(
         config_repository=config_repository,
         audit_service=audit_service,
         celery_task_log_repository=celery_task_log_repository,
+        embedding_queue_service=embedding_queue_service,
     )

@@ -46,7 +46,7 @@ from app.schemas.skill_ontology.skill_ontology_response import (
 )
 from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.tasks.skill_ontology_tasks import generate_skill_embedding
+from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
 from app.utils.excel.skill_excel_reader import SkillExcelReader
 from app.utils.excel_export import ExcelExport
 
@@ -75,6 +75,7 @@ class SkillOntologyService:
         config_repository: ConfigRepository,
         audit_service: AuditService,
         celery_task_log_repository: CeleryTaskLogRepository,
+        embedding_queue_service: EmbeddingQueueService,
     ):
         self.repository = repository
         self.db = db
@@ -82,6 +83,7 @@ class SkillOntologyService:
         self.config_repository = config_repository
         self.audit_service = audit_service
         self.celery_task_log_repository = celery_task_log_repository
+        self.embedding_queue_service = embedding_queue_service
 
     def get_dashboard_summary(self) -> SkillOntologySummaryResponse:
         return SkillOntologySummaryResponse(**self.repository.get_dashboard_summary())
@@ -654,6 +656,7 @@ class SkillOntologyService:
         inserted = updated = skipped = failed = 0
         failures: list[BulkImportFailureResponse] = []
         failed_rows_detail: list[dict] = []
+        new_active_skill_ids: list[UUID] = []
 
         try:
             existing_by_name = self.repository.get_all_canonical_names()
@@ -716,6 +719,8 @@ class SkillOntologyService:
                             )
                             self.repository.create_skill(new_skill)
                             existing_by_name[canonical_name] = new_skill
+                            if new_skill.is_active:
+                                new_active_skill_ids.append(new_skill.id)
                             inserted += 1
 
                 except Exception as exc:
@@ -738,6 +743,24 @@ class SkillOntologyService:
             self.repository.rollback()
             logger.exception("Bulk import failed.")
             raise
+
+        logger.info("Commit Successful")
+
+        # The batch transaction already committed above — a Redis/Celery
+        # outage here must never roll back a successful import, so each
+        # skill is queued independently and a failure here is only logged.
+        # The Missing Skill Embedding Recovery utility picks up anything
+        # left un-queued.
+        if new_active_skill_ids:
+            logger.info("Queueing %s embedding jobs", len(new_active_skill_ids))
+            for skill_id in new_active_skill_ids:
+                try:
+                    self.embedding_queue_service.queue_skill_embedding(skill_id)
+                except EmbeddingQueueError:
+                    logger.exception(
+                        "Failed to queue embedding generation for skill '%s'.", skill_id,
+                    )
+            logger.info("Queue Completed")
 
         logger.info(
             "Bulk import completed | inserted=%s updated=%s skipped=%s failed=%s",
@@ -1026,15 +1049,14 @@ class SkillOntologyService:
         )
 
     def _enqueue_embedding_generation(self, skill_id: UUID) -> None:
+        # Fire-and-forget: a broker outage must never fail skill creation/
+        # update, which has already committed by the time this runs. The
+        # actual task_id-generation + apply_async lives in
+        # EmbeddingQueueService now — this call site only owns the decision
+        # to swallow (not propagate) a queuing failure.
         try:
-            task_id = uuid4()
-            generate_skill_embedding.apply_async(
-                kwargs={"task_id": str(task_id), "skill_id": str(skill_id)},
-                task_id=str(task_id),
-            )
-        except Exception:
-            # Fire-and-forget: a broker outage must never fail skill creation,
-            # which has already committed by the time this runs.
+            self.embedding_queue_service.queue_skill_embedding(skill_id)
+        except EmbeddingQueueError:
             logger.exception("Failed to enqueue embedding generation for skill '%s'.", skill_id)
 
     def _get_similarity_threshold(self) -> float:
