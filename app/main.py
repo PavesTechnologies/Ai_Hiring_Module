@@ -18,14 +18,22 @@ from app.api.routes import campaign_routes
 from app.api.routes.campaign_candidate import router as campaign_candidate_router
 from app.api.routes.skill_routes import router as skill_router
 from app.api.routes import skill_ontology_routes
+from app.api.routes.resume_routes import router as resume_router
+from app.api.routes.bulk_upload_routes import router as bulk_upload_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.exceptions.campaign_exceptions import CampaignException
+from app.exceptions.candidate_exceptions import CandidateErasureBlockedException
+from app.exceptions.resume_exceptions import ResumeException
+from app.exceptions.storage_exception import StorageException
 from app.exception_handler.handlers import (
     duplicate_jd_exception_handler,
     campaign_exception_handler,
     http_exception_handler,
+    resume_exception_handler,
+    candidate_erasure_blocked_exception_handler,
+    storage_exception_handler,
 )
 
 logging.basicConfig(
@@ -126,7 +134,12 @@ app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Camp
 app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
 app.include_router(router=skill_router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=["Skill Ontology"])
+app.include_router(router=resume_router, prefix=API_PREFIX, tags=["Resume Intake"])
+app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Resume Upload"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)
+app.add_exception_handler(ResumeException, resume_exception_handler)
+app.add_exception_handler(CandidateErasureBlockedException, candidate_erasure_blocked_exception_handler)
+app.add_exception_handler(StorageException, storage_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)

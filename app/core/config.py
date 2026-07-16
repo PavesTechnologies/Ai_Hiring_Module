@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # AI / Embeddings
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
     embedding_model: str = "all-MiniLM-L6-v2"
 
     # Encryption

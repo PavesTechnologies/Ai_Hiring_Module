@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
-from app.enums.constants import PipelineStage
+from app.models.pipeline import PipelineStage
 
 class CampaignCandidateCreateRequest(BaseModel):
     campaign_id: UUID

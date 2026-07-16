@@ -1,9 +1,40 @@
+import json
 import uuid
 
 from app.db.session import SessionLocal
 from app.models.config import PlatformConfig
 
 db = SessionLocal()
+
+# Per-jurisdiction consent requirements consumed by the (future) ConsentService.
+# Stored as a JSON string since platform_config.value is a plain String column
+# (no migration available to make it JSONB) — parsed at the application layer.
+_JURISDICTION_CONSENT_CONFIG = json.dumps({
+    "GLOBAL": {
+        "consent_version": "1.0",
+        "min_acceptable_consent_version": "1.0",
+        "consent_text_key": "consent_disclosure_global",
+        "requires_explicit_opt_in": False,
+    },
+    "EU": {
+        "consent_version": "1.0",
+        "min_acceptable_consent_version": "1.0",
+        "consent_text_key": "consent_disclosure_eu",
+        "requires_explicit_opt_in": True,
+    },
+    "US": {
+        "consent_version": "1.0",
+        "min_acceptable_consent_version": "1.0",
+        "consent_text_key": "consent_disclosure_us",
+        "requires_explicit_opt_in": False,
+    },
+    "IN": {
+        "consent_version": "1.0",
+        "min_acceptable_consent_version": "1.0",
+        "consent_text_key": "consent_disclosure_in",
+        "requires_explicit_opt_in": True,
+    },
+})
 
 try:
     # Default campaign scoring weights
@@ -49,6 +80,47 @@ try:
             key="CAMPAIGN_AUTO_CLOSE_MINUTE",
             value="0",
             description="Minute when Celery Beat automatically closes expired campaigns",
+        ),
+        # Resume Intake (M05) / Consent (M16) config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_MAX_SIZE_MB",
+            value="10",
+            description="Maximum accepted resume file size in MB for individual resume uploads",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CONSENT_VERSION",
+            value="1.0",
+            description="Current consent legal-text version applied to new consent captures by default",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="JURISDICTION_CONSENT_CONFIG",
+            value=_JURISDICTION_CONSENT_CONFIG,
+            description=(
+                "JSON object keyed by jurisdiction (GLOBAL/EU/US/IN), each holding "
+                "consent_version, min_acceptable_consent_version, consent_text_key, "
+                "and requires_explicit_opt_in. Parsed by the application layer."
+            ),
+        ),
+        # Bulk ZIP Upload (M05-E02) config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="ZIP_MAX_SIZE_MB",
+            value="500",
+            description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_FILES_PER_ZIP",
+            value="200",
+            description=(
+                "Maximum number of resume files processed from a single bulk-upload "
+                "ZIP archive; extraction stops and the uploader is asked to split the "
+                "batch if exceeded. Not specified by the epic — a reasonable, tunable "
+                "default given ZIP_MAX_SIZE_MB=500 and typical resume file sizes."
+            ),
         ),
     ]
 

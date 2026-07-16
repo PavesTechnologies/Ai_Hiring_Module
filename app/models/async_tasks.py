@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    DateTime, Enum as SAEnum, ForeignKey, Integer,
+    Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer,
     SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -29,6 +29,12 @@ class BulkUploadStatus(enum.Enum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     PARTIAL_FAILURE = "PARTIAL_FAILURE"
+    FAILED = "FAILED"
+
+
+class BulkUploadFileStatus(enum.Enum):
+    QUEUED = "QUEUED"
+    PROCESSED = "PROCESSED"
     FAILED = "FAILED"
 
 
@@ -67,6 +73,10 @@ class CeleryTaskLog(Base):
     resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=True)
     campaign_candidate_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=True)
     jd_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)
+    # Bulk ZIP Upload (M05-E02) — set for RESUME_PARSE (and BULK_EXTRACT)
+    # tasks that belong to a bulk_upload_jobs run, including per-file
+    # validation-failure log rows created before any resumes row exists.
+    bulk_upload_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bulk_upload_jobs.id"), nullable=True)
     status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus, name="task_status_enum"), nullable=False, default=TaskStatus.QUEUED)
     retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     worker_hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -107,6 +117,12 @@ class BulkUploadJob(Base):
     campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=False)
     uploaded_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Bulk ZIP Upload (M05-E02) Phase B2 — the ZIP's own storage path, so a
+    # crashed/lost BULK_EXTRACT task can be recovered from the database alone.
+    zip_storage_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Bulk ZIP Upload (M05-E02) S01-T01 — durably records the mandatory
+    # bulk-consent checkbox on the job record itself.
+    consent_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     queued_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     processed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -116,6 +132,24 @@ class BulkUploadJob(Base):
     error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BulkUploadJobFile(Base):
+    """
+    One row per file extracted from a bulk_upload_jobs' ZIP (Phase B3),
+    staged in storage and awaiting Phase B4's per-file parse task. No
+    Resume row exists yet for these — Resume/Candidate rows are only
+    created once a file's AI extraction succeeds.
+    """
+
+    __tablename__ = "bulk_upload_job_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bulk_upload_job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("bulk_upload_jobs.id"), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[BulkUploadFileStatus] = mapped_column(SAEnum(BulkUploadFileStatus, name="bulk_upload_file_status_enum"), nullable=False, default=BulkUploadFileStatus.QUEUED)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class DocumentProcessingStageExecution(Base):
