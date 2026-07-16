@@ -172,6 +172,26 @@ class SkillRepository:
     def get_jd_skill_by_id(self, jd_skill_id: UUID) -> JDSkill | None:
         return self.db.query(JDSkill).filter(JDSkill.id == jd_skill_id).first()
 
+    def get_jd_skills_by_jd_id(self, jd_id: UUID) -> list[tuple[JDSkill, SkillOntology]]:
+        """Resolved (canonical) skills for a JD, paired with their SkillOntology row for display."""
+        return (
+            self.db.query(JDSkill, SkillOntology)
+            .join(SkillOntology, JDSkill.canonical_skill_id == SkillOntology.id)
+            .filter(JDSkill.jd_id == jd_id)
+            .order_by(JDSkill.created_at)
+            .all()
+        )
+
+    def get_jd_unknown_skills_by_jd_id(self, jd_id: UUID) -> list[tuple[JDUnknownSkill, UnknownSkill]]:
+        """Not-yet-resolved (or resolved) unknown-skill occurrences for a JD, paired with the deduped UnknownSkill row."""
+        return (
+            self.db.query(JDUnknownSkill, UnknownSkill)
+            .join(UnknownSkill, JDUnknownSkill.unknown_skill_id == UnknownSkill.id)
+            .filter(JDUnknownSkill.jd_id == jd_id)
+            .order_by(JDUnknownSkill.created_at)
+            .all()
+        )
+
     def remap_jd_skill(self, jd_skill: JDSkill, new_canonical_skill_id: UUID) -> JDSkill:
         """
         HR-driven override of an existing JDSkill's canonical mapping.

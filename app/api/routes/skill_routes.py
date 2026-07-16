@@ -7,7 +7,9 @@ from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 from app.schemas.response import APIResponse
 from app.schemas.skills.curation import (
+    JDSkillItem,
     JDSkillRemapResponse,
+    JDUnknownSkillItem,
     MapUnknownSkillRequest,
     PromoteUnknownSkillRequest,
     PromotedSkillResponse,
@@ -121,6 +123,69 @@ def dismiss_unknown_skill(
             id=unknown_skill.id, raw_text=unknown_skill.raw_text, status=unknown_skill.status.value,
         ),
         message="Unknown skill dismissed.",
+    )
+
+
+@router.get(
+    "/jd/{jd_id}/skills",
+    response_model=APIResponse[list[JDSkillItem]],
+)
+def list_jd_skills(
+    jd_id: UUID,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(
+        require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)
+    ),
+):
+    """Resolved (canonical) skills matched for a JD."""
+    rows = service.list_jd_skills(jd_id)
+    return APIResponse.ok(
+        data=[
+            JDSkillItem(
+                id=jd_skill.id,
+                jd_id=jd_skill.jd_id,
+                canonical_skill_id=jd_skill.canonical_skill_id,
+                canonical_name=skill.canonical_name,
+                mandatory=jd_skill.mandatory,
+                weight=jd_skill.weight,
+                confidence=jd_skill.confidence,
+                match_tier=jd_skill.match_tier,
+                verification_status=jd_skill.verification_status.value,
+                created_at=jd_skill.created_at,
+            )
+            for jd_skill, skill in rows
+        ],
+        message="JD skills retrieved successfully.",
+    )
+
+
+@router.get(
+    "/jd/{jd_id}/unknown-skills",
+    response_model=APIResponse[list[JDUnknownSkillItem]],
+)
+def list_jd_unknown_skills(
+    jd_id: UUID,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(
+        require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)
+    ),
+):
+    """Unknown-skill occurrences recorded for a JD, resolved or not."""
+    rows = service.list_jd_unknown_skills(jd_id)
+    return APIResponse.ok(
+        data=[
+            JDUnknownSkillItem(
+                id=link.id,
+                jd_id=link.jd_id,
+                unknown_skill_id=link.unknown_skill_id,
+                raw_text=unknown_skill.raw_text,
+                mandatory=link.mandatory,
+                status=link.status.value,
+                created_at=link.created_at,
+            )
+            for link, unknown_skill in rows
+        ],
+        message="JD unknown skills retrieved successfully.",
     )
 
 

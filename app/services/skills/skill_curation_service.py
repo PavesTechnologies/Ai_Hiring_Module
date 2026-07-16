@@ -41,6 +41,14 @@ class SkillCurationService:
     def list_pending_unknown_skills(self) -> list[UnknownSkill]:
         return self.skill_repository.get_pending_unknown_skills()
 
+    def list_jd_skills(self, jd_id: UUID):
+        """Resolved (canonical) skills matched for a JD."""
+        return self.skill_repository.get_jd_skills_by_jd_id(jd_id)
+
+    def list_jd_unknown_skills(self, jd_id: UUID):
+        """Unknown-skill occurrences recorded for a JD, resolved or not."""
+        return self.skill_repository.get_jd_unknown_skills_by_jd_id(jd_id)
+
     def map_to_existing_skill(
         self,
         unknown_skill_id: UUID,

@@ -4,7 +4,7 @@ from uuid import UUID
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 
-from app.models.async_tasks import DocumentType, TaskStatus
+from app.models.async_tasks import DocumentType
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
@@ -48,6 +48,7 @@ def process_jd_document(
     parent_jd_id: str | None = None,
     lineage_root_id: str | None = None,
     old_file_path: str | None = None,
+    original_filename: str | None = None,
 ) -> None:
     """
     Background leg of the JD processing pipeline (everything after
@@ -91,15 +92,15 @@ def process_jd_document(
         stage_tracker = StageExecutionService(stage_repo)
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
-        if existing_task_log is not None:
-            existing_task_log.status = TaskStatus.RUNNING
-            task_log = task_log_repo.update(existing_task_log)
-            task_log_repo.commit()
-        else:
-            task_log = task_log_service.create_log(
+        if existing_task_log is None:
+            # Fallback only — the route now creates this row synchronously
+            # (with created_by/title) before queuing the task, so this
+            # branch should just cover callers that queue the task directly.
+            existing_task_log = task_log_service.create_log(
                 task_id=task_id,
                 task_type="JD_DOCUMENT_PROCESSING",
             )
+        task_log = task_log_service.mark_running(existing_task_log)
 
         jd_service = JDService(
             repository=jd_repo,
@@ -144,6 +145,7 @@ def process_jd_document(
             task_id=task_id,
             raw_text=raw_text,
             file_path=file_path,
+            original_filename=original_filename,
             title=title,
             jurisdiction=jurisdiction,
             min_experience_years=min_experience_years,

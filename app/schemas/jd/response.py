@@ -16,6 +16,7 @@ class GetJDResponse(BaseModel):
     notice_period: int | None
     education_criteria: dict | None
     source_format: str
+    original_filename: str | None
     jurisdiction: str | None
     version_number: int
     is_active_version: bool
@@ -68,3 +69,14 @@ class JDProcessingStatusResponse(BaseModel):
     stages: list[StageProgress]
     jd_id: UUID | None
     error_message: str | None
+
+
+class JDUploadSummary(BaseModel):
+    task_id: UUID
+    title: str | None
+    status: str
+    current_stage: str | None
+    stages: list[StageProgress]
+    jd_id: UUID | None
+    error_message: str | None
+    queued_at: datetime

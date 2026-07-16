@@ -29,6 +29,7 @@ class JDProcessingContext:
     education_criteria: dict | None
     created_by: str
     file_path: str | None
+    original_filename: str | None
     raw_text: str | None
     document_type: DocumentType = DocumentType.JD
 
@@ -51,6 +52,7 @@ class JDProcessingContext:
     extraction: JDExtractionResponse | None = None
     skill_matches: list[SkillMatchResult] | None = None
     content_hash: str | None = None
+    is_duplicate: bool = False
     embedding_text: str | None = None
     embedding: list[float] | None = None
     embedding_model_version_id: UUID | None = None

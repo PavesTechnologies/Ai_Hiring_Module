@@ -69,6 +69,7 @@ class JobDescription(Base):
     education_criteria: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
     source_format: Mapped[JDSourceFormat] = mapped_column(SAEnum(JDSourceFormat, name="jd_source_format_enum"), nullable=False)
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active_version: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -43,3 +43,26 @@ class JDSkillRemapResponse(BaseModel):
     jd_id: UUID
     canonical_skill_id: UUID
     match_tier: str
+
+
+class JDSkillItem(BaseModel):
+    id: UUID
+    jd_id: UUID
+    canonical_skill_id: UUID
+    canonical_name: str
+    mandatory: bool
+    weight: float | None
+    confidence: float | None
+    match_tier: str
+    verification_status: str
+    created_at: datetime
+
+
+class JDUnknownSkillItem(BaseModel):
+    id: UUID
+    jd_id: UUID
+    unknown_skill_id: UUID
+    raw_text: str
+    mandatory: bool | None
+    status: str
+    created_at: datetime
