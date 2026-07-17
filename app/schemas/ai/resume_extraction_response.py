@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
 from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 def _clean_string_list(values: list[str]) -> list[str]:
@@ -60,6 +61,12 @@ class EducationEntry(BaseModel):
 
 
 class ResumeExtractionResponse(BaseModel):
+    # full_name/email/phone: needed by the bulk-ZIP-upload "parse-first"
+    # flow (M05-E02) — it has no upload form to source candidate identity
+    # from, so it has to learn it from the resume content itself.
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
@@ -73,7 +80,7 @@ class ResumeExtractionResponse(BaseModel):
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
 
-    @field_validator("summary")
+    @field_validator("full_name", "email", "phone", "summary")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
@@ -96,6 +103,9 @@ class ResumeExtractionGenerationSchema(BaseModel):
     defaults to {} when the key is absent, so dropping it here only affects
     generation, not parsing. Mirrors JDExtractionGenerationSchema.
     """
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)

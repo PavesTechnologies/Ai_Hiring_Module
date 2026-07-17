@@ -30,6 +30,7 @@ from app.core.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
+RESUME_DOCUMENT_PROCESSING_TASK_TYPE = "RESUME_DOCUMENT_PROCESSING"
 
 # Resume.file_format (FileFormat) also allows PNG/JPEG for scanned/image
 # resumes — out of scope here, same as the rest of this pipeline: no OCR
@@ -60,6 +61,7 @@ def process_resume_document(self, resume_id: str) -> None:
     task_log = None
     retry_driver = None
     attempt_number = 1
+    resume = None
     task_id = self.request.id
     try:
         resume_repo = ResumeRepository(db)
@@ -76,7 +78,7 @@ def process_resume_document(self, resume_id: str) -> None:
         if existing_task_log is None:
             existing_task_log = task_log_service.create_log(
                 task_id=task_id,
-                task_type="RESUME_DOCUMENT_PROCESSING",
+                task_type=RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
             )
         task_log = task_log_service.mark_running(existing_task_log)
 
@@ -107,6 +109,7 @@ def process_resume_document(self, resume_id: str) -> None:
             dead_letter_queue_repo,
             task_log_service,
             task_log,
+            task_type=RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
         )
 
         pipeline = ResumeProcessingPipeline(
@@ -154,6 +157,18 @@ def process_resume_document(self, resume_id: str) -> None:
             raise stage_exc.original
     except Exception as ex:
         db.rollback()
+        if resume is not None:
+            # Otherwise a resume whose file_format has no OCR/parse path
+            # (or any other pre-pipeline failure) is left at
+            # parse_status=PENDING forever instead of a visible terminal
+            # state — never let this bookkeeping mask the real exception.
+            try:
+                resume_repo = ResumeRepository(db)
+                resume_repo.mark_parse_failed(resume)
+                resume_repo.commit()
+            except Exception:
+                logger.exception("Failed to mark resume %s parse_status=FAILED.", resume_id)
+                db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         logger.exception("Resume document processing task failed for task_id %s", task_id)

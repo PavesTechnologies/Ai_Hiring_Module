@@ -4,6 +4,8 @@ from app.dependencies.campaign_candidate import (
     get_campaign_candidate_service,
 )
 
+from app.middleware.rbac import TokenUser, get_current_user
+
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
@@ -32,9 +34,14 @@ def create_campaign_candidate(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service
     ),
+    user: TokenUser = Depends(get_current_user),
 ):
 
-    candidate = service.create_campaign_candidate(request)
+    candidate = service.create_campaign_candidate(
+        request,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
 
     return APIResponse.ok(
         data=candidate,
@@ -76,9 +83,12 @@ def delete_campaign_candidate(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Depends(get_current_user),
 ):
     service.delete_campaign_candidate(
-        campaign_candidate_id
+        campaign_candidate_id,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
     )
 
     return APIResponse.ok(

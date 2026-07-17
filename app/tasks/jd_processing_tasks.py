@@ -124,6 +124,7 @@ def process_jd_document(
             dead_letter_queue_repo,
             task_log_service,
             task_log,
+            task_type="JD_DOCUMENT_PROCESSING",
         )
 
         pipeline = JDProcessingPipeline(

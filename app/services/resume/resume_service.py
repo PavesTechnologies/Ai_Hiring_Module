@@ -14,9 +14,17 @@ class ResumeService:
     Orchestrates the Persistence stage of the async Resume processing
     pipeline — mirrors JDService.persist_processed_jd's atomicity pattern
     (one transaction, roll back on any failure) for the Resume side.
+
+    Distinct from ResumeUploadService (app/services/resume/resume_upload_service.py),
+    which owns the synchronous upload leg (validate/store/candidate/create) —
+    the two were originally both named ResumeService on separate branches
+    before this merge.
     """
 
-    RESUME_STORAGE_BUCKET = "airs-resumes"
+    # Real bucket name, confirmed live against Supabase (see
+    # docs/resume_intake_implementation_log.md's bucket-name-mismatch entry) —
+    # not "airs-resumes".
+    RESUME_STORAGE_BUCKET = "airs_resumes"
     PARSER_VERSION = "gemini-resume-extraction-v1"
 
     def __init__(

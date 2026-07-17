@@ -95,3 +95,20 @@ class CeleryTaskLogService:
         self.repository.commit()          # <-- IMPORTANT
 
         return log
+
+    def mark_paused(
+        self,
+        log: CeleryTaskLog,
+    ) -> CeleryTaskLog:
+        """
+        TaskStatus.PAUSED doubles as "soft-cancelled" (see its definition) —
+        used here when a per-file bulk-upload task finds its file was
+        cancelled before it got a chance to run.
+        """
+        log.status = TaskStatus.PAUSED
+        log.completed_at = datetime.now(timezone.utc)
+
+        log = self.repository.update(log)
+        self.repository.commit()          # <-- IMPORTANT
+
+        return log
