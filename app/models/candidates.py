@@ -74,6 +74,9 @@ class Resume(Base):
     parse_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ocr_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     uploaded_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
+    # Bulk ZIP Upload (M05-E02) — NULL for every individual (M05-E01) upload;
+    # set only when this resume was extracted from a bulk_upload_jobs ZIP.
+    bulk_upload_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bulk_upload_jobs.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

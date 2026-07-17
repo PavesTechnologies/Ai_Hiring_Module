@@ -14,14 +14,19 @@ class GeminiExtractionService:
     def __init__(self):
         self.client = genai.Client(api_key=settings.gemini_api_key)
     
-    def extract_raw(self, normalized_text: str) -> dict:
+    def extract_raw(
+        self,
+        normalized_text: str,
+        prompt: str = SYSTEM_PROMPT,
+        response_schema: type = JDExtractionGenerationSchema,
+    ) -> dict:
         """
         Calls Gemini and returns the parsed JSON payload, unvalidated.
         Kept separate from extract() so a pipeline can track "call the AI"
         and "validate its output" as two distinct stages.
         """
-        prompt = f"""
-        {SYSTEM_PROMPT}
+        full_prompt = f"""
+        {prompt}
 
         Job Description:
 
@@ -30,10 +35,10 @@ class GeminiExtractionService:
 
         response = self.client.models.generate_content(
             model=settings.gemini_model,
-            contents=prompt,
+            contents=full_prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": JDExtractionGenerationSchema,
+                "response_schema": response_schema,
             }
         )
 

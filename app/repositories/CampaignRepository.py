@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, lazyload
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from datetime import datetime, timezone, timedelta
 
@@ -37,6 +37,31 @@ class CampaignRepository:
         return (
             self.db.query(HiringCampaign)
             .filter(HiringCampaign.id == campaign_id)
+            .first()
+        )
+
+    def get_by_id_for_update(
+        self,
+        campaign_id: UUID,
+    ) -> HiringCampaign | None:
+        """
+        Locking read (SELECT ... FOR UPDATE) so concurrent candidate-cap
+        checks against this campaign are serialized instead of racing —
+        the lock is released when the caller commits/rolls back.
+
+        HiringCampaign.job_description defaults to lazy="joined", which
+        would otherwise fold a LEFT OUTER JOIN into this query — Postgres
+        rejects FOR UPDATE against the nullable side of an outer join
+        (FeatureNotSupported: "FOR UPDATE cannot be applied to the nullable
+        side of an outer join"). This query never reads job_description, so
+        the eager load is overridden off here rather than changed on the
+        relationship itself, leaving every other caller unaffected.
+        """
+        return (
+            self.db.query(HiringCampaign)
+            .options(lazyload(HiringCampaign.job_description))
+            .filter(HiringCampaign.id == campaign_id)
+            .with_for_update()
             .first()
         )
 

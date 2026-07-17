@@ -260,6 +260,70 @@ class ExcelExport:
         return output
 
     @staticmethod
+    def export_bulk_upload_history(records):
+        """
+        M05-E02 Phase B8: one row per bulk_upload_jobs record for a
+        campaign — a job-level summary, not a per-file breakdown (that's
+        what the detail endpoint is for).
+        """
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Bulk Upload History"
+
+        ws.append([
+            "File Name",
+            "Status",
+            "Total Files",
+            "Processed",
+            "Failed",
+            "Duplicate",
+            "Uploaded By",
+            "Created At",
+            "Completed At",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for job in records:
+            ws.append([
+                job.original_filename,
+                job.status.value,
+                job.total_files,
+                job.processed_count,
+                job.failed_count,
+                job.duplicate_count,
+                job.uploaded_by,
+                job.created_at.strftime("%d-%b-%Y %I:%M %p"),
+                job.completed_at.strftime("%d-%b-%Y %I:%M %p") if job.completed_at else "",
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
     def export_single_jd(
         jd,
         version_history,

@@ -1,15 +1,14 @@
+import hashlib
 from uuid import UUID
-import uuid
 
 from app.dependencies import campaign
-from app.dependencies import campaign
 from app.enums.constants import ActionType, EntityType
-from app.enums.constants import EntityType
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaigns import CampaignStatus
 from app.models.pipeline import (
     CampaignCandidate,
     PipelineStage,
+    TransitionSource,
 )
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import (
@@ -37,6 +36,8 @@ class CampaignCandidateService:
     def create_campaign_candidate(
         self,
         request: CampaignCandidateCreateRequest,
+        actor_id: str,
+        actor_role: str | None = None,
     ) -> CampaignCandidateResponse:
 
         try:
@@ -44,7 +45,10 @@ class CampaignCandidateService:
             # -----------------------------
             # Validate Campaign
             # -----------------------------
-            campaign = self.campaign_repo.get_by_id(
+            # Locked for the rest of this transaction (S05-T03): serializes
+            # concurrent inserts against this campaign so the candidate-cap
+            # check below can't race with another request's insert.
+            campaign = self.campaign_repo.get_by_id_for_update(
                 request.campaign_id
             )
 
@@ -111,8 +115,8 @@ class CampaignCandidateService:
 
                 # Audit Log
                 self.audit_service.log(
-                    actor_id="SYSTEM",
-                    actor_role="HR_ADMIN",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
                     action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
                     entity_type=EntityType.CAMPAIGN,
                     entity_id=campaign.id,
@@ -132,23 +136,42 @@ class CampaignCandidateService:
             # -----------------------------
             # Create Candidate
             # -----------------------------
+            idempotency_key = self._build_idempotency_key(
+                request.campaign_id, request.candidate_id, request.resume_id,
+            )
+
             candidate = CampaignCandidate(
                 campaign_id=request.campaign_id,
                 candidate_id=request.candidate_id,
                 resume_id=request.resume_id,
-                idempotency_key=str(uuid.uuid4()),   # temporary placeholder
+                idempotency_key=idempotency_key,
                 pipeline_stage=PipelineStage.UPLOADED,
             )
 
-            candidate = (
-                self.campaign_candidate_repo.create(candidate)
+            candidate, was_created = (
+                self.campaign_candidate_repo.create_idempotent(candidate)
+            )
+
+            if not was_created:
+                # A retried request under the same idempotency key (e.g. a
+                # Celery task retry or a network-timeout resubmission) —
+                # return the existing pipeline entry rather than writing a
+                # second stage-history row or a duplicate audit entry.
+                self.campaign_candidate_repo.commit()
+                return CampaignCandidateResponse.model_validate(candidate)
+
+            self.campaign_candidate_repo.create_stage_history(
+                campaign_candidate_id=candidate.id,
+                from_stage=None,
+                to_stage=PipelineStage.UPLOADED,
+                transition_source=TransitionSource.SYSTEM,
             )
 
             self.campaign_candidate_repo.commit()
 
             self.audit_service.log(
-            actor_id="SYSTEM",          # Later replace with logged-in user
-            actor_role="HR_ADMIN",
+            actor_id=actor_id,
+            actor_role=actor_role,
             action_type=ActionType.CANDIDATE_ADDED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=candidate.id,
@@ -167,6 +190,15 @@ class CampaignCandidateService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+    @staticmethod
+    def _build_idempotency_key(
+        campaign_id: UUID,
+        candidate_id: UUID,
+        resume_id: UUID,
+    ) -> str:
+        raw = f"{campaign_id}:{candidate_id}:{resume_id}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get_campaign_candidates(
         self,
@@ -198,6 +230,8 @@ class CampaignCandidateService:
     def delete_campaign_candidate(
         self,
         campaign_candidate_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
     ) -> None:
         """
         Delete a campaign candidate.
@@ -223,8 +257,8 @@ class CampaignCandidateService:
 
             # Audit Log
             self.audit_service.log(
-                actor_id="SYSTEM",      # Replace with logged-in user later
-                actor_role="HR_ADMIN",
+                actor_id=actor_id,
+                actor_role=actor_role,
                 action_type=ActionType.CANDIDATE_REMOVED,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE,
                 entity_id=candidate.id,

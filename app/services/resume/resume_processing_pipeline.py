@@ -1,0 +1,162 @@
+from uuid import UUID
+
+from app.models.async_tasks import ProcessingStage
+from app.models.resume.resume_source_format import ResumeSourceFormat
+from app.repositories.resume_repository import ResumeRepository
+from app.repositories.skill_repository import SkillRepository
+from app.prompts.resume_extraction_prompt import RESUME_SYSTEM_PROMPT
+from app.schemas.ai.resume_extraction_response import ResumeExtractionGenerationSchema, ResumeExtractionResponse
+from app.services.ai.embedding_service import EmbeddingService
+from app.services.ai.preprocessing_service import PreprocessingService
+from app.services.document_processing.stage_execution_service import StageExecutionService
+from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.jd.hash_service import HashService
+from app.services.resume import resume_embedding_text_builder
+from app.services.resume.resume_processing_context import ResumeProcessingContext
+from app.services.resume.resume_service import ResumeService
+from app.services.resume.resume_text_extraction_service import ResumeTextExtractionService
+from app.services.skills.skill_normalization_service import SkillNormalizationService
+from app.core.storage_service import StorageService
+
+
+class ResumeProcessingPipeline:
+    """
+    Orchestrates the Resume document-processing pipeline: Text Extraction ->
+    Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
+    -> Embedding Generation -> Persistence. Mirrors JDProcessingPipeline's
+    stage loop and StageExecutionService usage, with one deliberate
+    deviation: stages are run WITHOUT `context=`/`checkpoint_repo=` args.
+
+    StageExecutionService.run_stage's failure branch calls
+    app.services.jd.context_serializer.to_dict(context) unconditionally
+    (that import is hardcoded, not dispatched by document_type) — passing a
+    ResumeProcessingContext into it would crash on the first failed stage,
+    since that serializer reads JD-only attributes (title, extraction,
+    jd_id, ...). Omitting context/checkpoint_repo keeps per-stage
+    success/failure logging (StageExecutionService itself) working exactly
+    like JD's, at the cost of mid-run checkpoint resume: a retried Celery
+    task for a resume re-runs every stage from TEXT_EXTRACTION rather than
+    resuming from the failed stage. Fixing this properly means making
+    StageExecutionService dispatch its serializer by document_type, which
+    is out of scope here (JD-facing shared file, not the one permitted
+    change).
+
+    Concrete and Resume-specific by design, same reasoning as
+    JDProcessingPipeline's own docstring.
+    """
+
+    RESUME_STORAGE_BUCKET = ResumeService.RESUME_STORAGE_BUCKET
+
+    def __init__(
+        self,
+        *,
+        preprocessing_service: PreprocessingService,
+        extraction_service: GeminiExtractionService,
+        hash_service: HashService,
+        storage_service: StorageService,
+        skill_normalization_service: SkillNormalizationService,
+        embedding_service: EmbeddingService,
+        resume_service: ResumeService,
+        resume_repository: ResumeRepository,
+        skill_repository: SkillRepository,
+        stage_tracker: StageExecutionService,
+    ):
+        self.preprocessing_service = preprocessing_service
+        self.extraction_service = extraction_service
+        self.hash_service = hash_service
+        self.storage_service = storage_service
+        self.skill_normalization_service = skill_normalization_service
+        self.embedding_service = embedding_service
+        self.resume_service = resume_service
+        self.resume_repository = resume_repository
+        self.skill_repository = skill_repository
+        self.stage_tracker = stage_tracker
+
+    def run(
+        self,
+        *,
+        task_id: str,
+        resume_id: UUID,
+        candidate_id: UUID,
+        file_path: str,
+        source_format: ResumeSourceFormat,
+        attempt_number: int = 1,
+    ) -> UUID:
+        context = ResumeProcessingContext(
+            task_id=task_id,
+            resume_id=resume_id,
+            candidate_id=candidate_id,
+            file_path=file_path,
+            source_format=source_format,
+        )
+
+        for stage, fn in (
+            (ProcessingStage.TEXT_EXTRACTION, lambda: self._run_text_extraction(context)),
+            (ProcessingStage.TEXT_CLEANING, lambda: self._run_text_cleaning(context)),
+            (ProcessingStage.AI_EXTRACTION, lambda: self._run_ai_extraction(context)),
+            (ProcessingStage.JSON_VALIDATION, lambda: self._run_json_validation(context)),
+            (ProcessingStage.SKILL_NORMALIZATION, lambda: self._run_skill_normalization(context)),
+            (ProcessingStage.EMBEDDING_GENERATION, lambda: self._run_embedding_generation(context)),
+            (ProcessingStage.PERSISTENCE, lambda: self._run_persistence(context)),
+        ):
+            self.stage_tracker.run_stage(
+                context.task_id,
+                context.document_type,
+                stage,
+                fn,
+                attempt_number=attempt_number,
+            )
+
+        self.stage_tracker.link_document_id(context.task_id, context.resume_id)
+
+        return context.resume_id
+
+    def _run_text_extraction(self, context: ResumeProcessingContext) -> None:
+        file_content = self.storage_service.download_file(
+            bucket_name=self.RESUME_STORAGE_BUCKET,
+            file_path=context.file_path,
+        )
+        context.raw_text = ResumeTextExtractionService.extract(file_content, context.source_format)
+
+    def _run_text_cleaning(self, context: ResumeProcessingContext) -> None:
+        context.cleaned_text = self.preprocessing_service.normalize(context.raw_text)
+
+    def _run_ai_extraction(self, context: ResumeProcessingContext) -> None:
+        context.raw_extraction = self.extraction_service.extract_raw(
+            context.cleaned_text,
+            prompt=RESUME_SYSTEM_PROMPT,
+            response_schema=ResumeExtractionGenerationSchema,
+        )
+
+    def _run_json_validation(self, context: ResumeProcessingContext) -> None:
+        context.validated_extraction = ResumeExtractionResponse.model_validate(context.raw_extraction)
+
+    def _run_skill_normalization(self, context: ResumeProcessingContext) -> None:
+        context.skill_match_results = self.skill_normalization_service.normalize_skills(
+            required_skills=context.validated_extraction.skills, preferred_skills=[],
+        )
+
+    def _run_embedding_generation(self, context: ResumeProcessingContext) -> None:
+        context.embedding_text = resume_embedding_text_builder.build_canonical_embedding_text(
+            context.validated_extraction,
+        )
+        context.embedding = self.embedding_service.generate_embedding(context.embedding_text)
+        context.input_text_hash = self.hash_service.generate_hash(context.embedding_text)
+
+    def _run_persistence(self, context: ResumeProcessingContext) -> None:
+        embedding_model_version = self.resume_repository.get_active_embedding_model_version()
+        context.embedding_model_version_id = embedding_model_version.id
+
+        resume = self.resume_repository.get_by_id(context.resume_id)
+        if resume is None:
+            raise ValueError(f"Resume with ID {context.resume_id} not found.")
+
+        self.resume_service.persist_processed_resume(
+            resume=resume,
+            extraction=context.validated_extraction,
+            skill_repository=self.skill_repository,
+            skill_matches=context.skill_match_results,
+            embedding=context.embedding,
+            embedding_model_version_id=context.embedding_model_version_id,
+            input_text_hash=context.input_text_hash,
+        )
