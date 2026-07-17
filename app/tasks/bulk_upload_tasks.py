@@ -43,7 +43,10 @@ from app.services.compliance.consent_service import ConsentService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.extractions.gemini_resume_extraction_service import GeminiResumeExtractionService
+from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.prompts.resume_extraction_prompt import IDENTITY_EXTRACTION_PROMPT, RESUME_SYSTEM_PROMPT
+from app.schemas.ai.resume_extraction_response import ResumeExtractionGenerationSchema, ResumeExtractionResponse
+from app.schemas.ai.resume_identity_extraction import ResumeIdentityExtraction
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
@@ -270,7 +273,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         file_validation_service = FileValidationService(config_repo)
         audit_service = AuditService(audit_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
-        extraction_service = GeminiResumeExtractionService()
+        extraction_service = GeminiExtractionService()
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
@@ -344,22 +347,40 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             checkpoint_repo, task_id, ProcessingStage.TEXT_CLEANING, context_data,
             lambda: preprocessing_service.normalize(text),
         )
-        extracted = _run_stage(
+        def _run_ai_extraction() -> tuple[ResumeExtractionResponse, ResumeIdentityExtraction]:
+            # Two calls, not one: content extraction uses the canonical,
+            # PII-free path shared with the single-upload flow
+            # (RESUME_SYSTEM_PROMPT/ResumeExtractionGenerationSchema) so
+            # resumes.parsed_json never carries PII; identity is resolved
+            # separately since this flow (unlike single-upload) has no
+            # upload form to source full_name/email/phone from otherwise.
+            raw_extraction = extraction_service.extract_raw(
+                cleaned_text, prompt=RESUME_SYSTEM_PROMPT, response_schema=ResumeExtractionGenerationSchema,
+            )
+            content = ResumeExtractionResponse.model_validate(raw_extraction)
+
+            raw_identity = extraction_service.extract_raw(
+                cleaned_text, prompt=IDENTITY_EXTRACTION_PROMPT, response_schema=ResumeIdentityExtraction,
+            )
+            identity = ResumeIdentityExtraction.model_validate(raw_identity)
+            return content, identity
+
+        extracted, identity = _run_stage(
             checkpoint_repo, task_id, ProcessingStage.AI_EXTRACTION, context_data,
-            lambda: extraction_service.extract(cleaned_text),
+            _run_ai_extraction,
         )
 
-        if not extracted.full_name or not extracted.email:
+        if not identity.full_name or not identity.email:
             raise ValueError(
                 "Could not identify a candidate name and email from this resume."
             )
 
         candidate = candidate_service.get_or_create(
-            full_name=extracted.full_name,
-            email=extracted.email,
+            full_name=identity.full_name,
+            email=identity.email,
             jurisdiction=Jurisdiction.GLOBAL.value,
             consent_source=BULK_UPLOAD_CONSENT_SOURCE,
-            phone=extracted.phone,
+            phone=identity.phone,
             source_campaign_id=job.campaign_id,
         )
 
@@ -376,7 +397,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             file_hash=hashlib.md5(file_bytes).hexdigest(),
             version_number=1,
             is_active_version=True,
-            parsed_json=extracted.model_dump(),
+            parsed_json=extracted.model_dump(mode="json"),
             parse_status=ParseStatus.PARSED,
             parser_version=f"{PARSER_NAME}-{PARSER_VERSION}",
             page_count=page_count,
