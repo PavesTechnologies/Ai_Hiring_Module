@@ -77,6 +77,7 @@ def _queue_reprocess(
             "task_id": str(task_id),
             "raw_text": result.raw_text,
             "file_path": result.file_path,
+            "original_filename": result.original_filename,
             "title": result.title,
             "jurisdiction": result.jurisdiction,
             "min_experience_years": result.min_experience_years,
@@ -154,6 +155,7 @@ def create_job_description(
             "task_id": str(task_id),
             "raw_text": request.raw_text,
             "file_path": None,
+            "original_filename": None,
             "title": request.title,
             "jurisdiction": request.jurisdiction,
             "min_experience_years": request.min_experience_years,
@@ -203,7 +205,7 @@ def create_job_description_from_file(
         lambda: service.validate_upload_type(file),
     )
 
-    file_path = stage_tracker.run_stage(
+    file_path, original_filename = stage_tracker.run_stage(
         str(task_id), DocumentType.JD, ProcessingStage.STORAGE,
         lambda: service.validate_and_store_file(file=file, org_id=SYSTEM_ORG),
     )
@@ -221,6 +223,7 @@ def create_job_description_from_file(
             "task_id": str(task_id),
             "raw_text": None,
             "file_path": file_path,
+            "original_filename": original_filename,
             "title": title,
             "jurisdiction": jurisdiction,
             "min_experience_years": min_experience_years,
@@ -364,6 +367,26 @@ def download_job_description_file(
     )
 
 
+@router.get("/{jd_id}/view", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
+def view_job_description_file(
+    jd_id: UUID,
+    service: JDService = Depends(get_jd_service)
+):
+    """
+    Same underlying file as /download (original PDF/DOCX, or raw_text
+    rendered into a DOCX for TEXT-sourced JDs), but with an inline
+    Content-Disposition so the browser renders it directly - e.g. to show
+    the existing document in the update form - instead of forcing a
+    Save-As download.
+    """
+    file_bytes, filename, content_type = service.download_jd_file(jd_id=jd_id)
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.put("/{jd_id}",response_model=APIResponse, status_code=status.HTTP_200_OK,)
 def update_job_description(
     jd_id: UUID,
@@ -417,7 +440,7 @@ def update_job_description_from_file(
     (this is one of the two triggers), so text extraction happens in the
     pipeline's own stage, same as JD creation, rather than in the route.
     """
-    file_path = service.validate_and_store_file(file=file, org_id=SYSTEM_ORG)
+    file_path, original_filename = service.validate_and_store_file(file=file, org_id=SYSTEM_ORG)
 
     jd_request = UpdateJDRequest(
         title=title,
@@ -434,6 +457,7 @@ def update_job_description_from_file(
         request=jd_request,
         updated_by=user.user_id,
         file_path=file_path,
+        original_filename=original_filename,
     )
     # file_path is always set here, so update_jd() always returns
     # JDReprocessRequired for this route — never the synchronous shape.
