@@ -75,6 +75,9 @@ class ActionType(enum.Enum):
     SKILL_PARENT_UPDATED = "SKILL_PARENT_UPDATED"
     SKILL_DEACTIVATED = "SKILL_DEACTIVATED"
     SKILL_REACTIVATED = "SKILL_REACTIVATED"
+    RESUME_PARSED = "RESUME_PARSED"
+    RESUME_PARSE_FAILED = "RESUME_PARSE_FAILED"
+    CANDIDATE_SKILL_MATCHED = "CANDIDATE_SKILL_MATCHED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
@@ -90,6 +93,7 @@ class EntityType(enum.Enum):
     CONSENT = "CONSENT"
     # Bulk ZIP Upload (M05-E02) Phase B0 — also already in the live enum.
     BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
+    CANDIDATE_SKILL = "CANDIDATE_SKILL"
 
 
 # Resume storage prefix inside the S3 bucket

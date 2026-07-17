@@ -7,7 +7,15 @@
       "Bash(pip install:*)",
       "Bash(venv/Scripts/python.exe -c ' *)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/routes/skill_routes.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/repositories/skill_repository.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/services/skills/skill_curation_service.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/schemas/skills/curation.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
-      "Bash(python -m alembic heads)"
+      "Bash(python -m alembic heads)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(git status *)",
+      "Bash(python -c ' *)",
+      "Bash(python -m alembic stamp b6e2d9a41c3f)",
+      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic stamp b6e2d9a41c3f)",
+      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic stamp --purge b6e2d9a41c3f)",
+      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic upgrade head)",
+      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -c ' *)"
     ],
     "deny": [],
     "ask": []

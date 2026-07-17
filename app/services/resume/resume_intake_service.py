@@ -11,7 +11,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
-from app.services.resume.resume_service import ResumeService
+from app.services.resume.resume_upload_service import ResumeUploadService
 from app.tasks.resume_processing_tasks import process_resume_document
 
 UPLOAD_CONSENT_SOURCE = "UPLOAD_FORM"
@@ -28,7 +28,7 @@ class ResumeIntakeService:
 
     def __init__(
         self,
-        resume_service: ResumeService,
+        resume_service: ResumeUploadService,
         campaign_candidate_service: CampaignCandidateService,
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
@@ -100,13 +100,7 @@ class ResumeIntakeService:
 
         task_id = uuid4()
         process_resume_document.apply_async(
-            kwargs={
-                "task_id": str(task_id),
-                "resume_id": str(resume.id),
-                "candidate_id": str(resume.candidate_id),
-                "file_path": resume.file_path,
-                "file_format": resume.file_format.value,
-            },
+            kwargs={"resume_id": str(resume.id)},
             task_id=str(task_id),
         )
 

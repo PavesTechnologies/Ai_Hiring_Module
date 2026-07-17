@@ -31,7 +31,7 @@ from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_intake_service import ResumeIntakeService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
-from app.services.resume.resume_service import ResumeService
+from app.services.resume.resume_upload_service import ResumeUploadService
 
 
 def get_encryption_key_repository(
@@ -98,8 +98,8 @@ def get_resume_service(
     storage_service: StorageService = Depends(get_storage_service),
     circuit_breaker_repo: CircuitBreakerRepository = Depends(get_circuit_breaker_repository),
     audit_service: AuditService = Depends(get_audit_service),
-) -> ResumeService:
-    return ResumeService(
+) -> ResumeUploadService:
+    return ResumeUploadService(
         resume_repo=resume_repo,
         candidate_service=candidate_service,
         file_validation_service=file_validation_service,
@@ -110,7 +110,7 @@ def get_resume_service(
 
 
 def get_resume_intake_service(
-    resume_service: ResumeService = Depends(get_resume_service),
+    resume_service: ResumeUploadService = Depends(get_resume_service),
     campaign_candidate_service: CampaignCandidateService = Depends(get_campaign_candidate_service),
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
     audit_service: AuditService = Depends(get_audit_service),
