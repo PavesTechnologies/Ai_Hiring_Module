@@ -83,6 +83,13 @@ class EntityType(enum.Enum):
     SKILL_ONTOLOGY = "SKILL_ONTOLOGY"
     UNKNOWN_SKILL = "UNKNOWN_SKILL"
     JD_SKILL = "JD_SKILL"
+    # Resume Intake (M05) — already present in the live audit_entity_type_enum;
+    # kept in sync here so app.services.audit_service can write these entity types.
+    CANDIDATE = "CANDIDATE"
+    RESUME = "RESUME"
+    CONSENT = "CONSENT"
+    # Bulk ZIP Upload (M05-E02) Phase B0 — also already in the live enum.
+    BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
 
 
 # Resume storage prefix inside the S3 bucket

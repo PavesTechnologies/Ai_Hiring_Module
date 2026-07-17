@@ -1,12 +1,14 @@
 import filetype
 
 from app.exceptions.bulk_upload_exceptions import (
+    MaxFilesExceededException,
     UnsupportedArchiveFormatException,
     ZipSizeExceededException,
 )
 from app.repositories.config_repository import ConfigRepository
 
 DEFAULT_ZIP_MAX_SIZE_MB = 500.0
+DEFAULT_MAX_FILES_PER_ZIP = 200
 
 _ZIP_MIME_TYPES = {"application/zip", "application/x-zip-compressed"}
 
@@ -65,3 +67,28 @@ class ZipValidationService:
             return float(raw)
         except ValueError:
             return DEFAULT_ZIP_MAX_SIZE_MB
+
+    def validate_file_count(self, file_count: int) -> None:
+        """
+        Run once extraction has enumerated the archive's real entries
+        (S02-T01 territory — the extraction task, not upload-time
+        validation, since the count isn't known until the ZIP is opened).
+        Rejects the whole job rather than silently processing a truncated
+        subset of an oversized archive.
+        """
+        max_files = self._max_files_per_zip()
+        if file_count > max_files:
+            raise MaxFilesExceededException(
+                f"ZIP archive contains {file_count} files, exceeding the "
+                f"{max_files}-file limit per bulk upload."
+            )
+
+    def _max_files_per_zip(self) -> int:
+        configs = self.config_repo.get_configs_by_keys(["MAX_FILES_PER_ZIP"])
+        raw = configs.get("MAX_FILES_PER_ZIP")
+        if not raw:
+            return DEFAULT_MAX_FILES_PER_ZIP
+        try:
+            return int(raw)
+        except ValueError:
+            return DEFAULT_MAX_FILES_PER_ZIP

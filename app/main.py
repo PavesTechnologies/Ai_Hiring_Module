@@ -135,6 +135,8 @@ app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Camp
 app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
 app.include_router(router=skill_router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=["Skill Ontology"])
+app.include_router(router=resume_router, prefix=API_PREFIX, tags=["Resume Intake"])
+app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Resume Upload"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

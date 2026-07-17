@@ -1,9 +1,9 @@
 # Resume Intake Epic (M05) — Implementation Log
 
-**Module:** M05 – Resume Intake | Individual Resume Upload
-**Scope:** Phases 0–11 of the implementation roadmap
-**Status:** All 12 phases implemented. Live-tested end-to-end through a real upload → encryption → storage → pipeline-entry → Celery parse → status-poll cycle.
-**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan)
+**Module:** M05 – Resume Intake | Individual Resume Upload (Epic 1) + Bulk ZIP Upload (Epic 2)
+**Scope:** Epic 1 (M05-E01) Phases 0–11, and Epic 2 (M05-E02) Phases B0–B9 of their respective implementation roadmaps
+**Status:** All 12 Epic 1 phases and all 10 Epic 2 phases implemented. Both live-tested — Epic 1 end-to-end through a real upload → encryption → storage → pipeline-entry → Celery parse → status-poll cycle; Epic 2 through real ZIP upload → extraction → parse-first candidate creation → cap enforcement → retry/DLQ → cancellation → history/export → failure-mode cleanup, verified primarily at the service/task layer (see Epic 2's Cross-Cutting Issues — Redis was unavailable throughout this environment, so full HTTP round-trips could only be exercised for routing/schema shape, not live Celery dispatch).
+**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan, including the Epic 2 schema-changes addendum)
 
 ## How to read this document
 
@@ -15,6 +15,8 @@ Each phase section is split into two halves, matching how the work was actually 
 A cross-cutting section after the phase-by-phase log covers bugs and environment issues that spanned multiple phases, plus a running list of what's still open.
 
 ---
+
+# Epic 1 (M05-E01): Individual Resume Upload — Phases 0–11
 
 ## Constraints in effect throughout
 
@@ -241,5 +243,198 @@ Covered under Phase 0/7 above — worth restating as a standing pattern: any fut
 - **`ALTER TYPE` for `CIRCUIT_BREAKER_OPENED` / `CIRCUIT_BREAKER`** — added to Python enums in Phase 11 but not yet applied to the live database (unlike the Phase 0/7 values, which were approved and applied).
 - **M16 Compliance stories beyond consent-capture** — dashboard, coverage reporting, consent withdrawal, jurisdiction-config admin UI — all out of scope for this epic slice.
 - **Resume skill extraction & embedding generation** — deliberately deferred; the processing pipeline stops at structured `parsed_json`, matching the architecture mapping's "modules dependent on future work."
-- **Bulk ZIP upload** — a separate epic; `bulk_upload_jobs.consent_confirmed` column doesn't exist yet either.
+- **Bulk ZIP upload** — was a separate epic at the time this note was written; **now implemented in full** — see Epic 2 (M05-E02), Phases B0–B9, below.
 - **Connection-pool sizing** — worth a deliberate look if exhaustion recurs outside of heavy concurrent debugging sessions.
+
+---
+
+*(Epic 1's own Known Gaps above are left as originally written, aside from the bulk-upload note; Epic 2 introduces its own gaps, listed at the very end of this document.)*
+
+---
+
+# Epic 2 (M05-E02): Bulk ZIP Upload — Phases B0–B9
+
+## Constraints in effect throughout
+
+- Unlike Epic 1, the **"no migrations" constraint was explicitly relaxed for this epic**, with the user's own sign-off (see the schema-changes addendum in `resume_intake_implementation_plan.md`). Every schema change below went through a real Alembic migration, not an ad-hoc `ALTER TYPE`.
+- **"Parse-first" architecture**: unlike an individual upload (where the candidate's name/email come from the upload form before parsing ever runs), a bulk ZIP has no such form data per file — text/AI extraction has to run *first* to learn who the candidate even is, and only then are `Candidate`/`Resume`/`CampaignCandidate` rows created. This one decision shaped B3's staging table, B4's task ordering, and B6's checkpoint contents.
+- No real Celery-level task cancellation (`revoke()`) exists anywhere in this codebase (confirmed by research before building B7) — "cancellation" here means a cooperative DB status flip plus an early-exit check in the per-file task, not killing an in-flight worker process.
+- **Redis was unavailable throughout this development environment.** Every phase's Celery task was verified by calling it directly (`task.run(...)`) or invoking the underlying service methods, never through a real `apply_async` + worker round-trip. This is the single biggest reason a routing regression (see Cross-Cutting Issue #6) went unnoticed for six phases.
+
+---
+
+## Phase B0 — Schema & Config Foundations
+
+**Before:** Add every column/enum-value/config-row the rest of the epic would need, this time via real Alembic migrations rather than Epic 1's ad-hoc `ALTER TYPE` approach.
+
+**After:**
+- **Created:** `alembic/versions/a3f9c72e1b6d_bulk_zip_upload_schema.py` — adds `resumes.bulk_upload_job_id`, `celery_task_log.bulk_upload_job_id`, `bulk_upload_jobs.consent_confirmed`, plus (in the *same* migration, unlike Epic 1) three new audit enum values: `ActionType.BULK_UPLOAD_CANCELLED`, `ActionType.BULK_UPLOAD_HISTORY_EXPORTED`, `EntityType.BULK_UPLOAD_JOB`.
+- **Modified:** `app/models/candidates.py`, `app/models/async_tasks.py`, `app/enums/constants.py`, `app/seeds/seed_platform_config.py` (added `ZIP_MAX_SIZE_MB=500`, `MAX_FILES_PER_ZIP=200`, the latter with no epic-specified number — my own chosen default).
+- **Bug found and fixed (pre-existing, unrelated to this epic):** the Alembic chain was already broken before this phase started — migration `d5c1a0b2e3f4`'s `down_revision` pointed at a nonexistent revision, and the live DB's `alembic_version` had drifted to a third, also-nonexistent value. Verified the actual live schema already matched what that migration should have produced (pure bookkeeping drift, no missing DDL), then repaired the file's `down_revision` and used `alembic stamp --purge` to reconcile tracking without running any DDL.
+- **Verification:** migration applied live; all 3 columns and 3 enum values confirmed directly against the real database; seeded config confirmed present.
+
+---
+
+## Phase B1 — ZIP Validation & Job Repository
+
+**Before:** `ZipValidationService` (extension/magic-byte/size checks, mirroring `FileValidationService`'s shape) and `BulkUploadJobRepository` (atomic SQL-level counters, mirroring the project's established "never read-modify-write a counter" rule).
+
+**After:**
+- **Created:** `app/exceptions/bulk_upload_exceptions.py` (`UnsupportedArchiveFormatException`, `ZipSizeExceededException`), `app/services/bulk_upload/zip_validation_service.py`, `app/repositories/bulk_upload_job_repository.py`
+- **Classes:** `ZipValidationService`, `BulkUploadJobRepository`
+- **Verification (live):** a real ZIP fixture correctly detected/passed; a real DB round-trip test (real campaign, real `uploaded_by`) confirmed atomic counter increments and cleanup.
+
+---
+
+## Phase B2 — Bulk Upload Intake API
+
+**Before:** `POST /airs/bulk-uploads` — validate the ZIP, store it, create the `bulk_upload_jobs` row at `PENDING`. Deliberately no Celery enqueue yet (mirrors Epic 1's Phase 7/8 split).
+
+**After:**
+- **Created:** `alembic/versions/c8d4f1a6e9b2_bulk_upload_zip_path.py` (adds `bulk_upload_jobs.zip_storage_path`), `app/schemas/bulk_upload/__init__.py`/`request.py`/`response.py`, `app/services/bulk_upload/bulk_upload_service.py`, `app/dependencies/bulk_upload.py`, `app/api/routes/bulk_upload_routes.py`
+- **Classes:** `BulkUploadRequest`, `BulkUploadAcceptedResponse`, `BulkUploadService`
+- **Schema gap found mid-design (approved via user sign-off, not assumed):** `bulk_upload_jobs` had nowhere to durably store the ZIP's own storage path — needed for crash recovery, mirroring how a resume's `file_path` had already been relied on once in Epic 1 to manually recover a stuck task. Closed with the migration above rather than working around it.
+- **Verification (live):** happy path (real 2-file ZIP → job created, storage round-trip byte-verified); rejected paths (non-ZIP content, paused campaign) both confirmed before any DB/storage write.
+
+---
+
+## Phase B3 — `BULK_EXTRACT` Celery Task
+
+**Before:** Download the stored ZIP, unpack its real entries, stage each as its own storage object, and enqueue Phase B4's per-file task for each.
+
+**After:**
+- **Created:** `alembic/versions/e1b7c4a9d2f6_bulk_upload_job_files.py` (new `bulk_upload_job_files` table + `bulk_upload_file_status_enum`), `app/repositories/bulk_upload_job_file_repository.py`, `app/tasks/bulk_upload_tasks.py` (`extract_bulk_upload_zip`)
+- **Classes:** `BulkUploadFileStatus`, `BulkUploadJobFile`, `BulkUploadJobFileRepository`
+- **Schema gap found mid-design (approved via user sign-off):** because of the parse-first design, no `Resume` row can exist per file until *after* its AI extraction succeeds — so extracted files had nowhere to live as domain rows while queued. A new dedicated table was chosen over overloading `CeleryTaskLog` (which exists for task-execution logging, not file/domain state).
+- **Migration hiccup (self-caused, fixed same phase):** the first migration attempt explicitly created the enum type and then let `create_table` create it *again* implicitly — Postgres correctly rejected the duplicate `CREATE TYPE`. Fixed by letting `create_table` create the enum exactly once.
+- **Verification (live):** a 5-entry ZIP (3 real files including one nested path, plus `__MACOSX/` and `.DS_Store` junk) correctly staged only the 3 real files, byte-verified after download; a corrupted-archive job correctly moved to `FAILED` with the real `BadZipFile` message recorded on both the job and its `celery_task_log` row.
+
+---
+
+## Phase B4 — `BULK_RESUME_PARSE` (Parse-First Per-File Task)
+
+**Before:** The per-file task itself — text extraction → AI extraction (Gemini) → *then* `Candidate`/`Resume`/`CampaignCandidate` creation, inverting Epic 1's order because no identity exists yet.
+
+**After:**
+- **Modified:** `app/tasks/bulk_upload_tasks.py` (`parse_bulk_upload_file`), `app/repositories/bulk_upload_job_file_repository.py` (`get_by_id`, `update_status`)
+- **Design note:** reused Epic 1's `FileValidationService`, `TextExtractionService`, `PreprocessingService`, `GeminiResumeExtractionService`, `CandidateService.get_or_create`, `ResumeRepository`, and — critically — the *existing* `CampaignCandidateService.create_campaign_candidate`, whose already-built "candidate already exists in this campaign" check is what gives bulk uploads duplicate-detection for free, without writing any new duplicate logic.
+- **Bug found and fixed (in this phase's own new code):** `AuditRepository` has no `.commit()` method — a stray `audit_repo.commit()` call meant every otherwise-successful parse was quietly recorded as a task failure (though the DB writes still landed once a later `job_repo.commit()` on the same shared session ran). Fixed by removing the call, matching the established pattern where any repo sharing the session can commit the rest.
+- **Job-finalization logic added:** `_maybe_finalize_job` — once every staged file resolves (processed + failed + duplicate == total), the job moves to `COMPLETED`/`PARTIAL_FAILURE`/`FAILED`.
+- **Verification (live, three separate real runs):** (1) a genuine transient Gemini `503 UNAVAILABLE` was hit twice in a row — confirmed the failure path recorded it correctly without side effects; (2) with Gemini's response stubbed (to isolate this phase's own logic from external flakiness), the full success path was confirmed — `Candidate` encrypted, `Resume` `PARSED`, `CampaignCandidate` `UPLOADED`, audit logged, job `COMPLETED`; (3) a second file resolving to the same candidate/campaign correctly counted as a **duplicate**, not a failure.
+
+---
+
+## Phase B5 — `MAX_FILES_PER_ZIP` Cap Enforcement
+
+**Before:** Enforce the cap seeded back in B0 but never used until now — reject the whole job outright (no partial processing) if a ZIP contains more real files than allowed, checked *before* any file is uploaded to storage.
+
+**After:**
+- **Modified:** `app/exceptions/bulk_upload_exceptions.py` (`MaxFilesExceededException`), `app/services/bulk_upload/zip_validation_service.py` (`validate_file_count`), `app/tasks/bulk_upload_tasks.py` (`extract_bulk_upload_zip` restructured into an enumerate-then-check-then-stage two-pass flow)
+- **Verification (live):** a real 201-file ZIP (cap is 200) was rejected with zero storage uploads and zero `bulk_upload_job_files` rows created; a regression check confirmed a normal 2-file ZIP still staged correctly afterward.
+
+---
+
+## Phase B6 — Partial-Failure Handling + Dead Letter Queue
+
+**Before:** Retry-with-backoff and a durable Dead Letter Queue for the genuinely transient steps (storage download, text extraction/cleaning, AI extraction) — reusing whatever this codebase already had, rather than inventing bulk-specific retry logic.
+
+**After:**
+- **Discovery:** this exact machinery already existed, fully built for the JD pipeline and unused anywhere else — `RetryDriver`, `error_classifier.classify()`, `StageFailureLogRepository`, `CheckpointRepository`, `DeadLetterQueueRepository`, `retry_policy` — plus `DocumentType.RESUME` and generic `ProcessingStage` names clearly pre-positioned for exactly this reuse.
+- **Modified:** `app/services/document_processing/retry_driver.py`, `app/tasks/jd_processing_tasks.py`, `app/tasks/bulk_upload_tasks.py` (`parse_bulk_upload_file` → `bind=True`, wraps STORAGE/TEXT_EXTRACTION/TEXT_CLEANING/AI_EXTRACTION through the shared retry machinery; deterministic per-file outcomes — bad format, no identifiable candidate, duplicate — stay exactly as B4 built them, unwrapped)
+- **Bug found and fixed (in shared, pre-existing JD infrastructure):** `RetryDriver.handle_failure` hardcoded `task_type="JD_DOCUMENT_PROCESSING"` when writing a `DeadLetterQueue` row — every bulk-upload DLQ entry would have been mislabeled as a JD failure. Fixed by adding a `task_type` constructor parameter (JD's own call site updated to keep passing its literal string, so its behavior is unchanged).
+- **Bug found and fixed (a second, more serious pre-existing regression, unrelated to this phase's own work):** `EntityType` was missing `CANDIDATE`, `RESUME`, `CONSENT`, and `BULK_UPLOAD_JOB` — even though the live Postgres `audit_entity_type_enum` still had all of them. This silently broke Phase B4's own audit logging (and very likely Epic 1's individual-resume audit logging too) the moment `EntityType.RESUME` was actually referenced. Root cause: parallel, unrelated skill-ontology work had edited the same enum class and apparently dropped these members. Restored them — a pure Python-side fix, zero DB changes needed.
+- **Structural fix:** flattened `parse_bulk_upload_file`'s try/except from nested to a single flat try with sibling `except` clauses — a nested structure would have let Celery's internal `Retry` signal get caught a second time by an outer catch-all, incorrectly marking a scheduled retry as a hard failure.
+- **Verification (live, all three outcomes):** success (unchanged from B4); a forced `PERMANENT`-classified failure correctly wrote a `stage_failure_logs` row, a `dead_letter_queue` row with the *correct* `task_type`, kept its checkpoint (matching the JD precedent of preserving replay context), marked the file/job `FAILED`, and re-raised so Celery itself also sees the task as failed; a forced `TRANSIENT`-classified failure below its retry policy's max attempts left the job/file completely untouched (still `PROCESSING`/`QUEUED`) and only moved the task log to `RETRY`.
+
+---
+
+## Phase B7 — Cancellation
+
+**Before:** `POST /bulk-uploads/{id}/cancel` — researched the existing campaign-pause feature first and deliberately mirrored its exact shape (a bulk DB status flip + audit log, in-flight work left to finish naturally), since no real Celery-level task revocation exists anywhere in this codebase.
+
+**After:**
+- **Created:** `alembic/versions/f2c9b8e4a1d3_bulk_upload_cancellation.py` (adds `BulkUploadStatus.CANCELLED`, and `BulkUploadFileStatus.RUNNING`/`CANCELLED`)
+- **Modified:** `app/exceptions/bulk_upload_exceptions.py` (`BulkUploadJobNotFoundException`, `BulkUploadJobNotCancellableException`), `app/repositories/bulk_upload_job_file_repository.py` (`try_start_processing`, `cancel_queued_files`), `app/services/bulk_upload/bulk_upload_service.py` (`cancel_job`), `app/services/celery_task_log_service.py` (`mark_paused`, reusing the existing `TaskStatus.PAUSED` — whose own comment already called it "soft-cancelled"), `app/tasks/bulk_upload_tasks.py`
+- **Race condition found and fixed (during this phase's own testing, before it could ship):** `bulk_upload_job_files` had no state analogous to `CeleryTaskLog.RUNNING` — the exact state that already protects campaign-pause's in-flight work from being touched. Without it, a file whose task was genuinely mid-flight was still `QUEUED` in the database and could be scooped up by the bulk-cancel `UPDATE`, then have its status silently reverted back to `PROCESSED`/`FAILED` once the task finished. Fixed with an atomic conditional claim (`try_start_processing`: `UPDATE ... WHERE status='QUEUED'` → `RUNNING`, checked via row count) plus the new `RUNNING` enum value — closing the race properly rather than accepting it.
+- **Related fix:** `_maybe_finalize_job` now only acts while the job is still `PROCESSING`, so a straggler file that finishes normally *after* its job was already cancelled can't flip a `CANCELLED` job back to a computed terminal status.
+- **Alembic multi-head issue found (pre-existing, not fixed):** applying this migration required resolving three divergent, never-merged Alembic heads (this epic's own chain, plus two from parallel JD/skill-ontology work). One of those other chains has its own pre-existing schema-drift bug (a column that already exists). Rather than fix someone else's broken, unrelated migration, the DDL for this phase was applied directly and `alembic stamp`'d — the multi-head situation itself was left exactly as found, flagged for whoever owns the other chains.
+- **Verification (live):** cancel on a job with 1 already-processed + 2 queued files correctly cancelled only the 2 queued ones; re-cancelling and cancelling a nonexistent job both correctly rejected (409/404); the atomic-claim race fix directly verified — a file claimed `RUNNING` was excluded from the bulk cancel, a second claim attempt on it correctly failed, and it finished normally at `PROCESSED`, completely unaffected by the other (genuinely queued) file's cancellation.
+
+---
+
+## Phase B8 — Bulk Upload History
+
+**Before:** List/detail/export endpoints for past bulk uploads, mirroring the JD module's existing pagination shape (`total`/`page`/`size`/`items`) and its xlsx-export convention (a `StreamingResponse` built via a static `ExcelExport` method, audit-logged with a nil-UUID sentinel entity id for list-level exports).
+
+**After:**
+- **Modified:** `app/repositories/bulk_upload_job_repository.py` (`list_by_campaign`, `count_by_campaign`, `get_all_by_campaign`), `app/services/bulk_upload/bulk_upload_service.py` (`get_job_detail`, `list_history`, `export_history`), `app/schemas/bulk_upload/response.py`, `app/utils/excel_export.py` (`export_bulk_upload_history`), `app/api/routes/bulk_upload_routes.py` (list/export/detail routes — `export` registered *before* the `{id}` route, exactly mirroring how `jd_routes.py` avoids "export" being swallowed as a path parameter)
+- **Critical bug found and fixed (pre-existing, epic-wide impact, not scoped to this phase):** `app/main.py` imported `resume_router` and `bulk_upload_router` but **never actually called `app.include_router(...)` for either.** Confirmed directly against the live OpenAPI schema — zero `/airs/resumes` or `/airs/bulk-uploads` paths existed anywhere. This meant **every HTTP endpoint from Phase B2 through B7, and all of Epic 1's individual resume upload, had been completely unreachable via the real API this entire time** — masked because Redis's unavailability had already forced every prior phase's verification to go through direct service/task-layer calls rather than real HTTP requests, so the gap was never exercised until this phase's own OpenAPI-schema inspection surfaced it. Fixed by restoring both `include_router` calls.
+- **Verification:** all 3 new routes confirmed present in the live OpenAPI schema post-fix; `list_history` (pagination correctness across two pages), `get_job_detail` (job + per-file breakdown), and `export_history` (real non-trivial `.xlsx` bytes, correct audit log) all confirmed directly against real data; 404s confirmed for both a missing job and a missing campaign.
+
+---
+
+## Phase B9 — Error Handling for New Failure Modes
+
+**Before:** Trace every exception path in `BULK_EXTRACT` end-to-end and close whatever the individual per-file task (`BULK_RESUME_PARSE`) already handled correctly but the extraction task didn't.
+
+**After:**
+- **Modified:** `app/tasks/bulk_upload_tasks.py` (`extract_bulk_upload_zip`'s outer exception handler, new `_cleanup_orphaned_uploads` helper)
+- **Bug found and fixed:** any unhandled exception during extraction *other than* the two already-explicit cases (corrupt ZIP, too many files) — e.g. a Supabase Storage outage on download, or a failure partway through staging files — left the job stuck at `EXTRACTING` forever, invisible as "failed" to the brand-new B8 history/detail view, and orphaned any files already uploaded to storage before the failure (no DB row ever existed to reference or clean them up). Fixed: the job now always moves to `FAILED` with a real `error_summary` for any unhandled exception, and every file uploaded earlier in that same failed run is deleted from storage first.
+- **Deliberately out of scope (and why):** extending Epic 1's circuit-breaker pattern to bulk storage/encryption failures was considered and dropped — its own audit-log-on-open path references `EntityType.CIRCUIT_BREAKER`, which doesn't exist in the Python enum *and* was never added to the live Postgres enum either (already flagged as an unfinished Epic 1 Phase 11 loose end in this very document, above). Completing that is a different epic's follow-up, not this one's. A periodic sweep to detect Celery-worker-crash "stuck" jobs was also considered and dropped — a distinct monitoring feature, not per-request error handling, and this codebase has no equivalent sweep for any other async pipeline either.
+- **Verification (live):** a job pointed at a nonexistent storage object correctly moved to `FAILED` (previously would have stayed at `EXTRACTING` forever); a real 3-file ZIP with a forced failure on the 3rd upload correctly deleted the first 2 already-uploaded files from storage (confirmed via `file_exists` returning `False` for both afterward), created zero orphaned `bulk_upload_job_files` rows, and moved the job to `FAILED` with the real error message.
+
+---
+
+## Cross-Cutting Issues Discovered Across Epic 2
+
+### 1. `AuditRepository` has no `.commit()` method
+Found in B4. A stray call in the new bulk-parse task silently turned successful parses into recorded task failures (though the actual DB writes still landed via a later commit on the same shared session). Fixed by removing the call — matches the established pattern where any repository sharing the session can commit the rest.
+
+### 2. `RetryDriver` hardcoded its Dead Letter Queue `task_type`
+Found in B6, in pre-existing JD-pipeline infrastructure being reused for the first time outside JD. Every bulk-upload DLQ entry would have been mislabeled `JD_DOCUMENT_PROCESSING`. Fixed by adding a constructor parameter; JD's own call site was updated to pass its literal string explicitly so its behavior is unchanged.
+
+### 3. `EntityType` missing four members that the live database already supported
+Found in B6. `CANDIDATE`, `RESUME`, `CONSENT`, `BULK_UPLOAD_JOB` were all present in the live `audit_entity_type_enum` but absent from the Python enum — apparently dropped by unrelated, parallel skill-ontology work editing the same file. This silently broke B4's own audit logging (and plausibly Epic 1's individual-resume audit logging too) the moment those entity types were actually referenced. Restored — a pure Python-side fix, no DB changes needed.
+
+### 4. `bulk_upload_job_files` had no state equivalent to `CeleryTaskLog.RUNNING`
+Found in B7, via this phase's own testing before it shipped. Without a `RUNNING` state, a file whose task was genuinely in-flight could be bulk-cancelled underneath it and then have its outcome silently overwritten once the task finished. Closed with an atomic conditional claim (`try_start_processing`) plus a new `RUNNING` enum value — the same protection `CeleryTaskLog.RUNNING` already gives campaign-pause's in-flight work.
+
+### 5. Alembic multi-head divergence (pre-existing, not fixed)
+Found across B0 and again in B7. Parallel, unrelated JD/skill-ontology work branched the migration graph from the same point as this epic and never merged it back. One of those unmerged chains has its own pre-existing schema-drift bug (a column that already exists on `job_descriptions`). This epic's own migrations were applied directly against the DB and `alembic_version` was `stamp`'d to the correct revision each time, deliberately without attempting to fix or merge the other, unrelated chains — that's other work's cleanup, not this epic's.
+
+### 6. `main.py` never actually registered `resume_router` or `bulk_upload_router`
+Found in B8 — the single most consequential issue in this epic. Both routers were imported but `app.include_router(...)` was never called for either, meaning **every bulk-upload endpoint (B2–B7) and all of Epic 1's individual resume upload were unreachable via the real HTTP API** the entire time. This is directly attributable to Cross-Cutting Issue #7 below: with no way to make a real end-to-end HTTP request in this environment, nothing ever exercised the actual route registration until B8's OpenAPI-schema inspection caught it by chance. Fixed by restoring both `include_router` calls.
+
+### 7. Redis unavailable throughout this development environment
+Every phase's Celery task (`extract_bulk_upload_zip`, `parse_bulk_upload_file`) was verified by invoking it directly rather than through a real `apply_async` + worker round-trip, since `redis-server` was never running here. This is a genuine environment gap, not a code defect, but it's the reason Cross-Cutting Issue #6 survived undetected for six phases — worth a real end-to-end smoke test (Redis + a worker + a live HTTP request) before this epic is considered production-verified.
+
+### 8. Real transient Gemini `503 UNAVAILABLE`, again
+Observed twice in B4, on the same `AI_EXTRACTION` step Epic 1 had already hit this exact issue on. Confirms it's a genuine, recurring external condition rather than a fluke — B6's retry/backoff machinery exists specifically to absorb this.
+
+---
+
+## Summary Table — Epic 2, All 10 Phases
+
+| Phase | Focus | New HTTP surface | Bugs found outside own scope |
+|---|---|---|---|
+| B0 | Schema & config foundations | No | Broken Alembic chain (pre-existing) |
+| B1 | ZIP validation & job repository | No | — |
+| B2 | Bulk upload intake API | `POST /bulk-uploads` | — |
+| B3 | `BULK_EXTRACT` Celery task | No (background task) | — |
+| B4 | `BULK_RESUME_PARSE` (parse-first per-file task) | No (background task) | — |
+| B5 | `MAX_FILES_PER_ZIP` cap enforcement | No (extends B3's task) | — |
+| B6 | Partial-failure handling + Dead Letter Queue | No (extends B4's task) | `RetryDriver` hardcoded `task_type`; `EntityType` missing 4 members |
+| B7 | Cancellation | `POST /bulk-uploads/{id}/cancel` | Alembic multi-head divergence (pre-existing) |
+| B8 | Bulk upload history | `GET /bulk-uploads`, `GET /bulk-uploads/export`, `GET /bulk-uploads/{id}` | `main.py` never registered `resume_router`/`bulk_upload_router` |
+| B9 | Error handling for new failure modes | No (hardens B3's task) | — |
+
+---
+
+## Known Gaps / Follow-Up Work — Epic 2
+
+- **Full HTTP + Redis end-to-end smoke test** — every phase was verified at the service/task layer or via direct `task.run(...)` calls; a real `apply_async` → worker → HTTP round-trip (with Redis actually running) has not been performed in this environment. Given Cross-Cutting Issue #6, this is the single highest-value remaining verification step.
+- **Epic 1's own already-flagged gaps** (email/alerting module, OCR for image resumes, `CIRCUIT_BREAKER` DB enum values, M16 compliance stories, skill extraction/embeddings, connection-pool sizing) — unchanged, still open, listed in full above.
+- **Alembic chain reconciliation** — three divergent heads still exist (this epic's, JD's, and skill-ontology's); one of the other two has its own pre-existing schema-drift bug. Neither was fixed here, as both belong to different work.
+- **Circuit-breaker coverage for bulk storage/encryption failures** — deliberately not extended to bulk uploads in B9, since the underlying mechanism (`EntityType.CIRCUIT_BREAKER`) is itself an incomplete Epic 1 loose end.
+- **Stale/stuck-job detection** — no periodic sweep exists to detect a job left permanently at `EXTRACTING`/`PROCESSING`/`RUNNING` by a hard Celery-worker crash (as opposed to a caught exception, which B9 now handles correctly). Epic 1 hit this exact scenario once and recovered manually; the same manual-recovery approach would still be needed for bulk uploads today.
+- **Epic 3** — explicitly deferred by the user until Epic 2 was complete; not started, no data provided yet.

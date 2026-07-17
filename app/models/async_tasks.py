@@ -30,12 +30,15 @@ class BulkUploadStatus(enum.Enum):
     COMPLETED = "COMPLETED"
     PARTIAL_FAILURE = "PARTIAL_FAILURE"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class BulkUploadFileStatus(enum.Enum):
     QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
     PROCESSED = "PROCESSED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class DocumentType(enum.Enum):

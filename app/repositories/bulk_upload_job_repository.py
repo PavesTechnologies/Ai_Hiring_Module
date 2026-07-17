@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus
@@ -72,6 +72,31 @@ class BulkUploadJobRepository:
             .values(**{column.key: column + by})
         )
         self.db.flush()
+
+    def list_by_campaign(self, campaign_id: UUID, offset: int, limit: int) -> list[BulkUploadJob]:
+        stmt = (
+            select(BulkUploadJob)
+            .where(BulkUploadJob.campaign_id == campaign_id)
+            .order_by(BulkUploadJob.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return self.db.execute(stmt).scalars().all()
+
+    def count_by_campaign(self, campaign_id: UUID) -> int:
+        stmt = select(func.count()).select_from(BulkUploadJob).where(
+            BulkUploadJob.campaign_id == campaign_id
+        )
+        return self.db.execute(stmt).scalar_one()
+
+    def get_all_by_campaign(self, campaign_id: UUID) -> list[BulkUploadJob]:
+        """Unpaginated — for history export, not for the paginated list endpoint."""
+        stmt = (
+            select(BulkUploadJob)
+            .where(BulkUploadJob.campaign_id == campaign_id)
+            .order_by(BulkUploadJob.created_at.desc())
+        )
+        return self.db.execute(stmt).scalars().all()
 
     def get_counts(self, job_id: UUID) -> tuple[int, int, int, int] | None:
         """Returns (total_files, processed_count, failed_count, duplicate_count)."""
