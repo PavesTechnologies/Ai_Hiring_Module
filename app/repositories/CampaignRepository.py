@@ -272,6 +272,7 @@ class CampaignRepository:
 
         campaign.semantic_threshold = request.semantic_threshold
         campaign.ai_threshold = request.ai_threshold
+        campaign.deterministic_threshold = request.deterministic_threshold
 
         campaign.updated_at = datetime.now(timezone.utc)
 

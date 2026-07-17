@@ -41,6 +41,7 @@ class CampaignScoringConfigurationResponse(BaseModel):
 
     semantic_threshold: float
     ai_threshold: float
+    deterministic_threshold: float
     total_weight: float
     formula:str
     layers: list[ScoringLayerExplanationResponse]

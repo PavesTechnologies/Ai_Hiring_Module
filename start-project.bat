@@ -28,8 +28,9 @@ set "VENV_ACTIVATE=%PROJECT_DIR%venv\Scripts\activate.bat"
 
 set "REDIS_HOST=127.0.0.1"
 set "REDIS_PORT=6379"
-set "REDIS_SERVER_CMD=redis-server"
-set "REDIS_CLI_CMD=redis-cli"
+set "REDIS_CONTAINER=airs-redis"
+@REM set "REDIS_SERVER_CMD=redis-server"
+@REM set "REDIS_CLI_CMD=redis-cli"
 
 set "CELERY_APP=app.core.celery_app"
 set "CELERY_LOGLEVEL=info"
@@ -93,32 +94,96 @@ del "%_HTTP_CODE_FILE%" >nul 2>&1
 endlocal
 exit /b 1
 
+@REM REM =============================================================================
+@REM REM  Stage: Redis
+@REM REM =============================================================================
+@REM :ensure_redis
+@REM "%REDIS_CLI_CMD%" -h %REDIS_HOST% -p %REDIS_PORT% ping >nul 2>&1
+@REM if not errorlevel 1 (
+@REM     echo   [SKIP]  Redis is already running on %REDIS_HOST%:%REDIS_PORT% - reusing it.
+@REM     goto :eof
+@REM )
+
+@REM echo   [START] Redis is not running - starting "%REDIS_SERVER_CMD%" ...
+@REM start "AIRS - Redis" cmd /k %REDIS_SERVER_CMD% --port %REDIS_PORT%
+
+@REM set /a _elapsed=0
+@REM :wait_redis
+@REM "%REDIS_CLI_CMD%" -h %REDIS_HOST% -p %REDIS_PORT% ping >nul 2>&1
+@REM if not errorlevel 1 (
+@REM     echo   [READY] Redis is up.
+@REM     goto :eof
+@REM )
+@REM if %_elapsed% GEQ %READY_TIMEOUT_SECONDS% (
+@REM     echo   [ERROR] Redis did not become ready within %READY_TIMEOUT_SECONDS% seconds.
+@REM     exit /b 1
+@REM )
+@REM ping -n %POLL_INTERVAL_SECONDS% 127.0.0.1 >nul
+@REM set /a _elapsed+=%POLL_INTERVAL_SECONDS%
+@REM goto :wait_redis
+
 REM =============================================================================
-REM  Stage: Redis
+REM  Stage: Redis - Docker
 REM =============================================================================
 :ensure_redis
-"%REDIS_CLI_CMD%" -h %REDIS_HOST% -p %REDIS_PORT% ping >nul 2>&1
+
+REM Check whether the Redis Docker container is already running
+docker inspect -f "{{.State.Running}}" %REDIS_CONTAINER% 2>nul | findstr /i "true" >nul
+
 if not errorlevel 1 (
-    echo   [SKIP]  Redis is already running on %REDIS_HOST%:%REDIS_PORT% - reusing it.
-    goto :eof
+    echo   [SKIP]  Redis Docker container is already running - reusing it.
+    goto :wait_redis
 )
 
-echo   [START] Redis is not running - starting "%REDIS_SERVER_CMD%" ...
-start "AIRS - Redis" cmd /k %REDIS_SERVER_CMD% --port %REDIS_PORT%
+REM Check whether the container already exists but is stopped
+docker inspect %REDIS_CONTAINER% >nul 2>&1
 
+if not errorlevel 1 (
+    echo   [START] Redis container exists but is stopped - starting it ...
+    docker start %REDIS_CONTAINER% >nul
+
+    if errorlevel 1 (
+        echo   [ERROR] Failed to start Redis Docker container.
+        exit /b 1
+    )
+
+    goto :wait_redis
+)
+
+REM Container does not exist - create it
+echo   [START] Redis container does not exist - creating it ...
+
+docker run -d ^
+    --name %REDIS_CONTAINER% ^
+    -p %REDIS_PORT%:6379 ^
+    redis
+
+if errorlevel 1 (
+    echo   [ERROR] Failed to create Redis Docker container.
+    echo   Make sure Docker Desktop is running.
+    exit /b 1
+)
+
+REM Wait until Redis responds
 set /a _elapsed=0
+
 :wait_redis
-"%REDIS_CLI_CMD%" -h %REDIS_HOST% -p %REDIS_PORT% ping >nul 2>&1
+
+docker exec %REDIS_CONTAINER% redis-cli ping 2>nul | findstr /i "PONG" >nul
+
 if not errorlevel 1 (
-    echo   [READY] Redis is up.
+    echo   [READY] Redis is up on %REDIS_HOST%:%REDIS_PORT%.
     goto :eof
 )
+
 if %_elapsed% GEQ %READY_TIMEOUT_SECONDS% (
     echo   [ERROR] Redis did not become ready within %READY_TIMEOUT_SECONDS% seconds.
     exit /b 1
 )
+
 ping -n %POLL_INTERVAL_SECONDS% 127.0.0.1 >nul
 set /a _elapsed+=%POLL_INTERVAL_SECONDS%
+
 goto :wait_redis
 
 REM =============================================================================

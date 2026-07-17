@@ -56,6 +56,18 @@ try:
             value="90.00",
             description="RapidFuzz similarity score (0-100) above which a newly created skill is flagged as similar to an existing one",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="HIERARCHY_GRANDCHILD_MULTIPLIER",
+            value="0.50",
+            description="Deterministic mandatory-skill scoring: contribution multiplier for a GRANDCHILD (depth-2) hierarchy match",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="HIERARCHY_SEMANTIC_ONLY_THRESHOLD",
+            value="0.80",
+            description="Deterministic mandatory-skill scoring: minimum cosine similarity for a candidate skill to count as a SEMANTIC match against a missing mandatory skill",
+        ),
     ]
 
     for config in configs:

@@ -144,6 +144,7 @@ class CampaignService:
                 weight_ai=float(request.weight_ai),
                 semantic_threshold=float(request.semantic_threshold),
                 ai_threshold=float(request.ai_threshold),
+                deterministic_threshold=float(request.deterministic_threshold),
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 hiring_manager_id=request.hiring_manager_id,
@@ -277,7 +278,7 @@ class CampaignService:
             ScoringLayerExplanationResponse(
                 layer="Deterministic",
                 weight=campaign.weight_deterministic,
-                threshold=None,
+                threshold=campaign.deterministic_threshold,
                 description="Mandatory skill, experience and education validation.",
                 ),
                 ScoringLayerExplanationResponse(
@@ -307,6 +308,7 @@ class CampaignService:
             weight_ai=campaign.weight_ai,
             semantic_threshold=campaign.semantic_threshold,
             ai_threshold=campaign.ai_threshold,
+            deterministic_threshold=campaign.deterministic_threshold,
             total_weight=total_weight,
             formula=formula,
             layers=layers,
@@ -852,6 +854,7 @@ class CampaignService:
                 weight_ai=campaign.weight_ai,
                 semantic_threshold=campaign.semantic_threshold,
                 ai_threshold=campaign.ai_threshold,
+                deterministic_threshold=campaign.deterministic_threshold,
             ),
             pipeline_limits=PipelineLimitsSection(
                 max_candidates=campaign.max_candidates,
@@ -987,6 +990,7 @@ class CampaignService:
         "weight_ai",
         "semantic_threshold",
         "ai_threshold",
+        "deterministic_threshold",
     )
 
     def update_campaign(
@@ -1243,4 +1247,46 @@ class CampaignService:
             pending_resume_count=pending,
             estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
+
+    def calculate_deterministic_score(
+        self,
+        jd_id: UUID,
+        resume_id: UUID,
+        deterministic_threshold: float,
+    ) -> tuple[float, bool]:
+
+        mandatory_skills = (
+            self.skill_repository.get_mandatory_jd_skills(jd_id)
+        )
+
+        candidate_skills = (
+            self.skill_repository.get_candidate_normalized_skills(resume_id)
+        )
+
+        if not mandatory_skills:
+            return 100.0, True
+
+        required_skill_ids = {
+            skill.canonical_skill_id
+            for skill in mandatory_skills
+        }
+
+        candidate_skill_ids = {
+            skill.canonical_skill_id
+            for skill in candidate_skills
+            if skill.canonical_skill_id is not None
+        }
+
+        matched_skill_ids = required_skill_ids.intersection(
+            candidate_skill_ids
+        )
+
+        score = round(
+            (len(matched_skill_ids) / len(required_skill_ids)) * 100,
+            2,
+        )
+
+        passed = score >= float(deterministic_threshold)
+
+        return score, passed
 
