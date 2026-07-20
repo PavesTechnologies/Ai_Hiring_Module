@@ -315,6 +315,51 @@ class CandidateScoringService:
             "contribution": contribution,
         }
 
+    # ------------------------------------------------------------------
+    # M03-E05 S01 T02: preferred (non-mandatory) skill bonus scoring
+    # ------------------------------------------------------------------
+
+    def build_preferred_skill_breakdown(
+        self,
+        jd_id: UUID,
+        resume_id: UUID,
+    ) -> dict:
+        """
+        Preferred JD skills (jd_skills.mandatory = FALSE), EXACT
+        canonical-match only - unlike mandatory skills, no CHILD/
+        GRANDCHILD/SIBLING/SEMANTIC fallback applies to preferred skills;
+        an unmatched preferred skill simply contributes 0, never MISSING
+        in the mandatory-coverage sense (it never affects
+        mandatory_coverage_pct or deterministic_passed).
+
+        Reuses SkillRepository.get_mandatory_skill_coverage(mandatory=False)
+        - the same LEFT JOIN T01 already established for mandatory
+        coverage - and _breakdown_entry, so the per-skill JSON shape is
+        identical to a mandatory_skills entry.
+
+        contribution = jd_skill.weight * candidate_skill.scoring_weight * 1.0
+        """
+        coverage_rows = self.skill_repository.get_mandatory_skill_coverage(jd_id, resume_id, mandatory=False)
+
+        preferred_skills = []
+        for row in coverage_rows:
+            weight = float(row.weight) if row.weight is not None else None
+            is_exact_match = row.candidate_scoring_weight is not None
+            preferred_skills.append(self._breakdown_entry(
+                row.canonical_skill_id, weight,
+                MandatorySkillMatchType.EXACT if is_exact_match else MandatorySkillMatchType.MISSING,
+                1.0 if is_exact_match else 0.0,
+                float(row.candidate_scoring_weight) if is_exact_match else None,
+                row.match_tier, row.confidence,
+            ))
+
+        preferred_bonus_score = round(sum(entry["contribution"] or 0 for entry in preferred_skills), 4)
+
+        return {
+            "preferred_skills": preferred_skills,
+            "preferred_bonus_score": preferred_bonus_score,
+        }
+
     def calculate_and_store_score_breakdown(
         self,
         campaign_candidate_id: UUID,
@@ -325,13 +370,21 @@ class CandidateScoringService:
         """
         Builds the hierarchy-aware mandatory-skill breakdown and persists
         it onto campaign_candidates.score_breakdown, deterministic_score
-        (= mandatory_coverage_pct) and deterministic_passed.
+        (= mandatory_coverage_pct + preferred_bonus_score) and
+        deterministic_passed.
 
         deterministic_passed is FALSE whenever any mandatory skill is
         ultimately MISSING, regardless of the overall coverage percentage,
         per the finalized rule - a campaign requiring 3 mandatory skills
         at an 50% threshold must not pass a candidate missing one of them
         just because 2-of-3 clears that bar.
+
+        After mandatory exact/hierarchy scoring completes, Preferred JD
+        Skills (mandatory=FALSE) are scored EXACT-only (M03-E05 S01 T02)
+        and summed into a Preferred Bonus Score, added to the final
+        deterministic_score - this never changes mandatory_coverage_pct
+        or the deterministic_passed decision, which are still computed
+        from mandatory skills exactly as before.
 
         Flushes via CampaignCandidateRepository.update() but deliberately
         does not commit - that belongs to whatever orchestrates this
@@ -358,11 +411,20 @@ class CandidateScoringService:
             breakdown["mandatory_coverage_pct"] >= float(deterministic_threshold) and not any_missing
         )
 
+        preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
+        breakdown["preferred_skills"] = preferred_breakdown["preferred_skills"]
+        breakdown["preferred_bonus_score"] = preferred_breakdown["preferred_bonus_score"]
+
+        final_deterministic_score = round(
+            breakdown["mandatory_coverage_pct"] + breakdown["preferred_bonus_score"], 2
+        )
+
         breakdown["deterministic_threshold"] = float(deterministic_threshold)
         breakdown["deterministic_passed"] = deterministic_passed
+        breakdown["deterministic_score"] = final_deterministic_score
 
         campaign_candidate.score_breakdown = breakdown
-        campaign_candidate.deterministic_score = breakdown["mandatory_coverage_pct"]
+        campaign_candidate.deterministic_score = final_deterministic_score
         campaign_candidate.deterministic_passed = deterministic_passed
         self.campaign_candidate_repository.update(campaign_candidate)
 

@@ -46,9 +46,14 @@ def make_service(
     config=None,
     semantic_match_result=None,
     with_campaign_candidate_repository=True,
+    preferred_coverage_rows=None,
 ):
     skill_repository = MagicMock()
-    skill_repository.get_mandatory_skill_coverage.return_value = coverage_rows
+
+    def _coverage_side_effect(jd_id, resume_id, mandatory=True):
+        return coverage_rows if mandatory else (preferred_coverage_rows or [])
+
+    skill_repository.get_mandatory_skill_coverage.side_effect = _coverage_side_effect
     skill_repository.get_candidate_normalized_skills.return_value = candidate_skills or []
     skill_repository.find_best_semantic_match.return_value = semantic_match_result
 
@@ -469,3 +474,126 @@ def test_build_mandatory_skill_breakdown_requires_hierarchy_repositories():
 
     with pytest.raises(ValueError):
         service.build_mandatory_skill_breakdown(JD_ID, RESUME_ID)
+
+
+# ---------------------------------------------------------------- M03-E05 S01 T02: preferred skill bonus
+
+
+def test_preferred_skill_exact_match_computes_contribution():
+    preferred_id = uuid4()
+    preferred_rows = [_coverage_row(preferred_id, weight=40.0, candidate_scoring_weight=0.8, match_tier="EXACT", confidence=1.0)]
+    # build_preferred_skill_breakdown only needs skill_repository - no mandatory rows at all.
+    service, _ = make_service(coverage_rows=[], preferred_coverage_rows=preferred_rows)
+
+    breakdown = service.build_preferred_skill_breakdown(JD_ID, RESUME_ID)
+    entry = breakdown["preferred_skills"][0]
+
+    assert entry["match_type"] == MandatorySkillMatchType.EXACT.value
+    assert entry["hierarchy_score_multiplier"] == 1.0
+    assert entry["contribution"] == round(40.0 * 0.8 * 1.0, 4)
+    assert breakdown["preferred_bonus_score"] == round(40.0 * 0.8 * 1.0, 4)
+
+
+def test_preferred_skill_no_match_contributes_zero():
+    preferred_id = uuid4()
+    preferred_rows = [_coverage_row(preferred_id, weight=40.0, candidate_scoring_weight=None)]
+    service, _ = make_service(coverage_rows=[], preferred_coverage_rows=preferred_rows)
+
+    breakdown = service.build_preferred_skill_breakdown(JD_ID, RESUME_ID)
+    entry = breakdown["preferred_skills"][0]
+
+    assert entry["match_type"] == MandatorySkillMatchType.MISSING.value
+    assert entry["hierarchy_score_multiplier"] == 0.0
+    assert entry["contribution"] == 0.0
+    assert breakdown["preferred_bonus_score"] == 0.0
+
+
+def test_multiple_preferred_matches_sum_into_bonus_score():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    preferred_rows = [
+        _coverage_row(a, weight=30.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(b, weight=20.0, candidate_scoring_weight=0.5, match_tier="EXACT", confidence=1.0),
+        _coverage_row(c, weight=50.0, candidate_scoring_weight=None),  # unmatched - contributes 0
+    ]
+    service, _ = make_service(coverage_rows=[], preferred_coverage_rows=preferred_rows)
+
+    breakdown = service.build_preferred_skill_breakdown(JD_ID, RESUME_ID)
+
+    expected_bonus = round(30.0 * 1.0 * 1.0 + 20.0 * 0.5 * 1.0, 4)
+    assert breakdown["preferred_bonus_score"] == expected_bonus
+    assert len(breakdown["preferred_skills"]) == 3
+
+
+def test_no_preferred_skills_configured_yields_zero_bonus():
+    service, _ = make_service(coverage_rows=[], preferred_coverage_rows=[])
+
+    breakdown = service.build_preferred_skill_breakdown(JD_ID, RESUME_ID)
+
+    assert breakdown["preferred_skills"] == []
+    assert breakdown["preferred_bonus_score"] == 0.0
+
+
+def test_preferred_bonus_added_to_final_deterministic_score():
+    mandatory_id, preferred_id = uuid4(), uuid4()
+    mandatory_rows = [_coverage_row(mandatory_id, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    preferred_rows = [_coverage_row(preferred_id, weight=10.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(mandatory_rows, preferred_coverage_rows=preferred_rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0)
+
+    assert breakdown["mandatory_coverage_pct"] == 100.0
+    assert breakdown["preferred_bonus_score"] == 10.0
+    assert breakdown["deterministic_score"] == 110.0
+    assert campaign_candidate.deterministic_score == 110.0
+
+
+def test_preferred_bonus_does_not_affect_mandatory_coverage_or_passed_decision():
+    mandatory_id, missing_id, preferred_id = uuid4(), uuid4(), uuid4()
+    mandatory_rows = [
+        _coverage_row(mandatory_id, weight=50.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(missing_id, weight=50.0, candidate_scoring_weight=None),
+    ]
+    preferred_rows = [_coverage_row(preferred_id, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    skill_by_id_map = {missing_id: _ontology_skill(missing_id, parent_skill_id=None)}
+    service, campaign_candidate_repository = make_service(
+        mandatory_rows, children_map={missing_id: []}, skill_by_id_map=skill_by_id_map,
+        preferred_coverage_rows=preferred_rows,
+    )
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    # Mandatory coverage is only 50%, and a huge preferred bonus (100.0) is
+    # available - deterministic_passed must still be False (a missing
+    # mandatory skill overrides everything, per the existing, unchanged rule).
+    breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=40.0)
+
+    assert breakdown["mandatory_coverage_pct"] == 50.0
+    assert breakdown["preferred_bonus_score"] == 100.0
+    assert breakdown["deterministic_score"] == 150.0
+    assert breakdown["deterministic_passed"] is False
+    assert campaign_candidate.deterministic_passed is False
+
+
+def test_mandatory_scoring_and_hierarchy_entries_unchanged_when_preferred_skills_present():
+    """Regression guard: adding preferred-skill scoring must not alter a single
+    mandatory_skills entry, mandatory_coverage_pct, or deterministic_passed."""
+    a, b = uuid4(), uuid4()
+    mandatory_rows = [
+        _coverage_row(a, weight=50.0, candidate_scoring_weight=0.9, match_tier="EXACT", confidence=1.0),
+        _coverage_row(b, weight=50.0, candidate_scoring_weight=None),
+    ]
+    skill_by_id_map = {b: _ontology_skill(b, parent_skill_id=None)}
+    preferred_rows = [_coverage_row(uuid4(), weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+
+    service_without_preferred, _ = make_service(mandatory_rows, children_map={b: []}, skill_by_id_map=skill_by_id_map)
+    service_with_preferred, _ = make_service(
+        mandatory_rows, children_map={b: []}, skill_by_id_map=skill_by_id_map, preferred_coverage_rows=preferred_rows,
+    )
+
+    breakdown_without = service_without_preferred.build_mandatory_skill_breakdown(JD_ID, RESUME_ID)
+    breakdown_with = service_with_preferred.build_mandatory_skill_breakdown(JD_ID, RESUME_ID)
+
+    assert breakdown_without["mandatory_skills"] == breakdown_with["mandatory_skills"]
+    assert breakdown_without["mandatory_coverage_pct"] == breakdown_with["mandatory_coverage_pct"]

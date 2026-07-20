@@ -430,14 +430,20 @@ class SkillRepository:
             .all()
         )
 
-    def get_mandatory_skill_coverage(self, jd_id: UUID, resume_id: UUID):
+    def get_mandatory_skill_coverage(self, jd_id: UUID, resume_id: UUID, mandatory: bool = True):
         """
-        One row per mandatory JD skill, LEFT JOINed against the candidate's
-        matching normalized skill (if any) - unmatched mandatory skills still
-        come back as a row (with NULL candidate_scoring_weight/match_tier/
-        confidence) instead of being silently dropped, so this is the single
-        source of truth for building a per-mandatory-skill coverage
-        breakdown (M07-E01 S02 T01).
+        One row per JD skill (mandatory ones by default), LEFT JOINed
+        against the candidate's matching normalized skill (if any) -
+        unmatched skills still come back as a row (with NULL
+        candidate_scoring_weight/match_tier/confidence) instead of being
+        silently dropped, so this is the single source of truth for
+        building a per-skill coverage breakdown (M07-E01 S02 T01).
+
+        mandatory=False reuses this exact same JOIN for Preferred JD
+        Skills (M03-E05 S01 T02) - same "canonical_skill_id only, never
+        raw text, scoring_weight > 0" matching rule, just against
+        jd_skills.mandatory = FALSE rows instead. The default (True)
+        preserves every existing caller's behavior unchanged.
 
         The join condition matches on canonical_skill_id only - never on
         raw_extracted_text - and only considers a candidate skill "in play"
@@ -462,7 +468,7 @@ class SkillRepository:
             )
             .filter(
                 JDSkill.jd_id == jd_id,
-                JDSkill.mandatory.is_(True),
+                JDSkill.mandatory.is_(mandatory),
             )
             .all()
         )
