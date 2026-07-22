@@ -128,6 +128,31 @@ try:
             value="90.00",
             description="RapidFuzz similarity score (0-100) above which a newly created skill is flagged as similar to an existing one",
         ),
+        # S04-T03: campaign cap/deadline warning thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CAP_WARNING_PERCENTAGE",
+            value="80.00",
+            description="Candidate-cap percentage (0-100) at which a campaign is flagged as approaching_cap",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DEADLINE_WARNING_DAYS",
+            value="3",
+            description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="HM_REVIEW_SLA_DAYS",
+            value="5",
+            description="Days a candidate can sit in HM_REVIEW before the campaign is flagged overdue_review",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="STALE_CAMPAIGN_DAYS",
+            value="7",
+            description="Days without a new candidate before a campaign is flagged pipeline_stalled",
+        ),
     ]
 
     for config in configs:

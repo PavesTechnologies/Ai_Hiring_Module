@@ -6,7 +6,11 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.resume_extraction_response import ResumeExtractionResponse
 from app.services.audit_service import AuditService
-from app.services.skills.skill_normalization_service import SkillMatchResult, verification_status_for_tier
+from app.services.skills.skill_normalization_service import (
+    SkillMatchResult,
+    scoring_weight_for_tier,
+    verification_status_for_tier,
+)
 
 
 class ResumeService:
@@ -94,6 +98,7 @@ class ResumeService:
                     confidence=match.confidence,
                     match_tier=match.match_tier.value,
                     status=verification_status_for_tier(match.match_tier).value,
+                    scoring_weight=scoring_weight_for_tier(match.match_tier),
                 )
                 skill_repository.bump_occurrence_count(match.canonical_skill_id)
 
@@ -113,6 +118,7 @@ class ResumeService:
                     confidence=match.confidence,
                     match_tier=match.match_tier.value,
                     status=verification_status_for_tier(match.match_tier).value,
+                    scoring_weight=scoring_weight_for_tier(match.match_tier),
                 )
 
             self.repository.create_resume_embedding(

@@ -35,6 +35,14 @@ class CeleryTaskLogRepository:
             .first()
         )
 
+    def get_by_idempotency_key(self, idempotency_key: str) -> CeleryTaskLog | None:
+        """No DB-level uniqueness on idempotency_key (unlike CampaignCandidate's) - callers must check this before enqueueing to avoid a duplicate."""
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(CeleryTaskLog.idempotency_key == idempotency_key)
+            .first()
+        )
+
     def get_by_task_ids(self, task_ids: list[str]) -> list[CeleryTaskLog]:
         """
         Batched counterpart to get_by_task_id — one query for a whole

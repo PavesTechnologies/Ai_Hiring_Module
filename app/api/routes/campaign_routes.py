@@ -56,7 +56,6 @@ def create_campaign(
     status_code=status.HTTP_200_OK,
     summary="Get all campaigns",
     description="Retrieve a list of all campaigns with JD and hiring manager details.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.HIRING_MANAGER))]
 )
 def get_all_campaigns(
     search: str | None = Query(None),
@@ -66,6 +65,7 @@ def get_all_campaigns(
     has_deadline: bool | None = Query(None),
     show_closed: bool = Query(False),
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     filters = CampaignFilterRequest(
         search=search,
@@ -76,7 +76,7 @@ def get_all_campaigns(
         show_closed=show_closed,
     )
 
-    campaigns = service.search_campaigns(filters)
+    campaigns = service.search_campaigns(filters, requesting_user=user)
 
     return APIResponse.ok(
         data=campaigns,
@@ -87,15 +87,15 @@ def get_all_campaigns(
     "/hr_admin",
     response_model=APIResponse[list[CampaignResponse]],
     status_code=status.HTTP_200_OK,
-    summary="Get campaigns by manager ID",
-    description="Retrieve a list of campaigns by manager ID with JD and hiring manager details.",
+    summary="Get all campaigns (HR_ADMIN)",
+    description="Retrieve every campaign in the organisation, with JD and hiring manager details.",
     dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def get_campaigns_by_manager(
-    user: TokenUser = Depends(get_current_user),
+    show_closed: bool = Query(False),
     service: CampaignService = Depends(get_campaign_service),
 ):
-    campaigns = service.get_all_campaigns_for_hrAdmin(user.user_id)
+    campaigns = service.get_all_campaigns_for_hrAdmin(show_closed=show_closed)
 
     return APIResponse.ok(
         data=campaigns,
@@ -111,10 +111,11 @@ def get_campaigns_by_manager(
     dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
 )
 def get_campaigns_by_hiring_manager(
+    show_closed: bool = Query(False),
     user: TokenUser = Depends(get_current_user),
     service: CampaignService = Depends(get_campaign_service),
 ):
-    campaigns = service.get_all_campaigns_for_hiring_manager(user.user_id)
+    campaigns = service.get_all_campaigns_for_hiring_manager(user.user_id, show_closed=show_closed)
 
     return APIResponse.ok(
         data=campaigns,
@@ -249,17 +250,18 @@ def get_scoring_history(
     status_code=status.HTTP_200_OK,
     summary="Update Campaign Scoring Configuration",
     description="Update scoring weights and thresholds for a campaign.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def update_scoring_configuration(
     campaign_id: UUID,
     request: CampaignScoringUpdateRequest,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     configuration = service.update_scoring_configuration(
         campaign_id=campaign_id,
         request=request,
+        updated_by=user.user_id,
     )
 
     return configuration

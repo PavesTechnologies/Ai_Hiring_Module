@@ -117,19 +117,7 @@ class CampaignRepository:
         result = self.db.execute(stmt)
         return result.scalars().all()
     
-    def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[HiringCampaign]:
-        stmt = (
-            select(HiringCampaign)
-            .where(
-                HiringCampaign.created_by == manager_id,
-            )
-            .options(joinedload(HiringCampaign.job_description))
-            .order_by(HiringCampaign.created_at.desc())
-        )
-        result = self.db.execute(stmt)
-        return result.scalars().all()
-
-    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[HiringCampaign]:
+    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
             .where(
@@ -138,8 +126,26 @@ class CampaignRepository:
             .options(joinedload(HiringCampaign.job_description))
             .order_by(HiringCampaign.created_at.desc())
         )
+        if not show_closed:
+            stmt = stmt.where(
+                HiringCampaign.status != CampaignStatus.CLOSED
+            )
         result = self.db.execute(stmt)
         return result.scalars().all()
+
+    def get_hiring_manager_names(self, hiring_manager_ids: list[str]) -> dict[str, str]:
+        """
+        Batch-resolves hiring_manager_id -> full_name for list endpoints, avoiding
+        an N+1 query per campaign row (same User model get_campaign_by_id already
+        uses for the single-campaign case).
+        """
+        ids = [hm_id for hm_id in set(hiring_manager_ids) if hm_id]
+        if not ids:
+            return {}
+
+        stmt = select(User.id, User.full_name).where(User.id.in_(ids))
+        result = self.db.execute(stmt)
+        return {row.id: row.full_name for row in result}
     
     def get_candidate_count(
         self,
@@ -173,6 +179,69 @@ class CampaignRepository:
             .scalar()
             or 0
         )
+
+    def get_hm_review_count(
+        self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        candidates currently awaiting hiring-manager review in this
+        campaign — used to warn HR_ADMIN that pending decisions may need
+        re-communicating to a newly-reassigned hiring manager.
+        """
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
+            )
+            .scalar()
+            or 0
+        )
+
+    def get_overdue_review_count(self, campaign_id: UUID, sla_days: int) -> int:
+        """
+        candidates currently in HM_REVIEW whose most recent transition
+        into that stage is older than sla_days, with no decision since.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
+
+        latest_entry = (
+            select(
+                CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.HM_REVIEW)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(func.count(CampaignCandidate.id))
+            .join(latest_entry, latest_entry.c.campaign_candidate_id == CampaignCandidate.id)
+            .where(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
+                latest_entry.c.entered_at <= cutoff,
+            )
+        )
+        return self.db.execute(stmt).scalar() or 0
+
+    def is_pipeline_stalled(self, campaign_id: UUID, stale_days: int) -> bool:
+        """
+        S05-T03: True if the campaign has candidates but none have been added
+        in the last stale_days days.
+        """
+        latest_added_at = (
+            self.db.query(func.max(CampaignCandidate.created_at))
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .scalar()
+        )
+        if latest_added_at is None:
+            return False
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        return latest_added_at <= cutoff
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
@@ -297,6 +366,7 @@ class CampaignRepository:
 
         campaign.semantic_threshold = request.semantic_threshold
         campaign.ai_threshold = request.ai_threshold
+        campaign.deterministic_threshold = request.deterministic_threshold
 
         campaign.updated_at = datetime.now(timezone.utc)
 
