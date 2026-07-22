@@ -307,11 +307,11 @@ class CampaignService:
 
         configs = self.config_repo.get_configs_by_keys(
             [
-                "DEFAULT_WEIGHT_DETERMINISTIC",
-                "DEFAULT_WEIGHT_SEMANTIC",
-                "DEFAULT_WEIGHT_AI",
-                "DEFAULT_SEMANTIC_THRESHOLD",
-                "DEFAULT_AI_THRESHOLD",
+                "CAMPAIGN_WEIGHT_DETERMINISTIC",
+                "CAMPAIGN_WEIGHT_SEMANTIC",
+                "CAMPAIGN_WEIGHT_AI",
+                "SEMANTIC_PASS_THRESHOLD",
+                "AI_PASS_THRESHOLD",
             ]
         )
         formula = "((det × w_det) + (sem × 100 × w_sem) + (eff_ai × w_ai)) / 100"
@@ -354,25 +354,20 @@ class CampaignService:
             formula=formula,
             layers=layers,
             defaults=CampaignScoringDefaultsResponse(
-                # NOTE: platform_config has no DEFAULT_WEIGHT_* rows yet (only
-                # SEMANTIC_PASS_THRESHOLD / AI_PASS_THRESHOLD exist, under the
-                # names S02 already uses). Falling back to the HiringCampaign
-                # column defaults — same values — instead of crashing with a
-                # KeyError until the platform_config keys are decided/seeded.
                 weight_deterministic=float(
-                    configs.get("DEFAULT_WEIGHT_DETERMINISTIC", "30.00")
+                    configs.get("CAMPAIGN_WEIGHT_DETERMINISTIC", "30.00")
                 ),
                 weight_semantic=float(
-                    configs.get("DEFAULT_WEIGHT_SEMANTIC", "40.00")
+                    configs.get("CAMPAIGN_WEIGHT_SEMANTIC", "40.00")
                 ),
                 weight_ai=float(
-                    configs.get("DEFAULT_WEIGHT_AI", "30.00")
+                    configs.get("CAMPAIGN_WEIGHT_AI", "30.00")
                 ),
                 semantic_threshold=float(
-                    configs.get("DEFAULT_SEMANTIC_THRESHOLD", "0.6500")
+                    configs.get("SEMANTIC_PASS_THRESHOLD", "0.6500")
                 ),
                 ai_threshold=float(
-                    configs.get("DEFAULT_AI_THRESHOLD", "50.00")
+                    configs.get("AI_PASS_THRESHOLD", "50.00")
                 ),
             ),
         )
@@ -400,18 +395,27 @@ class CampaignService:
         for record in history:
 
             detail = record.detail or {}
+            field_changes = detail.get("changes", {})
 
             history_items.append(
                 WeightHistoryItemResponse(
-                    changed_by=str(record.actor_id),
+                    changed_by=self._resolve_actor(record.actor_id),
                     changed_at=record.created_at,
-                    before=detail.get("before", {}),
-                    after=detail.get("after", {}),
+                    before={field: v.get("before") for field, v in field_changes.items()},
+                    after={field: v.get("after") for field, v in field_changes.items()},
                 )
             )
 
+        message = None
+        if not history_items:
+            message = (
+                f"No changes — using initial configuration set on "
+                f"{campaign.created_at.date().isoformat()}."
+            )
+
         return CampaignWeightHistoryResponse(
-            history=history_items
+            history=history_items,
+            message=message,
         )
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
@@ -637,10 +641,12 @@ class CampaignService:
         )
 
         if changes:
+            # S01-T03: same action_type update_campaign() uses for scoring edits,
+            # so both edit paths land in the same Weight Change History query.
             self.audit_service.log(
                 actor_id=updated_by,
                 actor_role="HR_ADMIN",
-                action_type=ActionType.CAMPAIGN_THRESHOLDS_UPDATED,
+                action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED,
                 entity_type=EntityType.CAMPAIGN,
                 entity_id=campaign.id,
                 campaign_id=campaign.id,

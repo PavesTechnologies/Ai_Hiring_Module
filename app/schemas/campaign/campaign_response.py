@@ -59,7 +59,7 @@ class WeightHistoryItemResponse(BaseModel):
 
 class CampaignWeightHistoryResponse(BaseModel):
     history: list[WeightHistoryItemResponse]
-
+    message: str | None = None  
 
 class HiringCampaignResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
