@@ -311,20 +311,25 @@ class CampaignService:
             formula=formula,
             layers=layers,
             defaults=CampaignScoringDefaultsResponse(
+                # NOTE: platform_config has no DEFAULT_WEIGHT_* rows yet (only
+                # SEMANTIC_PASS_THRESHOLD / AI_PASS_THRESHOLD exist, under the
+                # names S02 already uses). Falling back to the HiringCampaign
+                # column defaults — same values — instead of crashing with a
+                # KeyError until the platform_config keys are decided/seeded.
                 weight_deterministic=float(
-                    configs["DEFAULT_WEIGHT_DETERMINISTIC"]
+                    configs.get("DEFAULT_WEIGHT_DETERMINISTIC", "30.00")
                 ),
                 weight_semantic=float(
-                    configs["DEFAULT_WEIGHT_SEMANTIC"]
+                    configs.get("DEFAULT_WEIGHT_SEMANTIC", "40.00")
                 ),
                 weight_ai=float(
-                    configs["DEFAULT_WEIGHT_AI"]
+                    configs.get("DEFAULT_WEIGHT_AI", "30.00")
                 ),
                 semantic_threshold=float(
-                    configs["DEFAULT_SEMANTIC_THRESHOLD"]
+                    configs.get("DEFAULT_SEMANTIC_THRESHOLD", "0.6500")
                 ),
                 ai_threshold=float(
-                    configs["DEFAULT_AI_THRESHOLD"]
+                    configs.get("DEFAULT_AI_THRESHOLD", "50.00")
                 ),
             ),
         )
@@ -480,12 +485,10 @@ class CampaignService:
         self,
         campaign_id: UUID,
         request: CampaignScoringUpdateRequest,
+        updated_by: str,
     ) -> CampaignScoringConfigurationResponse:
 
-        campaign = self.campaign_repo.get_by_id(
-            campaign_id
-        )
-
+        campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(
                 f"Campaign with ID '{campaign_id}' not found",
@@ -530,6 +533,23 @@ class CampaignService:
                 None,
             )
 
+        # T03: capture before/after for every field that actually changed,
+        # atomically with the save (audit is written in the same transaction).
+        threshold_fields = (
+            "weight_deterministic", "weight_semantic", "weight_ai",
+            "semantic_threshold", "ai_threshold",
+        )
+        changes = {
+            field: {
+                "before": str(getattr(campaign, field)),
+                "after": str(getattr(request, field)),
+            }
+            for field in threshold_fields
+            if Decimal(str(getattr(campaign, field))) != getattr(request, field)
+        }
+
+        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+
         campaign = (
             self.campaign_repo.update_scoring_configuration(
                 campaign,
@@ -537,11 +557,35 @@ class CampaignService:
             )
         )
 
+        if changes:
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_THRESHOLDS_UPDATED,
+                entity_type=EntityType.CAMPAIGN,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' thresholds updated",
+                    "changes": changes,
+                    "candidates_already_processed": candidate_count,
+                },
+            )
+
         self.campaign_repo.commit()
 
-        return self.get_scoring_configuration(
-            campaign.id
-        )
+        result = self.get_scoring_configuration(campaign.id)
+
+        if candidate_count > 0:
+            # T03: "a warning must notify HR_ADMIN that threshold changes only
+            # affect newly submitted candidates" — surfaced on the response.
+            result.warning = (
+                f"{candidate_count} candidate(s) were already processed with "
+                f"the previous configuration. Their scores will not be "
+                f"automatically recalculated."
+            )
+
+        return result
     
     def get_weight_presets(
         self,

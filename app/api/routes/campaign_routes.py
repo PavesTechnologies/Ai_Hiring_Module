@@ -249,17 +249,18 @@ def get_scoring_history(
     status_code=status.HTTP_200_OK,
     summary="Update Campaign Scoring Configuration",
     description="Update scoring weights and thresholds for a campaign.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def update_scoring_configuration(
     campaign_id: UUID,
     request: CampaignScoringUpdateRequest,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     configuration = service.update_scoring_configuration(
         campaign_id=campaign_id,
         request=request,
+        updated_by=user.user_id,
     )
 
     return configuration
