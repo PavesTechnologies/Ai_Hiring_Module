@@ -40,6 +40,7 @@ import app.models.identity          # noqa: F401, E402
 import app.models.config            # noqa: F401, E402
 import app.models.jd.job_descriptions  # noqa: F401, E402
 import app.models.campaigns         # noqa: F401, E402
+import app.models.campaign_weight_preset  # noqa: F401, E402
 import app.models.candidates        # noqa: F401, E402
 import app.models.embeddings        # noqa: F401, E402
 import app.models.pipeline          # noqa: F401, E402

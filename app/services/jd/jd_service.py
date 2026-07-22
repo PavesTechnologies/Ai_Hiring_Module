@@ -3,6 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import timezone
+from decimal import Decimal
 from urllib import request
 from uuid import UUID, uuid4
 
@@ -30,6 +31,24 @@ from datetime import datetime
 from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
+
+# jd_skills.weight was never populated by this pipeline ("reserved for
+# future business-set scoring input" - see the comment this replaces,
+# below). CandidateScoringService computes
+# deterministic_score = (SUM mandatory contributions / SUM max mandatory
+# contributions) x 100 - a ratio, not an absolute sum - so the scale is
+# self-normalizing regardless of what magnitude jd_skills.weight uses, as
+# long as every skill in a JD carries the same weight. No requirement
+# anywhere (JDSkill model/migrations, JD schemas/routes, campaign scoring
+# config, or existing tests) defines a specific weight value or a
+# mandatory/preferred split, so this is the documented minimum-safe
+# default: every matched skill (mandatory or preferred) gets this same
+# flat weight - no 100-point budget, no per-JD remainder math to get
+# right or wrong. This only ever runs at JD-skill creation time (never
+# re-touches an already-existing jd_skills row), which is what keeps room
+# for a future manual/business weight-override feature: nothing here will
+# ever overwrite a weight once assigned.
+_DEFAULT_JD_SKILL_WEIGHT = Decimal("1.00")
 
 
 @dataclass
@@ -212,6 +231,8 @@ class JDService:
                 if existing_match is None or (match.mandatory and not existing_match.mandatory):
                     matched_by_skill[match.canonical_skill_id] = match
 
+            # Every matched skill (mandatory or preferred) gets the same
+            # flat weight (see _DEFAULT_JD_SKILL_WEIGHT above for why).
             for match in matched_by_skill.values():
                 skill_repository.create_jd_skill(
                     jd_id=job_description.id,
@@ -220,8 +241,7 @@ class JDService:
                     match_tier=match.match_tier.value,
                     verification_status=verification_status_for_tier(match.match_tier),
                     confidence=match.confidence,
-                    # weight is reserved for future business-set scoring
-                    # input, not populated by the automated pipeline.
+                    weight=_DEFAULT_JD_SKILL_WEIGHT,
                 )
                 skill_repository.bump_occurrence_count(match.canonical_skill_id)
 

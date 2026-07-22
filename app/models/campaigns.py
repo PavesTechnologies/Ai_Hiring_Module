@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
     CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
-    Integer, Numeric, String, UniqueConstraint, func,
+    Integer, Numeric, String, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,6 +37,9 @@ class HiringCampaign(Base):
     weight_ai: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=30.00)
     semantic_threshold: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.6500)
     ai_threshold: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=50.00)
+    deterministic_threshold: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=70.00, server_default=text("70.00")
+    )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)

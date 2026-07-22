@@ -1,4 +1,5 @@
 import logging
+from uuid import uuid4
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
@@ -7,6 +8,7 @@ from app.models.async_tasks import DocumentType
 from app.models.candidates import FileFormat
 from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
@@ -14,6 +16,10 @@ from app.repositories.document_processing_repository import DocumentProcessingRe
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
+from app.tasks.deterministic_scoring_tasks import (
+    DETERMINISTIC_SCORE_TASK_TYPE,
+    calculate_deterministic_score_task,
+)
 
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
@@ -40,6 +46,56 @@ _FILE_FORMAT_TO_SOURCE_FORMAT = {
     FileFormat.PDF: ResumeSourceFormat.PDF,
     FileFormat.DOCX: ResumeSourceFormat.DOCX,
 }
+
+
+def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLogService) -> None:
+    """
+    M07-E01 S02: after skill normalization's candidate_skills have
+    committed (i.e. this resume's processing pipeline has fully
+    succeeded), queue DETERMINISTIC_SCORE for every campaign_candidate
+    this resume belongs to. A plain apply_async - independent from and
+    unchained to anything else queued (e.g. resume-level embedding
+    generation, which already ran synchronously earlier in this same
+    pipeline) - so it runs on its own, in parallel with whatever else is
+    queued.
+
+    Idempotency: keyed on (campaign_candidate_id, resume_id), checked via
+    CeleryTaskLog.idempotency_key before enqueueing, so a retried
+    process_resume_document run (or a re-run against the same resume)
+    never double-queues scoring for the same candidate+resume.
+    """
+    campaign_candidate_repo = CampaignCandidateRepository(db)
+    task_log_repo = task_log_service.repository
+
+    for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
+        idempotency_key = f"{DETERMINISTIC_SCORE_TASK_TYPE}:{campaign_candidate.id}:{resume_id}"
+
+        if task_log_repo.get_by_idempotency_key(idempotency_key) is not None:
+            logger.info(
+                "Deterministic scoring already queued/run for campaign_candidate_id=%s resume_id=%s - skipping.",
+                campaign_candidate.id, resume_id,
+            )
+            continue
+
+        scoring_task_id = str(uuid4())
+        task_log_service.create_log(
+            task_id=scoring_task_id,
+            task_type=DETERMINISTIC_SCORE_TASK_TYPE,
+            idempotency_key=idempotency_key,
+            resume_id=resume_id,
+            campaign_candidate_id=campaign_candidate.id,
+        )
+
+        try:
+            calculate_deterministic_score_task.apply_async(
+                kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                task_id=scoring_task_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue deterministic scoring for campaign_candidate_id=%s resume_id=%s",
+                campaign_candidate.id, resume_id,
+            )
 
 
 @celery_app.task(name="resume.process_document", bind=True)
@@ -139,6 +195,16 @@ def process_resume_document(self, resume_id: str) -> None:
         task_log_repo.update(task_log)
         task_log_repo.commit()
         task_log_service.mark_success(task_log, summary=f"Resume {processed_resume_id} parsed.")
+
+        # Resume processing has already fully succeeded and committed above
+        # - a failure enqueueing deterministic scoring must never overwrite
+        # that success (or crash this task); log and move on.
+        try:
+            _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,
+            )
 
     except StageExecutionError as stage_exc:
         should_retry = False

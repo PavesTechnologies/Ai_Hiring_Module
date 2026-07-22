@@ -30,6 +30,14 @@ class CeleryTaskLogRepository:
             .first()
         )
 
+    def get_by_idempotency_key(self, idempotency_key: str) -> CeleryTaskLog | None:
+        """No DB-level uniqueness on idempotency_key (unlike CampaignCandidate's) - callers must check this before enqueueing to avoid a duplicate."""
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(CeleryTaskLog.idempotency_key == idempotency_key)
+            .first()
+        )
+
     def get_recent_by_created_by(self, created_by: str, limit: int = 50) -> list[CeleryTaskLog]:
         """
         Excludes SUCCESS: this backs the "my uploads" list, which only
