@@ -388,17 +388,17 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
 
         extracted = context.validated_extraction
 
-        if not extracted.full_name or not extracted.email:
+        if not identity.full_name or not identity.email:
             raise ValueError(
                 "Could not identify a candidate name and email from this resume."
             )
 
         candidate = candidate_service.get_or_create(
-            full_name=extracted.full_name,
-            email=extracted.email,
+            full_name=identity.full_name,
+            email=identity.email,
             jurisdiction=Jurisdiction.GLOBAL.value,
             consent_source=BULK_UPLOAD_CONSENT_SOURCE,
-            phone=extracted.phone,
+            phone=identity.phone,
             source_campaign_id=job.campaign_id,
         )
 
