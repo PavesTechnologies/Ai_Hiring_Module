@@ -409,7 +409,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         )
 
         resume = Resume(
-            candidate_id=candidate.id,
+            candidate_id=candidate.id,     
             file_path=job_file.storage_path,
             file_format=validation_result.file_format,
             file_hash=hashlib.md5(file_bytes).hexdigest(),
