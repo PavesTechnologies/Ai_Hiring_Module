@@ -76,6 +76,22 @@ class CampaignService:
         deadline_warning_days = int(configs.get("DEADLINE_WARNING_DAYS", "3"))
         return cap_warning_percentage, deadline_warning_days
 
+    def _get_review_stall_thresholds(self) -> tuple[int, int]:
+        """
+        overdue-review / stalled-pipeline thresholds, sourced from
+        platform_config (HM_REVIEW_SLA_DAYS / STALE_CAMPAIGN_DAYS).
+        """
+        configs = self.config_repo.get_configs_by_keys(
+            ["HM_REVIEW_SLA_DAYS", "STALE_CAMPAIGN_DAYS"]
+        )
+        hm_review_sla_days = int(configs.get("HM_REVIEW_SLA_DAYS", "5"))
+        stale_campaign_days = int(configs.get("STALE_CAMPAIGN_DAYS", "7"))
+        return hm_review_sla_days, stale_campaign_days
+
+    def _hiring_manager_name_map(self, campaigns: list[HiringCampaign]) -> dict[str, str]:
+        ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
+        return self.campaign_repo.get_hiring_manager_names(ids)
+
     def _is_approaching_cap(
         self,
         candidate_count: int,
@@ -400,6 +416,8 @@ class CampaignService:
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
+        hm_names = self._hiring_manager_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -407,7 +425,7 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,   # ← matches the actual column name
-                hiring_manager=c.hiring_manager_id,
+                hiring_manager=hm_names.get(c.hiring_manager_id, c.hiring_manager_id),
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
@@ -421,15 +439,21 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
                     deadline_warning_days,
-                )
-
+                ),
+                overdue_review=self.campaign_repo.get_overdue_review_count(c.id, hm_review_sla_days) > 0,
+                pipeline_stalled=self.campaign_repo.is_pipeline_stalled(c.id, stale_campaign_days),
             )
             for c in campaigns
         ]
 
-    def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[CampaignResponse]:
-        campaigns = self.campaign_repo.get_all_campaigns_for_hrAdmin(manager_id)
+    def get_all_campaigns_for_hrAdmin(self, show_closed: bool = False) -> list[CampaignResponse]:
+        # S05-T01: HR_ADMIN must see every campaign in the org, not just the
+        # ones they personally created — reuses get_all_campaigns() instead of
+        # a separate created_by-scoped repo query.
+        campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
+        hm_names = self._hiring_manager_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -437,7 +461,7 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
-                hiring_manager=c.hiring_manager_id,
+                hiring_manager=hm_names.get(c.hiring_manager_id, c.hiring_manager_id),
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
@@ -451,14 +475,18 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
                     deadline_warning_days,
-                )
+                ),
+                overdue_review=self.campaign_repo.get_overdue_review_count(c.id, hm_review_sla_days) > 0,
+                pipeline_stalled=self.campaign_repo.is_pipeline_stalled(c.id, stale_campaign_days),
             )
             for c in campaigns
         ]
 
-    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[CampaignResponse]:
-        campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id)
+    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[CampaignResponse]:
+        campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id, show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
+        hm_names = self._hiring_manager_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -466,7 +494,7 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
-                hiring_manager=c.hiring_manager_id,
+                hiring_manager=hm_names.get(c.hiring_manager_id, c.hiring_manager_id),
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
@@ -480,7 +508,9 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
                     deadline_warning_days,
-                )
+                ),
+                overdue_review=self.campaign_repo.get_overdue_review_count(c.id, hm_review_sla_days) > 0,
+                pipeline_stalled=self.campaign_repo.is_pipeline_stalled(c.id, stale_campaign_days),
             )
             for c in campaigns
         ]
@@ -489,10 +519,18 @@ class CampaignService:
     def search_campaigns(
         self,
         filters: CampaignFilterRequest,
+        requesting_user: TokenUser | None = None,
     ) -> list[CampaignResponse]:
+
+        if requesting_user is not None and UserRole.HIRING_MANAGER.value in requesting_user.roles:
+            # S05-T01: a HIRING_MANAGER must never see campaigns beyond their
+            # own, regardless of what hiring_manager_id filter was requested.
+            filters.hiring_manager_id = requesting_user.user_id
 
         campaigns = self.campaign_repo.search_campaigns(filters)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
+        hm_names = self._hiring_manager_name_map(campaigns)
 
         return [
             CampaignResponse(
@@ -501,7 +539,7 @@ class CampaignService:
                 status=c.status.value,
                 jd_title=c.job_description.title,
                 jd_version=c.job_description.version_number,
-                hiring_manager=c.hiring_manager_id,
+                hiring_manager=hm_names.get(c.hiring_manager_id, c.hiring_manager_id),
                 deadline=c.deadline,
                 max_candidates=c.max_candidates,
                 created_at=c.created_at,
@@ -515,7 +553,9 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
                     deadline_warning_days,
-                )
+                ),
+                overdue_review=self.campaign_repo.get_overdue_review_count(c.id, hm_review_sla_days) > 0,
+                pipeline_stalled=self.campaign_repo.is_pipeline_stalled(c.id, stale_campaign_days),
             )
             for c in campaigns
         ]

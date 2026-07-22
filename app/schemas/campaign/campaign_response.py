@@ -20,7 +20,9 @@ class CampaignResponse(BaseModel):
     created_at: datetime
     approaching_cap: bool = False
     deadline_soon: bool = False
-    warning: str | None = None 
+    overdue_review: bool = False
+    pipeline_stalled: bool = False
+    warning: str | None = None
 
 class CampaignScoringDefaultsResponse(BaseModel):
     weight_deterministic: float
