@@ -14,6 +14,7 @@ from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.identity import User
+from app.models.identity import UserRole as LocalUserRole
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
@@ -62,18 +63,32 @@ class CampaignService:
         self.preset_repo = preset_repo
         self.db = db
 
+    def _get_warning_thresholds(self) -> tuple[float, int]:
+        """
+        S04-T03: cap/deadline warning thresholds, sourced from platform_config
+        (CAP_WARNING_PERCENTAGE / DEADLINE_WARNING_DAYS) with the previous
+        hardcoded values (80%, 3 days) as fallback if the keys aren't seeded.
+        """
+        configs = self.config_repo.get_configs_by_keys(
+            ["CAP_WARNING_PERCENTAGE", "DEADLINE_WARNING_DAYS"]
+        )
+        cap_warning_percentage = float(configs.get("CAP_WARNING_PERCENTAGE", "80.00"))
+        deadline_warning_days = int(configs.get("DEADLINE_WARNING_DAYS", "3"))
+        return cap_warning_percentage, deadline_warning_days
+
     def _is_approaching_cap(
         self,
         candidate_count: int,
         max_candidates: int | None,
+        warning_percentage: float = 80.0,
     ) -> bool:
         """
-        Returns True if campaign has reached 80% of its candidate cap.
+        Returns True if campaign has reached warning_percentage of its candidate cap.
         """
         if not max_candidates:
             return False
 
-        return candidate_count >= (max_candidates * 0.8)
+        return candidate_count >= (max_candidates * (warning_percentage / 100))
 
 
     def _is_deadline_soon(
@@ -144,6 +159,7 @@ class CampaignService:
                 weight_ai=float(request.weight_ai),
                 semantic_threshold=float(request.semantic_threshold),
                 ai_threshold=float(request.ai_threshold),
+                deterministic_threshold=float(request.deterministic_threshold),
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 hiring_manager_id=request.hiring_manager_id,
@@ -171,12 +187,15 @@ class CampaignService:
 
             self.campaign_repo.commit()
 
-            
-            hiring_manager_name = request.hiring_manager_id 
+
+            hiring_manager_name = request.hiring_manager_id
             # if campaign.hiring_manager_id:
             #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
             #     if hiring_manager:
             #         hiring_manager_name = hiring_manager.full_name
+
+            cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+            candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
 
             return CampaignResponse(
                 id=campaign.id,
@@ -188,14 +207,16 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
-                candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(
-                    self.campaign_repo.get_candidate_count(campaign.id),
+                    candidate_count,
                     campaign.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     campaign.deadline,
+                    deadline_warning_days,
                 )
             )
 
@@ -228,6 +249,9 @@ class CampaignService:
             if hiring_manager:
                 hiring_manager_name = hiring_manager.full_name
 
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+
         return CampaignResponse(
             id=campaign.id,
             name=campaign.name,
@@ -238,17 +262,19 @@ class CampaignService:
             max_candidates=campaign.max_candidates,
             deadline=campaign.deadline,
             created_at=campaign.created_at,
-            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            candidate_count=candidate_count,
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
             approaching_cap=self._is_approaching_cap(
-                self.campaign_repo.get_candidate_count(campaign.id),
+                candidate_count,
                 campaign.max_candidates,
+                cap_warning_percentage,
             ),
             deadline_soon=self._is_deadline_soon(
                 campaign.deadline,
+                deadline_warning_days,
             )
         )
-    
+
     def get_scoring_configuration(
         self,
         campaign_id: UUID,
@@ -277,7 +303,7 @@ class CampaignService:
             ScoringLayerExplanationResponse(
                 layer="Deterministic",
                 weight=campaign.weight_deterministic,
-                threshold=None,
+                threshold=campaign.deterministic_threshold,
                 description="Mandatory skill, experience and education validation.",
                 ),
                 ScoringLayerExplanationResponse(
@@ -307,24 +333,30 @@ class CampaignService:
             weight_ai=campaign.weight_ai,
             semantic_threshold=campaign.semantic_threshold,
             ai_threshold=campaign.ai_threshold,
+            deterministic_threshold=campaign.deterministic_threshold,
             total_weight=total_weight,
             formula=formula,
             layers=layers,
             defaults=CampaignScoringDefaultsResponse(
+                # NOTE: platform_config has no DEFAULT_WEIGHT_* rows yet (only
+                # SEMANTIC_PASS_THRESHOLD / AI_PASS_THRESHOLD exist, under the
+                # names S02 already uses). Falling back to the HiringCampaign
+                # column defaults — same values — instead of crashing with a
+                # KeyError until the platform_config keys are decided/seeded.
                 weight_deterministic=float(
-                    configs["DEFAULT_WEIGHT_DETERMINISTIC"]
+                    configs.get("DEFAULT_WEIGHT_DETERMINISTIC", "30.00")
                 ),
                 weight_semantic=float(
-                    configs["DEFAULT_WEIGHT_SEMANTIC"]
+                    configs.get("DEFAULT_WEIGHT_SEMANTIC", "40.00")
                 ),
                 weight_ai=float(
-                    configs["DEFAULT_WEIGHT_AI"]
+                    configs.get("DEFAULT_WEIGHT_AI", "30.00")
                 ),
                 semantic_threshold=float(
-                    configs["DEFAULT_SEMANTIC_THRESHOLD"]
+                    configs.get("DEFAULT_SEMANTIC_THRESHOLD", "0.6500")
                 ),
                 ai_threshold=float(
-                    configs["DEFAULT_AI_THRESHOLD"]
+                    configs.get("DEFAULT_AI_THRESHOLD", "50.00")
                 ),
             ),
         )
@@ -367,6 +399,7 @@ class CampaignService:
         )
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -383,17 +416,20 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
-                
+
             )
             for c in campaigns
         ]
-    
+
     def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hrAdmin(manager_id)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -410,16 +446,19 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
         ]
-    
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -436,21 +475,24 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
         ]
-    
-   
+
+
     def search_campaigns(
         self,
         filters: CampaignFilterRequest,
     ) -> list[CampaignResponse]:
 
         campaigns = self.campaign_repo.search_campaigns(filters)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
 
         return [
             CampaignResponse(
@@ -468,9 +510,11 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
@@ -480,12 +524,10 @@ class CampaignService:
         self,
         campaign_id: UUID,
         request: CampaignScoringUpdateRequest,
+        updated_by: str,
     ) -> CampaignScoringConfigurationResponse:
 
-        campaign = self.campaign_repo.get_by_id(
-            campaign_id
-        )
-
+        campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(
                 f"Campaign with ID '{campaign_id}' not found",
@@ -530,6 +572,23 @@ class CampaignService:
                 None,
             )
 
+        # T03: capture before/after for every field that actually changed,
+        # atomically with the save (audit is written in the same transaction).
+        threshold_fields = (
+            "weight_deterministic", "weight_semantic", "weight_ai",
+            "semantic_threshold", "ai_threshold",
+        )
+        changes = {
+            field: {
+                "before": str(getattr(campaign, field)),
+                "after": str(getattr(request, field)),
+            }
+            for field in threshold_fields
+            if Decimal(str(getattr(campaign, field))) != getattr(request, field)
+        }
+
+        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+
         campaign = (
             self.campaign_repo.update_scoring_configuration(
                 campaign,
@@ -537,11 +596,35 @@ class CampaignService:
             )
         )
 
+        if changes:
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_THRESHOLDS_UPDATED,
+                entity_type=EntityType.CAMPAIGN,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' thresholds updated",
+                    "changes": changes,
+                    "candidates_already_processed": candidate_count,
+                },
+            )
+
         self.campaign_repo.commit()
 
-        return self.get_scoring_configuration(
-            campaign.id
-        )
+        result = self.get_scoring_configuration(campaign.id)
+
+        if candidate_count > 0:
+            # T03: "a warning must notify HR_ADMIN that threshold changes only
+            # affect newly submitted candidates" — surfaced on the response.
+            result.warning = (
+                f"{candidate_count} candidate(s) were already processed with "
+                f"the previous configuration. Their scores will not be "
+                f"automatically recalculated."
+            )
+
+        return result
     
     def get_weight_presets(
         self,
@@ -556,6 +639,7 @@ class CampaignService:
                 weight_deterministic=Decimal("40.00"),
                 weight_semantic=Decimal("40.00"),
                 weight_ai=Decimal("20.00"),
+                deterministic_threshold=Decimal("70.00"),
                 semantic_threshold=Decimal("65.00"),
                 ai_threshold=Decimal("50.00"),
                 created_by="SYSTEM",
@@ -568,6 +652,7 @@ class CampaignService:
                 weight_deterministic=Decimal("20.00"),
                 weight_semantic=Decimal("30.00"),
                 weight_ai=Decimal("50.00"),
+                deterministic_threshold=Decimal("70.00"),
                 semantic_threshold=Decimal("65.00"),
                 ai_threshold=Decimal("50.00"),
                 created_by="SYSTEM",
@@ -580,6 +665,7 @@ class CampaignService:
                 weight_deterministic=Decimal("30.00"),
                 weight_semantic=Decimal("40.00"),
                 weight_ai=Decimal("30.00"),
+                deterministic_threshold=Decimal("70.00"),
                 semantic_threshold=Decimal("65.00"),
                 ai_threshold=Decimal("50.00"),
                 created_by="SYSTEM",
@@ -592,6 +678,7 @@ class CampaignService:
                 weight_deterministic=Decimal("20.00"),
                 weight_semantic=Decimal("50.00"),
                 weight_ai=Decimal("30.00"),
+                deterministic_threshold=Decimal("70.00"),
                 semantic_threshold=Decimal("65.00"),
                 ai_threshold=Decimal("50.00"),
                 created_by="SYSTEM",
@@ -651,6 +738,7 @@ class CampaignService:
             weight_deterministic=request.weight_deterministic,
             weight_semantic=request.weight_semantic,
             weight_ai=request.weight_ai,
+            deterministic_threshold=request.deterministic_threshold,
             semantic_threshold=request.semantic_threshold,
             ai_threshold=request.ai_threshold,
             created_by=created_by,
@@ -852,6 +940,7 @@ class CampaignService:
                 weight_ai=campaign.weight_ai,
                 semantic_threshold=campaign.semantic_threshold,
                 ai_threshold=campaign.ai_threshold,
+                deterministic_threshold=campaign.deterministic_threshold,
             ),
             pipeline_limits=PipelineLimitsSection(
                 max_candidates=campaign.max_candidates,
@@ -987,6 +1076,7 @@ class CampaignService:
         "weight_ai",
         "semantic_threshold",
         "ai_threshold",
+        "deterministic_threshold",
     )
 
     def update_campaign(
@@ -1089,6 +1179,40 @@ class CampaignService:
                 }
                 campaign.deadline = request.deadline
 
+            # ── S03-T01/T03: reassign hiring manager ─────────────────────
+            previous_hiring_manager_id = None
+            hm_review_pending_count = 0
+            if (request.hiring_manager_id is not None
+                    and request.hiring_manager_id != campaign.hiring_manager_id):
+                new_manager = self.campaign_repo.get_user(request.hiring_manager_id)
+                if not new_manager:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' not found.", 404,
+                    )
+                if new_manager.role != LocalUserRole.HIRING_MANAGER:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' does not have the "
+                        f"HIRING_MANAGER role.", 422,
+                    )
+                if not new_manager.is_active:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' is not an active user.", 422,
+                    )
+
+                previous_hiring_manager_id = campaign.hiring_manager_id
+                changes["hiring_manager_id"] = {
+                    "before": previous_hiring_manager_id,
+                    "after": request.hiring_manager_id,
+                }
+                campaign.hiring_manager_id = request.hiring_manager_id
+
+                # T03: candidates currently in HM_REVIEW may need re-communicating
+                # to the incoming manager — computed regardless of who they were
+                # visible to before, since no candidate-listing endpoint filters
+                # by hiring_manager_id yet (access-revocation is not applicable
+                # until that endpoint exists).
+                hm_review_pending_count = self.campaign_repo.get_hm_review_count(campaign.id)
+
             # ── S07-T02: scoring config gate on ACTIVE campaigns ─────────
             scoring_changes = {
                 field: getattr(request, field)
@@ -1156,10 +1280,30 @@ class CampaignService:
                 details=detail,
             )
 
+            if previous_hiring_manager_id is not None:
+                # S03-T03: dedicated audit entry — always recorded on reassignment,
+                # independent of whatever action_type won the main log entry above.
+                self.audit_service.log(
+                    actor_id=updated_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.HIRING_MANAGER_REASSIGNED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"Hiring manager reassigned on campaign '{campaign.name}'",
+                        "previous_hiring_manager_id": previous_hiring_manager_id,
+                        "new_hiring_manager_id": campaign.hiring_manager_id,
+                        "hm_review_pending_count": hm_review_pending_count,
+                    },
+                )
+
             self.campaign_repo.commit()
 
             jd = self.jd_repo.get_by_id(campaign.jd_id)
-            return CampaignResponse(
+            candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+            cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+            response = CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
                 status=campaign.status.value,
@@ -1169,7 +1313,22 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
+                candidate_count=candidate_count,
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates, cap_warning_percentage),
+                deadline_soon=self._is_deadline_soon(campaign.deadline, deadline_warning_days),
             )
+
+            if hm_review_pending_count > 0:
+                # T03: "a specific warning must alert HR_ADMIN that pending HM
+                # review decisions may need to be re-communicated to the new manager"
+                response.warning = (
+                    f"{hm_review_pending_count} candidate(s) are currently awaiting "
+                    f"hiring-manager review. These pending decisions may need to be "
+                    f"re-communicated to the newly assigned hiring manager."
+                )
+
+            return response
 
         except Exception:
             self.campaign_repo.rollback()
@@ -1243,4 +1402,46 @@ class CampaignService:
             pending_resume_count=pending,
             estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
+
+    def calculate_deterministic_score(
+        self,
+        jd_id: UUID,
+        resume_id: UUID,
+        deterministic_threshold: float,
+    ) -> tuple[float, bool]:
+
+        mandatory_skills = (
+            self.skill_repository.get_mandatory_jd_skills(jd_id)
+        )
+
+        candidate_skills = (
+            self.skill_repository.get_candidate_normalized_skills(resume_id)
+        )
+
+        if not mandatory_skills:
+            return 100.0, True
+
+        required_skill_ids = {
+            skill.canonical_skill_id
+            for skill in mandatory_skills
+        }
+
+        candidate_skill_ids = {
+            skill.canonical_skill_id
+            for skill in candidate_skills
+            if skill.canonical_skill_id is not None
+        }
+
+        matched_skill_ids = required_skill_ids.intersection(
+            candidate_skill_ids
+        )
+
+        score = round(
+            (len(matched_skill_ids) / len(required_skill_ids)) * 100,
+            2,
+        )
+
+        passed = score >= float(deterministic_threshold)
+
+        return score, passed
 

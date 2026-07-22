@@ -21,8 +21,11 @@ class CampaignCreateRequest(BaseModel):
     weight_semantic: Decimal = Decimal("40.00")
     weight_ai: Decimal = Decimal("30.00")
 
-    semantic_threshold: Decimal = Decimal("0.6500")
+    semantic_threshold: Decimal = Field(
+        default=Decimal("0.6500"), ge=Decimal("0.0000"), le=Decimal("1.0000")
+    )
     ai_threshold: Decimal = Decimal("50.00")
+    deterministic_threshold: Decimal = Decimal("70.00")
 
     hiring_manager_id: str
     recruiter_id: str
@@ -62,12 +65,19 @@ class CampaignScoringUpdateRequest(BaseModel):
 
     semantic_threshold: Decimal = Field(
         ...,
+        ge=Decimal("0.0000"),
+        le=Decimal("1.0000"),
+        decimal_places=4,
+    )
+
+    ai_threshold: Decimal = Field(
+        ...,
         ge=0,
         le=100,
         decimal_places=2,
     )
 
-    ai_threshold: Decimal = Field(
+    deterministic_threshold: Decimal = Field(
         ...,
         ge=0,
         le=100,
@@ -93,11 +103,14 @@ class CampaignUpdateRequest(BaseModel):
     max_candidates: Optional[int] = Field(default=None, gt=0, le=100000)
     clear_max_candidates: bool = False
 
+    hiring_manager_id: Optional[str] = None
+
     weight_deterministic: Optional[Decimal] = None
     weight_semantic: Optional[Decimal] = None
     weight_ai: Optional[Decimal] = None
     semantic_threshold: Optional[Decimal] = None
     ai_threshold: Optional[Decimal] = None
+    deterministic_threshold: Optional[Decimal] = None
 
     # The "I understand existing scores won't be recalculated" checkbox —
     # required when changing scoring config on an ACTIVE campaign.
