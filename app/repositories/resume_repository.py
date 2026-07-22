@@ -129,6 +129,7 @@ class ResumeRepository:
         confidence: float | None,
         match_tier: str,
         status: str,
+        scoring_weight: float = 1.0,
     ) -> CandidateSkill:
         candidate_skill = CandidateSkill(
             candidate_id=candidate_id,
@@ -138,6 +139,7 @@ class ResumeRepository:
             confidence=confidence,
             match_tier=match_tier,
             status=status,
+            scoring_weight=scoring_weight,
         )
         self.db.add(candidate_skill)
         self.db.flush()

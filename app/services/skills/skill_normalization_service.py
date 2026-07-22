@@ -44,6 +44,33 @@ def verification_status_for_tier(tier: SkillMatchTier) -> JDSkillVerificationSta
     )
 
 
+# M07-E01 S03-T02: candidate_skills.scoring_weight by match tier - reuses
+# the same deterministic-vs-similarity grouping as _AUTO_VERIFIED_TIERS
+# above. Deterministic string-comparison tiers (alias/high-confidence
+# matches) are trusted at full weight; FUZZY (partial-fuzzy) and SEMANTIC
+# (vector) are similarity guesses and count for less; UNKNOWN never
+# resolved to a canonical skill at all.
+_FULL_CONFIDENCE_TIERS = {
+    SkillMatchTier.EXACT,
+    SkillMatchTier.ALIAS,
+    SkillMatchTier.CASE_INSENSITIVE,
+    SkillMatchTier.RULE_BASED,
+    SkillMatchTier.MANUAL_HR,
+}
+_PARTIAL_CONFIDENCE_TIERS = {
+    SkillMatchTier.FUZZY,
+    SkillMatchTier.SEMANTIC,
+}
+
+
+def scoring_weight_for_tier(tier: SkillMatchTier) -> float:
+    if tier in _FULL_CONFIDENCE_TIERS:
+        return 1.0
+    if tier in _PARTIAL_CONFIDENCE_TIERS:
+        return 0.8
+    return 0.0
+
+
 @dataclass
 class SkillMatchResult:
     raw_text: str

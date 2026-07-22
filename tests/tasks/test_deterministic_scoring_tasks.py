@@ -12,15 +12,26 @@ from app.services.campaign.candidate_scoring_service import MandatorySkillMatchT
 TASKS_MODULE = "app.tasks.deterministic_scoring_tasks"
 
 
-def _breakdown(mandatory_skills, coverage_pct, passed, preferred_bonus_score=0.0):
+def _breakdown(
+    mandatory_skills, coverage_pct, passed, deterministic_score=None,
+    preferred_skill_bonus=0.0, no_verified_skills=False,
+):
+    """
+    deterministic_score defaults to coverage_pct only for tests that don't
+    care about the distinction - M07 requires it be computed independently
+    (actual/max mandatory contributions * 100) and to NEVER include
+    preferred_skill_bonus, so the two are deliberately separate parameters
+    here, never derived from one another.
+    """
     return {
         "mandatory_skills": mandatory_skills,
         "mandatory_coverage_pct": coverage_pct,
         "deterministic_passed": passed,
         "deterministic_threshold": 70.0,
         "preferred_skills": [],
-        "preferred_bonus_score": preferred_bonus_score,
-        "deterministic_score": round(coverage_pct + preferred_bonus_score, 2),
+        "preferred_skill_bonus": preferred_skill_bonus,
+        "deterministic_score": coverage_pct if deterministic_score is None else deterministic_score,
+        "NO_VERIFIED_SKILLS": no_verified_skills,
     }
 
 
@@ -145,7 +156,7 @@ def test_creates_rejection_when_mandatory_skill_missing():
         missing_skill_id = uuid4()
         breakdown = _breakdown(
             [_skill_entry(uuid4(), "EXACT"), _skill_entry(missing_skill_id, "MISSING")],
-            coverage_pct=50.0, passed=False, preferred_bonus_score=12.5,
+            coverage_pct=50.0, passed=False, preferred_skill_bonus=12.5,
         )
         h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
 
@@ -164,11 +175,84 @@ def test_creates_rejection_when_mandatory_skill_missing():
         assert audit_kwargs["details"]["missing"] == 1
         assert audit_kwargs["details"]["matched"] == 1
         assert audit_kwargs["details"]["deterministic_passed"] is False
-        # deterministic_score reported here must be the final blended score
-        # (mandatory coverage + preferred bonus), not mandatory coverage alone.
-        assert audit_kwargs["details"]["deterministic_score"] == 62.5
+        # deterministic_score reported here must be the mandatory-only
+        # ratio score (50.0, defaulted from coverage_pct in this fixture) -
+        # the preferred_skill_bonus (12.5) must NEVER be folded into it.
+        assert audit_kwargs["details"]["deterministic_score"] == 50.0
 
         assert cc.screened_at is not None
+
+
+def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
+    """
+    T02: deterministic_passed can be False even with zero MISSING entries -
+    e.g. every mandatory skill matched, but only at low-multiplier hierarchy
+    tiers (SIBLING/SEMANTIC), so the weighted score still misses threshold.
+    This must still produce a DETERMINISTIC candidate_rejection, not just
+    a passed=False flag with no rejection record at all.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown(
+            [_skill_entry(uuid4(), "SIBLING"), _skill_entry(uuid4(), "SIBLING")],
+            coverage_pct=100.0, passed=False, deterministic_score=40.0,
+        )
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.candidate_rejection_repo.create.assert_called_once()
+        rejection = h.candidate_rejection_repo.create.call_args[0][0]
+        assert rejection.rejection_reason == "Deterministic score below threshold"
+        assert rejection.rejection_detail == {
+            "deterministic_score": 40.0,
+            "deterministic_threshold": 70.0,
+        }
+
+        audit_kwargs = h.audit_service_instance.log.call_args.kwargs
+        assert audit_kwargs["details"]["missing"] == 0
+        assert audit_kwargs["details"]["deterministic_passed"] is False
+        assert audit_kwargs["details"]["score_breakdown"] == breakdown
+
+
+def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
+    """
+    S04-T01: zero verified candidate skills gets its own specific rejection
+    reason ("No verifiable skills extracted from resume.") even though every
+    mandatory skill also comes back MISSING in this scenario - it must NOT
+    be reported as the generic "Missing mandatory skills" reason, and must
+    be distinguishable from a resume parse failure (which never reaches
+    this task at all - that raises ValueError earlier).
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown(
+            [_skill_entry(uuid4(), "MISSING"), _skill_entry(uuid4(), "MISSING")],
+            coverage_pct=0.0, passed=False, deterministic_score=0.0,
+            no_verified_skills=True,
+        )
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.candidate_rejection_repo.create.assert_called_once()
+        rejection = h.candidate_rejection_repo.create.call_args[0][0]
+        assert rejection.rejection_reason == "No verifiable skills extracted from resume."
+        assert rejection.rejection_detail == {"NO_VERIFIED_SKILLS": True}
 
 
 def test_no_rejection_when_nothing_missing():

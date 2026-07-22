@@ -109,17 +109,39 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             skill for skill in breakdown["mandatory_skills"]
             if skill["match_type"] == MandatorySkillMatchType.MISSING.value
         ]
-        if missing_entries:
-            missing_skill_names = []
-            for entry in missing_entries:
-                skill = skill_ontology_repo.get_skill_by_id(UUID(entry["canonical_skill_id"]))
-                missing_skill_names.append(skill.canonical_name if skill else entry["canonical_skill_id"])
+
+        # T02: a rejection must be recorded on ANY deterministic failure, not
+        # only when a mandatory skill is outright MISSING - a candidate whose
+        # mandatory skills all matched at low-multiplier hierarchy tiers
+        # (SIBLING/SEMANTIC) can still fall short of deterministic_threshold,
+        # and that case must not silently skip candidate_rejections.
+        if not breakdown["deterministic_passed"]:
+            if breakdown.get("NO_VERIFIED_SKILLS"):
+                # S04-T01: distinct from both "some mandatory skills missing"
+                # and a resume parse failure (that raises ValueError earlier
+                # and never reaches this point) - the resume parsed fine but
+                # nothing it extracted normalized to a usable, in-play skill.
+                rejection_reason = "No verifiable skills extracted from resume."
+                rejection_detail = {"NO_VERIFIED_SKILLS": True}
+            elif missing_entries:
+                missing_skill_names = []
+                for entry in missing_entries:
+                    skill = skill_ontology_repo.get_skill_by_id(UUID(entry["canonical_skill_id"]))
+                    missing_skill_names.append(skill.canonical_name if skill else entry["canonical_skill_id"])
+                rejection_reason = "Missing mandatory skills"
+                rejection_detail = {"missing_skills": missing_skill_names}
+            else:
+                rejection_reason = "Deterministic score below threshold"
+                rejection_detail = {
+                    "deterministic_score": breakdown["deterministic_score"],
+                    "deterministic_threshold": breakdown["deterministic_threshold"],
+                }
 
             candidate_rejection_repo.create(CandidateRejection(
                 campaign_candidate_id=campaign_candidate.id,
                 rejection_layer=RejectionLayer.DETERMINISTIC,
-                rejection_reason="Missing mandatory skills",
-                rejection_detail={"missing_skills": missing_skill_names},
+                rejection_reason=rejection_reason,
+                rejection_detail=rejection_detail,
             ))
 
         matched_count = len(breakdown["mandatory_skills"]) - len(missing_entries)
@@ -127,11 +149,19 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             "mandatory_skills_checked": len(breakdown["mandatory_skills"]),
             "matched": matched_count,
             "missing": len(missing_entries),
-            # deterministic_score is the final blended score (mandatory
-            # coverage + preferred bonus, M03-E05 S01 T02) - the same value
+            # deterministic_score = (SUM mandatory contributions / SUM max
+            # mandatory contributions) x 100 (M07) - mandatory skills only,
+            # never includes the preferred_skill_bonus - the same value
             # persisted to campaign_candidate.deterministic_score.
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
+            # Versioning: campaign_candidates.score_breakdown only ever holds
+            # the latest computation and is overwritten on every rescoring.
+            # This audit_log row is append-only and timestamped, so embedding
+            # the full breakdown here (not just the summary above) reuses
+            # the existing audit-log infrastructure as score_breakdown's
+            # version history, with no schema change required.
+            "score_breakdown": breakdown,
         }
 
         # Shares this task's db session - flushed here, committed together
