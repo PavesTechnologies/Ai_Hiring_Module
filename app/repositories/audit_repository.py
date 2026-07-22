@@ -31,7 +31,13 @@ class AuditRepository:
             select(AuditLog)
             .where(
                 AuditLog.campaign_id == campaign_id,
-                AuditLog.action_type == "CAMPAIGN_SCORING_CONFIG_CHANGED",
+                # CAMPAIGN_THRESHOLDS_UPDATED is kept here for backward
+                # compatibility with rows written before update_scoring_configuration
+                # was switched to log CAMPAIGN_SCORING_CONFIG_CHANGED like every
+                # other scoring-edit path — new rows only ever use the latter.
+                AuditLog.action_type.in_(
+                    ["CAMPAIGN_SCORING_CONFIG_CHANGED", "CAMPAIGN_THRESHOLDS_UPDATED"]
+                ),
             )
             .order_by(
                 AuditLog.created_at.desc()
