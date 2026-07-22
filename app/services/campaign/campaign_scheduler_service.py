@@ -35,10 +35,11 @@ class CampaignSchedulerService:
 
                 self.campaign_repo.close_campaign(campaign)
 
-                # Audit log
+                # Audit log — attributed to the HR_ADMIN who created the campaign,
+                # since the closure is triggered by the scheduler on their behalf.
                 self.audit_service.log(
-                    actor_id=SYSTEM,
-                    actor_role="SYSTEM",
+                    actor_id=campaign.created_by,
+                    actor_role="HR_ADMIN",
                     action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
                     entity_type=EntityType.CAMPAIGN.value,
                     entity_id=campaign.id,

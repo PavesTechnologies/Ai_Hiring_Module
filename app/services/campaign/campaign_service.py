@@ -63,18 +63,32 @@ class CampaignService:
         self.preset_repo = preset_repo
         self.db = db
 
+    def _get_warning_thresholds(self) -> tuple[float, int]:
+        """
+        S04-T03: cap/deadline warning thresholds, sourced from platform_config
+        (CAP_WARNING_PERCENTAGE / DEADLINE_WARNING_DAYS) with the previous
+        hardcoded values (80%, 3 days) as fallback if the keys aren't seeded.
+        """
+        configs = self.config_repo.get_configs_by_keys(
+            ["CAP_WARNING_PERCENTAGE", "DEADLINE_WARNING_DAYS"]
+        )
+        cap_warning_percentage = float(configs.get("CAP_WARNING_PERCENTAGE", "80.00"))
+        deadline_warning_days = int(configs.get("DEADLINE_WARNING_DAYS", "3"))
+        return cap_warning_percentage, deadline_warning_days
+
     def _is_approaching_cap(
         self,
         candidate_count: int,
         max_candidates: int | None,
+        warning_percentage: float = 80.0,
     ) -> bool:
         """
-        Returns True if campaign has reached 80% of its candidate cap.
+        Returns True if campaign has reached warning_percentage of its candidate cap.
         """
         if not max_candidates:
             return False
 
-        return candidate_count >= (max_candidates * 0.8)
+        return candidate_count >= (max_candidates * (warning_percentage / 100))
 
 
     def _is_deadline_soon(
@@ -172,12 +186,15 @@ class CampaignService:
 
             self.campaign_repo.commit()
 
-            
-            hiring_manager_name = request.hiring_manager_id 
+
+            hiring_manager_name = request.hiring_manager_id
             # if campaign.hiring_manager_id:
             #     hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
             #     if hiring_manager:
             #         hiring_manager_name = hiring_manager.full_name
+
+            cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+            candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
 
             return CampaignResponse(
                 id=campaign.id,
@@ -189,14 +206,16 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
-                candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(
-                    self.campaign_repo.get_candidate_count(campaign.id),
+                    candidate_count,
                     campaign.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     campaign.deadline,
+                    deadline_warning_days,
                 )
             )
 
@@ -229,6 +248,9 @@ class CampaignService:
             if hiring_manager:
                 hiring_manager_name = hiring_manager.full_name
 
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+
         return CampaignResponse(
             id=campaign.id,
             name=campaign.name,
@@ -239,17 +261,19 @@ class CampaignService:
             max_candidates=campaign.max_candidates,
             deadline=campaign.deadline,
             created_at=campaign.created_at,
-            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            candidate_count=candidate_count,
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
             approaching_cap=self._is_approaching_cap(
-                self.campaign_repo.get_candidate_count(campaign.id),
+                candidate_count,
                 campaign.max_candidates,
+                cap_warning_percentage,
             ),
             deadline_soon=self._is_deadline_soon(
                 campaign.deadline,
+                deadline_warning_days,
             )
         )
-    
+
     def get_scoring_configuration(
         self,
         campaign_id: UUID,
@@ -373,6 +397,7 @@ class CampaignService:
         )
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -389,17 +414,20 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
-                
+
             )
             for c in campaigns
         ]
-    
+
     def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hrAdmin(manager_id)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -416,16 +444,19 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
         ]
-    
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         return [
             CampaignResponse(
                 id=c.id,
@@ -442,21 +473,24 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
         ]
-    
-   
+
+
     def search_campaigns(
         self,
         filters: CampaignFilterRequest,
     ) -> list[CampaignResponse]:
 
         campaigns = self.campaign_repo.search_campaigns(filters)
+        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
 
         return [
             CampaignResponse(
@@ -474,9 +508,11 @@ class CampaignService:
                 approaching_cap=self._is_approaching_cap(
                     self.campaign_repo.get_candidate_count(c.id),
                     c.max_candidates,
+                    cap_warning_percentage,
                 ),
                 deadline_soon=self._is_deadline_soon(
                     c.deadline,
+                    deadline_warning_days,
                 )
             )
             for c in campaigns
@@ -1257,6 +1293,7 @@ class CampaignService:
 
             jd = self.jd_repo.get_by_id(campaign.jd_id)
             candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+            cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
             response = CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
@@ -1269,8 +1306,8 @@ class CampaignService:
                 created_at=campaign.created_at,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates),
-                deadline_soon=self._is_deadline_soon(campaign.deadline),
+                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates, cap_warning_percentage),
+                deadline_soon=self._is_deadline_soon(campaign.deadline, deadline_warning_days),
             )
 
             if hm_review_pending_count > 0:
