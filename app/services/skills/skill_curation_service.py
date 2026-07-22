@@ -12,6 +12,7 @@ from app.models.skills import (
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
+from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
 from app.services.skills.skill_normalization_service import SkillMatchTier
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,10 @@ class SkillCurationService:
                     match_tier=SkillMatchTier.MANUAL_HR.value,
                     verification_status=JDSkillVerificationStatus.AUTO_VERIFIED,
                     confidence=1.0,
+                    # Same flat weight the JD parsing pipeline assigns
+                    # (M07) - this is a retroactive jd_skills row for an
+                    # existing JD, so it must never be created NULL either.
+                    weight=_DEFAULT_JD_SKILL_WEIGHT,
                 )
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
             self.skill_repository.mark_jd_unknown_skill_resolved(link)

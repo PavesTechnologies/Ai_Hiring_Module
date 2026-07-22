@@ -55,6 +55,12 @@ class CampaignWeightPreset(Base):
         Numeric(5, 2),
         nullable=False,
     )
+
+    deterministic_threshold: Mapped[float] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=70.00,
+    )
  
     semantic_threshold: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
