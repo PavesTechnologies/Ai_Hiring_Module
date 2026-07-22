@@ -185,6 +185,10 @@ class BulkUploadJobFile(Base):
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[BulkUploadFileStatus] = mapped_column(SAEnum(BulkUploadFileStatus, name="bulk_upload_file_status_enum"), nullable=False, default=BulkUploadFileStatus.QUEUED)
+    # Correlates this file back to its own celery_task_log row (celery_task_log
+    # only carries bulk_upload_job_id, shared across every file in the job) —
+    # needed to surface retry-attempt counts per file on the detail endpoint.
+    task_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

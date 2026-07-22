@@ -99,6 +99,7 @@ class ResumeIntakeService:
             raise
 
         task_id = uuid4()
+        self.resume_service.record_task_id(resume, str(task_id))
         process_resume_document.apply_async(
             kwargs={"resume_id": str(resume.id)},
             task_id=str(task_id),
