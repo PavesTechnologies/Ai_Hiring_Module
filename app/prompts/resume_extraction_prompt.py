@@ -18,6 +18,10 @@ GENERAL RULES
 9. Do not normalize, rename, or categorize skills.
 10. Return every technical skill mentioned in the document.
 
+CONTACT INFORMATION
+--------------------
+Extract full_name, email, and phone if explicitly present in the Resume.
+
 SKILLS
 ------
 Extract all technical skills including, but not limited to:
@@ -124,6 +128,9 @@ explicitly requested.
 Return ONLY the following JSON structure.
 
 {
+    "full_name": null,
+    "email": null,
+    "phone": null,
     "skills": [],
     "work_experience": [
         {

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import (
@@ -29,6 +29,36 @@ class DocumentProcessingRepository:
         stage: ProcessingStage,
         attempt_number: int = 1,
     ) -> DocumentProcessingStageExecution:
+        """
+        Idempotent on (task_id, stage, attempt_number) — the table's own
+        unique constraint. A broker-level redelivery after an ungraceful
+        worker crash mid-stage re-enters this same triple (Celery's own
+        retry counter, and therefore attempt_number, never incremented,
+        since this isn't a self.retry()-triggered retry); inserting again
+        would crash on the unique constraint instead of just resuming.
+        Reset the existing row in that case rather than inserting a
+        duplicate.
+        """
+        existing = (
+            self.db.query(DocumentProcessingStageExecution)
+            .filter(
+                DocumentProcessingStageExecution.task_id == task_id,
+                DocumentProcessingStageExecution.stage == stage,
+                DocumentProcessingStageExecution.attempt_number == attempt_number,
+            )
+            .first()
+        )
+        if existing is not None:
+            existing.document_type = document_type
+            existing.status = StageExecutionStatus.RUNNING
+            existing.error_message = None
+            existing.duration_ms = None
+            existing.started_at = datetime.now(timezone.utc)
+            existing.completed_at = None
+            self.db.flush()
+            self.db.refresh(existing)
+            return existing
+
         execution = DocumentProcessingStageExecution(
             task_id=task_id,
             document_type=document_type,
@@ -95,6 +125,41 @@ class DocumentProcessingRepository:
             .order_by(DocumentProcessingStageExecution.task_id, DocumentProcessingStageExecution.created_at)
             .all()
         )
+
+    def get_avg_duration_by_stage_since(self, since: datetime, document_type: DocumentType) -> dict[str, float]:
+        """Monitoring-only. Backs processing-metrics' bounded-window avg_duration_by_stage."""
+        stmt = (
+            select(
+                DocumentProcessingStageExecution.stage,
+                func.avg(DocumentProcessingStageExecution.duration_ms),
+            )
+            .where(
+                DocumentProcessingStageExecution.document_type == document_type,
+                DocumentProcessingStageExecution.created_at >= since,
+                DocumentProcessingStageExecution.duration_ms.is_not(None),
+            )
+            .group_by(DocumentProcessingStageExecution.stage)
+        )
+        return {stage.value: round(float(avg_ms), 1) for stage, avg_ms in self.db.execute(stmt).all()}
+
+    def get_failure_rate_by_stage_since(self, since: datetime, document_type: DocumentType) -> dict[str, float]:
+        """Monitoring-only. FAILED-count / total-count per stage, within the bounded window."""
+        stmt = (
+            select(
+                DocumentProcessingStageExecution.stage,
+                func.count().filter(DocumentProcessingStageExecution.status == StageExecutionStatus.FAILED),
+                func.count(),
+            )
+            .where(
+                DocumentProcessingStageExecution.document_type == document_type,
+                DocumentProcessingStageExecution.created_at >= since,
+            )
+            .group_by(DocumentProcessingStageExecution.stage)
+        )
+        return {
+            stage.value: round(failed / total, 4) if total else 0.0
+            for stage, failed, total in self.db.execute(stmt).all()
+        }
 
     def link_document_id(self, task_id: str, document_id: UUID) -> None:
         (

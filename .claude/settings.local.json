@@ -16,6 +16,7 @@
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic stamp --purge b6e2d9a41c3f)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic upgrade head)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -c ' *)",
+      "Bash(./airs/Scripts/python.exe -c ' *)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic heads)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic history)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic merge -m \"merge resume/skill-ontology/bulk-upload branches\" a7c4e9f1d2b8 4fcdbc589048 e7a4f2c9d8b1 f2c9b8e4a1d3)",

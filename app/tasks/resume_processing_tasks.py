@@ -217,6 +217,15 @@ def process_resume_document(self, resume_id: str) -> None:
                 attempt_number,
             )
         if not should_retry:
+            db.rollback()
+            if resume is not None:
+                try:
+                    resume_repo = ResumeRepository(db)
+                    resume_repo.mark_parse_failed(resume)
+                    resume_repo.commit()
+                except Exception:
+                    logger.exception("Failed to mark resume %s parse_status=FAILED.", resume_id)
+                    db.rollback()
             if task_log:
                 task_log_service.mark_failure(task_log, str(stage_exc.original))
             logger.exception("Resume document processing task failed for task_id %s", task_id)
