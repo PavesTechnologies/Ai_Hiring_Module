@@ -81,24 +81,49 @@ class ResumeProcessingPipeline:
         file_path: str,
         source_format: ResumeSourceFormat,
         attempt_number: int = 1,
+        initial_context: ResumeProcessingContext | None = None,
     ) -> UUID:
-        context = ResumeProcessingContext(
+        """
+        initial_context lets a caller that already ran some of these stages
+        itself (bulk upload, which must extract text and run AI extraction
+        before Candidate/Resume — and therefore this context — can exist)
+        hand in a context with those stages' outputs already populated.
+
+        A stage whose expected output is already present on the context is
+        skipped entirely — not re-run, and no skip_stage() call either. The
+        caller that populated the context (bulk's own pre-identity
+        stage_tracker.run_stage() calls) already wrote the real SUCCESS
+        document_processing_stage_executions row for it in this same
+        attempt; calling skip_stage() here would try to write a second
+        record for the exact same (task_id, stage, attempt_number) and
+        overwrite that real row with a SKIPPED one instead. This differs
+        from JDProcessingPipeline's _should_skip_stage/skip_stage pattern,
+        which exists for a genuinely different case (a checkpoint-resumed
+        retry where the stage truly did not run in this attempt) — bulk's
+        case is "already ran, just not through this method," not "never
+        ran." An individual-upload call never passes initial_context, so
+        every stage always runs exactly as before this change.
+        """
+        context = initial_context or ResumeProcessingContext(
             task_id=task_id,
-            resume_id=resume_id,
-            candidate_id=candidate_id,
             file_path=file_path,
             source_format=source_format,
         )
+        context.resume_id = resume_id
+        context.candidate_id = candidate_id
+        context.attempt_number = attempt_number
 
-        for stage, fn in (
-            (ProcessingStage.TEXT_EXTRACTION, lambda: self._run_text_extraction(context)),
-            (ProcessingStage.TEXT_CLEANING, lambda: self._run_text_cleaning(context)),
-            (ProcessingStage.AI_EXTRACTION, lambda: self._run_ai_extraction(context)),
-            (ProcessingStage.JSON_VALIDATION, lambda: self._run_json_validation(context)),
-            (ProcessingStage.SKILL_NORMALIZATION, lambda: self._run_skill_normalization(context)),
-            (ProcessingStage.EMBEDDING_GENERATION, lambda: self._run_embedding_generation(context)),
-            (ProcessingStage.PERSISTENCE, lambda: self._run_persistence(context)),
+        for stage, output_attr, fn in (
+            (ProcessingStage.TEXT_EXTRACTION, "raw_text", lambda: self._run_text_extraction(context)),
+            (ProcessingStage.TEXT_CLEANING, "cleaned_text", lambda: self._run_text_cleaning(context)),
+            (ProcessingStage.AI_EXTRACTION, "raw_extraction", lambda: self._run_ai_extraction(context)),
+            (ProcessingStage.JSON_VALIDATION, "validated_extraction", lambda: self._run_json_validation(context)),
+            (ProcessingStage.SKILL_NORMALIZATION, "skill_match_results", lambda: self._run_skill_normalization(context)),
+            (ProcessingStage.EMBEDDING_GENERATION, "embedding", lambda: self._run_embedding_generation(context)),
+            (ProcessingStage.PERSISTENCE, None, lambda: self._run_persistence(context)),
         ):
+            if output_attr is not None and getattr(context, output_attr) is not None:
+                continue
             self.stage_tracker.run_stage(
                 context.task_id,
                 context.document_type,
@@ -159,4 +184,5 @@ class ResumeProcessingPipeline:
             embedding=context.embedding,
             embedding_model_version_id=context.embedding_model_version_id,
             input_text_hash=context.input_text_hash,
+            attempt_number=context.attempt_number,
         )

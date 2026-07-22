@@ -19,7 +19,8 @@ from app.models.async_tasks import (
     DocumentType,
     ProcessingStage,
 )
-from app.models.candidates import FileFormat, ParseAttemptStatus, ParseStatus, Resume
+from app.models.candidates import FileFormat, Resume
+from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
@@ -31,50 +32,45 @@ from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.schemas.campaign.campaign_candidate_schema import CampaignCandidateCreateRequest
 from app.services.audit_service import AuditService
+from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.compliance.consent_service import ConsentService
 from app.services.document_processing.retry_driver import RetryDriver
-from app.services.document_processing.stage_execution_service import StageExecutionError
+from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.extractions.gemini_resume_extraction_service import GeminiResumeExtractionService
+from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.jd.hash_service import HashService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
+from app.services.resume.resume_processing_context import ResumeProcessingContext
+from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
+from app.services.resume.resume_service import ResumeService
+from app.services.skills.skill_normalization_service import SkillNormalizationService
 
 logger = logging.getLogger(__name__)
 
 BULK_UPLOAD_STORAGE_BUCKET = "airs_resumes"
 BULK_UPLOAD_CONSENT_SOURCE = "BULK_UPLOAD_FORM"
 BULK_RESUME_PARSE_TASK_TYPE = "BULK_RESUME_PARSE"
-PARSER_NAME = "gemini-resume-parser"
-PARSER_VERSION = "v1"
 _JUNK_PATH_PREFIXES = ("__MACOSX/",)
 _IMAGE_FORMATS = (FileFormat.PNG, FileFormat.JPEG)
-
-
-def _run_stage(checkpoint_repo, task_id: str, stage: ProcessingStage, context_data: dict, fn):
-    """
-    Lightweight counterpart to StageExecutionService.run_stage — tags a
-    failure with its ProcessingStage and saves just enough checkpoint
-    context for RetryDriver's dead-letter entry to be inspectable, without
-    adopting per-stage DocumentProcessingStageExecution row tracking (no
-    per-file status-polling endpoint exists for bulk uploads to show it).
-    """
-    try:
-        return fn()
-    except Exception as exc:
-        checkpoint_repo.upsert(
-            task_id, DocumentType.RESUME, failed_at_stage=stage, context_data=context_data,
-        )
-        checkpoint_repo.commit()
-        raise StageExecutionError(stage, exc) from exc
+# PDF/DOCX only — validation_result.file_format is already guaranteed to be
+# one of these two by the _IMAGE_FORMATS rejection above by the time this
+# mapping is consulted.
+_BULK_FILE_FORMAT_TO_SOURCE_FORMAT = {
+    FileFormat.PDF: ResumeSourceFormat.PDF,
+    FileFormat.DOCX: ResumeSourceFormat.DOCX,
+}
 
 
 @celery_app.task(name="bulk_upload.extract_zip")
@@ -154,12 +150,16 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
                 file_content=file_bytes,
             )
             uploaded_paths.append(object_path)
+            # task_id generated here (not in the enqueue loop below) so it
+            # can be stored on the row itself and later correlated back to
+            # this file's own celery_task_log entry (e.g. retry_count).
             staged_files.append(
                 BulkUploadJobFile(
                     bulk_upload_job_id=job.id,
                     original_filename=basename,
                     storage_path=object_path,
                     status=BulkUploadFileStatus.QUEUED,
+                    task_id=str(uuid4()),
                 )
             )
 
@@ -178,13 +178,12 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         job_repo.commit()
 
         for staged_file in staged_files:
-            per_file_task_id = uuid4()
             parse_bulk_upload_file.apply_async(
                 kwargs={
-                    "task_id": str(per_file_task_id),
+                    "task_id": staged_file.task_id,
                     "bulk_upload_job_file_id": str(staged_file.id),
                 },
-                task_id=str(per_file_task_id),
+                task_id=staged_file.task_id,
             )
 
         summary = f"Extracted {len(staged_files)} file(s) from '{job.original_filename}'."
@@ -243,9 +242,11 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
     on the job's counters and does not affect any other file's processing.
     """
     db = SessionLocal()
+    stage_db = SessionLocal()
     task_log = None
     job_file = None
     job = None
+    resume = None
     retry_driver = None
     attempt_number = 1
     try:
@@ -254,6 +255,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         config_repo = ConfigRepository(db)
         candidate_repo = CandidateRepository(db)
         resume_repo = ResumeRepository(db)
+        skill_repo = SkillRepository(db)
         encryption_key_repo = EncryptionKeyRepository(db)
         consent_repo = ConsentRepository(db)
         campaign_repo = CampaignRepository(db)
@@ -263,6 +265,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         checkpoint_repo = CheckpointRepository(db)
         stage_failure_log_repo = StageFailureLogRepository(db)
         dead_letter_queue_repo = DeadLetterQueueRepository(db)
+        stage_repo = DocumentProcessingRepository(stage_db)
 
         encryption_service = EncryptionService(encryption_key_repo)
         consent_service = ConsentService(consent_repo, config_repo)
@@ -270,10 +273,27 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         file_validation_service = FileValidationService(config_repo)
         audit_service = AuditService(audit_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
-        extraction_service = GeminiResumeExtractionService()
+        extraction_service = GeminiExtractionService()
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
+        embedding_service = EmbeddingService()
+        skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
+        hash_service = HashService()
+        resume_service = ResumeService(resume_repo, audit_service)
+        stage_tracker = StageExecutionService(stage_repo)
+        pipeline = ResumeProcessingPipeline(
+            preprocessing_service=preprocessing_service,
+            extraction_service=extraction_service,
+            hash_service=hash_service,
+            storage_service=storage_service,
+            skill_normalization_service=skill_normalization_service,
+            embedding_service=embedding_service,
+            resume_service=resume_service,
+            resume_repository=resume_repo,
+            skill_repository=skill_repo,
+            stage_tracker=stage_tracker,
+        )
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
         if existing_task_log is None:
@@ -317,17 +337,18 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             task_type=BULK_RESUME_PARSE_TASK_TYPE,
         )
         attempt_number = self.request.retries + 1
-        context_data = {
-            "bulk_upload_job_file_id": str(job_file.id),
-            "bulk_upload_job_id": str(job.id),
-            "storage_path": job_file.storage_path,
-            "original_filename": job_file.original_filename,
-        }
 
-        file_bytes = _run_stage(
-            checkpoint_repo, task_id, ProcessingStage.STORAGE, context_data,
-            lambda: storage_service.download_file(BULK_UPLOAD_STORAGE_BUCKET, job_file.storage_path),
-        )
+        # Bulk still needs the raw bytes up front — before ResumeProcessingPipeline
+        # can be invoked at all — to validate the file and reject unsupported
+        # formats (identity isn't known yet, so no Resume/Candidate exists for
+        # the pipeline to operate on). This one download is not stage-tracked,
+        # same as FileValidationService.validate() itself never has been —
+        # the pipeline's own _run_text_extraction (called below) will download
+        # the same file again as its real, tracked TEXT_EXTRACTION stage. That
+        # second download is a deliberate, accepted cost of reusing the exact
+        # same stage implementation individual upload runs, rather than
+        # maintaining a second copy of text-extraction logic.
+        file_bytes = storage_service.download_file(BULK_UPLOAD_STORAGE_BUCKET, job_file.storage_path)
 
         validation_result = file_validation_service.validate(file_bytes, job_file.original_filename)
 
@@ -336,18 +357,36 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
                 "Image-format resumes (PNG/JPEG) require OCR, which is not yet implemented."
             )
 
-        text = _run_stage(
-            checkpoint_repo, task_id, ProcessingStage.TEXT_EXTRACTION, context_data,
-            lambda: TextExtractionService.extract_for_resume(file_bytes, validation_result.file_format),
+        source_format = _BULK_FILE_FORMAT_TO_SOURCE_FORMAT[validation_result.file_format]
+
+        context = ResumeProcessingContext(
+            task_id=task_id,
+            file_path=job_file.storage_path,
+            source_format=source_format,
         )
-        cleaned_text = _run_stage(
-            checkpoint_repo, task_id, ProcessingStage.TEXT_CLEANING, context_data,
-            lambda: preprocessing_service.normalize(text),
+
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.TEXT_EXTRACTION,
+            lambda: pipeline._run_text_extraction(context),
+            attempt_number=attempt_number,
         )
-        extracted = _run_stage(
-            checkpoint_repo, task_id, ProcessingStage.AI_EXTRACTION, context_data,
-            lambda: extraction_service.extract(cleaned_text),
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.TEXT_CLEANING,
+            lambda: pipeline._run_text_cleaning(context),
+            attempt_number=attempt_number,
         )
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.AI_EXTRACTION,
+            lambda: pipeline._run_ai_extraction(context),
+            attempt_number=attempt_number,
+        )
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.JSON_VALIDATION,
+            lambda: pipeline._run_json_validation(context),
+            attempt_number=attempt_number,
+        )
+
+        extracted = context.validated_extraction
 
         if not extracted.full_name or not extracted.email:
             raise ValueError(
@@ -376,24 +415,33 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             file_hash=hashlib.md5(file_bytes).hexdigest(),
             version_number=1,
             is_active_version=True,
-            parsed_json=extracted.model_dump(),
-            parse_status=ParseStatus.PARSED,
-            parser_version=f"{PARSER_NAME}-{PARSER_VERSION}",
             page_count=page_count,
             ocr_used=False,
             uploaded_by=job.uploaded_by,
             bulk_upload_job_id=job.id,
         )
         resume = resume_repo.create(resume)
-        resume_repo.record_parse_attempt(
-            resume_id=resume.id,
-            attempt_number=1,
-            parser_used=PARSER_NAME,
-            parser_version=PARSER_VERSION,
-            status=ParseAttemptStatus.SUCCESS,
-            confidence_score=1.0,
-        )
         resume_repo.commit()
+
+        # SKILL_NORMALIZATION -> EMBEDDING_GENERATION -> PERSISTENCE run
+        # through the same ResumeProcessingPipeline.run() individual upload
+        # calls. context already has raw_text/cleaned_text/raw_extraction/
+        # validated_extraction populated from the stages above, so run()'s
+        # own skip-check (skip_stage) passes over those four and genuinely
+        # executes only these last three. PERSISTENCE (via
+        # ResumeService.persist_processed_resume) now records the
+        # resume_parse_attempts row itself, using the real attempt_number —
+        # bulk no longer records its own separate one here, since doing both
+        # would write two rows per resume.
+        pipeline.run(
+            task_id=task_id,
+            resume_id=resume.id,
+            candidate_id=candidate.id,
+            file_path=job_file.storage_path,
+            source_format=source_format,
+            attempt_number=attempt_number,
+            initial_context=context,
+        )
 
         campaign_candidate_service.create_campaign_candidate(
             CampaignCandidateCreateRequest(
@@ -439,6 +487,21 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
                 self, task_id, DocumentType.RESUME, stage_exc, attempt_number,
             )
         if not should_retry:
+            db.rollback()
+            if resume is not None:
+                # Otherwise a resume that reached Resume-row creation but
+                # then permanently failed at SKILL_NORMALIZATION/
+                # EMBEDDING_GENERATION/PERSISTENCE (now reached via
+                # pipeline.run(), same as individual upload) is left at
+                # parse_status=PENDING forever instead of a visible terminal
+                # state — mirrors the equivalent fix already applied to
+                # process_resume_document's own StageExecutionError branch.
+                try:
+                    resume_repo.mark_parse_failed(resume)
+                    resume_repo.commit()
+                except Exception:
+                    logger.exception("Failed to mark resume %s parse_status=FAILED.", resume.id)
+                    db.rollback()
             if job_file is not None and job is not None:
                 file_repo.update_status(job_file.id, BulkUploadFileStatus.FAILED)
                 job_repo.increment_failed_count(job.id)
@@ -479,6 +542,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
 
     finally:
         db.close()
+        stage_db.close()
 
 
 def _maybe_finalize_job(job_repo: BulkUploadJobRepository, job_id: UUID) -> None:

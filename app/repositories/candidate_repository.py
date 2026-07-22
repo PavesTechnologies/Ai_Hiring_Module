@@ -16,6 +16,16 @@ class CandidateRepository:
         stmt = select(Candidate).where(Candidate.email_hash == email_hash)
         return self.db.execute(stmt).scalars().first()
 
+    def get_by_id(self, candidate_id: UUID) -> Candidate | None:
+        return self.db.get(Candidate, candidate_id)
+
+    def get_by_ids(self, candidate_ids: list[UUID]) -> list[Candidate]:
+        """Batched counterpart to get_by_id — one query per page of a list endpoint, not one per row."""
+        if not candidate_ids:
+            return []
+        stmt = select(Candidate).where(Candidate.id.in_(candidate_ids))
+        return list(self.db.execute(stmt).scalars().all())
+
     def create(self, candidate: Candidate) -> tuple[Candidate, bool]:
         """
         Attempts to insert `candidate`. Two concurrent uploads for the same

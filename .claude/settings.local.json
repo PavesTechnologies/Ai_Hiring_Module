@@ -15,7 +15,8 @@
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic stamp b6e2d9a41c3f)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic stamp --purge b6e2d9a41c3f)",
       "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -m alembic upgrade head)",
-      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -c ' *)"
+      "Bash(/c/AIRS/Ai_Hiring_Module/venv/Scripts/python.exe -c ' *)",
+      "Bash(./airs/Scripts/python.exe -c ' *)"
     ],
     "deny": [],
     "ask": []

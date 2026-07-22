@@ -21,15 +21,18 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 from app.services.compliance.consent_service import ConsentService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_intake_service import ResumeIntakeService
+from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
 from app.services.resume.resume_upload_service import ResumeUploadService
 
@@ -130,4 +133,36 @@ def get_resume_processing_status_service(
     return ResumeProcessingStatusService(
         task_log_repository=task_log_repository,
         stage_repository=stage_repository,
+    )
+
+
+def get_stage_failure_log_repository(
+    db: Session = Depends(get_db),
+) -> StageFailureLogRepository:
+    return StageFailureLogRepository(db)
+
+
+def get_dead_letter_queue_repository(
+    db: Session = Depends(get_db),
+) -> DeadLetterQueueRepository:
+    return DeadLetterQueueRepository(db)
+
+
+def get_resume_monitoring_service(
+    resume_repository: ResumeRepository = Depends(get_resume_repository),
+    candidate_repository: CandidateRepository = Depends(get_candidate_repository),
+    encryption_service: EncryptionService = Depends(get_encryption_service),
+    task_log_repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    stage_repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
+    stage_failure_log_repository: StageFailureLogRepository = Depends(get_stage_failure_log_repository),
+    dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+) -> ResumeMonitoringService:
+    return ResumeMonitoringService(
+        resume_repository=resume_repository,
+        candidate_repository=candidate_repository,
+        encryption_service=encryption_service,
+        task_log_repository=task_log_repository,
+        stage_repository=stage_repository,
+        stage_failure_log_repository=stage_failure_log_repository,
+        dead_letter_queue_repository=dead_letter_queue_repository,
     )
