@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.enums.constants import ActionType, EntityType
-from app.models.candidates import ParseStatus, Resume
+from app.models.candidates import ParseAttemptStatus, ParseStatus, Resume
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.resume_extraction_response import ResumeExtractionResponse
@@ -26,6 +26,7 @@ class ResumeService:
     # not "airs-resumes".
     RESUME_STORAGE_BUCKET = "airs_resumes"
     PARSER_VERSION = "gemini-resume-extraction-v1"
+    PARSER_NAME = "gemini-resume-extraction"
 
     def __init__(
         self,
@@ -45,6 +46,7 @@ class ResumeService:
         embedding: list[float],
         embedding_model_version_id: UUID,
         input_text_hash: str,
+        attempt_number: int | None = None,
     ) -> UUID:
         """
         Writes Resume.parsed_json/parse_status + candidate_skills +
@@ -52,6 +54,13 @@ class ResumeService:
         resume_id (the row already exists — this pipeline never creates
         one, per the scope boundary that Candidate/Resume creation happens
         elsewhere).
+
+        attempt_number is optional: when a caller supplies it, a
+        resume_parse_attempts row is recorded here too. Bulk upload already
+        records its own attempt separately (at resume-creation time, before
+        this method ever runs) and does not pass this — so this stays
+        opt-in rather than unconditional, to avoid a second, duplicate
+        attempt row for bulk-origin resumes.
         """
         try:
             self.repository.update_parsed_result(
@@ -113,6 +122,16 @@ class ResumeService:
                 embedding_model_version_id=embedding_model_version_id,
                 input_text_hash=input_text_hash,
             )
+
+            if attempt_number is not None:
+                self.repository.record_parse_attempt(
+                    resume_id=resume.id,
+                    attempt_number=attempt_number,
+                    parser_used=self.PARSER_NAME,
+                    parser_version=self.PARSER_VERSION,
+                    status=ParseAttemptStatus.SUCCESS,
+                    confidence_score=1.0,
+                )
 
             self.audit_service.log(
                 actor_id=resume.uploaded_by,
