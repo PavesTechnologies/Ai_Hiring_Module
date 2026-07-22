@@ -158,3 +158,35 @@ Return ONLY the following JSON structure.
     "metadata": {}
 }
 """
+
+
+# Used only by the bulk-ZIP upload flow (app/tasks/bulk_upload_tasks.py) —
+# that flow has no upload form to source candidate identity from, so it
+# makes a second, narrowly-scoped Gemini call using this prompt purely to
+# resolve full_name/email/phone for Candidate creation. Deliberately
+# separate from RESUME_SYSTEM_PROMPT/ResumeExtractionResponse, which must
+# never carry PII into resumes.parsed_json.
+IDENTITY_EXTRACTION_PROMPT = """
+You are an expert AI assistant extracting candidate identity information from a resume.
+
+Extract ONLY the following three fields, nothing else:
+
+- full_name: the candidate's full name, if explicitly present.
+- email: the candidate's email address, if explicitly present.
+- phone: the candidate's phone number, if explicitly present.
+
+Do NOT extract skills, work experience, education, certifications, or any
+other content. Do NOT infer a value that is not explicitly present in the
+text. If a value is unavailable, return null.
+
+Return ONLY valid JSON. Do NOT include markdown. Do NOT explain your
+reasoning.
+
+Return ONLY the following JSON structure.
+
+{
+    "full_name": null,
+    "email": null,
+    "phone": null
+}
+"""
