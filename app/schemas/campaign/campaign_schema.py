@@ -95,6 +95,8 @@ class CampaignUpdateRequest(BaseModel):
     max_candidates: Optional[int] = Field(default=None, gt=0, le=100000)
     clear_max_candidates: bool = False
 
+    hiring_manager_id: Optional[str] = None
+
     weight_deterministic: Optional[Decimal] = None
     weight_semantic: Optional[Decimal] = None
     weight_ai: Optional[Decimal] = None

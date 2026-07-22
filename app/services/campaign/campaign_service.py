@@ -14,6 +14,7 @@ from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.identity import User
+from app.models.identity import UserRole as LocalUserRole
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
@@ -1133,6 +1134,40 @@ class CampaignService:
                 }
                 campaign.deadline = request.deadline
 
+            # ── S03-T01/T03: reassign hiring manager ─────────────────────
+            previous_hiring_manager_id = None
+            hm_review_pending_count = 0
+            if (request.hiring_manager_id is not None
+                    and request.hiring_manager_id != campaign.hiring_manager_id):
+                new_manager = self.campaign_repo.get_user(request.hiring_manager_id)
+                if not new_manager:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' not found.", 404,
+                    )
+                if new_manager.role != LocalUserRole.HIRING_MANAGER:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' does not have the "
+                        f"HIRING_MANAGER role.", 422,
+                    )
+                if not new_manager.is_active:
+                    raise CampaignException(
+                        f"User '{request.hiring_manager_id}' is not an active user.", 422,
+                    )
+
+                previous_hiring_manager_id = campaign.hiring_manager_id
+                changes["hiring_manager_id"] = {
+                    "before": previous_hiring_manager_id,
+                    "after": request.hiring_manager_id,
+                }
+                campaign.hiring_manager_id = request.hiring_manager_id
+
+                # T03: candidates currently in HM_REVIEW may need re-communicating
+                # to the incoming manager — computed regardless of who they were
+                # visible to before, since no candidate-listing endpoint filters
+                # by hiring_manager_id yet (access-revocation is not applicable
+                # until that endpoint exists).
+                hm_review_pending_count = self.campaign_repo.get_hm_review_count(campaign.id)
+
             # ── S07-T02: scoring config gate on ACTIVE campaigns ─────────
             scoring_changes = {
                 field: getattr(request, field)
@@ -1200,10 +1235,29 @@ class CampaignService:
                 details=detail,
             )
 
+            if previous_hiring_manager_id is not None:
+                # S03-T03: dedicated audit entry — always recorded on reassignment,
+                # independent of whatever action_type won the main log entry above.
+                self.audit_service.log(
+                    actor_id=updated_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.HIRING_MANAGER_REASSIGNED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"Hiring manager reassigned on campaign '{campaign.name}'",
+                        "previous_hiring_manager_id": previous_hiring_manager_id,
+                        "new_hiring_manager_id": campaign.hiring_manager_id,
+                        "hm_review_pending_count": hm_review_pending_count,
+                    },
+                )
+
             self.campaign_repo.commit()
 
             jd = self.jd_repo.get_by_id(campaign.jd_id)
-            return CampaignResponse(
+            candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+            response = CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
                 status=campaign.status.value,
@@ -1213,7 +1267,22 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
+                candidate_count=candidate_count,
+                shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
+                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates),
+                deadline_soon=self._is_deadline_soon(campaign.deadline),
             )
+
+            if hm_review_pending_count > 0:
+                # T03: "a specific warning must alert HR_ADMIN that pending HM
+                # review decisions may need to be re-communicated to the new manager"
+                response.warning = (
+                    f"{hm_review_pending_count} candidate(s) are currently awaiting "
+                    f"hiring-manager review. These pending decisions may need to be "
+                    f"re-communicated to the newly assigned hiring manager."
+                )
+
+            return response
 
         except Exception:
             self.campaign_repo.rollback()

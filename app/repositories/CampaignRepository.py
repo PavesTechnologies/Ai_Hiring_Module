@@ -174,6 +174,25 @@ class CampaignRepository:
             or 0
         )
 
+    def get_hm_review_count(
+        self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        candidates currently awaiting hiring-manager review in this
+        campaign — used to warn HR_ADMIN that pending decisions may need
+        re-communicating to a newly-reassigned hiring manager.
+        """
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
+            )
+            .scalar()
+            or 0
+        )
+
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
         self.db.flush()
