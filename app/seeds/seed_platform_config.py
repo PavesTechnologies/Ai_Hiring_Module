@@ -128,17 +128,18 @@ try:
             value="90.00",
             description="RapidFuzz similarity score (0-100) above which a newly created skill is flagged as similar to an existing one",
         ),
+        # S04-T03: campaign cap/deadline warning thresholds
         PlatformConfig(
             id=uuid.uuid4(),
-            key="HIERARCHY_GRANDCHILD_MULTIPLIER",
-            value="0.50",
-            description="Deterministic mandatory-skill scoring: contribution multiplier for a GRANDCHILD (depth-2) hierarchy match",
+            key="CAP_WARNING_PERCENTAGE",
+            value="80.00",
+            description="Candidate-cap percentage (0-100) at which a campaign is flagged as approaching_cap",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="HIERARCHY_SEMANTIC_ONLY_THRESHOLD",
-            value="0.80",
-            description="Deterministic mandatory-skill scoring: minimum cosine similarity for a candidate skill to count as a SEMANTIC match against a missing mandatory skill",
+            key="DEADLINE_WARNING_DAYS",
+            value="3",
+            description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
         ),
     ]
 

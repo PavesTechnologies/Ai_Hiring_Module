@@ -20,6 +20,7 @@ class CampaignResponse(BaseModel):
     created_at: datetime
     approaching_cap: bool = False
     deadline_soon: bool = False
+    warning: str | None = None 
 
 class CampaignScoringDefaultsResponse(BaseModel):
     weight_deterministic: float
@@ -46,6 +47,7 @@ class CampaignScoringConfigurationResponse(BaseModel):
     formula:str
     layers: list[ScoringLayerExplanationResponse]
     defaults: CampaignScoringDefaultsResponse
+    warning: str | None = None  # S02-T03: set when candidates were already processed
 
 class WeightHistoryItemResponse(BaseModel):
     changed_by: str
