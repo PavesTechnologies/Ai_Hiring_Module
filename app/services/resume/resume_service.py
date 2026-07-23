@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from app.enums.constants import ActionType, EntityType
@@ -11,6 +12,8 @@ from app.services.skills.skill_normalization_service import (
     scoring_weight_for_tier,
     verification_status_for_tier,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ResumeService:
@@ -57,12 +60,16 @@ class ResumeService:
         one, per the scope boundary that Candidate/Resume creation happens
         elsewhere).
         """
+        logger.warning("=== persist_processed_resume STARTED === resume_id=%s", resume.id)
         try:
             self.repository.update_parsed_result(
                 resume,
                 parsed_json=extraction.model_dump(mode="json"),
                 parse_status=ParseStatus.PARSED,
                 parser_version=self.PARSER_VERSION,
+            )
+            logger.warning(
+                "=== persist_processed_resume: parsed_json/parse_status updated === resume_id=%s", resume.id,
             )
 
             # Two raw strings (e.g. "Python" in one bullet, "PYTHON" in
@@ -92,6 +99,10 @@ class ResumeService:
                     scoring_weight=scoring_weight_for_tier(match.match_tier),
                 )
                 skill_repository.bump_occurrence_count(match.canonical_skill_id)
+            logger.warning(
+                "=== persist_processed_resume: matched candidate_skills persisted === "
+                "resume_id=%s count=%s", resume.id, len(matched_by_skill),
+            )
 
             # Unmatched skills have no canonical_skill_id, so the unique
             # constraint (scoped to non-null canonical_skill_id) doesn't
@@ -111,6 +122,9 @@ class ResumeService:
                     status=verification_status_for_tier(match.match_tier).value,
                     scoring_weight=scoring_weight_for_tier(match.match_tier),
                 )
+            logger.warning(
+                "=== persist_processed_resume: unmatched candidate_skills persisted === resume_id=%s", resume.id,
+            )
 
             self.repository.create_resume_embedding(
                 resume_id=resume.id,
@@ -118,6 +132,9 @@ class ResumeService:
                 embedding=embedding,
                 embedding_model_version_id=embedding_model_version_id,
                 input_text_hash=input_text_hash,
+            )
+            logger.warning(
+                "=== persist_processed_resume: resume_embedding persisted === resume_id=%s", resume.id,
             )
 
             self.audit_service.log(
@@ -147,10 +164,15 @@ class ResumeService:
                         "match_tier": match.match_tier.value,
                     },
                 )
+            logger.warning(
+                "=== persist_processed_resume: audit logs written === resume_id=%s", resume.id,
+            )
 
             self.repository.commit()
+            logger.warning("=== persist_processed_resume COMMITTED === resume_id=%s", resume.id)
             return resume.id
 
         except Exception:
+            logger.warning("=== persist_processed_resume FAILED - rolling back === resume_id=%s", resume.id)
             self.repository.rollback()
             raise

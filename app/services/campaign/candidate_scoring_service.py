@@ -56,51 +56,28 @@ class CandidateScoringService:
         deterministic_threshold: float,
     ) -> tuple[float, bool]:
         """
-        Calculate deterministic score based on mandatory JD skills
-        matched against candidate normalized skills.
+        Deterministic score based on mandatory JD skills matched against
+        candidate normalized skills - delegates entirely to
+        build_mandatory_skill_breakdown so this always reflects the same
+        weighted SUM(skill_contribution)/SUM(configured_weight) x 100
+        formula, never a count/ratio of how many skills matched. A
+        count-based formula must never be reintroduced here even as a
+        "simpler" no-hierarchy alternative - it would silently diverge from
+        the one true deterministic_score calculation and duplicate logic
+        that already exists in build_mandatory_skill_breakdown.
 
-        Score = matched mandatory skills / total mandatory skills * 100
+        Requires skill_ontology_repository/config_repository for the same
+        reason build_mandatory_skill_breakdown does - see its docstring.
         """
+        breakdown = self.build_mandatory_skill_breakdown(jd_id, resume_id)
 
-        # Get mandatory JD skills
-        mandatory_jd_skills = (
-            self.skill_repository.get_mandatory_jd_skills(jd_id)
+        any_missing = any(
+            skill["match_type"] == MandatorySkillMatchType.MISSING.value
+            for skill in breakdown["mandatory_skills"]
         )
+        passed = not any_missing and breakdown["deterministic_score"] >= float(deterministic_threshold)
 
-        # Get candidate normalized skills
-        candidate_skills = (
-            self.skill_repository.get_candidate_normalized_skills(resume_id)
-        )
-
-        # No mandatory skills configured
-        if not mandatory_jd_skills:
-            return 100.0, True
-
-        jd_skill_ids = {
-            skill.canonical_skill_id
-            for skill in mandatory_jd_skills
-        }
-
-        candidate_skill_ids = {
-            skill.canonical_skill_id
-            for skill in candidate_skills
-            if skill.canonical_skill_id is not None
-        }
-
-        matched_skill_ids = jd_skill_ids.intersection(
-            candidate_skill_ids
-        )
-
-        score = (
-            len(matched_skill_ids)
-            / len(jd_skill_ids)
-        ) * 100
-
-        score = round(score, 2)
-
-        passed = score >= float(deterministic_threshold)
-
-        return score, passed
+        return breakdown["deterministic_score"], passed
 
     # ------------------------------------------------------------------
     # M07-E01 S02: hierarchy-aware mandatory-skill coverage breakdown
@@ -120,7 +97,7 @@ class CandidateScoringService:
         Requires skill_ontology_repository (hierarchy traversal) and
         config_repository (HIERARCHY_GRANDCHILD_MULTIPLIER /
         HIERARCHY_SEMANTIC_ONLY_THRESHOLD) - calculate_deterministic_score
-        above does not need either and is unaffected by their absence.
+        delegates here, so it requires both too.
         """
         if self.skill_ontology_repository is None or self.config_repository is None:
             raise ValueError(
@@ -435,6 +412,9 @@ class CandidateScoringService:
         jd_id: UUID,
         resume_id: UUID,
         deterministic_threshold: float,
+        experience_result: dict | None = None,
+        education_result: dict | None = None,
+        score_weights: dict | None = None,
     ) -> dict:
         """
         Builds the hierarchy-aware mandatory-skill breakdown and persists it
@@ -450,6 +430,24 @@ class CandidateScoringService:
         deterministic_score - their EXACT-match bonus is computed and
         stored under score_breakdown.preferred_skill_bonus purely for a
         future Composite Score to consume.
+
+        M07-E02 S04 (Combined Deterministic Score): experience_result/
+        education_result are the dicts ExperienceEducationValidationService
+        returns - the caller (calculate_deterministic_score_task) computes
+        them since it owns the JD/resume fetch, this service never fetches
+        either. Omitting both (the default) leaves every pre-existing
+        caller's behavior byte-for-byte unchanged - deterministic_score
+        stays the pure skill-based ratio, exactly as before M07-E02.
+
+        When either is supplied, deterministic_score becomes a weighted
+        blend of the skill/experience/education sub-scores (score_weights,
+        default {skills: .70, experience: .15, education: .15} - see
+        _DEFAULT_SCORE_WEIGHTS), renormalized across whichever sub-scores
+        are "applicable" (a SKIPPED-because-JD-has-no-requirement or
+        DATA_MISSING-because-resume-has-no-data sub-score is excluded from
+        the blend rather than penalizing or rewarding the candidate for
+        something that was never evaluated). The pure skill-only score is
+        preserved under score_breakdown.skill_deterministic_score.
 
         deterministic_passed = (no mandatory skill is MISSING) AND
         (deterministic_score >= deterministic_threshold). A campaign
@@ -478,20 +476,78 @@ class CandidateScoringService:
             skill["match_type"] == MandatorySkillMatchType.MISSING.value
             for skill in breakdown["mandatory_skills"]
         )
-        deterministic_passed = (
-            not any_missing and breakdown["deterministic_score"] >= float(deterministic_threshold)
-        )
+        skill_score = breakdown["deterministic_score"]
+        # Mandatory-skill gate only - never compare skill_score to
+        # deterministic_threshold here. The threshold is validated exactly
+        # once (Step 5/6 of the ATS spec), against the FINAL combined score
+        # (skills + experience + education) below. Comparing skill_score to
+        # it here too would double-validate the same threshold and could
+        # fail a candidate whose skill sub-score alone is under threshold
+        # even though their blended score clears it.
+        mandatory_skills_passed = not any_missing
 
         preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
         breakdown["preferred_skills"] = preferred_breakdown["preferred_skills"]
         breakdown["preferred_skill_bonus"] = preferred_breakdown["preferred_skill_bonus"]
 
+        if experience_result is None and education_result is None:
+            # No M07-E02 inputs supplied - skill_score IS the final score in
+            # this branch, so this is the one and only threshold comparison
+            # here, not a second one - identical to pre-M07-E02 behavior.
+            final_score = skill_score
+            final_passed = mandatory_skills_passed and final_score >= float(deterministic_threshold)
+        else:
+            final_score, final_passed = self._combine_deterministic_score(
+                skill_score, mandatory_skills_passed, experience_result, education_result,
+                score_weights, float(deterministic_threshold),
+            )
+            breakdown["skill_deterministic_score"] = skill_score
+            if experience_result is not None:
+                breakdown["experience_validation"] = experience_result
+            if education_result is not None:
+                breakdown["education_validation"] = education_result
+
         breakdown["deterministic_threshold"] = float(deterministic_threshold)
-        breakdown["deterministic_passed"] = deterministic_passed
+        breakdown["deterministic_score"] = final_score
+        breakdown["deterministic_passed"] = final_passed
 
         campaign_candidate.score_breakdown = breakdown
-        campaign_candidate.deterministic_score = breakdown["deterministic_score"]
-        campaign_candidate.deterministic_passed = deterministic_passed
+        campaign_candidate.deterministic_score = final_score
+        campaign_candidate.deterministic_passed = final_passed
         self.campaign_candidate_repository.update(campaign_candidate)
 
         return breakdown
+
+    # Renormalized weighted blend across whichever of skills/experience/
+    # education are "applicable" (see ExperienceEducationValidationService
+    # docstring for what SKIPPED/DATA_MISSING mean) - skills is always
+    # applicable (it has no such concept), so this never divides by zero.
+    _DEFAULT_SCORE_WEIGHTS = {"skills": 0.70, "experience": 0.15, "education": 0.15}
+
+    def _combine_deterministic_score(
+        self, skill_score, mandatory_skills_passed, experience_result, education_result,
+        score_weights, deterministic_threshold,
+    ) -> tuple[float, bool]:
+        weights = score_weights or self._DEFAULT_SCORE_WEIGHTS
+
+        components = [(skill_score, weights["skills"])]
+        if experience_result is not None and experience_result["applicable"]:
+            components.append((experience_result["score"], weights["experience"]))
+        if education_result is not None and education_result["applicable"]:
+            components.append((education_result["score"], weights["education"]))
+
+        weight_sum = sum(weight for _, weight in components)
+        combined_score = (
+            round(sum(score * weight for score, weight in components) / weight_sum, 2)
+            if weight_sum > 0 else skill_score
+        )
+
+        # The campaign threshold is validated exactly once, here, against
+        # combined_score - never separately against skill_score.
+        combined_passed = (
+            mandatory_skills_passed
+            and (experience_result is None or experience_result["passed"])
+            and (education_result is None or education_result["passed"])
+            and combined_score >= deterministic_threshold
+        )
+        return combined_score, combined_passed
