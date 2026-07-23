@@ -1,14 +1,18 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
+from fastapi.responses import StreamingResponse
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignWeightHistoryResponse, HiringCampaignResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
+from app.schemas.campaign.campaign_comparison_response import CampaignComparisonResponse
+from app.schemas.campaign.campaign_weight_change_report_response import WeightChangeReportResponse
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
 from app.schemas.response import APIResponse
@@ -192,6 +196,84 @@ def get_weight_presets(
         org_id=SYSTEM_ORG,
     )
 
+# Compare Weight Configurations Across Campaigns ────────────────────
+
+@router.get(
+    "/compare",
+    response_model=APIResponse[CampaignComparisonResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Compare scoring configs across 2-4 campaigns",
+    description="Side-by-side weight/threshold config and score distribution for 2-4 campaigns.",
+)
+def compare_campaigns(
+    campaign_ids: list[UUID] = Query(..., min_length=2, max_length=4),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    comparison = service.compare_campaigns(campaign_ids)
+    return APIResponse.ok(data=comparison, message="Campaign comparison retrieved successfully")
+
+
+# ── S05 — Reset Weights to Platform Defaults ────────────────────────────────
+
+@router.put(
+    "/platform-defaults/scoring",
+    response_model=APIResponse[CampaignScoringDefaultsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Update platform default scoring weights",
+    description=(
+        "Updates the org-wide scoring defaults used by new campaigns and the "
+        "Reset to Defaults option. Existing campaigns are not affected."
+    ),
+)
+def update_platform_default_weights(
+    request: PlatformDefaultWeightsUpdateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    defaults = service.update_platform_default_weights(request, updated_by=user.user_id)
+    return APIResponse.ok(data=defaults, message="Platform default scoring weights updated successfully")
+
+
+@router.get(
+    "/reports/weight-changes",
+    response_model=APIResponse[WeightChangeReportResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Consolidated weight change report",
+    description="All scoring weight changes across every campaign, for compliance review.",
+)
+def get_weight_change_report(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    campaign_status: CampaignStatus | None = Query(default=None),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    report = service.get_weight_change_report(date_from, date_to, campaign_status)
+    return APIResponse.ok(data=report, message="Weight change report retrieved successfully")
+
+
+@router.get(
+    "/reports/weight-changes/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export the weight change report as XLSX",
+)
+def export_weight_change_report(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    campaign_status: CampaignStatus | None = Query(default=None),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    excel_file = service.export_weight_change_report_xlsx(date_from, date_to, campaign_status)
+    filename = f"Weight_Change_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get(
     "/{campaign_id}",
     response_model=APIResponse[CampaignResponse],
@@ -265,6 +347,41 @@ def update_scoring_configuration(
     )
 
     return configuration
+
+@router.post(
+    "/{campaign_id}/scoring-config/copy",
+    response_model=APIResponse[CopyScoringConfigResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Copy scoring config to other campaigns",
+    description="Copies this campaign's weights/thresholds onto one or more target campaigns.",
+)
+def copy_scoring_configuration(
+    campaign_id: UUID,
+    request: CopyScoringConfigRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.copy_scoring_configuration(
+        source_campaign_id=campaign_id,
+        request=request,
+        updated_by=user.user_id,
+    )
+    return APIResponse.ok(data=result, message="Scoring configuration copied successfully")
+
+@router.post(
+    "/{campaign_id}/scoring-config/reset",
+    response_model=APIResponse[CampaignScoringConfigurationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reset scoring config to platform defaults",
+    description="Resets weight_deterministic/semantic/ai and semantic_threshold/ai_threshold to the current platform defaults.",
+)
+def reset_scoring_configuration(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reset_scoring_to_defaults(campaign_id, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Scoring configuration reset to platform defaults")
 
 @router.post(
     "/scoring-presets",
