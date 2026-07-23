@@ -125,9 +125,9 @@ class ResumeProcessingPipeline:
             (ProcessingStage.EMBEDDING_GENERATION, "embedding", lambda: self._run_embedding_generation(context)),
             (ProcessingStage.PERSISTENCE, None, lambda: self._run_persistence(context)),
         ):
+            logger.warning("=== STAGE STARTING: %s === resume_id=%s", stage.value, context.resume_id)
             if output_attr is not None and getattr(context, output_attr) is not None:
                 continue
-            logger.warning("=== STAGE STARTING: %s === resume_id=%s", stage.value, context.resume_id)
             self.stage_tracker.run_stage(
                 context.task_id,
                 context.document_type,
