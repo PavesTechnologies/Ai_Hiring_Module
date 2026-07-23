@@ -171,6 +171,23 @@ try:
             key="DETERMINISTIC_WEIGHT_EDUCATION",
             value="0.15",
             description="Weight of the education validation sub-score in the combined deterministic_score blend",
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="HM_REVIEW_SLA_DAYS",
+            value="5",
+            description="Days a candidate can sit in HM_REVIEW before the campaign is flagged overdue_review",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="STALE_CAMPAIGN_DAYS",
+            value="7",
+            description="Days without a new candidate before a campaign is flagged pipeline_stalled",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_LAYER_WEIGHT",
+            value="5.00",
+            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
         ),
     ]
 

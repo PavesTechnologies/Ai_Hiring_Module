@@ -1,9 +1,11 @@
+from datetime import datetime
 from uuid import UUID
 
 from app.enums.constants import (
     ActionType,
     EntityType,
 )
+from app.models.campaigns import CampaignStatus
 
 from app.models.compliance import AuditLog
 from app.repositories.audit_repository import AuditRepository
@@ -48,4 +50,17 @@ class AuditService:
     ):
         return self.repository.get_campaign_scoring_history(
             campaign_id
+        )
+
+    def get_all_scoring_changes(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        campaign_status: CampaignStatus | None = None,
+    ):
+        """S05-T03: cross-campaign feed for the Weight Change Report."""
+        return self.repository.get_all_scoring_changes(
+            date_from=date_from,
+            date_to=date_to,
+            campaign_status=campaign_status,
         )

@@ -61,12 +61,10 @@ class EducationEntry(BaseModel):
 
 
 class ResumeExtractionResponse(BaseModel):
-    # full_name/email/phone: needed by the bulk-ZIP-upload "parse-first"
-    # flow (M05-E02) — it has no upload form to source candidate identity
-    # from, so it has to learn it from the resume content itself.
-    full_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    # Deliberately PII-free: full_name/email/phone must never appear here or
+    # in resumes.parsed_json. The bulk-ZIP upload flow (which has no upload
+    # form to source candidate identity from) resolves identity via a
+    # separate ResumeIdentityExtraction call instead of this schema.
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
@@ -80,7 +78,7 @@ class ResumeExtractionResponse(BaseModel):
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
 
-    @field_validator("full_name", "email", "phone", "summary")
+    @field_validator("summary")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
@@ -103,9 +101,6 @@ class ResumeExtractionGenerationSchema(BaseModel):
     defaults to {} when the key is absent, so dropping it here only affects
     generation, not parsing. Mirrors JDExtractionGenerationSchema.
     """
-    full_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)

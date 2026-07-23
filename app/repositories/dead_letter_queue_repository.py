@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import DeadLetterQueue
@@ -10,6 +11,11 @@ from app.models.async_tasks import DeadLetterQueue
 class DeadLetterQueueRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def get_by_task_id(self, original_task_id: str) -> DeadLetterQueue | None:
+        """Read-only — monitoring lookup, no writes."""
+        stmt = select(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id)
+        return self.db.execute(stmt).scalars().first()
 
     def create(
         self,
