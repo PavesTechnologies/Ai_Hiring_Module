@@ -386,7 +386,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
 
-        extracted = context.validated_extraction
+        identity = context.validated_extraction
 
         if not identity.full_name or not identity.email:
             raise ValueError(
