@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib import request
-from fastapi import HTTPException
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import timedelta
 from app.middleware.rbac import TokenUser
+from app.models.async_tasks import TaskStatus
+from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
+from app.tasks.resume_processing_tasks import process_resume_document
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -24,6 +26,11 @@ from app.schemas.campaign.campaign_schema import CampaignCreateRequest, Campaign
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
+from app.schemas.campaign.campaign_closure_schema import (
+    CampaignCloseRequest,
+    CampaignClosureImpactSummaryResponse,
+    CampaignClosureResultResponse,
+)
 from app.schemas.campaign.campaign_response import (
     CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
@@ -1456,6 +1463,47 @@ class CampaignService:
         report = self.get_weight_change_report(date_from, date_to, campaign_status)
         return ExcelExport.export_weight_change_report(report.rows)
 
+    def _resubmit_paused_tasks(self, campaign_id: UUID) -> int:
+        """
+        actually resubmits each PAUSED task to the Celery broker,
+        reusing its original task_id (so the task's own get_by_task_id()
+        lookup finds and reuses this same log row instead of creating a
+        duplicate — the same convention resume_processing_tasks.py uses for
+        first-submission). Only DETERMINISTIC_SCORE is ever linked to a
+        campaign_candidate_id today; anything else is skipped defensively
+        rather than guessed at, and left PAUSED for manual follow-up.
+        """
+        requeued = 0
+        for task in self.campaign_repo.get_paused_tasks(campaign_id):
+            if task.task_type != DETERMINISTIC_SCORE_TASK_TYPE:
+                continue
+            calculate_deterministic_score_task.apply_async(
+                kwargs={"campaign_candidate_id": str(task.campaign_candidate_id)},
+                task_id=str(task.task_id),
+            )
+            task.status = TaskStatus.QUEUED
+            requeued += 1
+        self.campaign_repo.db.flush()
+        return requeued
+
+    def _enqueue_pending_resume_parses(self, campaign_id: UUID) -> int:
+        """
+        S02-T02: submits a fresh resume.process_document task for every
+        resume that was uploaded while the campaign was paused and never got
+        parsed (parse_status = PENDING) — mirroring the exact submission
+        pattern resume_intake_service.py uses on a normal upload.
+        """
+        enqueued = 0
+        for resume in self.campaign_repo.get_pending_resumes(campaign_id):
+            task_id = uuid4()
+            self.campaign_repo.set_resume_task_id(resume, str(task_id))
+            process_resume_document.apply_async(
+                kwargs={"resume_id": str(resume.id)},
+                task_id=str(task_id),
+            )
+            enqueued += 1
+        return enqueued
+
     _SCORING_FIELDS = (
         "weight_deterministic",
         "weight_semantic",
@@ -1650,8 +1698,21 @@ class CampaignService:
                 # S02-T02: re-queue suspended tasks (PAUSED → QUEUED); uploads are
                 # re-permitted immediately by the ACTIVE status.
                 detail["title"] = f"Campaign '{campaign.name}' resumed"
-                detail["tasks_requeued"] = self.campaign_repo.requeue_suspended_tasks(campaign.id)
-                detail["resumes_enqueued"] = self.campaign_repo.count_pending_resumes(campaign.id)
+                detail["tasks_requeued"] = self._resubmit_paused_tasks(campaign.id)
+                detail["resumes_enqueued"] = self._enqueue_pending_resume_parses(campaign.id)
+
+                # S02-T03: pause duration, from the matching CAMPAIGN_PAUSED
+                # entry's timestamp to now.
+                last_pause = self.audit_service.get_latest_entry(
+                    campaign.id, ActionType.CAMPAIGN_PAUSED.value,
+                )
+                if last_pause is not None:
+                    paused_at = last_pause.created_at
+                    detail["paused_at"] = paused_at.isoformat()
+                    detail["pause_duration_seconds"] = (
+                        datetime.now(timezone.utc) - paused_at
+                    ).total_seconds()
+
                 action_type = ActionType.CAMPAIGN_RESUMED
             elif scoring_changes:
                 action_type = ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED
@@ -1731,20 +1792,6 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    
-    def update_campaign_status(self, campaign_id: UUID, status: CampaignStatus) -> HiringCampaign:
-        campaign = self.campaign_repo.get_by_id(campaign_id)  # or a small read-only lookup
-        if not campaign:
-            raise HTTPException(status_code=404, detail="Campaign not found")
-        if campaign.status == CampaignStatus.CLOSED:
-            raise HTTPException(status_code=400, detail="Cannot change status of a closed campaign")
-        if campaign.status == CampaignStatus.ACTIVE:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.PAUSED, campaign_id)
-        elif status == CampaignStatus.PAUSED:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.ACTIVE, campaign_id)
-
-        return campaign
-
     # ── S01 — Pause an Active Campaign ──────────────────────────────────────
 
     def get_pause_impact_summary(
@@ -1799,6 +1846,101 @@ class CampaignService:
             pending_resume_count=pending,
             estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
+
+    # ── S03 — Close a Campaign Manually ──────────────────────────────────────
+
+    def get_closure_impact_summary(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignClosureImpactSummaryResponse:
+        """
+        S03-T01: read-only data for the close confirmation dialog. HR_ADMIN
+        only (enforced at the route). Only an ACTIVE or PAUSED campaign can
+        be closed.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+            raise CampaignException(
+                "Only an active or paused campaign can be closed.", 409,
+            )
+
+        return CampaignClosureImpactSummaryResponse(
+            candidate_count=self.campaign_repo.get_candidate_count(campaign_id),
+            stage_counts=self.campaign_repo.get_stage_counts(campaign_id),
+            in_progress_task_count=self.campaign_repo.count_active_queue_tasks(campaign_id),
+            pending_human_decision_count=self.campaign_repo.count_pending_human_decision(campaign_id),
+            in_progress_bulk_job_count=self.campaign_repo.count_processing_bulk_jobs(campaign_id),
+        )
+
+    def close_campaign(
+        self,
+        campaign_id: UUID,
+        request: CampaignCloseRequest,
+        updated_by: str,
+    ) -> CampaignClosureResultResponse:
+        """
+        S03-T02/T03: manual, terminal closure — distinct from the automated
+        auto-close paths (deadline expiry, candidate cap): those already call
+        CampaignRepository.close_campaign() directly. This is the only path
+        that kills QUEUED tasks (DEAD, not PAUSED — there's no resume to
+        re-queue them later) and cancels in-flight bulk uploads, then builds
+        the closure summary and records CAMPAIGN_CLOSED.
+        """
+        try:
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+            if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+                raise CampaignException(
+                    "Only an active or paused campaign can be closed.", 409,
+                )
+
+            tasks_cancelled = self.campaign_repo.kill_queued_tasks(campaign_id)
+            bulk_uploads_cancelled = self.campaign_repo.cancel_pending_bulk_jobs(campaign_id)
+
+            self.campaign_repo.close_campaign(campaign)
+
+            stage_counts = self.campaign_repo.get_stage_counts(campaign_id)
+            candidate_count = sum(stage_counts.values())
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_CLOSED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' closed",
+                    "closure_reason": request.closure_reason.value,
+                    "final_pipeline_state": stage_counts,
+                    "tasks_cancelled": tasks_cancelled,
+                    "bulk_uploads_cancelled": bulk_uploads_cancelled,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignClosureResultResponse(
+                campaign_id=str(campaign.id),
+                campaign_name=campaign.name,
+                closed_at=campaign.updated_at,
+                closure_reason=request.closure_reason,
+                candidate_count=candidate_count,
+                stage_counts=stage_counts,
+                selected_count=stage_counts.get(PipelineStage.SELECTED.value, 0),
+                rejected_count=stage_counts.get(PipelineStage.REJECTED.value, 0),
+                tasks_cancelled_count=tasks_cancelled,
+                bulk_uploads_cancelled_count=bulk_uploads_cancelled,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
 
     def calculate_deterministic_score(
         self,

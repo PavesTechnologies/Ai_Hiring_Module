@@ -505,15 +505,6 @@ class CampaignRepository:
             .all()
         )
 
-    def update_campaign_status(self, campaign_status: CampaignStatus, campaign_id: UUID) -> HiringCampaign:
-        campaign = self.db.query(HiringCampaign).filter(HiringCampaign.id == campaign_id).first()
-        if not campaign:
-            return None
-        campaign.status = campaign_status
-        self.db.commit()
-        self.db.refresh(campaign)
-        return campaign
-
     # ── S01 Pause an Active Campaign ────────────────────────────────────────
 
     def count_active_queue_tasks(self, campaign_id: UUID) -> int:
@@ -607,10 +598,69 @@ class CampaignRepository:
             or 0
         )
 
-    def requeue_suspended_tasks(self, campaign_id: UUID) -> int:
+    def get_paused_tasks(self, campaign_id: UUID) -> list[CeleryTaskLog]:
         """
-        T02: re-queue suspended tasks by flipping PAUSED → QUEUED for this
-        campaign. Mirror of suspend_queued_tasks. Returns the number re-queued.
+        T02: hydrated PAUSED CeleryTaskLog rows for this campaign — unlike a
+        bulk UPDATE, these need to be loaded so each one can actually be
+        resubmitted to the Celery broker before its status flips to QUEUED.
+        """
+        return (
+            self.db.query(CeleryTaskLog)
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CeleryTaskLog.status == TaskStatus.PAUSED,
+            )
+            .all()
+        )
+
+    def set_resume_task_id(self, resume: Resume, task_id: str) -> Resume:
+        """Mirrors ResumeRepository.set_task_id — persists the processing task's id at enqueue time."""
+        resume.task_id = task_id
+        self.db.flush()
+        return resume
+
+    def get_pending_resumes(self, campaign_id: UUID) -> list[Resume]:
+        """
+        T02: hydrated Resume rows with parse_status = PENDING for this
+        campaign — these need a new RESUME_PARSE task actually submitted on
+        resume, not just counted.
+        """
+        return (
+            self.db.query(Resume)
+            .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                Resume.parse_status == ParseStatus.PENDING,
+            )
+            .distinct()
+            .all()
+        )
+
+    # ── S03 Close a Campaign Manually ───────────────────────────────────────
+
+    def count_pending_human_decision(self, campaign_id: UUID) -> int:
+        """T01: candidates in INTERVIEW or HM_REVIEW — need a human decision before closing."""
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage.in_(
+                    [PipelineStage.INTERVIEW, PipelineStage.HM_REVIEW]
+                ),
+            )
+            .scalar()
+            or 0
+        )
+
+    def kill_queued_tasks(self, campaign_id: UUID) -> int:
+        """
+        T02: closure is terminal (unlike pause) — QUEUED tasks are killed to
+        DEAD, not soft-cancelled to PAUSED, since there's no resume to
+        re-queue them later. RUNNING tasks are left to finish naturally.
         """
         candidate_ids = (
             select(CampaignCandidate.id)
@@ -621,9 +671,28 @@ class CampaignRepository:
             update(CeleryTaskLog)
             .where(
                 CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
-                CeleryTaskLog.status == TaskStatus.PAUSED,
+                CeleryTaskLog.status == TaskStatus.QUEUED,
             )
-            .values(status=TaskStatus.QUEUED)
+            .values(
+                status=TaskStatus.DEAD,
+                error_message="Campaign closed by HR_ADMIN before task could execute.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    def cancel_pending_bulk_jobs(self, campaign_id: UUID) -> int:
+        """T02: bulk_upload_jobs still PENDING/EXTRACTING are cancelled outright on closure."""
+        result = self.db.execute(
+            update(BulkUploadJob)
+            .where(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status.in_([BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING]),
+            )
+            .values(
+                status=BulkUploadStatus.FAILED,
+                error_summary="Campaign closed during upload.",
+            )
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0
