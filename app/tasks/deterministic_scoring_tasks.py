@@ -15,6 +15,7 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
@@ -22,6 +23,9 @@ from app.services.audit_service import AuditService
 from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService,
     MandatorySkillMatchType,
+)
+from app.services.campaign.experience_education_validation_service import (
+    ExperienceEducationValidationService,
 )
 from app.services.celery_task_log_service import CeleryTaskLogService
 
@@ -32,6 +36,15 @@ DETERMINISTIC_SCORE_TASK_TYPE = "DETERMINISTIC_SCORE"
 # Campaign states this task will actually score against - a CLOSED campaign
 # is a legitimate reason to skip, not a failure (M07-E01 S02 T02 rule 2).
 _SCOREABLE_CAMPAIGN_STATUSES = {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}
+
+# M07-E02 S04: platform_config keys for the combined deterministic score.
+# Missing/unconfigured keys fall back to ExperienceEducationValidationService's
+# and CandidateScoringService's own module defaults - never hard-fail.
+_EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
+_EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
+_DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
+_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
+_DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
 
 
 @celery_app.task(name="scoring.calculate_deterministic_score", bind=True)
@@ -51,6 +64,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         campaign_candidate_repo = CampaignCandidateRepository(db)
         campaign_repo = CampaignRepository(db)
         resume_repo = ResumeRepository(db)
+        jd_repo = JDRepository(db)
         skill_repo = SkillRepository(db)
         skill_ontology_repo = SkillOntologyRepository(db)
         config_repo = ConfigRepository(db)
@@ -59,18 +73,41 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
 
+        # Root cause: _enqueue_deterministic_scoring captures a valid
+        # campaign_candidate_id at enqueue time, but resume processing (AI
+        # extraction + embedding generation) can run for a long time, and
+        # Celery delivery/pickup can itself be delayed - an HR admin can
+        # legitimately delete_campaign_candidate that same candidate in the
+        # meantime. Existence must be checked BEFORE any write that has a
+        # hard FK dependency on it (the CeleryTaskLog row below) - creating
+        # that row first, as before, meant a since-deleted candidate raised
+        # psycopg2.errors.ForeignKeyViolation instead of a graceful skip.
+        campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
+
         existing_task_log = task_log_repo.get_by_task_id(task_id)
         if existing_task_log is None:
             existing_task_log = task_log_service.create_log(
                 task_id=task_id,
                 task_type=DETERMINISTIC_SCORE_TASK_TYPE,
-                campaign_candidate_id=UUID(campaign_candidate_id),
+                # Only set when campaign_candidate genuinely exists - this is
+                # exactly the FK the existence check above protects against
+                # violating.
+                campaign_candidate_id=campaign_candidate.id if campaign_candidate is not None else None,
             )
         task_log = task_log_service.mark_running(existing_task_log)
 
-        campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
         if campaign_candidate is None:
-            raise ValueError(f"CampaignCandidate '{campaign_candidate_id}' not found.")
+            summary = json.dumps({
+                "skipped": True,
+                "reason": f"campaign_candidate_id {campaign_candidate_id} no longer exists.",
+            })
+            task_log_service.mark_success(task_log, summary=summary)
+            logger.warning(
+                "Deterministic scoring skipped | campaign_candidate_id=%s reason=campaign_candidate_deleted "
+                "(candidate was likely removed from the campaign while its resume was still processing).",
+                campaign_candidate_id,
+            )
+            return
 
         campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
         if campaign is None:
@@ -92,12 +129,60 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
                 "normalization yet - deterministic scoring cannot run."
             )
 
+        job_description = jd_repo.get_by_id(campaign.jd_id)
+
+        # M07-E02 S01/S02: read whatever the AI extraction pipeline already
+        # captured on the resume - no new columns, this is the same
+        # parsed_json ResumeExtractionResponse.model_dump() already wrote.
+        parsed_json = resume.parsed_json or {}
+        candidate_total_years = parsed_json.get("total_experience_years")
+        candidate_education_entries = parsed_json.get("education")
+        required_degree_text = (job_description.education_criteria or {}).get("degree")
+
+        weight_configs = config_repo.get_configs_by_keys([
+            _EXPERIENCE_TOLERANCE_YEARS_KEY,
+            _EQUIVALENT_EXPERIENCE_YEARS_KEY,
+            _DETERMINISTIC_WEIGHT_SKILLS_KEY,
+            _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
+            _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+        ])
+        validation_service = ExperienceEducationValidationService(
+            experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
+            equivalent_experience_years=float(weight_configs[_EQUIVALENT_EXPERIENCE_YEARS_KEY])
+            if weight_configs.get(_EQUIVALENT_EXPERIENCE_YEARS_KEY) is not None else None,
+        )
+        # job_description.min_experience_years is a Numeric(4,1) column -
+        # SQLAlchemy returns a decimal.Decimal, which cannot be subtracted
+        # from ExperienceEducationValidationService's float tolerance
+        # (TypeError: unsupported operand type(s) for -: 'decimal.Decimal'
+        # and 'float'). Cast at the DB boundary, same as every other
+        # Numeric column already crossing into scoring elsewhere in this
+        # codebase (e.g. candidate_scoring_service.py's `float(row.weight)`).
+        min_experience_years = (
+            float(job_description.min_experience_years)
+            if job_description.min_experience_years is not None else None
+        )
+        experience_result = validation_service.validate_experience(
+            min_experience_years, candidate_total_years,
+        )
+        education_result = validation_service.validate_education(
+            required_degree_text, candidate_education_entries, candidate_total_years,
+        )
+        score_weights = {
+            "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
+            "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),
+            "education": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, 0.15)),
+        }
+
         scoring_service = CandidateScoringService(
             skill_repo, skill_ontology_repo, config_repo, campaign_candidate_repo,
         )
         breakdown = scoring_service.calculate_and_store_score_breakdown(
             campaign_candidate.id, campaign.jd_id, campaign_candidate.resume_id,
             float(campaign.deterministic_threshold),
+            experience_result=experience_result,
+            education_result=education_result,
+            score_weights=score_weights,
         )
 
         now = datetime.now(timezone.utc)
@@ -130,6 +215,22 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
                     missing_skill_names.append(skill.canonical_name if skill else entry["canonical_skill_id"])
                 rejection_reason = "Missing mandatory skills"
                 rejection_detail = {"missing_skills": missing_skill_names}
+            elif not experience_result["passed"]:
+                # M07-E02 S01/S04: a SKIPPED or DATA_MISSING experience_result
+                # is always passed=True (never held against the candidate),
+                # so reaching here means the JD required a minimum and the
+                # candidate's parsed experience fell short of it.
+                rejection_reason = "Experience requirement not met"
+                rejection_detail = {
+                    "candidate_years": experience_result["candidate_years"],
+                    "min_years": experience_result["min_years"],
+                }
+            elif not education_result["passed"]:
+                rejection_reason = "Education requirement not met"
+                rejection_detail = {
+                    "candidate_level": education_result["candidate_level"],
+                    "required_level": education_result["required_level"],
+                }
             else:
                 rejection_reason = "Deterministic score below threshold"
                 rejection_detail = {

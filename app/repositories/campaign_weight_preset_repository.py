@@ -103,33 +103,3 @@ class CampaignWeightPresetRepository:
     def rollback(self):
 
         self.db.rollback()
-
-    def get_by_id(
-        self,
-        preset_id: UUID,
-    ) -> CampaignWeightPreset | None:
-
-        stmt = (
-            select(CampaignWeightPreset)
-            .where(
-                CampaignWeightPreset.id == preset_id
-            )
-        )
-
-        return self.db.execute(stmt).scalar_one_or_none()
-    
-    def update(
-        self,
-        preset: CampaignWeightPreset,
-    ) -> CampaignWeightPreset:
-
-        self.db.flush()
-        self.db.refresh(preset)
-        return preset
-
-    def delete(
-        self,
-        preset: CampaignWeightPreset,
-    ) -> None:
-
-        self.db.delete(preset)

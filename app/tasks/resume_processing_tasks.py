@@ -65,6 +65,10 @@ def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLo
     never double-queues scoring for the same candidate+resume.
     """
     campaign_candidate_repo = CampaignCandidateRepository(db)
+    logger.warning(
+    "=== ENTERED _enqueue_deterministic_scoring === resume_id=%s",
+    resume_id,
+)
     task_log_repo = task_log_service.repository
 
     for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
@@ -119,6 +123,11 @@ def process_resume_document(self, resume_id: str) -> None:
     attempt_number = 1
     resume = None
     task_id = self.request.id
+    logger.warning(
+    "=== PROCESS_RESUME_DOCUMENT STARTED === resume_id=%s task_id=%s",
+    resume_id,
+    task_id,
+)
     try:
         resume_repo = ResumeRepository(db)
         skill_repo = SkillRepository(db)
@@ -182,6 +191,7 @@ def process_resume_document(self, resume_id: str) -> None:
         )
 
         attempt_number = self.request.retries + 1
+        logger.warning("=== CALLING pipeline.run() === resume_id=%s task_id=%s", resume_id, task_id)
         processed_resume_id = pipeline.run(
             task_id=task_id,
             resume_id=resume.id,
@@ -190,17 +200,24 @@ def process_resume_document(self, resume_id: str) -> None:
             source_format=source_format,
             attempt_number=attempt_number,
         )
+        logger.warning("=== pipeline.run() RETURNED === resume_id=%s", processed_resume_id)
 
         task_log.resume_id = processed_resume_id
         task_log_repo.update(task_log)
         task_log_repo.commit()
         task_log_service.mark_success(task_log, summary=f"Resume {processed_resume_id} parsed.")
-
+        logger.warning(
+        "=== CALLING _enqueue_deterministic_scoring === resume_id=%s",
+        processed_resume_id,
+    )
         # Resume processing has already fully succeeded and committed above
         # - a failure enqueueing deterministic scoring must never overwrite
         # that success (or crash this task); log and move on.
         try:
             _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service)
+            logger.warning(
+                "=== _enqueue_deterministic_scoring() RETURNED === resume_id=%s", processed_resume_id,
+            )
         except Exception:
             logger.exception(
                 "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,

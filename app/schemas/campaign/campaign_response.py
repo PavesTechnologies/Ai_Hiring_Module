@@ -51,6 +51,10 @@ class CampaignScoringConfigurationResponse(BaseModel):
     defaults: CampaignScoringDefaultsResponse
     warning: str | None = None  # S02-T03: set when candidates were already processed
 
+class CopyScoringConfigResponse(BaseModel):
+    source_campaign_id: UUID
+    results: list[CampaignScoringConfigurationResponse]
+
 class WeightHistoryItemResponse(BaseModel):
     changed_by: str
     changed_at: datetime
@@ -59,7 +63,7 @@ class WeightHistoryItemResponse(BaseModel):
 
 class CampaignWeightHistoryResponse(BaseModel):
     history: list[WeightHistoryItemResponse]
-
+    message: str | None = None  
 
 class HiringCampaignResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
