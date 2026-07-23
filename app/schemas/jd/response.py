@@ -39,9 +39,12 @@ class JDListItem(BaseModel):
     jurisdiction: str | None
     source_format: str
     is_verified: str
+    is_active_version: bool
+    active_campaigns_count: int
+    passed_campaigns_count: int
     created_by: str
     created_at: datetime
-    
+
 
 class PaginatedJDResponse(BaseModel):
     total: int

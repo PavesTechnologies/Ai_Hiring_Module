@@ -623,7 +623,13 @@ class JDService:
     )-> PaginatedJDResponse:
         records, total = self.repository.search(request=request)
 
-        items = [JDMapper.to_list_item(jd) for jd in records]
+        campaign_counts = self.repository.get_campaign_status_counts(
+            jd_ids=[jd.id for jd in records]
+        )
+        items = [
+            JDMapper.to_list_item(jd, campaign_counts.get(jd.id))
+            for jd in records
+        ]
 
         return PaginatedJDResponse(
             total=total,
