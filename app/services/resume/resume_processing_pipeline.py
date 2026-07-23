@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from app.models.async_tasks import ProcessingStage
@@ -17,6 +18,8 @@ from app.services.resume.resume_service import ResumeService
 from app.services.resume.resume_text_extraction_service import ResumeTextExtractionService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
+
+logger = logging.getLogger(__name__)
 
 
 class ResumeProcessingPipeline:
@@ -122,6 +125,7 @@ class ResumeProcessingPipeline:
             (ProcessingStage.EMBEDDING_GENERATION, "embedding", lambda: self._run_embedding_generation(context)),
             (ProcessingStage.PERSISTENCE, None, lambda: self._run_persistence(context)),
         ):
+            logger.warning("=== STAGE STARTING: %s === resume_id=%s", stage.value, context.resume_id)
             if output_attr is not None and getattr(context, output_attr) is not None:
                 continue
             self.stage_tracker.run_stage(
@@ -131,9 +135,11 @@ class ResumeProcessingPipeline:
                 fn,
                 attempt_number=attempt_number,
             )
+            logger.warning("=== STAGE COMPLETED: %s === resume_id=%s", stage.value, context.resume_id)
 
         self.stage_tracker.link_document_id(context.task_id, context.resume_id)
 
+        logger.warning("=== ResumeProcessingPipeline.run() RETURNING === resume_id=%s", context.resume_id)
         return context.resume_id
 
     def _run_text_extraction(self, context: ResumeProcessingContext) -> None:
