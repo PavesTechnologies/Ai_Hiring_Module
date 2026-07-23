@@ -20,6 +20,10 @@ from app.schemas.campaign.campaign_closure_schema import (
     CampaignClosureImpactSummaryResponse,
     CampaignClosureResultResponse,
 )
+from app.schemas.campaign.campaign_reopen_schema import (
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles
@@ -203,6 +207,40 @@ def close_campaign(
 ):
     result = service.close_campaign(campaign_id, request, updated_by=user.user_id)
     return APIResponse.ok(data=result, message="Campaign closed successfully")
+
+# ── S04 — Reopen a Closed Campaign ──────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/reopen-readiness",
+    response_model=APIResponse[CampaignReopenReadinessResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen readiness check",
+    description="JD/skill readiness validation + current config, for the reopen confirmation dialog (HR_ADMIN).",
+)
+def get_reopen_readiness(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_reopen_readiness(campaign_id),
+        message="Reopen readiness retrieved successfully",
+    )
+
+@router.post(
+    "/{campaign_id}/reopen",
+    response_model=APIResponse[CampaignReopenResultResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen a closed campaign",
+    description="Re-validates JD readiness, restores ACTIVE status, clears an already-passed deadline, and records CAMPAIGN_REOPENED.",
+)
+def reopen_campaign(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reopen_campaign(campaign_id, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign reopened successfully")
 
 @router.get(
     "/scoring-presets",

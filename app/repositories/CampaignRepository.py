@@ -10,7 +10,7 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
-from app.models.skills import JDSkill
+from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
 from app.models.candidates import Resume, ParseStatus
@@ -456,6 +456,33 @@ class CampaignRepository:
         return (
             self.db.query(JDSkill)
             .filter(JDSkill.jd_id == jd_id, JDSkill.mandatory == True)
+            .count()
+        )
+
+    def get_mandatory_unverified_skill_count(self, jd_id) -> int:
+        """S04-T01: mandatory jd_skills not yet AUTO_VERIFIED (still PENDING_REVIEW)."""
+        return (
+            self.db.query(JDSkill)
+            .filter(
+                JDSkill.jd_id == jd_id,
+                JDSkill.mandatory == True,
+                JDSkill.verification_status == JDSkillVerificationStatus.PENDING_REVIEW,
+            )
+            .count()
+        )
+
+    def get_unresolved_unknown_skill_count(self, jd_id) -> int:
+        """
+        S04-T01: "no blocking parse failures" — the closest concrete, queryable
+        signal is unknown skills the extraction pipeline couldn't confidently
+        match to skill_ontology, still sitting unresolved for this JD.
+        """
+        return (
+            self.db.query(JDUnknownSkill)
+            .filter(
+                JDUnknownSkill.jd_id == jd_id,
+                JDUnknownSkill.status == JDUnknownSkillStatus.PENDING,
+            )
             .count()
         )
     

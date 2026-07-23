@@ -31,6 +31,11 @@ from app.schemas.campaign.campaign_closure_schema import (
     CampaignClosureImpactSummaryResponse,
     CampaignClosureResultResponse,
 )
+from app.schemas.campaign.campaign_reopen_schema import (
+    JDReadinessIssue,
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.campaign.campaign_response import (
     CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
@@ -1936,6 +1941,164 @@ class CampaignService:
                 rejected_count=stage_counts.get(PipelineStage.REJECTED.value, 0),
                 tasks_cancelled_count=tasks_cancelled,
                 bulk_uploads_cancelled_count=bulk_uploads_cancelled,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
+    # ── S04 — Reopen a Closed Campaign ───────────────────────────────────────
+
+    def get_reopen_readiness(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignReopenReadinessResponse:
+        """
+        S04-T01: read-only readiness check for the reopen confirmation dialog.
+        HR_ADMIN only (enforced at the route). Only a CLOSED campaign can be
+        reopened.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status != CampaignStatus.CLOSED:
+            raise CampaignException(
+                "Only a closed campaign can be reopened.", 409,
+            )
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        issues: list[JDReadinessIssue] = []
+
+        if not jd:
+            issues.append(JDReadinessIssue(
+                code="JD_NOT_FOUND",
+                message="The linked job description could not be found.",
+            ))
+        else:
+            if not jd.is_active_version:
+                issues.append(JDReadinessIssue(
+                    code="JD_NOT_ACTIVE_VERSION",
+                    message=f"'{jd.title}' is no longer the active version. Update this campaign to an active JD version before reopening.",
+                ))
+            if jd.closed_at is not None:
+                issues.append(JDReadinessIssue(
+                    code="JD_CLOSED",
+                    message=f"'{jd.title}' has been closed. Update this campaign to an active, open JD before reopening.",
+                ))
+
+            unverified_count = self.campaign_repo.get_mandatory_unverified_skill_count(jd.id)
+            if unverified_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="MANDATORY_SKILLS_UNVERIFIED",
+                    message=f"{unverified_count} mandatory skill(s) on '{jd.title}' are still pending verification.",
+                ))
+
+            unresolved_count = self.campaign_repo.get_unresolved_unknown_skill_count(jd.id)
+            if unresolved_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="UNRESOLVED_SKILL_EXTRACTION",
+                    message=f"{unresolved_count} skill(s) extracted from '{jd.title}' are still unresolved.",
+                ))
+
+        return CampaignReopenReadinessResponse(
+            is_ready=not issues,
+            issues=issues,
+            campaign_id=campaign.id,
+            campaign_name=campaign.name,
+            jd_id=campaign.jd_id,
+            jd_title=jd.title if jd else "",
+            max_candidates=campaign.max_candidates,
+            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            deadline=campaign.deadline,
+            weight_deterministic=campaign.weight_deterministic,
+            weight_semantic=campaign.weight_semantic,
+            weight_ai=campaign.weight_ai,
+        )
+
+    def reopen_campaign(
+        self,
+        campaign_id: UUID,
+        updated_by: str,
+    ) -> CampaignReopenResultResponse:
+        """
+        S04-T02/T03: reopens a closed campaign back to ACTIVE, re-validating
+        readiness first. An already-passed deadline is cleared automatically
+        (spec: it must be re-set, not silently kept expired). A cap already
+        at/over max_candidates blocks reopen rather than silently allowing an
+        over-cap campaign — HR_ADMIN raises/clears it via the existing edit
+        endpoint first, reusing that validation instead of duplicating it.
+        """
+        try:
+            readiness = self.get_reopen_readiness(campaign_id)
+            if not readiness.is_ready:
+                raise CampaignException(
+                    "Campaign is not ready to reopen: "
+                    + "; ".join(issue.message for issue in readiness.issues),
+                    422,
+                )
+
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+
+            if campaign.max_candidates is not None:
+                candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+                if candidate_count >= campaign.max_candidates:
+                    raise CampaignException(
+                        f"This campaign already has {candidate_count} candidate(s), at or "
+                        f"above its cap of {campaign.max_candidates}. Raise or clear the "
+                        f"candidate cap (PATCH the campaign) before reopening.",
+                        422,
+                    )
+
+            deadline_cleared = False
+            if campaign.deadline is not None and campaign.deadline <= datetime.now(timezone.utc):
+                campaign.deadline = None
+                deadline_cleared = True
+
+            campaign.status = CampaignStatus.ACTIVE
+            campaign.updated_at = datetime.now(timezone.utc)
+            campaign = self.campaign_repo.update(campaign)
+
+            last_closure = self.audit_service.get_latest_entry(
+                campaign.id, ActionType.CAMPAIGN_CLOSED.value,
+            )
+            original_closure_reason = None
+            closed_at = None
+            duration_closed_days = None
+            if last_closure is not None:
+                closed_at = last_closure.created_at
+                original_closure_reason = (last_closure.detail or {}).get("closure_reason")
+                duration_closed_days = (
+                    datetime.now(timezone.utc) - closed_at
+                ).total_seconds() / 86400
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_REOPENED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' reopened",
+                    "original_closure_reason": original_closure_reason,
+                    "closed_at": closed_at.isoformat() if closed_at else None,
+                    "duration_closed_days": duration_closed_days,
+                    "deadline_cleared": deadline_cleared,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignReopenResultResponse(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                status=campaign.status.value,
+                reopened_at=campaign.updated_at,
+                deadline_cleared=deadline_cleared,
+                original_closure_reason=original_closure_reason,
+                closed_at=closed_at,
+                duration_closed_days=duration_closed_days,
             )
 
         except Exception:
