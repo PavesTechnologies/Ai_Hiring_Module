@@ -21,7 +21,7 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse, CampaignMinimalResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
@@ -482,6 +482,11 @@ class CampaignService:
             history=history_items,
             message=message,
         )
+    def get_active_campaigns_minimal(self) -> list[CampaignMinimalResponse]:
+        """id + name only, for dropdowns/pickers — HR_ADMIN/RECRUITER (enforced at the route)."""
+        rows = self.campaign_repo.get_active_campaigns_minimal()
+        return [CampaignMinimalResponse(id=row.id, name=row.name) for row in rows]
+
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()

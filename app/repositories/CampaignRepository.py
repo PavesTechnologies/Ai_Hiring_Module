@@ -116,7 +116,19 @@ class CampaignRepository:
             )
         result = self.db.execute(stmt)
         return result.scalars().all()
-    
+
+    def get_active_campaigns_minimal(self):
+        """
+        id + name only, for dropdowns/pickers — a column projection instead
+        of loading full HiringCampaign rows (no job_description join needed).
+        """
+        stmt = (
+            select(HiringCampaign.id, HiringCampaign.name)
+            .where(HiringCampaign.status == CampaignStatus.ACTIVE)
+            .order_by(HiringCampaign.name)
+        )
+        return self.db.execute(stmt).all()
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
@@ -333,19 +345,23 @@ class CampaignRepository:
         self.db.rollback()
 
 
-    def get_expired_campaigns(self) -> list[HiringCampaign]:
+    def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
         """
-        Returns all ACTIVE campaigns whose deadline has passed.
+        Returns ACTIVE campaigns whose deadline has passed. S05-T02: an
+        optional limit lets the caller process expired campaigns in batches
+        instead of locking every expired row in one huge transaction.
         """
-        return (
+        stmt = (
             self.db.query(HiringCampaign)
             .filter(
                 HiringCampaign.status == CampaignStatus.ACTIVE,
                 HiringCampaign.deadline.isnot(None),
                 HiringCampaign.deadline < datetime.now(timezone.utc),
             )
-            .all()
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return stmt.all()
     
     def close_campaign(self, campaign: HiringCampaign) -> HiringCampaign:
         campaign.status = CampaignStatus.CLOSED
@@ -719,6 +735,27 @@ class CampaignRepository:
             .values(
                 status=BulkUploadStatus.FAILED,
                 error_summary="Campaign closed during upload.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    def mark_processing_bulk_jobs_partial_failure(self, campaign_id: UUID) -> int:
+        """
+        E03-S05-T01: when a campaign auto-closes because its candidate cap was
+        just reached, any bulk_upload_jobs still PROCESSING get marked
+        PARTIAL_FAILURE (some files were processed before the cap hit, not a
+        clean FAILED) rather than left to run against a now-closed campaign.
+        """
+        result = self.db.execute(
+            update(BulkUploadJob)
+            .where(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status == BulkUploadStatus.PROCESSING,
+            )
+            .values(
+                status=BulkUploadStatus.PARTIAL_FAILURE,
+                error_summary="Campaign reached maximum candidate limit during upload.",
             )
             .execution_options(synchronize_session=False)
         )

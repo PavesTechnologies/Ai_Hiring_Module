@@ -24,6 +24,12 @@ class CampaignResponse(BaseModel):
     pipeline_stalled: bool = False
     warning: str | None = None
 
+class CampaignMinimalResponse(BaseModel):
+    """id + name only — for dropdowns/pickers that don't need the full campaign shape."""
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str
+
 class CampaignScoringDefaultsResponse(BaseModel):
     weight_deterministic: float
     weight_semantic: float

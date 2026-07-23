@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse, CampaignMinimalResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
@@ -61,6 +61,22 @@ def create_campaign(
     return APIResponse.ok(
         data=campaign,
         message="Campaign created successfully"
+    )
+
+@router.get(
+    "/active",
+    response_model=APIResponse[list[CampaignMinimalResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Get all active campaigns (id + name only)",
+    description="Lightweight list of ACTIVE campaigns for dropdowns/pickers.",
+)
+def get_active_campaigns(
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    return APIResponse.ok(
+        data=service.get_active_campaigns_minimal(),
+        message="Active campaigns retrieved successfully",
     )
 
 @router.get(
