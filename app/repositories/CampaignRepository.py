@@ -11,7 +11,7 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
-from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
@@ -117,19 +117,7 @@ class CampaignRepository:
         result = self.db.execute(stmt)
         return result.scalars().all()
     
-    def get_all_campaigns_for_hrAdmin(self, manager_id: UUID) -> list[HiringCampaign]:
-        stmt = (
-            select(HiringCampaign)
-            .where(
-                HiringCampaign.created_by == manager_id,
-            )
-            .options(joinedload(HiringCampaign.job_description))
-            .order_by(HiringCampaign.created_at.desc())
-        )
-        result = self.db.execute(stmt)
-        return result.scalars().all()
-
-    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID) -> list[HiringCampaign]:
+    def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
             .where(
@@ -138,8 +126,26 @@ class CampaignRepository:
             .options(joinedload(HiringCampaign.job_description))
             .order_by(HiringCampaign.created_at.desc())
         )
+        if not show_closed:
+            stmt = stmt.where(
+                HiringCampaign.status != CampaignStatus.CLOSED
+            )
         result = self.db.execute(stmt)
         return result.scalars().all()
+
+    def get_hiring_manager_names(self, hiring_manager_ids: list[str]) -> dict[str, str]:
+        """
+        Batch-resolves hiring_manager_id -> full_name for list endpoints, avoiding
+        an N+1 query per campaign row (same User model get_campaign_by_id already
+        uses for the single-campaign case).
+        """
+        ids = [hm_id for hm_id in set(hiring_manager_ids) if hm_id]
+        if not ids:
+            return {}
+
+        stmt = select(User.id, User.full_name).where(User.id.in_(ids))
+        result = self.db.execute(stmt)
+        return {row.id: row.full_name for row in result}
     
     def get_candidate_count(
         self,
@@ -192,6 +198,127 @@ class CampaignRepository:
             .scalar()
             or 0
         )
+
+    def get_overdue_review_count(self, campaign_id: UUID, sla_days: int) -> int:
+        """
+        candidates currently in HM_REVIEW whose most recent transition
+        into that stage is older than sla_days, with no decision since.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
+
+        latest_entry = (
+            select(
+                CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.HM_REVIEW)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(func.count(CampaignCandidate.id))
+            .join(latest_entry, latest_entry.c.campaign_candidate_id == CampaignCandidate.id)
+            .where(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
+                latest_entry.c.entered_at <= cutoff,
+            )
+        )
+        return self.db.execute(stmt).scalar() or 0
+
+    def is_pipeline_stalled(self, campaign_id: UUID, stale_days: int) -> bool:
+        """
+        S05-T03: True if the campaign has candidates but none have been added
+        in the last stale_days days.
+        """
+        latest_added_at = (
+            self.db.query(func.max(CampaignCandidate.created_at))
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .scalar()
+        )
+        if latest_added_at is None:
+            return False
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        return latest_added_at <= cutoff
+
+    def get_score_distribution(self, campaign_id: UUID) -> dict:
+        """
+        composite_score stats (excluding REJECTED) plus per-layer
+        rejection counts, for the campaign comparison view. Computed in
+        Python over the raw rows rather than DB-side percentile_cont — these
+        are report-scale volumes (a handful of compared campaigns), and this
+        avoids a Postgres-version/dialect dependency for the median.
+        """
+        rows = (
+            self.db.query(
+                CampaignCandidate.composite_score,
+                CampaignCandidate.rejection_layer,
+                CampaignCandidate.pipeline_stage,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .all()
+        )
+
+        scored = sorted(
+            float(r.composite_score)
+            for r in rows
+            if r.composite_score is not None and r.pipeline_stage != PipelineStage.REJECTED
+        )
+
+        passed_all_layers_count = sum(
+            1 for r in rows if r.rejection_layer is None and r.composite_score is not None
+        )
+        rejected_deterministic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.DETERMINISTIC)
+        rejected_semantic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.SEMANTIC)
+        rejected_ai_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.AI)
+
+        if not scored:
+            return {
+                "average": None,
+                "median": None,
+                "highest": None,
+                "lowest": None,
+                "passed_all_layers_count": passed_all_layers_count,
+                "rejected_deterministic_count": rejected_deterministic_count,
+                "rejected_semantic_count": rejected_semantic_count,
+                "rejected_ai_count": rejected_ai_count,
+            }
+
+        n = len(scored)
+        mid = n // 2
+        median = scored[mid] if n % 2 == 1 else (scored[mid - 1] + scored[mid]) / 2
+
+        return {
+            "average": sum(scored) / n,
+            "median": median,
+            "highest": scored[-1],
+            "lowest": scored[0],
+            "passed_all_layers_count": passed_all_layers_count,
+            "rejected_deterministic_count": rejected_deterministic_count,
+            "rejected_semantic_count": rejected_semantic_count,
+            "rejected_ai_count": rejected_ai_count,
+        }
+
+    def count_candidates_in_window(
+        self,
+        campaign_id: UUID,
+        start: datetime,
+        end: datetime | None,
+    ) -> int:
+        """
+        S05-T03: candidates added to this campaign in [start, end) — end=None
+        means open-ended (through now), used for a config's most recent
+        window in the Weight Change Report.
+        """
+        stmt = select(func.count(CampaignCandidate.id)).where(
+            CampaignCandidate.campaign_id == campaign_id,
+            CampaignCandidate.created_at >= start,
+        )
+        if end is not None:
+            stmt = stmt.where(CampaignCandidate.created_at < end)
+        return self.db.execute(stmt).scalar() or 0
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""

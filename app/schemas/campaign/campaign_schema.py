@@ -85,6 +85,24 @@ class CampaignScoringUpdateRequest(BaseModel):
     )
 
 
+class CopyScoringConfigRequest(BaseModel):
+    """copy a source campaign's scoring config onto one or more targets."""
+    target_campaign_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+
+
+class PlatformDefaultWeightsUpdateRequest(BaseModel):
+    """
+    S05-T02: updates the org-wide scoring defaults (platform_config) — only
+    affects campaigns created after the change and the Reset to Defaults
+    option; existing campaigns are untouched.
+    """
+    weight_deterministic: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    weight_semantic: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    weight_ai: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    semantic_threshold: Decimal = Field(..., ge=Decimal("0.0000"), le=Decimal("1.0000"), decimal_places=4)
+    ai_threshold: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+
+
 class CampaignUpdateRequest(BaseModel):
     """
     PATCH body for editing a campaign — every field optional; only what is

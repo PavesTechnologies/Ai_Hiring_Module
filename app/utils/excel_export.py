@@ -324,6 +324,62 @@ class ExcelExport:
         return output
 
     @staticmethod
+    def export_weight_change_report(rows):
+        """S05-T03: rows is an iterable of WeightChangeReportRow."""
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Weight Change Report"
+
+        ws.append([
+            "Campaign Name",
+            "Campaign Status",
+            "Change Date",
+            "Changed By",
+            "Previous Weights",
+            "New Weights",
+            "Candidates Processed With This Config",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for row in rows:
+            ws.append([
+                row.campaign_name,
+                row.campaign_status,
+                row.change_date.strftime("%d-%b-%Y %I:%M %p"),
+                row.changed_by,
+                ", ".join(f"{k}={v}" for k, v in row.previous_weights.items()),
+                ", ".join(f"{k}={v}" for k, v in row.new_weights.items()),
+                row.candidates_processed_with_this_config,
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
     def export_single_jd(
         jd,
         version_history,

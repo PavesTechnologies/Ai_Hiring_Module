@@ -1,11 +1,18 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.candidates import ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
+from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
+from app.models.pipeline import CampaignCandidate
 from app.models.skills import CandidateSkill
+
+_SORT_COLUMNS = {
+    "created_at": Resume.created_at,
+    "parse_status": Resume.parse_status,
+}
 
 
 class ResumeRepository:
@@ -90,6 +97,12 @@ class ResumeRepository:
         self.db.refresh(resume)
         return resume
 
+    def set_task_id(self, resume: Resume, task_id: str) -> Resume:
+        resume.task_id = task_id
+        self.db.flush()
+        self.db.refresh(resume)
+        return resume
+
     def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
         version = (
             self.db.query(EmbeddingModelVersion)
@@ -145,6 +158,121 @@ class ResumeRepository:
         self.db.flush()
         self.db.refresh(candidate_skill)
         return candidate_skill
+
+    def get_parse_attempts(self, resume_id: UUID) -> list[ResumeParseAttempt]:
+        """Read counterpart to record_parse_attempt — monitoring-only, no writes."""
+        stmt = (
+            select(ResumeParseAttempt)
+            .where(ResumeParseAttempt.resume_id == resume_id)
+            .order_by(ResumeParseAttempt.attempted_at)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def get_candidate_skills(self, resume_id: UUID) -> list[CandidateSkill]:
+        """Read counterpart to create_candidate_skill — monitoring-only, no writes."""
+        stmt = select(CandidateSkill).where(CandidateSkill.resume_id == resume_id)
+        return list(self.db.execute(stmt).scalars().all())
+
+    def get_embedding(self, resume_id: UUID) -> ResumeEmbedding | None:
+        """Read counterpart to create_resume_embedding — monitoring-only, no writes."""
+        stmt = select(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id)
+        return self.db.execute(stmt).scalars().first()
+
+    def get_by_file_path(self, file_path: str) -> Resume | None:
+        """
+        Monitoring-only. bulk_upload_job_files carries no resume_id column —
+        a bulk file's resulting Resume row (if any) is found via the storage
+        path both share: parse_bulk_upload_file sets Resume.file_path to the
+        exact same value as the file's own storage_path, and that path
+        embeds a fresh uuid4() per file, so the match is reliably 1:1.
+        """
+        stmt = select(Resume).where(Resume.file_path == file_path)
+        return self.db.execute(stmt).scalars().first()
+
+    def search(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> list[Resume]:
+        """Monitoring-only, no writes. Backs GET /resumes' list/search/filter."""
+        conditions = self._build_search_conditions(
+            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to,
+        )
+        sort_column = _SORT_COLUMNS.get(sort_by, Resume.created_at)
+        order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+
+        stmt = (
+            select(Resume)
+            .where(*conditions)
+            .order_by(order)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def count_search(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+    ) -> int:
+        """Same filters as search(), for the list endpoint's total count."""
+        conditions = self._build_search_conditions(
+            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to,
+        )
+        stmt = select(func.count()).select_from(Resume).where(*conditions)
+        return self.db.execute(stmt).scalar_one()
+
+    @staticmethod
+    def _build_search_conditions(
+        campaign_id: UUID | None,
+        parse_status: ParseStatus | None,
+        source: str | None,
+        email_hash: str | None,
+        uploaded_from: datetime | None,
+        uploaded_to: datetime | None,
+    ) -> list:
+        # Resume carries no campaign_id column itself — reached only via
+        # campaign_candidates. A subquery (not a join) avoids duplicating a
+        # resume row if it were ever linked to more than one
+        # campaign_candidates record for the same campaign.
+        conditions = []
+        if campaign_id is not None:
+            resume_ids_in_campaign = select(CampaignCandidate.resume_id).where(
+                CampaignCandidate.campaign_id == campaign_id
+            )
+            conditions.append(Resume.id.in_(resume_ids_in_campaign))
+        if parse_status is not None:
+            conditions.append(Resume.parse_status == parse_status)
+        if source == "individual":
+            conditions.append(Resume.bulk_upload_job_id.is_(None))
+        elif source == "bulk":
+            conditions.append(Resume.bulk_upload_job_id.is_not(None))
+        if email_hash is not None:
+            # candidates.full_name_encrypted is encrypted at rest and can't
+            # be searched directly — email_hash is the one exact-match
+            # identity lookup that's actually available (see
+            # docs/Resume_Intake_Monitoring_API_Design.md §8).
+            candidate_ids_matching = select(Candidate.id).where(Candidate.email_hash == email_hash)
+            conditions.append(Resume.candidate_id.in_(candidate_ids_matching))
+        if uploaded_from is not None:
+            conditions.append(Resume.created_at >= uploaded_from)
+        if uploaded_to is not None:
+            conditions.append(Resume.created_at <= uploaded_to)
+        return conditions
 
     def commit(self) -> None:
         self.db.commit()
