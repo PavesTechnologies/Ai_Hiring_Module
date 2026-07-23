@@ -64,3 +64,6 @@ class AuditService:
             date_to=date_to,
             campaign_status=campaign_status,
         )
+
+    def get_latest_entry(self, campaign_id: UUID, action_type: str):
+        return self.repository.get_latest_entry(campaign_id, action_type)

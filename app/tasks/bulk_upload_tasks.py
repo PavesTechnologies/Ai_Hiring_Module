@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType, Jurisdiction
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
 from app.exceptions.campaign_exceptions import CampaignException
+from app.models.campaigns import CampaignStatus
 from app.models.async_tasks import (
     BulkUploadFileStatus,
     BulkUploadJobFile,
@@ -176,6 +177,29 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         if staged_files:
             job_repo.increment_queued_count(job.id, by=len(staged_files))
         job_repo.commit()
+
+        # S01-T02/S03-T02: the campaign may have been paused or closed while
+        # this ZIP was being extracted — staged files already exist, but no
+        # new parse task may be enqueued once paused/closed. Files already
+        # mid-processing beforehand are unaffected (this only runs once,
+        # right after extraction).
+        campaign_repo = CampaignRepository(db)
+        campaign = campaign_repo.get_by_id(job.campaign_id)
+        if campaign is not None and campaign.status in (CampaignStatus.PAUSED, CampaignStatus.CLOSED):
+            reason = (
+                "Campaign was paused before file processing could begin."
+                if campaign.status == CampaignStatus.PAUSED
+                else "Campaign closed during upload."
+            )
+            for staged_file in staged_files:
+                file_repo.update_status(staged_file.id, BulkUploadFileStatus.CANCELLED)
+            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=reason)
+            job_repo.commit()
+            task_log_service.mark_success(
+                task_log,
+                summary=f"Extraction completed but campaign is {campaign.status.value.lower()} — {len(staged_files)} file(s) not queued.",
+            )
+            return
 
         for staged_file in staged_files:
             parse_bulk_upload_file.apply_async(
