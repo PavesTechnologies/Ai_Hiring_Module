@@ -141,6 +141,36 @@ try:
             value="3",
             description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
         ),
+        # M07-E02: Experience & Education Validation config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EXPERIENCE_TOLERANCE_YEARS",
+            value="0.0",
+            description="Years a candidate's total experience may fall short of a JD's min_experience_years and still pass",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EQUIVALENT_EXPERIENCE_YEARS",
+            value="8.0",
+            description="Total years of experience that substitute for an insufficient/missing degree in education validation",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_SKILLS",
+            value="0.70",
+            description="Weight of the skill-based sub-score in the combined deterministic_score blend (with experience/education)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_EXPERIENCE",
+            value="0.15",
+            description="Weight of the experience validation sub-score in the combined deterministic_score blend",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_EDUCATION",
+            value="0.15",
+            description="Weight of the education validation sub-score in the combined deterministic_score blend",
         PlatformConfig(
             id=uuid.uuid4(),
             key="HM_REVIEW_SLA_DAYS",

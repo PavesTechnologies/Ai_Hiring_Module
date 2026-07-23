@@ -626,6 +626,222 @@ def test_build_mandatory_skill_breakdown_requires_hierarchy_repositories():
         service.build_mandatory_skill_breakdown(JD_ID, RESUME_ID)
 
 
+# ---------------------------------------------------------------- M07-E02 S04: Combined Deterministic Score
+
+
+def _experience_result(passed, score, applicable=True):
+    return {
+        "applicable": applicable, "skipped": False, "data_missing": False,
+        "passed": passed, "score": score, "candidate_years": 3.0, "min_years": 5.0,
+        "effective_min_years": 5.0,
+    }
+
+
+def _education_result(passed, score, applicable=True):
+    return {
+        "applicable": applicable, "skipped": False, "data_missing": False,
+        "passed": passed, "score": score, "required_level": "BACHELOR",
+        "candidate_level": "BACHELOR", "equivalent_experience_applied": False,
+    }
+
+
+def test_omitting_experience_and_education_leaves_skill_only_score_unchanged():
+    """Backward compatibility: pre-M07-E02 callers pass neither argument."""
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=0.9, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0)
+
+    assert breakdown["deterministic_score"] == round(100.0 * 0.9 * 1.0, 2)
+    assert "skill_deterministic_score" not in breakdown
+    assert "experience_validation" not in breakdown
+    assert "education_validation" not in breakdown
+
+
+def test_combined_score_blends_skill_experience_education_with_default_weights():
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=True, score=80.0)
+    education_result = _education_result(passed=True, score=60.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    expected = round((100.0 * 0.70 + 80.0 * 0.15 + 60.0 * 0.15) / 1.0, 2)
+    assert breakdown["deterministic_score"] == expected
+    assert breakdown["skill_deterministic_score"] == 100.0
+    assert breakdown["experience_validation"] == experience_result
+    assert breakdown["education_validation"] == education_result
+    assert campaign_candidate.deterministic_score == expected
+
+
+def test_combined_score_renormalizes_when_experience_not_applicable():
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    # Experience SKIPPED (JD has no minimum) - excluded from the blend
+    # entirely, weight renormalized across skills + education only.
+    experience_result = _experience_result(passed=True, score=100.0, applicable=False)
+    education_result = _education_result(passed=True, score=60.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    expected = round((100.0 * 0.70 + 60.0 * 0.15) / (0.70 + 0.15), 2)
+    assert breakdown["deterministic_score"] == expected
+
+
+def test_combined_gate_fails_when_experience_fails_even_if_score_clears_threshold():
+    """
+    M07-E02 S04: the gate is an AND across skill/experience/education, not
+    purely the blended score - a high blended score must not paper over an
+    outright experience failure.
+    """
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=False, score=60.0)
+    education_result = _education_result(passed=True, score=100.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    assert breakdown["deterministic_score"] >= 70.0  # score alone would pass
+    assert breakdown["deterministic_passed"] is False  # but experience failed
+
+
+def test_combined_score_uses_custom_score_weights_when_provided():
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=True, score=0.0)
+    education_result = _education_result(passed=True, score=0.0)
+    custom_weights = {"skills": 0.5, "experience": 0.25, "education": 0.25}
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+        score_weights=custom_weights,
+    )
+
+    assert breakdown["deterministic_score"] == round(100.0 * 0.5, 2)
+
+
+# ---------------------------------------------------------------- threshold validated once, against the combined score only
+
+
+def test_case1_low_skill_score_but_high_combined_score_passes():
+    """
+    Case 1: skill=65 alone would fail a threshold of 70, but blended with
+    experience=100/education=100 the combined score clears 70. The
+    threshold must be checked exactly once, against the combined score -
+    never separately against the skill sub-score - so this must PASS.
+    """
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=0.65, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=True, score=100.0)
+    education_result = _education_result(passed=True, score=100.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    assert breakdown["skill_deterministic_score"] == 65.0
+    expected_combined = round(65.0 * 0.70 + 100.0 * 0.15 + 100.0 * 0.15, 2)
+    assert breakdown["deterministic_score"] == expected_combined
+    assert expected_combined >= 70.0
+    assert breakdown["deterministic_passed"] is True
+
+
+def test_case2_high_skill_score_but_experience_fails():
+    """Case 2: skill=95, experience FAILS -> must FAIL regardless of score."""
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=0.95, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=False, score=40.0)
+    education_result = _education_result(passed=True, score=100.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    assert breakdown["deterministic_passed"] is False
+
+
+def test_case3_one_mandatory_skill_missing_fails_regardless_of_combined_score():
+    """Case 3: one mandatory skill MISSING -> must FAIL regardless of combined score."""
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=None)]
+    skill_by_id_map = {a: _ontology_skill(a, parent_skill_id=None)}
+    service, campaign_candidate_repository = make_service(rows, children_map={a: []}, skill_by_id_map=skill_by_id_map)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=True, score=100.0)
+    education_result = _education_result(passed=True, score=100.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    assert breakdown["mandatory_skills"][0]["match_type"] == MandatorySkillMatchType.MISSING.value
+    assert breakdown["deterministic_passed"] is False
+
+
+def test_case4_combined_score_below_threshold_fails():
+    """Case 4: combined score below threshold -> must FAIL."""
+    a = uuid4()
+    rows = [_coverage_row(a, weight=100.0, candidate_scoring_weight=0.5, match_tier="EXACT", confidence=1.0)]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    experience_result = _experience_result(passed=True, score=40.0)
+    education_result = _education_result(passed=True, score=40.0)
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        experience_result=experience_result, education_result=education_result,
+    )
+
+    expected_combined = round(50.0 * 0.70 + 40.0 * 0.15 + 40.0 * 0.15, 2)
+    assert breakdown["deterministic_score"] == expected_combined
+    assert expected_combined < 70.0
+    assert breakdown["deterministic_passed"] is False
+
+
 # ---------------------------------------------------------------- M03-E05 S01 T02: preferred skill bonus
 
 

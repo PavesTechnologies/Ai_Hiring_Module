@@ -55,6 +55,15 @@ class _Harness:
         self.campaign_candidate_repo = MagicMock()
         self.campaign_repo = MagicMock()
         self.resume_repo = MagicMock()
+        self.jd_repo = MagicMock()
+        self.jd_repo.get_by_id.return_value = _make_job_description()
+        self.config_repo = MagicMock()
+        # A bare MagicMock's .get_configs_by_keys(...) would return a
+        # MagicMock, not a dict - every weight/tolerance .get(key, default)
+        # in the task would then silently pick up a MagicMock instead of
+        # its literal default. Empty dict makes every lookup fall through
+        # to the task's own defaults, exactly like an unconfigured platform.
+        self.config_repo.get_configs_by_keys.return_value = {}
         self.candidate_rejection_repo = MagicMock()
         self.task_log_repo = MagicMock()
         self.task_log_repo.get_by_task_id.return_value = None
@@ -67,9 +76,10 @@ class _Harness:
             patch(f"{TASKS_MODULE}.CampaignCandidateRepository", return_value=self.campaign_candidate_repo),
             patch(f"{TASKS_MODULE}.CampaignRepository", return_value=self.campaign_repo),
             patch(f"{TASKS_MODULE}.ResumeRepository", return_value=self.resume_repo),
+            patch(f"{TASKS_MODULE}.JDRepository", return_value=self.jd_repo),
             patch(f"{TASKS_MODULE}.SkillRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.SkillOntologyRepository", return_value=MagicMock()),
-            patch(f"{TASKS_MODULE}.ConfigRepository", return_value=MagicMock()),
+            patch(f"{TASKS_MODULE}.ConfigRepository", return_value=self.config_repo),
             patch(f"{TASKS_MODULE}.CandidateRejectionRepository", return_value=self.candidate_rejection_repo),
             patch(f"{TASKS_MODULE}.AuditRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
@@ -96,8 +106,15 @@ def _make_campaign(status=CampaignStatus.ACTIVE, jd_id=None, deterministic_thres
     return SimpleNamespace(id=uuid4(), status=status, jd_id=jd_id or uuid4(), deterministic_threshold=deterministic_threshold)
 
 
-def _make_resume(parse_status=ParseStatus.PARSED):
-    return SimpleNamespace(id=uuid4(), parse_status=parse_status)
+def _make_resume(parse_status=ParseStatus.PARSED, parsed_json=None):
+    return SimpleNamespace(id=uuid4(), parse_status=parse_status, parsed_json=parsed_json)
+
+
+def _make_job_description(min_experience_years=None, education_criteria=None):
+    return SimpleNamespace(
+        id=uuid4(), min_experience_years=min_experience_years,
+        education_criteria=education_criteria,
+    )
 
 
 def test_skips_scoring_when_campaign_closed():
@@ -133,14 +150,32 @@ def test_raises_when_resume_not_parsed():
         h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
 
 
-def test_raises_when_campaign_candidate_missing():
+def test_skips_gracefully_when_campaign_candidate_no_longer_exists():
+    """
+    Root-cause fix: a campaign_candidate can legitimately be deleted (HR
+    removes the candidate) while its resume is still being processed
+    asynchronously - _enqueue_deterministic_scoring captures a valid id at
+    enqueue time, but by the time a worker actually runs this task the row
+    can be gone. This must be a graceful skip, never a crash, and the
+    CeleryTaskLog row created for this run must NOT reference the missing
+    id (campaign_candidate_id stays NULL, avoiding the ForeignKeyViolation
+    this used to raise).
+    """
     from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
 
     with _Harness() as h:
         h.campaign_candidate_repo.get_by_id.return_value = None
 
-        with pytest.raises(ValueError):
-            calculate_deterministic_score_task(campaign_candidate_id=str(uuid4()))
+        calculate_deterministic_score_task(campaign_candidate_id=str(uuid4()))
+
+        h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
+        h.candidate_rejection_repo.create.assert_not_called()
+        # task_log_service.create_log must be called with
+        # campaign_candidate_id=None, never the missing id - this is exactly
+        # the FK the old ordering violated.
+        assert h.task_log_repo.create.call_args is not None
+        created_log = h.task_log_repo.create.call_args[0][0]
+        assert created_log.campaign_candidate_id is None
 
 
 def test_creates_rejection_when_mandatory_skill_missing():
@@ -253,6 +288,122 @@ def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
         rejection = h.candidate_rejection_repo.create.call_args[0][0]
         assert rejection.rejection_reason == "No verifiable skills extracted from resume."
         assert rejection.rejection_detail == {"NO_VERIFIED_SKILLS": True}
+
+
+def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
+    """
+    M07-E02 S01/S04: the JD/resume experience validation runs for real
+    inside the task (only the skill breakdown itself is mocked) - a JD
+    requiring 5 years against a candidate with 2 must reject with the
+    experience-specific reason, not the generic threshold one.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume(parsed_json={"total_experience_years": 2.0})
+        h.jd_repo.get_by_id.return_value = _make_job_description(min_experience_years=5.0)
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=False, deterministic_score=60.0)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.candidate_rejection_repo.create.assert_called_once()
+        rejection = h.candidate_rejection_repo.create.call_args[0][0]
+        assert rejection.rejection_reason == "Experience requirement not met"
+        assert rejection.rejection_detail == {"candidate_years": 2.0, "min_years": 5.0}
+
+
+def test_handles_decimal_min_experience_years_without_crashing():
+    """
+    Regression test: JobDescription.min_experience_years is a Numeric(4,1)
+    column - SQLAlchemy returns a real decimal.Decimal at runtime, not a
+    float. Passing it straight into ExperienceEducationValidationService
+    (which subtracts a float tolerance from it) used to raise TypeError:
+    unsupported operand type(s) for -: 'decimal.Decimal' and 'float',
+    silently rolling back the whole task and leaving deterministic_score/
+    deterministic_passed/screened_at NULL forever. Every other test in
+    this file uses a plain float/None for min_experience_years, which
+    never exercised this - only a real Decimal does.
+    """
+    from decimal import Decimal
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume(parsed_json={"total_experience_years": 6.0})
+        h.jd_repo.get_by_id.return_value = _make_job_description(min_experience_years=Decimal("5.0"))
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        call_kwargs = h.scoring_service_instance.calculate_and_store_score_breakdown.call_args.kwargs
+        assert call_kwargs["experience_result"]["passed"] is True
+        h.task_log_repo.commit.assert_called()
+
+
+def test_creates_education_rejection_when_skills_and_experience_pass_but_education_fails():
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume(
+            parsed_json={"total_experience_years": 1.0, "education": [{"degree": "Bachelor's"}]},
+        )
+        h.jd_repo.get_by_id.return_value = _make_job_description(
+            min_experience_years=None, education_criteria={"degree": "Master's"},
+        )
+        h.config_repo.get_configs_by_keys.return_value = {"EQUIVALENT_EXPERIENCE_YEARS": "8.0"}
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=False, deterministic_score=60.0)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.candidate_rejection_repo.create.assert_called_once()
+        rejection = h.candidate_rejection_repo.create.call_args[0][0]
+        assert rejection.rejection_reason == "Education requirement not met"
+        assert rejection.rejection_detail == {"candidate_level": "BACHELOR", "required_level": "MASTER"}
+
+
+def test_experience_education_wiring_is_passed_through_to_scoring_service():
+    """
+    Verifies the task actually threads its own experience_result/
+    education_result/score_weights into calculate_and_store_score_breakdown,
+    rather than only computing them for the rejection-reason branch.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume(parsed_json={"total_experience_years": 6.0})
+        h.jd_repo.get_by_id.return_value = _make_job_description(min_experience_years=5.0)
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        call_kwargs = h.scoring_service_instance.calculate_and_store_score_breakdown.call_args.kwargs
+        assert call_kwargs["experience_result"]["passed"] is True
+        assert call_kwargs["experience_result"]["candidate_years"] == 6.0
+        assert call_kwargs["education_result"]["skipped"] is True
+        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15}
 
 
 def test_no_rejection_when_nothing_missing():
