@@ -153,6 +153,12 @@ try:
             value="7",
             description="Days without a new candidate before a campaign is flagged pipeline_stalled",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_LAYER_WEIGHT",
+            value="5.00",
+            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
+        ),
     ]
 
     for config in configs:

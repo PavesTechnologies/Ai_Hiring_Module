@@ -11,7 +11,7 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill
-from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
@@ -242,6 +242,83 @@ class CampaignRepository:
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
         return latest_added_at <= cutoff
+
+    def get_score_distribution(self, campaign_id: UUID) -> dict:
+        """
+        composite_score stats (excluding REJECTED) plus per-layer
+        rejection counts, for the campaign comparison view. Computed in
+        Python over the raw rows rather than DB-side percentile_cont — these
+        are report-scale volumes (a handful of compared campaigns), and this
+        avoids a Postgres-version/dialect dependency for the median.
+        """
+        rows = (
+            self.db.query(
+                CampaignCandidate.composite_score,
+                CampaignCandidate.rejection_layer,
+                CampaignCandidate.pipeline_stage,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .all()
+        )
+
+        scored = sorted(
+            float(r.composite_score)
+            for r in rows
+            if r.composite_score is not None and r.pipeline_stage != PipelineStage.REJECTED
+        )
+
+        passed_all_layers_count = sum(
+            1 for r in rows if r.rejection_layer is None and r.composite_score is not None
+        )
+        rejected_deterministic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.DETERMINISTIC)
+        rejected_semantic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.SEMANTIC)
+        rejected_ai_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.AI)
+
+        if not scored:
+            return {
+                "average": None,
+                "median": None,
+                "highest": None,
+                "lowest": None,
+                "passed_all_layers_count": passed_all_layers_count,
+                "rejected_deterministic_count": rejected_deterministic_count,
+                "rejected_semantic_count": rejected_semantic_count,
+                "rejected_ai_count": rejected_ai_count,
+            }
+
+        n = len(scored)
+        mid = n // 2
+        median = scored[mid] if n % 2 == 1 else (scored[mid - 1] + scored[mid]) / 2
+
+        return {
+            "average": sum(scored) / n,
+            "median": median,
+            "highest": scored[-1],
+            "lowest": scored[0],
+            "passed_all_layers_count": passed_all_layers_count,
+            "rejected_deterministic_count": rejected_deterministic_count,
+            "rejected_semantic_count": rejected_semantic_count,
+            "rejected_ai_count": rejected_ai_count,
+        }
+
+    def count_candidates_in_window(
+        self,
+        campaign_id: UUID,
+        start: datetime,
+        end: datetime | None,
+    ) -> int:
+        """
+        S05-T03: candidates added to this campaign in [start, end) — end=None
+        means open-ended (through now), used for a config's most recent
+        window in the Weight Change Report.
+        """
+        stmt = select(func.count(CampaignCandidate.id)).where(
+            CampaignCandidate.campaign_id == campaign_id,
+            CampaignCandidate.created_at >= start,
+        )
+        if end is not None:
+            stmt = stmt.where(CampaignCandidate.created_at < end)
+        return self.db.execute(stmt).scalar() or 0
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
