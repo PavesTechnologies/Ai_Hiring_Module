@@ -1,15 +1,25 @@
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Request, Security, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Security, UploadFile, status
 from pydantic import ValidationError
 
 from app.dependencies.resume import (
     get_resume_intake_service,
+    get_resume_monitoring_service,
     get_resume_processing_status_service,
 )
 from app.enums.constants import Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
 from app.middleware.rbac import TokenUser, require_roles
+from app.models.candidates import ParseStatus
+from app.schemas.resume.monitoring import (
+    ParseAttemptItem,
+    ResumeDetailResponse,
+    ResumeListResponse,
+    ResumeTimelineResponse,
+)
 from app.schemas.resume.request import ResumeUploadRequest
 from app.schemas.resume.response import (
     ResumeProcessingStatusResponse,
@@ -17,6 +27,7 @@ from app.schemas.resume.response import (
 )
 from app.schemas.response import APIResponse
 from app.services.resume.resume_intake_service import ResumeIntakeService
+from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
 
 router = APIRouter(
@@ -97,6 +108,43 @@ def upload_resume(
 
 
 @router.get(
+    "",
+    response_model=APIResponse[ResumeListResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_resumes(
+    campaign_id: UUID | None = Query(default=None),
+    parse_status: ParseStatus | None = Query(default=None),
+    source: Literal["individual", "bulk"] | None = Query(default=None),
+    email_hash: str | None = Query(default=None),
+    uploaded_from: datetime | None = Query(default=None),
+    uploaded_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    sort_by: Literal["created_at", "parse_status"] = Query(default="created_at"),
+    sort_dir: Literal["asc", "desc"] = Query(default="desc"),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Read-only monitoring endpoint — paginated, filterable resume list across both individual and bulk upload sources."""
+    return APIResponse.ok(
+        data=service.list_resumes(
+            campaign_id=campaign_id,
+            parse_status=parse_status,
+            source=source,
+            email_hash=email_hash,
+            uploaded_from=uploaded_from,
+            uploaded_to=uploaded_to,
+            page=page,
+            size=size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        ),
+        message="Resume list retrieved successfully.",
+    )
+
+
+@router.get(
     "/processing-status/{task_id}",
     response_model=APIResponse[ResumeProcessingStatusResponse],
     status_code=status.HTTP_200_OK,
@@ -109,4 +157,61 @@ def get_resume_processing_status(
     return APIResponse.ok(
         data=service.get_status(task_id),
         message="Processing status retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{resume_id}",
+    response_model=APIResponse[ResumeDetailResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_detail(
+    resume_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Read-only monitoring endpoint — resume metadata, candidate summary, current processing state, skill/embedding/parser info, and failure detail if applicable."""
+    return APIResponse.ok(
+        data=service.get_resume_detail(resume_id),
+        message="Resume detail retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{resume_id}/timeline",
+    response_model=APIResponse[ResumeTimelineResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_timeline(
+    resume_id: UUID,
+    attempt_number: int | None = Query(default=None, ge=1),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Read-only monitoring endpoint — per-stage execution timeline for this
+    resume's processing task, resolved via resumes.task_id (stable across
+    retries, set at enqueue time). Defaults to the current/latest attempt;
+    pass attempt_number to view a specific historical retry instead.
+    """
+    return APIResponse.ok(
+        data=service.get_timeline(resume_id, attempt_number=attempt_number),
+        message="Resume timeline retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{resume_id}/parse-attempts",
+    response_model=APIResponse[list[ParseAttemptItem]],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_parse_attempts(
+    resume_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Read-only monitoring endpoint — full attempt/failure history, merging resume_parse_attempts (successes) with stage_failure_logs (failures, including ones that never reached a successful attempt)."""
+    return APIResponse.ok(
+        data=service.get_parse_attempts(resume_id),
+        message="Parse attempt history retrieved successfully.",
     )

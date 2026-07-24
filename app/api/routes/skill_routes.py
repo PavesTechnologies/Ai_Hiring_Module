@@ -15,7 +15,9 @@ from app.schemas.skills.curation import (
     PromotedSkillResponse,
     RemapJDSkillRequest,
     UnknownSkillActionResponse,
+    UnknownSkillCandidateItem,
     UnknownSkillItem,
+    UnknownSkillJDItem,
 )
 from app.services.skills.skill_curation_service import SkillCurationService
 
@@ -123,6 +125,73 @@ def dismiss_unknown_skill(
             id=unknown_skill.id, raw_text=unknown_skill.raw_text, status=unknown_skill.status.value,
         ),
         message="Unknown skill dismissed.",
+    )
+
+
+@router.get(
+    "/unknown/{unknown_skill_id}/jds",
+    response_model=APIResponse[list[UnknownSkillJDItem]],
+)
+def list_jds_for_unknown_skill(
+    unknown_skill_id: UUID,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(
+        require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)
+    ),
+):
+    """Every JD (any version) this unknown skill occurs in — the reverse of /jd/{jd_id}/unknown-skills."""
+    rows = service.list_jds_for_unknown_skill(unknown_skill_id)
+    return APIResponse.ok(
+        data=[
+            UnknownSkillJDItem(
+                id=link.id,
+                jd_id=jd.id,
+                job_id=jd.job_id,
+                title=jd.title,
+                version_number=jd.version_number,
+                is_active_version=jd.is_active_version,
+                mandatory=link.mandatory,
+                status=link.status.value,
+                created_at=link.created_at,
+            )
+            for link, jd in rows
+        ],
+        message="Job descriptions for unknown skill retrieved successfully.",
+    )
+
+
+@router.get(
+    "/unknown/{unknown_skill_id}/candidates",
+    response_model=APIResponse[list[UnknownSkillCandidateItem]],
+)
+def list_candidates_for_unknown_skill(
+    unknown_skill_id: UUID,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(
+        require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)
+    ),
+):
+    """
+    Candidates whose (active) resume carries this exact unmatched raw skill
+    text. Matched on raw text, not a shared id — resume-side unmatched
+    skills are never deduped into unknown_skills the way JD-side ones are.
+    """
+    rows = service.list_candidates_for_unknown_skill(unknown_skill_id)
+    return APIResponse.ok(
+        data=[
+            UnknownSkillCandidateItem(
+                id=candidate_skill.id,
+                candidate_id=candidate.id,
+                resume_id=candidate_skill.resume_id,
+                candidate_name=service.decrypt_candidate_name(candidate),
+                raw_extracted_text=candidate_skill.raw_extracted_text,
+                confidence=candidate_skill.confidence,
+                match_tier=candidate_skill.match_tier,
+                created_at=candidate_skill.created_at,
+            )
+            for candidate_skill, candidate, resume in rows
+        ],
+        message="Candidates for unknown skill retrieved successfully.",
     )
 
 

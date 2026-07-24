@@ -5,10 +5,18 @@ from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile,
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
-from app.dependencies.bulk_upload import get_bulk_upload_service
+from app.dependencies.bulk_upload import get_bulk_upload_monitoring_service, get_bulk_upload_service
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
 from app.exception_handler.exceptions import BadRequestError
 from app.middleware.rbac import TokenUser, require_roles
+from app.models.async_tasks import BulkUploadFileStatus
+from app.schemas.bulk_upload.monitoring import (
+    BulkFileDetailResponse,
+    BulkFileListResponse,
+    BulkFileTimelineResponse,
+    BulkJobFailureListResponse,
+    BulkJobMetricsResponse,
+)
 from app.schemas.bulk_upload.request import BulkUploadRequest
 from app.schemas.bulk_upload.response import (
     BulkUploadAcceptedResponse,
@@ -19,6 +27,7 @@ from app.schemas.bulk_upload.response import (
     BulkUploadJobSummary,
 )
 from app.schemas.response import APIResponse
+from app.services.bulk_upload.bulk_upload_monitoring_service import BulkUploadMonitoringService
 from app.services.bulk_upload.bulk_upload_service import BulkUploadService
 
 router = APIRouter(
@@ -154,7 +163,7 @@ def get_bulk_upload_detail(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """One bulk upload job's full detail, including its per-file breakdown."""
-    job, files = service.get_job_detail(bulk_upload_job_id)
+    job, files, retry_counts = service.get_job_detail(bulk_upload_job_id)
 
     return APIResponse.ok(
         data=BulkUploadJobDetailResponse(
@@ -177,11 +186,135 @@ def get_bulk_upload_detail(
                     id=f.id,
                     original_filename=f.original_filename,
                     status=f.status.value,
+                    retry_count=retry_counts.get(f.task_id),
                 )
                 for f in files
             ],
         ),
         message="Bulk upload detail retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/files",
+    response_model=APIResponse[BulkFileListResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_bulk_upload_files(
+    bulk_upload_job_id: UUID,
+    status_filter: BulkUploadFileStatus | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    sort_by: str = Query(default="created_at"),
+    sort_dir: str = Query(default="desc"),
+    service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Read-only monitoring endpoint — paginated, filterable, searchable file
+    list for a bulk upload job. The embedded file array on
+    GET /bulk-uploads/{id} stays as-is and unpaginated; this is what a UI
+    should page through for a large ZIP.
+    """
+    return APIResponse.ok(
+        data=service.list_files(
+            bulk_upload_job_id,
+            status=status_filter,
+            search=search,
+            page=page,
+            size=size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        ),
+        message="Bulk upload files retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/files/{file_id}",
+    response_model=APIResponse[BulkFileDetailResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_file_detail(
+    bulk_upload_job_id: UUID,
+    file_id: UUID,
+    service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Read-only monitoring endpoint — mirrors the Resume Detail shape, with
+    resume/candidate left null until a file's identity resolves (a file
+    that fails before AI_EXTRACTION never gets a Resume row at all).
+    """
+    return APIResponse.ok(
+        data=service.get_file_detail(bulk_upload_job_id, file_id),
+        message="Bulk upload file detail retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/files/{file_id}/timeline",
+    response_model=APIResponse[BulkFileTimelineResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_file_timeline(
+    bulk_upload_job_id: UUID,
+    file_id: UUID,
+    attempt_number: int | None = Query(default=None, ge=1),
+    service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Read-only monitoring endpoint — identical StageTimeline shape as
+    GET /resumes/{id}/timeline. bulk_upload_job_files.task_id is populated
+    at row-creation time (not just on success), so this resolves reliably
+    at every point in a file's lifecycle.
+    """
+    return APIResponse.ok(
+        data=service.get_file_timeline(bulk_upload_job_id, file_id, attempt_number=attempt_number),
+        message="Bulk upload file timeline retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/metrics",
+    response_model=APIResponse[BulkJobMetricsResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_job_metrics(
+    bulk_upload_job_id: UUID,
+    service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Read-only monitoring endpoint — total_files/processed/failed/duplicate
+    come from the job's own maintained counters; avg_duration_by_stage and
+    retry_rate are computed live over this job's files' stage executions
+    and task logs.
+    """
+    return APIResponse.ok(
+        data=service.get_job_metrics(bulk_upload_job_id),
+        message="Bulk upload job metrics retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/failures",
+    response_model=APIResponse[BulkJobFailureListResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_job_failures(
+    bulk_upload_job_id: UUID,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Read-only monitoring endpoint — paginated list of this job's failed files, with resolved failure detail per file."""
+    return APIResponse.ok(
+        data=service.get_job_failures(bulk_upload_job_id, page=page, size=size),
+        message="Bulk upload job failures retrieved successfully.",
     )
 
 

@@ -20,11 +20,16 @@ class ResumeProcessingContext:
 
     # Submitted at the start of the run — never mutated by a stage.
     task_id: str
-    resume_id: UUID
-    candidate_id: UUID
     file_path: str
     source_format: ResumeSourceFormat
+    # Optional at construction time: a caller building a context before
+    # identity is known (e.g. bulk upload, ahead of Candidate/Resume
+    # creation) fills these in once resolved, rather than needing them
+    # up front the way an individual-upload context always has them.
+    resume_id: UUID | None = None
+    candidate_id: UUID | None = None
     document_type: DocumentType = DocumentType.RESUME
+    attempt_number: int = 1
 
     # Populated progressively, one stage at a time.
     raw_text: str | None = None

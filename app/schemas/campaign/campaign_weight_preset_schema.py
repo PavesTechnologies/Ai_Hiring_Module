@@ -16,6 +16,7 @@ class CampaignWeightPresetResponse(BaseModel):
     weight_semantic: Decimal
     weight_ai: Decimal
 
+    deterministic_threshold: Decimal
     semantic_threshold: Decimal
     ai_threshold: Decimal
 
@@ -39,7 +40,7 @@ class CampaignWeightPresetCreateRequest(BaseModel):
     weight_deterministic: Decimal
     weight_semantic: Decimal
     weight_ai: Decimal
-
+    deterministic_threshold: Decimal
     semantic_threshold: Decimal
     ai_threshold: Decimal
 
@@ -60,6 +61,6 @@ class CampaignWeightPresetUpdateRequest(BaseModel):
     weight_deterministic: Decimal
     weight_semantic: Decimal
     weight_ai: Decimal
-
+    deterministic_threshold: Decimal
     semantic_threshold: Decimal
     ai_threshold: Decimal

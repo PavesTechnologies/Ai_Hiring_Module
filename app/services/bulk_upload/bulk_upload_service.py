@@ -13,6 +13,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.services.audit_service import AuditService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.tasks.bulk_upload_tasks import extract_bulk_upload_zip
@@ -49,6 +50,7 @@ class BulkUploadService:
         storage_service: StorageService,
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
+        celery_task_log_repo: CeleryTaskLogRepository,
     ):
         self.bulk_upload_job_repo = bulk_upload_job_repo
         self.bulk_upload_job_file_repo = bulk_upload_job_file_repo
@@ -56,6 +58,7 @@ class BulkUploadService:
         self.storage_service = storage_service
         self.campaign_repo = campaign_repo
         self.audit_service = audit_service
+        self.celery_task_log_repo = celery_task_log_repo
 
     def upload_zip(
         self,
@@ -183,14 +186,24 @@ class BulkUploadService:
         job = self.bulk_upload_job_repo.get_by_id(job_id)
         return job, files_cancelled
 
-    def get_job_detail(self, job_id: UUID) -> tuple[BulkUploadJob, list]:
-        """Phase B8: one job's full detail plus its per-file breakdown."""
+    def get_job_detail(self, job_id: UUID) -> tuple[BulkUploadJob, list, dict[str, int]]:
+        """
+        Phase B8: one job's full detail plus its per-file breakdown, plus a
+        {task_id: retry_count} map so the route can surface each file's
+        retry-attempt count — one batched celery_task_log query for the
+        whole job rather than one query per file.
+        """
         job = self.bulk_upload_job_repo.get_by_id(job_id)
         if job is None:
             raise BulkUploadJobNotFoundException("Bulk upload job not found.")
 
         files = self.bulk_upload_job_file_repo.get_by_job_id(job_id)
-        return job, files
+
+        task_ids = [f.task_id for f in files if f.task_id]
+        task_logs = self.celery_task_log_repo.get_by_task_ids(task_ids)
+        retry_counts = {log.task_id: log.retry_count for log in task_logs}
+
+        return job, files, retry_counts
 
     def list_history(
         self,

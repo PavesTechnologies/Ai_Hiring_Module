@@ -31,3 +31,19 @@ STAGE_ORDER = [
 
 def compute_backoff_seconds(policy: RetryPolicy, attempt_number: int) -> int:
     return min(policy.base_delay_seconds * (2 ** (attempt_number - 1)), policy.max_delay_seconds)
+
+
+def get_max_attempts(stage: ProcessingStage | None) -> int:
+    """
+    Single, named lookup for a stage's configured retry ceiling — the same
+    STAGE_POLICIES/DEFAULT_POLICY fallback RetryDriver.handle_failure
+    already applies inline, exposed here so a read-only caller (e.g. a
+    future retry-summary API) doesn't need to duplicate that fallback
+    rule itself. RetryDriver's own inline lookup is untouched — this is a
+    parallel accessor, not a replacement, so retry behavior cannot change.
+    stage=None (no stage-execution row exists yet) falls back to
+    DEFAULT_POLICY, same as an unrecognized stage would.
+    """
+    if stage is None:
+        return DEFAULT_POLICY.max_attempts
+    return STAGE_POLICIES.get(stage, DEFAULT_POLICY).max_attempts

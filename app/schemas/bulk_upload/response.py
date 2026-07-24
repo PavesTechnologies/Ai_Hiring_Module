@@ -41,6 +41,7 @@ class BulkUploadJobFileItem(BaseModel):
     id: UUID
     original_filename: str
     status: str
+    retry_count: int | None = None
 
 
 class BulkUploadJobDetailResponse(BaseModel):

@@ -3,6 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import timezone
+from decimal import Decimal
 from urllib import request
 from uuid import UUID, uuid4
 
@@ -30,6 +31,24 @@ from datetime import datetime
 from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
+
+# jd_skills.weight was never populated by this pipeline ("reserved for
+# future business-set scoring input" - see the comment this replaces,
+# below). CandidateScoringService computes
+# deterministic_score = (SUM mandatory contributions / SUM max mandatory
+# contributions) x 100 - a ratio, not an absolute sum - so the scale is
+# self-normalizing regardless of what magnitude jd_skills.weight uses, as
+# long as every skill in a JD carries the same weight. No requirement
+# anywhere (JDSkill model/migrations, JD schemas/routes, campaign scoring
+# config, or existing tests) defines a specific weight value or a
+# mandatory/preferred split, so this is the documented minimum-safe
+# default: every matched skill (mandatory or preferred) gets this same
+# flat weight - no 100-point budget, no per-JD remainder math to get
+# right or wrong. This only ever runs at JD-skill creation time (never
+# re-touches an already-existing jd_skills row), which is what keeps room
+# for a future manual/business weight-override feature: nothing here will
+# ever overwrite a weight once assigned.
+_DEFAULT_JD_SKILL_WEIGHT = Decimal("1.00")
 
 
 @dataclass
@@ -114,13 +133,16 @@ class JDService:
         version_number: int = 1,
         parent_jd_id: UUID | None = None,
         lineage_root_id: UUID | None = None,
-    ) -> UUID | None:
+    ) -> UUID:
         """
         The Persistence stage of the async JD processing pipeline: writes
         JobDescription + JDSkill + UnknownSkill + JDEmbedding + audit log in
-        one transaction. Returns the new jd_id, or None if a duplicate was
+        one transaction. Raises DuplicateJDException if a duplicate was
         detected right before insert (final safety net against the race
-        widened by asynchronous processing).
+        widened by asynchronous processing) — the same exception the
+        synchronous pre-checks raise, so every duplicate-content path is
+        handled consistently instead of some of them completing silently
+        with no JD created.
 
         existing_jd_id absent (default) means this is a normal create run.
         When present, this is an update-triggered reprocess run: the given
@@ -137,7 +159,18 @@ class JDService:
                 else self.repository.get_by_content_hash(content_hash)
             )
             if duplicate:
-                return None
+                raise DuplicateJDException(
+                    DuplicateJDInfo(
+                        message="Duplicate job description found.",
+                        existing_jd=ExistingJDInfo(
+                            id=duplicate.id,
+                            title=duplicate.title,
+                            version_number=duplicate.version_number,
+                            created_at=duplicate.created_at,
+                        ),
+                        actions=["View Existing", "Create New Version"],
+                    )
+                )
 
             if is_reprocess:
                 # Re-check now, immediately before mutating anything: the
@@ -212,6 +245,8 @@ class JDService:
                 if existing_match is None or (match.mandatory and not existing_match.mandatory):
                     matched_by_skill[match.canonical_skill_id] = match
 
+            # Every matched skill (mandatory or preferred) gets the same
+            # flat weight (see _DEFAULT_JD_SKILL_WEIGHT above for why).
             for match in matched_by_skill.values():
                 skill_repository.create_jd_skill(
                     jd_id=job_description.id,
@@ -220,8 +255,7 @@ class JDService:
                     match_tier=match.match_tier.value,
                     verification_status=verification_status_for_tier(match.match_tier),
                     confidence=match.confidence,
-                    # weight is reserved for future business-set scoring
-                    # input, not populated by the automated pipeline.
+                    weight=_DEFAULT_JD_SKILL_WEIGHT,
                 )
                 skill_repository.bump_occurrence_count(match.canonical_skill_id)
 

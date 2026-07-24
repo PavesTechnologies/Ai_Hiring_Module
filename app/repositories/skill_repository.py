@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.candidates import Candidate, Resume
+from app.models.jd.job_descriptions import JobDescription
 from app.models.skills import (
+    CandidateSkill,
     JDSkill,
     JDSkillVerificationStatus,
     JDUnknownSkill,
@@ -192,6 +195,43 @@ class SkillRepository:
             .all()
         )
 
+    def get_jd_links_by_unknown_skill_id(self, unknown_skill_id: UUID) -> list[tuple[JDUnknownSkill, JobDescription]]:
+        """
+        Every JD occurrence of a given UnknownSkill (any version, resolved
+        or not), paired with the JD row for display — the reverse direction
+        of get_jd_unknown_skills_by_jd_id.
+        """
+        return (
+            self.db.query(JDUnknownSkill, JobDescription)
+            .join(JobDescription, JDUnknownSkill.jd_id == JobDescription.id)
+            .filter(JDUnknownSkill.unknown_skill_id == unknown_skill_id)
+            .order_by(JDUnknownSkill.created_at)
+            .all()
+        )
+
+    def get_candidate_skills_by_raw_text(self, raw_text: str) -> list[tuple[CandidateSkill, Candidate, Resume]]:
+        """
+        Candidates whose active resume carries this exact unmatched raw
+        skill text. CandidateSkill has no FK to unknown_skills — unmatched
+        resume skills are never deduped into unknown_skills/jd_unknown_skills
+        the way JD-side ones are (see resume_service.py's own comment on
+        this), they're written straight into candidate_skills with
+        canonical_skill_id NULL and the raw text on the row itself — so an
+        exact match against raw_extracted_text is the only join available.
+        """
+        return (
+            self.db.query(CandidateSkill, Candidate, Resume)
+            .join(Candidate, CandidateSkill.candidate_id == Candidate.id)
+            .join(Resume, CandidateSkill.resume_id == Resume.id)
+            .filter(
+                CandidateSkill.canonical_skill_id.is_(None),
+                CandidateSkill.raw_extracted_text == raw_text,
+                Resume.is_active_version.is_(True),
+            )
+            .order_by(CandidateSkill.created_at)
+            .all()
+        )
+
     def remap_jd_skill(self, jd_skill: JDSkill, new_canonical_skill_id: UUID) -> JDSkill:
         """
         HR-driven override of an existing JDSkill's canonical mapping.
@@ -246,6 +286,36 @@ class SkillRepository:
             return None
         skill, dist = result
         return skill, 1.0 - dist
+
+    def find_best_semantic_match(
+        self, target_embedding: list[float], candidate_skill_ids: list[UUID]
+    ) -> tuple[UUID, float] | None:
+        """
+        Deterministic-scoring SEMANTIC tier (M07-E01 S02): highest cosine
+        similarity between target_embedding (a missing mandatory skill's
+        embedding) and just the candidate's own canonical skill ids -
+        unlike find_by_embedding, this never searches the whole catalog.
+        Skills with no embedding yet (still queued) are excluded rather
+        than compared. Returns (candidate_skill_id, similarity) or None if
+        candidate_skill_ids is empty or none of them have an embedding.
+        """
+        if not candidate_skill_ids:
+            return None
+
+        distance = SkillOntology.embedding.cosine_distance(target_embedding)
+        result = (
+            self.db.query(SkillOntology.id, distance.label("distance"))
+            .filter(
+                SkillOntology.id.in_(candidate_skill_ids),
+                SkillOntology.embedding.isnot(None),
+            )
+            .order_by(distance)
+            .first()
+        )
+        if result is None:
+            return None
+        skill_id, dist = result
+        return skill_id, 1.0 - dist
 
     def find_skill_by_name_or_alias(self, text: str) -> SkillOntology | None:
         """
@@ -361,3 +431,83 @@ class SkillRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
+
+    def get_mandatory_jd_skills(
+        self,
+        jd_id: UUID,
+    ) -> list[JDSkill]:
+        """
+        Return all mandatory canonical skills required by a JD.
+        Used by deterministic candidate scoring.
+        """
+        return (
+            self.db.query(JDSkill)
+            .filter(
+                JDSkill.jd_id == jd_id,
+                JDSkill.mandatory.is_(True),
+            )
+            .all()
+        )
+
+    def get_candidate_normalized_skills(
+        self,
+        resume_id: UUID,
+    ) -> list[CandidateSkill]:
+        """
+        Return candidate skills that were successfully normalized
+        to a canonical SkillOntology entry.
+
+        Skills with canonical_skill_id = NULL are excluded because
+        they cannot participate in deterministic canonical matching.
+        """
+        return (
+            self.db.query(CandidateSkill)
+            .filter(
+                CandidateSkill.resume_id == resume_id,
+                CandidateSkill.canonical_skill_id.isnot(None),
+            )
+            .all()
+        )
+
+    def get_mandatory_skill_coverage(self, jd_id: UUID, resume_id: UUID, mandatory: bool = True):
+        """
+        One row per JD skill (mandatory ones by default), LEFT JOINed
+        against the candidate's matching normalized skill (if any) -
+        unmatched skills still come back as a row (with NULL
+        candidate_scoring_weight/match_tier/confidence) instead of being
+        silently dropped, so this is the single source of truth for
+        building a per-skill coverage breakdown (M07-E01 S02 T01).
+
+        mandatory=False reuses this exact same JOIN for Preferred JD
+        Skills (M03-E05 S01 T02) - same "canonical_skill_id only, never
+        raw text, scoring_weight > 0" matching rule, just against
+        jd_skills.mandatory = FALSE rows instead. The default (True)
+        preserves every existing caller's behavior unchanged.
+
+        The join condition matches on canonical_skill_id only - never on
+        raw_extracted_text - and only considers a candidate skill "in play"
+        if its scoring_weight is > 0.
+        """
+        return (
+            self.db.query(
+                JDSkill.canonical_skill_id.label("canonical_skill_id"),
+                JDSkill.weight.label("weight"),
+                JDSkill.mandatory.label("mandatory"),
+                CandidateSkill.scoring_weight.label("candidate_scoring_weight"),
+                CandidateSkill.match_tier.label("match_tier"),
+                CandidateSkill.confidence.label("confidence"),
+            )
+            .outerjoin(
+                CandidateSkill,
+                and_(
+                    CandidateSkill.canonical_skill_id == JDSkill.canonical_skill_id,
+                    CandidateSkill.resume_id == resume_id,
+                    CandidateSkill.scoring_weight > 0,
+                ),
+            )
+            .filter(
+                JDSkill.jd_id == jd_id,
+                JDSkill.mandatory.is_(mandatory),
+            )
+            .all()
+        )

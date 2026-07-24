@@ -35,6 +35,7 @@ celery_app.conf.imports = (
     "app.tasks.resume_processing_tasks",
     "app.tasks.bulk_upload_tasks",
     "app.tasks.skill_ontology_tasks",
+    "app.tasks.deterministic_scoring_tasks",
 )
 
 celery_app.conf.beat_schedule = {

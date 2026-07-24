@@ -127,6 +127,17 @@ class ResumeUploadService:
 
         return resume
 
+    def record_task_id(self, resume: Resume, task_id: str) -> None:
+        """
+        Persists the processing task's id on the Resume row itself, at
+        enqueue time — before Celery ever picks it up — so a future
+        monitoring API can resolve resume_id -> task_id at any point in
+        the resume's lifecycle, not just after the task first succeeds
+        (the only time celery_task_log.resume_id gets set today).
+        """
+        self.resume_repo.set_task_id(resume, task_id)
+        self.resume_repo.commit()
+
     def _build_object_path(self, org_id: UUID | None, file_format: FileFormat) -> str:
         extension = _FORMAT_TO_EXTENSION[file_format]
         return f"org_{org_id}/resume/{uuid4()}.{extension}"

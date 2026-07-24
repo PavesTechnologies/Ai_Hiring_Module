@@ -1,8 +1,10 @@
 import logging
 from uuid import UUID
 
+from app.core.encryption_service import DecryptionError, EncryptionService
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import BadRequestError, NotFoundError
+from app.models.candidates import Candidate
 from app.models.skills import (
     JDSkillVerificationStatus,
     SkillOntology,
@@ -12,6 +14,7 @@ from app.models.skills import (
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
+from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
 from app.services.skills.skill_normalization_service import SkillMatchTier
 
 logger = logging.getLogger(__name__)
@@ -33,10 +36,12 @@ class SkillCurationService:
         skill_repository: SkillRepository,
         audit_service: AuditService,
         embedding_queue_service: EmbeddingQueueService,
+        encryption_service: EncryptionService,
     ):
         self.skill_repository = skill_repository
         self.audit_service = audit_service
         self.embedding_queue_service = embedding_queue_service
+        self.encryption_service = encryption_service
 
     def list_pending_unknown_skills(self) -> list[UnknownSkill]:
         return self.skill_repository.get_pending_unknown_skills()
@@ -48,6 +53,33 @@ class SkillCurationService:
     def list_jd_unknown_skills(self, jd_id: UUID):
         """Unknown-skill occurrences recorded for a JD, resolved or not."""
         return self.skill_repository.get_jd_unknown_skills_by_jd_id(jd_id)
+
+    def list_jds_for_unknown_skill(self, unknown_skill_id: UUID):
+        """Every JD version where this UnknownSkill occurs — the reverse direction of list_jd_unknown_skills."""
+        self._get_unknown_skill_or_404(unknown_skill_id)
+        return self.skill_repository.get_jd_links_by_unknown_skill_id(unknown_skill_id)
+
+    def list_candidates_for_unknown_skill(self, unknown_skill_id: UUID):
+        """
+        Candidates whose resume carries this exact unmatched raw skill text.
+        Matched on raw_text, not id — CandidateSkill has no FK to
+        unknown_skills (see get_candidate_skills_by_raw_text's own
+        docstring for why), so this can only ever be a raw-text match, never
+        a join through a shared unknown-skill row the way the JD side is.
+        """
+        unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+        return self.skill_repository.get_candidate_skills_by_raw_text(unknown_skill.raw_text)
+
+    def decrypt_candidate_name(self, candidate: Candidate) -> str | None:
+        if not candidate.full_name_encrypted:
+            return None
+        try:
+            return self.encryption_service.decrypt(
+                candidate.full_name_encrypted, candidate.encryption_key_id,
+            )
+        except DecryptionError:
+            logger.exception("Failed to decrypt candidate name for candidate_id=%s", candidate.id)
+            return None
 
     def map_to_existing_skill(
         self,
@@ -212,6 +244,10 @@ class SkillCurationService:
                     match_tier=SkillMatchTier.MANUAL_HR.value,
                     verification_status=JDSkillVerificationStatus.AUTO_VERIFIED,
                     confidence=1.0,
+                    # Same flat weight the JD parsing pipeline assigns
+                    # (M07) - this is a retroactive jd_skills row for an
+                    # existing JD, so it must never be created NULL either.
+                    weight=_DEFAULT_JD_SKILL_WEIGHT,
                 )
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
             self.skill_repository.mark_jd_unknown_skill_resolved(link)

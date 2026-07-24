@@ -20,6 +20,9 @@ class CeleryTaskLogService:
         task_type: str,
         created_by: str | None = None,
         title: str | None = None,
+        idempotency_key: str | None = None,
+        resume_id=None,
+        campaign_candidate_id=None,
     ) -> CeleryTaskLog:
         """
         Called synchronously from the route before the Celery task is even
@@ -27,12 +30,18 @@ class CeleryTaskLogService:
         title) to a "my uploads" style listing from the moment the request
         is accepted — not just once a worker picks it up. Status starts at
         QUEUED; the task itself flips it to RUNNING when it actually starts.
+
+        idempotency_key/resume_id/campaign_candidate_id are optional and
+        default to None, so every existing call site is unaffected.
         """
         log = CeleryTaskLog(
             task_id=task_id,
             task_type=task_type,
             created_by=created_by,
             title=title,
+            idempotency_key=idempotency_key,
+            resume_id=resume_id,
+            campaign_candidate_id=campaign_candidate_id,
             status=TaskStatus.QUEUED,
         )
 

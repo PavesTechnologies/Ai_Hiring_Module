@@ -77,6 +77,12 @@ class Resume(Base):
     # Bulk ZIP Upload (M05-E02) — NULL for every individual (M05-E01) upload;
     # set only when this resume was extracted from a bulk_upload_jobs ZIP.
     bulk_upload_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bulk_upload_jobs.id"), nullable=True)
+    # Set once, at enqueue time, before the Celery task is ever dispatched —
+    # not derived from celery_task_log.resume_id, which is only populated on
+    # that task's first success. Stable across retries (a retry reuses the
+    # same task_id). Lets a future monitoring API resolve resume_id -> task_id
+    # at any point in the resume's lifecycle, not just after it first succeeds.
+    task_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

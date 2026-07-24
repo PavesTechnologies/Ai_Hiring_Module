@@ -1,10 +1,13 @@
 import hashlib
+import logging
 from uuid import UUID
 
+from app.core.encryption_service import DecryptionError, EncryptionService
 from app.dependencies import campaign
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaigns import CampaignStatus
+from app.models.candidates import Candidate, Resume
 from app.models.pipeline import (
     CampaignCandidate,
     PipelineStage,
@@ -20,6 +23,10 @@ from app.schemas.campaign.campaign_candidate_schema import (
 )
 from app.services.audit_service import AuditService
 
+logger = logging.getLogger(__name__)
+
+CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
+
 
 class CampaignCandidateService:
 
@@ -28,10 +35,12 @@ class CampaignCandidateService:
         campaign_repo: CampaignRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
+        encryption_service: EncryptionService | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        self.encryption_service = encryption_service
 
     def create_campaign_candidate(
         self,
@@ -205,7 +214,12 @@ class CampaignCandidateService:
         campaign_id: UUID,
     ) -> list[CampaignCandidateResponse]:
         """
-        Get all candidates belonging to a campaign.
+        Get all candidates belonging to a campaign, enriched for the
+        Candidate Listing UI: decrypted candidate name, designation/
+        experience parsed from the resume, and the scores already stored
+        on CampaignCandidate (never recalculated here). location and
+        risk_score have no backing data anywhere in the system yet, so
+        they are always returned as null.
         """
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -216,16 +230,95 @@ class CampaignCandidateService:
                 404,
             )
 
-        candidates = (
+        rows = (
             self.campaign_candidate_repo.get_all_by_campaign(
                 campaign_id
             )
         )
 
         return [
-            CampaignCandidateResponse.model_validate(candidate)
-            for candidate in candidates
+            self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
+            for campaign_candidate, candidate, resume in rows
         ]
+
+    def _to_campaign_candidate_response(
+        self,
+        campaign_candidate: CampaignCandidate,
+        candidate: Candidate | None,
+        resume: Resume | None,
+    ) -> CampaignCandidateResponse:
+        designation, experience = self._extract_designation_and_experience(resume)
+
+        return CampaignCandidateResponse(
+            id=campaign_candidate.id,
+            campaign_id=campaign_candidate.campaign_id,
+            candidate_id=campaign_candidate.candidate_id,
+            campaign_candidate_id=campaign_candidate.id,
+            resume_id=campaign_candidate.resume_id,
+            pipeline_stage=campaign_candidate.pipeline_stage,
+            candidate_name=self._decrypt_candidate_name(candidate),
+            current_designation=designation,
+            experience=experience,
+            deterministic_score=(
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            ai_ats_score=(
+                float(campaign_candidate.ai_ats_score)
+                if campaign_candidate.ai_ats_score is not None else None
+            ),
+            semantic_score=(
+                float(campaign_candidate.semantic_score)
+                if campaign_candidate.semantic_score is not None else None
+            ),
+            composite_score=(
+                float(campaign_candidate.composite_score)
+                if campaign_candidate.composite_score is not None else None
+            ),
+            location=None,
+            risk_score=None,
+            created_at=campaign_candidate.created_at,
+        )
+
+    def _decrypt_candidate_name(self, candidate: Candidate | None) -> str | None:
+        if candidate is None or not candidate.full_name_encrypted:
+            return None
+        if self.encryption_service is None:
+            logger.warning("No encryption_service configured - cannot decrypt candidate name.")
+            return None
+        try:
+            return self.encryption_service.decrypt(
+                candidate.full_name_encrypted, candidate.encryption_key_id,
+            )
+        except DecryptionError:
+            logger.exception("Failed to decrypt candidate name for candidate_id=%s", candidate.id)
+            return None
+
+    @staticmethod
+    def _extract_designation_and_experience(
+        resume: Resume | None,
+    ) -> tuple[str | None, float | None]:
+        """
+        Reads designation/experience straight out of the already-parsed
+        resume JSON (ResumeExtractionResponse's shape) - never re-parses
+        or re-extracts anything. designation prefers the work_experience
+        entry marked is_current=True, falling back to the first (most
+        recent) entry when none is marked current.
+        """
+        if resume is None or not resume.parsed_json:
+            return None, None
+
+        parsed = resume.parsed_json
+        experience = parsed.get("total_experience_years")
+
+        work_experience = parsed.get("work_experience") or []
+        designation = None
+        current_entry = next((entry for entry in work_experience if entry.get("is_current")), None)
+        entry = current_entry or (work_experience[0] if work_experience else None)
+        if entry:
+            designation = entry.get("title")
+
+        return designation, experience
 
     def delete_campaign_candidate(
         self,

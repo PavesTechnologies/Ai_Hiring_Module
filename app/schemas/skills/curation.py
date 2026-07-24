@@ -66,3 +66,26 @@ class JDUnknownSkillItem(BaseModel):
     mandatory: bool | None
     status: str
     created_at: datetime
+
+
+class UnknownSkillJDItem(BaseModel):
+    id: UUID
+    jd_id: UUID
+    job_id: str
+    title: str
+    version_number: int
+    is_active_version: bool
+    mandatory: bool | None
+    status: str
+    created_at: datetime
+
+
+class UnknownSkillCandidateItem(BaseModel):
+    id: UUID
+    candidate_id: UUID
+    resume_id: UUID
+    candidate_name: str | None
+    raw_extracted_text: str
+    confidence: float | None
+    match_tier: str
+    created_at: datetime

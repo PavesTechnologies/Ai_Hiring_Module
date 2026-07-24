@@ -22,6 +22,7 @@ class ScoringConfigSection(BaseModel):
     weight_ai: float
     semantic_threshold: float
     ai_threshold: float
+    deterministic_threshold: float
 
 class PipelineLimitsSection(BaseModel):
     max_candidates: int | None

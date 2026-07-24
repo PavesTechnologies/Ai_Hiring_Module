@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.candidates import Candidate, Resume
 from app.models.pipeline import (
     CampaignCandidate,
     CampaignCandidateStageHistory,
@@ -100,6 +101,21 @@ class CampaignCandidateRepository:
             .first()
         )
     
+    def get_by_resume_id(
+        self,
+        resume_id: UUID,
+    ) -> list[CampaignCandidate]:
+        """
+        Every campaign_candidates row pointing at this resume - normally
+        exactly one (a resume upload is always for one specific campaign),
+        but a resume can in principle be reused across campaigns.
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.resume_id == resume_id)
+            .all()
+        )
+
     def get_by_campaign_and_candidate(
         self,
         campaign_id: UUID,
@@ -135,19 +151,28 @@ class CampaignCandidateRepository:
     def get_all_by_campaign(
         self,
         campaign_id: UUID,
-    ) -> list[CampaignCandidate]:
+    ):
         """
-        Returns all candidates belonging to a campaign.
+        Returns all candidates belonging to a campaign, joined with their
+        Candidate and Resume rows for the Candidate Listing page (candidate
+        name, parsed designation/experience) - LEFT JOINed so a row is never
+        dropped even if a candidate/resume were ever missing (both FKs are
+        NOT NULL today; this is defensive, not expected to matter). No
+        scores are computed here - deterministic_score/ai_ats_score/
+        semantic_score/composite_score are read directly off
+        CampaignCandidate exactly as already stored by the scoring
+        pipeline. Returns a list of (CampaignCandidate, Candidate, Resume)
+        rows.
         """
         stmt = (
-            select(CampaignCandidate)
+            select(CampaignCandidate, Candidate, Resume)
+            .outerjoin(Candidate, CampaignCandidate.candidate_id == Candidate.id)
+            .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
             .where(CampaignCandidate.campaign_id == campaign_id)
             .order_by(CampaignCandidate.created_at.desc())
         )
 
-        result = self.db.execute(stmt)
-
-        return result.scalars().all()
+        return self.db.execute(stmt).all()
 
     def update(
         self,

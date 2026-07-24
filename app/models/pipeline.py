@@ -75,6 +75,7 @@ class CampaignCandidate(Base):
     screened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deterministic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     deterministic_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    score_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(7, 6), nullable=True)
     ai_ats_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     ai_confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
