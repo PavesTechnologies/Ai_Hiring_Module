@@ -53,6 +53,10 @@ from app.schemas.campaign.campaign_detail_response import (
 )
 from app.models.pipeline import PipelineStage
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
+from app.schemas.campaign.campaign_processing_status_response import (
+    ProcessingStatusSummaryResponse,
+    DeadLetterQueueEntryResponse,
+)
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 from app.schemas.campaign.campaign_comparison_response import (
     CampaignComparisonColumn,
@@ -1163,6 +1167,43 @@ class CampaignService:
             total_candidates=sum(counts.values()),
             stages=stages,
         )
+
+    def get_processing_status_summary(self, campaign_id: UUID) -> ProcessingStatusSummaryResponse:
+        """S01-T02: celery_task_log status breakdown + DLQ count for this campaign."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        counts = self.campaign_repo.get_task_status_counts(campaign_id)
+        dlq_count = len(self.campaign_repo.get_dead_letter_queue_entries(campaign_id))
+
+        return ProcessingStatusSummaryResponse(
+            queued_count=counts.get(TaskStatus.QUEUED.value, 0),
+            running_count=counts.get(TaskStatus.RUNNING.value, 0),
+            retry_count=counts.get(TaskStatus.RETRY.value, 0),
+            dead_count=counts.get(TaskStatus.DEAD.value, 0),
+            paused_count=counts.get(TaskStatus.PAUSED.value, 0),
+            dead_letter_queue_count=dlq_count,
+        )
+
+    def get_dead_letter_queue_for_campaign(self, campaign_id: UUID) -> list[DeadLetterQueueEntryResponse]:
+        """S01-T02: the destination for clicking the DEAD metric card."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        entries = self.campaign_repo.get_dead_letter_queue_entries(campaign_id)
+        return [
+            DeadLetterQueueEntryResponse(
+                id=e.id,
+                task_type=e.task_type,
+                final_error_message=e.final_error_message,
+                retry_count=e.retry_count,
+                moved_to_dlq_at=e.moved_to_dlq_at,
+                campaign_candidate_id=e.campaign_candidate_id,
+            )
+            for e in entries
+        ]
 
     def get_campaign_timeline(
         self,

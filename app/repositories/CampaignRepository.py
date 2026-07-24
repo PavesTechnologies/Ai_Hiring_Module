@@ -12,7 +12,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
-from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
+from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus, DeadLetterQueue
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
 
@@ -760,3 +760,89 @@ class CampaignRepository:
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0
+
+    # Monitor Campaign Pipeline Health ────────────────────────────
+
+    def get_task_status_counts(self, campaign_id: UUID) -> dict[str, int]:
+        """T02: celery_task_log status breakdown for this campaign's tasks."""
+        rows = (
+            self.db.query(CeleryTaskLog.status, func.count())
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CeleryTaskLog.status)
+            .all()
+        )
+        return {status.value: count for status, count in rows}
+
+    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+        """T02: dead_letter_queue rows tied to this campaign's candidates."""
+        return (
+            self.db.query(DeadLetterQueue)
+            .join(
+                CampaignCandidate,
+                DeadLetterQueue.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .all()
+        )
+
+    def get_deterministic_rejection_rate(self, campaign_id: UUID) -> float:
+        """
+        T03: percentage of this campaign's total candidates rejected at the
+        DETERMINISTIC layer. 0.0 for a campaign with no candidates yet
+        (nothing to alert on).
+        """
+        total = self.get_candidate_count(campaign_id)
+        if total == 0:
+            return 0.0
+
+        rejected = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.rejection_layer == RejectionLayer.DETERMINISTIC,
+            )
+            .scalar()
+            or 0
+        )
+        return (rejected / total) * 100
+
+    def get_average_screening_hours(self, campaign_id: UUID) -> float | None:
+        """
+        T03: average hours-in-SCREENING for candidates CURRENTLY in that
+        stage (i.e. "stuck", not a historical average over completed
+        transitions) — measured from each candidate's most recent
+        transition into SCREENING to now. None if nobody is in SCREENING.
+        """
+        latest_entry = (
+            select(
+                CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        rows = (
+            self.db.query(latest_entry.c.entered_at)
+            .join(
+                CampaignCandidate,
+                CampaignCandidate.id == latest_entry.c.campaign_candidate_id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+            )
+            .all()
+        )
+        if not rows:
+            return None
+
+        now = datetime.now(timezone.utc)
+        hours = [(now - r.entered_at).total_seconds() / 3600 for r in rows]
+        return sum(hours) / len(hours)
