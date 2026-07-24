@@ -15,6 +15,15 @@ from app.schemas.campaign.campaign_comparison_response import CampaignComparison
 from app.schemas.campaign.campaign_weight_change_report_response import WeightChangeReportResponse
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
+from app.schemas.campaign.campaign_closure_schema import (
+    CampaignCloseRequest,
+    CampaignClosureImpactSummaryResponse,
+    CampaignClosureResultResponse,
+)
+from app.schemas.campaign.campaign_reopen_schema import (
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.middleware.rbac import TokenUser, require_roles
@@ -125,22 +134,6 @@ def get_campaigns_by_hiring_manager(
         message="Campaigns retrieved successfully"
     )
 
-@router.put(
-    "/{campaign_id}/status/update",
-    response_model=APIResponse[None],
-    status_code=status.HTTP_200_OK,
-    summary="Update campaign status",
-    description="Update the status of a campaign.",
-)
-def update_campaign_status(
-    campaign_id: UUID,
-    service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    campaign = service.update_campaign_status(campaign_id=campaign_id, status=CampaignStatus.PAUSED)
-    return APIResponse.ok(data=None, message="Campaign status updated successfully.")
-
-
 # ── S01 — Pause an Active Campaign ──────────────────────────────────────────
 
 @router.get(
@@ -179,6 +172,75 @@ def get_resume_summary(
         data=service.get_resume_summary(campaign_id),
         message="Resume summary retrieved successfully",
     )
+
+# ── S03 — Close a Campaign Manually ─────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/closure-summary",
+    response_model=APIResponse[CampaignClosureImpactSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Closure impact summary",
+    description="Impact summary shown in the close confirmation dialog (HR_ADMIN).",
+)
+def get_closure_summary(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_closure_impact_summary(campaign_id),
+        message="Closure impact summary retrieved successfully",
+    )
+
+@router.post(
+    "/{campaign_id}/close",
+    response_model=APIResponse[CampaignClosureResultResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Manually close a campaign",
+    description="Terminal closure — cancels in-flight processing and uploads, then returns the closure summary.",
+)
+def close_campaign(
+    campaign_id: UUID,
+    request: CampaignCloseRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.close_campaign(campaign_id, request, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign closed successfully")
+
+# ── S04 — Reopen a Closed Campaign ──────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/reopen-readiness",
+    response_model=APIResponse[CampaignReopenReadinessResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen readiness check",
+    description="JD/skill readiness validation + current config, for the reopen confirmation dialog (HR_ADMIN).",
+)
+def get_reopen_readiness(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_reopen_readiness(campaign_id),
+        message="Reopen readiness retrieved successfully",
+    )
+
+@router.post(
+    "/{campaign_id}/reopen",
+    response_model=APIResponse[CampaignReopenResultResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen a closed campaign",
+    description="Re-validates JD readiness, restores ACTIVE status, clears an already-passed deadline, and records CAMPAIGN_REOPENED.",
+)
+def reopen_campaign(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reopen_campaign(campaign_id, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign reopened successfully")
 
 @router.get(
     "/scoring-presets",
