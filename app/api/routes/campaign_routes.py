@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse, CampaignMinimalResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
@@ -257,6 +257,24 @@ def reopen_campaign(
 ):
     result = service.reopen_campaign(campaign_id, updated_by=user.user_id)
     return APIResponse.ok(data=result, message="Campaign reopened successfully")
+
+# ── S06 — Duplicate a Campaign Configuration ────────────────────────────────
+
+@router.post(
+    "/{campaign_id}/duplicate",
+    response_model=APIResponse[CampaignResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate a campaign's configuration",
+    description="Creates a new, fully independent campaign copying the source's scoring weights/thresholds. Works regardless of the source campaign's status. Candidate data is never copied.",
+)
+def duplicate_campaign(
+    campaign_id: UUID,
+    request: CampaignDuplicateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.duplicate_campaign(campaign_id, request, created_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign duplicated successfully")
 
 @router.get(
     "/scoring-presets",

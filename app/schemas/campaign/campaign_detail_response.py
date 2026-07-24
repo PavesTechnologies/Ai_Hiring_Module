@@ -8,6 +8,8 @@ class CampaignInfoSection(BaseModel):
     created_by_name: str | None
     created_at: datetime
     updated_at: datetime | None
+    duplicated_from_campaign_id: UUID | None = None
+    duplicated_from_campaign_name: str | None = None
 
 class JDConfigSection(BaseModel):
     jd_id: UUID

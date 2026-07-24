@@ -23,6 +23,8 @@ class CampaignResponse(BaseModel):
     overdue_review: bool = False
     pipeline_stalled: bool = False
     warning: str | None = None
+    duplicated_from_campaign_id: UUID | None = None
+    duplicated_from_campaign_name: str | None = None
 
 class CampaignMinimalResponse(BaseModel):
     """id + name only — for dropdowns/pickers that don't need the full campaign shape."""
