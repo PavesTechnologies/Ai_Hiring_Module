@@ -171,6 +171,7 @@ try:
             key="DETERMINISTIC_WEIGHT_EDUCATION",
             value="0.15",
             description="Weight of the education validation sub-score in the combined deterministic_score blend",
+        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="HM_REVIEW_SLA_DAYS",
@@ -188,6 +189,16 @@ try:
             key="MIN_LAYER_WEIGHT",
             value="5.00",
             description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DEADLINE_CHECK_INTERVAL_HOURS",
+            value="1",
+            description=(
+                "Hours between Celery Beat runs of the deadline-based campaign "
+                "auto-close task. Read once at Celery process startup — changing "
+                "this value requires restarting the beat process to take effect."
+            ),
         ),
     ]
 
