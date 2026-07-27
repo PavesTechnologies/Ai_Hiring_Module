@@ -75,4 +75,11 @@ celery_app.conf.beat_schedule = {
         # Nightly, off-peak — a full skill_ontology scan, not time-sensitive.
         "schedule": crontab(minute=0, hour=2),
     },
+    "evaluate-campaign-health-alerts": {
+        "task": "campaign.evaluate_health_alerts",
+        # spec says "daily" with no config-sourced interval, so
+        # this one is a plain fixed off-peak hour, distinct from the other
+        # two daily/hourly jobs.
+        "schedule": crontab(minute=0, hour=3),
+    },
 }

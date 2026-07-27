@@ -102,6 +102,7 @@ class SkillOntologyService:
         search: str | None,
         category: str | None,
         confidence: str | None,
+        source: str | None,
         is_active: bool | None,
     ) -> SkillOntologyPageResponse:
         rows = self.repository.get_skills(
@@ -110,10 +111,11 @@ class SkillOntologyService:
             search=search,
             category=category,
             confidence=confidence,
+            source=source,
             is_active=is_active,
         )
         total = self.repository.count_skills(
-            search=search, category=category, confidence=confidence, is_active=is_active
+            search=search, category=category, confidence=confidence, source=source, is_active=is_active
         )
 
         items = [
@@ -243,7 +245,7 @@ class SkillOntologyService:
                     actor_id=updated_by,
                     actor_role=actor_role,
                     action_type=ActionType.SKILL_UPDATED,
-                    entity_type=EntityType.SKILL,
+                    entity_type=EntityType.SKILL_ONTOLOGY,
                     entity_id=skill.id,
                     details={"before": before, "after": after},
                 )
@@ -254,7 +256,7 @@ class SkillOntologyService:
                     actor_id=updated_by,
                     actor_role=actor_role,
                     action_type=ActionType.SKILL_PARENT_UPDATED,
-                    entity_type=EntityType.SKILL,
+                    entity_type=EntityType.SKILL_ONTOLOGY,
                     entity_id=skill.id,
                     details=parent_change,
                 )
@@ -426,7 +428,7 @@ class SkillOntologyService:
                 actor_id=updated_by,
                 actor_role=actor_role,
                 action_type=action_type,
-                entity_type=EntityType.SKILL,
+                entity_type=EntityType.SKILL_ONTOLOGY,
                 entity_id=skill.id,
                 details={
                     "old_status": "active" if old_status else "inactive",
@@ -512,10 +514,11 @@ class SkillOntologyService:
         search: str | None,
         category: str | None,
         confidence: str | None,
+        source: str | None,
         is_active: bool | None,
     ) -> StreamingResponse:
         rows = self.repository.get_skills_for_export(
-            search=search, category=category, confidence=confidence, is_active=is_active
+            search=search, category=category, confidence=confidence, source=source, is_active=is_active
         )
         excel_file = ExcelExport.export_skill_ontology(rows)
         filename = f"skill_ontology_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -862,7 +865,7 @@ class SkillOntologyService:
                 actor_id=updated_by,
                 actor_role=actor_role,
                 action_type=ActionType.SKILL_UPDATED,
-                entity_type=EntityType.SKILL,
+                entity_type=EntityType.SKILL_ONTOLOGY,
                 entity_id=skill.id,
                 details={"before": before, "after": after, "source": "bulk_import"},
             )

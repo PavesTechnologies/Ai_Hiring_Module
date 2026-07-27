@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import DeadLetterQueue
@@ -16,6 +16,14 @@ class DeadLetterQueueRepository:
         """Read-only — monitoring lookup, no writes."""
         stmt = select(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id)
         return self.db.execute(stmt).scalars().first()
+
+    def mark_replayed(self, dlq_id: UUID, replayed_by: str, replayed_at: datetime) -> None:
+        self.db.execute(
+            update(DeadLetterQueue)
+            .where(DeadLetterQueue.id == dlq_id)
+            .values(replayed_at=replayed_at, replayed_by=replayed_by)
+        )
+        self.db.flush()
 
     def create(
         self,

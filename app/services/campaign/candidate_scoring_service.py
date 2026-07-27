@@ -12,6 +12,30 @@ _MAX_HIERARCHY_DEPTH = 2
 
 _DEFAULT_GRANDCHILD_MULTIPLIER = 0.50
 
+# M07-E03 S01 T02: human-readable display names for
+# ExperienceEducationValidationService's internal degree-level names
+# (HIGH_SCHOOL/ASSOCIATE/BACHELOR/MASTER/DOCTORATE) - rejection_reason must
+# never surface an internal level code verbatim.
+_DEGREE_LEVEL_DISPLAY_NAMES = {
+    "HIGH_SCHOOL": "High School",
+    "ASSOCIATE": "Associate's",
+    "BACHELOR": "Bachelor's",
+    "MASTER": "Master's",
+    "DOCTORATE": "Doctorate",
+}
+
+
+def _degree_level_display(level_name: str | None) -> str:
+    if level_name is None:
+        return "no qualifying degree"
+    return _DEGREE_LEVEL_DISPLAY_NAMES.get(level_name, level_name.replace("_", " ").title())
+
+
+def _format_years(value: float) -> str:
+    """4.0 -> '4', 2.5 -> '2.5' - matches the ticket's example wording."""
+    rounded = round(value, 1)
+    return str(int(rounded)) if rounded == int(rounded) else str(rounded)
+
 
 class MandatorySkillMatchType(str, Enum):
     """Match-type vocabulary for the mandatory-skill coverage breakdown (M07-E01 S02 T02)."""
@@ -405,6 +429,70 @@ class CandidateScoringService:
             "preferred_skills": preferred_skills,
             "preferred_skill_bonus": preferred_skill_bonus,
         }
+
+    # ------------------------------------------------------------------
+    # M07-E03 S01 T02: human-readable rejection_reason summary
+    # ------------------------------------------------------------------
+
+    MAX_REJECTION_REASON_LENGTH = 500
+
+    @staticmethod
+    def build_rejection_reason(
+        breakdown: dict,
+        experience_result: dict | None = None,
+        education_result: dict | None = None,
+    ) -> str:
+        """
+        Builds candidate_rejections.rejection_reason from the same
+        breakdown/experience_result/education_result already computed for
+        scoring - never a second, independent evaluation. Concatenates
+        every applicable failure with " | " so a candidate rejected for
+        multiple reasons at once (e.g. missing skills AND insufficient
+        experience) reports all of them, not just the first one found.
+
+        Only canonical_name / plain float / human-readable degree-level
+        text is ever interpolated - no canonical_skill_id, no match_type
+        code, no database column name.
+        """
+        clauses: list[str] = []
+
+        if breakdown.get("NO_VERIFIED_SKILLS"):
+            clauses.append("No verifiable skills extracted from resume")
+        else:
+            missing_skill_names = [
+                skill["canonical_name"] or skill["canonical_skill_id"]
+                for skill in breakdown.get("mandatory_skills", [])
+                if skill["match_type"] == MandatorySkillMatchType.MISSING.value
+            ]
+            if missing_skill_names:
+                clauses.append(f"Missing required skills: {', '.join(missing_skill_names)}")
+
+        if experience_result is not None and not experience_result["passed"]:
+            candidate_years = experience_result["candidate_years"]
+            min_years = experience_result["min_years"]
+            gap = round(min_years - candidate_years, 1)
+            clauses.append(
+                f"Insufficient experience: {_format_years(candidate_years)} years provided, "
+                f"minimum {_format_years(min_years)} years required (gap: {_format_years(gap)} years)"
+            )
+
+        if education_result is not None and not education_result["passed"]:
+            required_display = _degree_level_display(education_result["required_level"])
+            candidate_display = _degree_level_display(education_result["candidate_level"])
+            clauses.append(
+                f"Education requirement not met: {required_display} required, {candidate_display} found"
+            )
+
+        if not clauses:
+            # deterministic_score alone fell below threshold with nothing
+            # else to point to (e.g. every mandatory skill matched, but only
+            # at low-multiplier hierarchy tiers).
+            clauses.append("Deterministic score below threshold")
+
+        reason = " | ".join(clauses) + "."
+        if len(reason) > CandidateScoringService.MAX_REJECTION_REASON_LENGTH:
+            reason = reason[: CandidateScoringService.MAX_REJECTION_REASON_LENGTH - 1].rstrip() + "…"
+        return reason
 
     def calculate_and_store_score_breakdown(
         self,

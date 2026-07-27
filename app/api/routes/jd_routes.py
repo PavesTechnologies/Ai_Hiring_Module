@@ -24,6 +24,7 @@ from app.enums.constants import UserRole
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.async_tasks import DocumentType, ProcessingStage
+from app.models.jd.job_descriptions import JDVerificationStatus
 from app.repositories.jd_repository import JDRepository
 from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDRequest, JDSearchRequest
@@ -467,7 +468,8 @@ def update_job_description_from_file(
 @router.delete(
     "/{jd_id}",
     response_model=APIResponse,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
 def delete_job_description(
     jd_id: UUID,
@@ -494,6 +496,7 @@ def search_job_descriptions(
     jurisdiction: str | None = Query(default=None),
     active: bool | None = Query(default=True),
     source_format: str | None = Query(default=None),
+    is_verified: JDVerificationStatus | None = Query(default=None),
 
     page: int = Query(default=1, ge=1),
     size: int = Query(default=10, ge=1, le=100),
@@ -507,6 +510,7 @@ def search_job_descriptions(
         jurisdiction=jurisdiction,
         active=active,
         source_format=source_format,
+        is_verified=is_verified,
         page=page,
         size=size,
         sort_by=sort_by,

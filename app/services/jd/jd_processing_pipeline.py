@@ -1,10 +1,13 @@
+import logging
 from uuid import UUID
 
+from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.models.async_tasks import DocumentType, ProcessingStage
 from app.models.jd.job_descriptions import JDSourceFormat
 from app.repositories.jd_repository import JDRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
+from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
@@ -17,6 +20,8 @@ from app.services.jd.jd_service import JDService
 from app.services.document_processing.retry_policy import STAGE_ORDER
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
+
+logger = logging.getLogger(__name__)
 
 
 class JDProcessingPipeline:
@@ -158,7 +163,8 @@ class JDProcessingPipeline:
                 )
                 if context.is_duplicate:
                     self._skip_remaining_after_text_extraction(context)
-                    return None
+                    self._delete_uploaded_file(context)
+                    raise self._duplicate_exception(context.duplicate_jd_info)
 
         for stage, fn in (
             (ProcessingStage.TEXT_CLEANING, lambda: self._run_text_cleaning(context)),
@@ -190,8 +196,52 @@ class JDProcessingPipeline:
 
         if context.jd_id:
             self.stage_tracker.link_document_id(context.task_id, context.jd_id)
+            return context.jd_id
+
+        if context.duplicate_jd_info:
+            self._delete_uploaded_file(context)
+            raise self._duplicate_exception(context.duplicate_jd_info)
 
         return context.jd_id
+
+    def _delete_uploaded_file(self, context: JDProcessingContext) -> None:
+        """
+        Undoes the route's synchronous Storage-stage upload once a duplicate
+        is confirmed, for both create and update(reprocess): context.file_path
+        is only ever the file uploaded for *this* run (never the prior
+        version's file — that's old_file_path, a separate Celery task kwarg
+        this pipeline never touches), so it's always safe to delete here.
+        Best-effort: a storage hiccup shouldn't stop the duplicate exception
+        from being raised, it just leaves an orphaned object to clean up
+        later.
+        """
+        if not context.file_path:
+            return
+        try:
+            self.storage_service.delete_file(
+                bucket_name=self.jd_service.JD_STORAGE_BUCKET,
+                file_path=context.file_path,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to delete uploaded JD document '%s' after duplicate detection.",
+                context.file_path,
+            )
+
+    @staticmethod
+    def _duplicate_exception(info: dict) -> DuplicateJDException:
+        return DuplicateJDException(
+            DuplicateJDInfo(
+                message="Duplicate job description found.",
+                existing_jd=ExistingJDInfo(
+                    id=info["id"],
+                    title=info["title"],
+                    version_number=info["version_number"],
+                    created_at=info["created_at"],
+                ),
+                actions=["View Existing", "Create New Version"],
+            )
+        )
 
     @staticmethod
     def _stage_order_index(stage: ProcessingStage) -> int:
@@ -235,6 +285,13 @@ class JDProcessingPipeline:
             else self.jd_repository.get_by_content_hash(context.content_hash)
         )
         context.is_duplicate = duplicate is not None
+        if duplicate is not None:
+            context.duplicate_jd_info = {
+                "id": duplicate.id,
+                "title": duplicate.title,
+                "version_number": duplicate.version_number,
+                "created_at": duplicate.created_at,
+            }
 
     def _run_text_cleaning(self, context: JDProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.text)
@@ -264,30 +321,45 @@ class JDProcessingPipeline:
         if context.content_hash is None:
             context.content_hash = self.hash_service.generate_hash(context.text)
 
-        context.jd_id = self.jd_service.persist_processed_jd(
-            title=context.title,
-            raw_text=context.text,
-            jurisdiction=context.jurisdiction,
-            min_experience_years=context.min_experience_years,
-            max_experience_years=context.max_experience_years,
-            notice_period=context.notice_period,
-            education_criteria=context.education_criteria,
-            source_format=context.source_format,
-            file_path=context.file_path,
-            original_filename=context.original_filename,
-            created_by=context.created_by,
-            content_hash=context.content_hash,
-            extraction=context.extraction,
-            skill_repository=self.skill_repository,
-            skill_matches=context.skill_matches,
-            embedding=context.embedding,
-            embedding_model_version_id=context.embedding_model_version_id,
-            input_text_hash=context.input_text_hash,
-            existing_jd_id=context.existing_jd_id,
-            version_number=context.version_number,
-            parent_jd_id=context.parent_jd_id,
-            lineage_root_id=context.lineage_root_id,
-        )
+        try:
+            context.jd_id = self.jd_service.persist_processed_jd(
+                title=context.title,
+                raw_text=context.text,
+                jurisdiction=context.jurisdiction,
+                min_experience_years=context.min_experience_years,
+                max_experience_years=context.max_experience_years,
+                notice_period=context.notice_period,
+                education_criteria=context.education_criteria,
+                source_format=context.source_format,
+                file_path=context.file_path,
+                original_filename=context.original_filename,
+                created_by=context.created_by,
+                content_hash=context.content_hash,
+                extraction=context.extraction,
+                skill_repository=self.skill_repository,
+                skill_matches=context.skill_matches,
+                embedding=context.embedding,
+                embedding_model_version_id=context.embedding_model_version_id,
+                input_text_hash=context.input_text_hash,
+                existing_jd_id=context.existing_jd_id,
+                version_number=context.version_number,
+                parent_jd_id=context.parent_jd_id,
+                lineage_root_id=context.lineage_root_id,
+            )
+        except DuplicateJDException as exc:
+            # Caught here rather than left to propagate: this stage function
+            # runs inside stage_tracker.run_stage(), which would otherwise
+            # wrap it as a StageExecutionError and feed it to the
+            # retry/dead-letter machinery meant for genuine failures. run()
+            # re-raises this as the same DuplicateJDException once the
+            # PERSISTENCE stage itself is recorded as having completed.
+            existing = exc.existing_jd.existing_jd
+            context.duplicate_jd_info = {
+                "id": existing.id,
+                "title": existing.title,
+                "version_number": existing.version_number,
+                "created_at": existing.created_at,
+            }
 
     def _skip_remaining_after_text_extraction(self, context: JDProcessingContext) -> None:
         for stage in (

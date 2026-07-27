@@ -145,7 +145,7 @@ def detect_duplicate_skill_aliases() -> None:
                         actor_id=None,
                         actor_role="SYSTEM",
                         action_type=ActionType.ALIAS_DUPLICATE_DETECTED,
-                        entity_type=EntityType.SKILL,
+                        entity_type=EntityType.SKILL_ONTOLOGY,
                         entity_id=skill_a_id,
                         details={
                             "alias": alias,

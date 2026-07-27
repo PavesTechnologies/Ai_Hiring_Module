@@ -21,6 +21,7 @@ from app.schemas.bulk_upload.request import BulkUploadRequest
 from app.schemas.bulk_upload.response import (
     BulkUploadAcceptedResponse,
     BulkUploadCancelResponse,
+    BulkUploadFileReplayResponse,
     BulkUploadHistoryListResponse,
     BulkUploadJobDetailResponse,
     BulkUploadJobFileItem,
@@ -118,6 +119,7 @@ def list_bulk_upload_history(
                     original_filename=job.original_filename,
                     status=job.status.value,
                     total_files=job.total_files,
+                    queued_count=job.queued_count,
                     processed_count=job.processed_count,
                     failed_count=job.failed_count,
                     duplicate_count=job.duplicate_count,
@@ -323,6 +325,42 @@ def get_bulk_upload_job_failures(
     return APIResponse.ok(
         data=service.get_job_failures(bulk_upload_job_id, page=page, size=size),
         message="Bulk upload job failures retrieved successfully.",
+    )
+
+
+@router.post(
+    "/{bulk_upload_job_id}/files/{file_id}/replay",
+    response_model=APIResponse[BulkUploadFileReplayResponse],
+    status_code=status.HTTP_200_OK,
+)
+def replay_bulk_upload_file(
+    bulk_upload_job_id: UUID,
+    file_id: UUID,
+    service: BulkUploadService = Depends(get_bulk_upload_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Re-enqueues a single FAILED file's parse task from its dead-lettered
+    attempt, under a fresh task_id. Only files that actually reached the
+    dead letter queue are replayable — duplicate-candidate and other
+    deterministic failures never dead-letter and cannot be replayed here.
+    """
+    job_file, new_task_id = service.replay_failed_file(
+        job_id=bulk_upload_job_id,
+        file_id=file_id,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+
+    return APIResponse.ok(
+        data=BulkUploadFileReplayResponse(
+            file_id=job_file.id,
+            bulk_upload_job_id=job_file.bulk_upload_job_id,
+            original_filename=job_file.original_filename,
+            status=job_file.status.value,
+            new_task_id=new_task_id,
+        ),
+        message="File replay enqueued.",
     )
 
 

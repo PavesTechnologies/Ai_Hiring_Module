@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     aws_region: str = "ap-south-1"
     aws_s3_bucket: str = ""
 
+    # AWS SES (M07-E03 S02 T02) — reuses the same AWS credentials/region
+    # above; only the verified sender address is SES-specific.
+    ses_from_email: str = ""
+
     # Supabase
     SUPABASE_URL:str
     SUPABASE_PUBLISHABLE_KEY:str

@@ -1,3 +1,4 @@
+from datetime import datetime
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -177,6 +178,134 @@ class ExcelExport:
                 "Active" if skill.is_active else "Inactive",
                 skill.occurrence_count,
                 skill.created_at.strftime("%d-%b-%Y %I:%M %p"),
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
+    def export_rejected_candidates(rows):
+        """
+        M07-E03 S03 T03: rows is an iterable of dicts (see
+        CampaignCandidateService._to_export_row) - one row per rejected
+        candidate. Never includes candidate name/email/phone/resume or any
+        other PII - only the opaque candidate_uuid plus rejection/score
+        fields already computed by the deterministic scoring pipeline.
+        """
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Rejected Candidates"
+
+        ws.append([
+            "Candidate UUID",
+            "Rejection Layer",
+            "Rejection Reason",
+            "Rejected At",
+            "Deterministic Score",
+            "Missing Mandatory Skills",
+            "Experience Gap",
+            "Education Gap",
+            "HR Override",
+            "Override Reason",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for row in rows:
+            ws.append([
+                row["candidate_uuid"],
+                row["rejection_layer"],
+                row["rejection_reason"],
+                row["rejected_at"].strftime("%d-%b-%Y %I:%M %p") if row["rejected_at"] else "",
+                row["deterministic_score"] if row["deterministic_score"] is not None else "",
+                row["missing_mandatory_skills"],
+                row["experience_gap"],
+                row["education_gap"],
+                "Yes" if row["hr_override"] else "No",
+                row["override_reason"],
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
+    def export_override_report(rows):
+        """
+        M07-E03 S04 T03: rows is an iterable of dicts (see
+        CampaignCandidateService._to_override_export_row) - one row per HR
+        override event. Never includes candidate name/email/phone/resume -
+        only the opaque candidate_uuid. HR full name is not candidate PII
+        and is included as explicitly required by this report.
+        """
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Override Report"
+
+        ws.append([
+            "Campaign Name",
+            "Candidate UUID",
+            "Original Rejection Reason",
+            "Override Reason",
+            "HR Full Name",
+            "Override Timestamp",
+            "Current Pipeline Stage",
+        ])
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for row in rows:
+            ws.append([
+                row["campaign_name"],
+                row["candidate_uuid"],
+                row["original_rejection_reason"],
+                row["override_reason"],
+                row["hr_full_name"],
+                row["override_timestamp"].strftime("%d-%b-%Y %I:%M %p") if row["override_timestamp"] else "",
+                row["current_pipeline_stage"],
             ])
 
         ws.auto_filter.ref = ws.dimensions
@@ -701,7 +830,7 @@ class ExcelExport:
                 row += 1
         else:
                 ws.cell(row=row, column=1).value = "No linked campaigns"
-        
+
         for column_cells in ws.columns:
 
             max_length = 0
@@ -728,6 +857,128 @@ class ExcelExport:
 
         wb.save(output)
 
+        output.seek(0)
+
+        return output
+
+    @staticmethod
+    def _write_sheet(ws, headers, rows, row_key_order):
+        """
+        M07-E03 S05 T03: shared per-sheet writer for
+        export_deterministic_rejection_summary - same header-styling/
+        freeze-panes/auto-filter/auto-fit conventions as every other
+        single-sheet export method in this file, just parameterized so
+        one workbook can hold 3 sheets without repeating the boilerplate
+        3 times.
+        """
+        ws.append(headers)
+
+        for cell in ws[1]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.freeze_panes = "A2"
+
+        for row in rows:
+            ws.append([
+                # openpyxl rejects tz-aware datetimes outright - format the
+                # same way every other export method in this file already
+                # does, rather than making every S05 row-builder remember to.
+                value.strftime("%d-%b-%Y %I:%M %p") if isinstance(value, datetime) else value
+                for value in (row.get(key, "") for key in row_key_order)
+            ])
+
+        ws.auto_filter.ref = ws.dimensions
+
+        for column_cells in ws.columns:
+            max_length = 0
+            for cell in column_cells:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                get_column_letter(column_cells[0].column)
+            ].width = min(max_length + 3, 50)
+
+    @staticmethod
+    def export_deterministic_rejection_summary(campaign_summary_rows, skill_gap_rows, override_log_rows):
+        """
+        M07-E03 S05 T03: platform-wide deterministic rejection summary -
+        3 sheets in one workbook (Campaign Summary, Skill Gap Analysis,
+        Override Log). Never includes candidate name/email/phone/resume -
+        only the opaque candidate_uuid on the Override Log sheet.
+        """
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        ExcelExport._write_sheet(
+            wb.create_sheet("Campaign Summary"),
+            [
+                "Campaign Name",
+                "Total Candidates",
+                "Deterministic Rejections",
+                "Rejection Rate (%)",
+                "Top Rejection Reason",
+                "Override Count",
+                "Override Rate (%)",
+            ],
+            campaign_summary_rows,
+            [
+                "campaign_name",
+                "total_candidates",
+                "deterministic_rejections",
+                "rejection_rate",
+                "top_rejection_reason",
+                "override_count",
+                "override_rate",
+            ],
+        )
+
+        ExcelExport._write_sheet(
+            wb.create_sheet("Skill Gap Analysis"),
+            [
+                "Skill Canonical Name",
+                "Campaigns Requiring Skill",
+                "Missing Count",
+                "Missing Rate (%)",
+            ],
+            skill_gap_rows,
+            [
+                "canonical_name",
+                "campaigns_requiring_skill",
+                "missing_count",
+                "missing_rate",
+            ],
+        )
+
+        ExcelExport._write_sheet(
+            wb.create_sheet("Override Log"),
+            [
+                "Campaign Name",
+                "Candidate UUID",
+                "Rejection Reason",
+                "Override Reason",
+                "Override By",
+                "Override Timestamp",
+                "Current Pipeline Stage",
+            ],
+            override_log_rows,
+            [
+                "campaign_name",
+                "candidate_uuid",
+                "rejection_reason",
+                "override_reason",
+                "override_by",
+                "override_timestamp",
+                "current_pipeline_stage",
+            ],
+        )
+
+        output = BytesIO()
+        wb.save(output)
         output.seek(0)
 
         return output

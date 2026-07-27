@@ -33,6 +33,10 @@ class AIEvaluationStatus(enum.Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     MANUAL_REVIEW = "MANUAL_REVIEW"
+    # M07-E03 S01 T03: set when a candidate is rejected at the DETERMINISTIC
+    # layer and any QUEUED AI_EVALUATE task for them is cancelled - distinct
+    # from PENDING (never queued yet) and FAILED (queued, ran, errored).
+    SKIPPED = "SKIPPED"
 
 
 class AIRecommendation(enum.Enum):

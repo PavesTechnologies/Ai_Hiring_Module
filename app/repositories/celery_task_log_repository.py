@@ -43,6 +43,24 @@ class CeleryTaskLogRepository:
             .first()
         )
 
+    def get_by_campaign_candidate_and_task_type(
+        self, campaign_candidate_id: UUID, task_type: str,
+    ) -> list[CeleryTaskLog]:
+        """
+        M07-E03 S01 T03: every task log of a given type queued/run for one
+        campaign_candidate - scoped strictly to this id (never other
+        candidates/campaigns). Caller filters by status (e.g. QUEUED only)
+        since different callers care about different statuses.
+        """
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(
+                CeleryTaskLog.campaign_candidate_id == campaign_candidate_id,
+                CeleryTaskLog.task_type == task_type,
+            )
+            .all()
+        )
+
     def get_by_task_ids(self, task_ids: list[str]) -> list[CeleryTaskLog]:
         """
         Batched counterpart to get_by_task_id — one query for a whole
