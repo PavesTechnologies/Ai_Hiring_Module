@@ -166,27 +166,28 @@ def process_jd_document(
             checkpoint_repo.delete(task_id)
             checkpoint_repo.commit()
 
-        if jd_id:
-            task_log.jd_id = jd_id
-            task_log_repo.update(task_log)
-            task_log_repo.commit()
-            task_log_service.mark_success(
-                task_log,
-                summary=f"JD {jd_id} reprocessed." if existing_jd_id else f"JD {jd_id} created.",
-            )
-            if existing_jd_id and file_path and old_file_path:
-                try:
-                    jd_service.storage_service.delete_file(
-                        bucket_name=jd_service.JD_STORAGE_BUCKET,
-                        file_path=old_file_path,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to delete superseded JD document '%s' for JD %s.",
-                        old_file_path, jd_id,
-                    )
-        else:
-            task_log_service.mark_success(task_log, summary="Duplicate job description; no new JD created.")
+        # jd_id is never None here: pipeline.run() now raises
+        # DuplicateJDException (caught below) instead of returning None for
+        # a detected duplicate, so a normal return always means a JD was
+        # persisted.
+        task_log.jd_id = jd_id
+        task_log_repo.update(task_log)
+        task_log_repo.commit()
+        task_log_service.mark_success(
+            task_log,
+            summary=f"JD {jd_id} reprocessed." if existing_jd_id else f"JD {jd_id} created.",
+        )
+        if existing_jd_id and file_path and old_file_path:
+            try:
+                jd_service.storage_service.delete_file(
+                    bucket_name=jd_service.JD_STORAGE_BUCKET,
+                    file_path=old_file_path,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to delete superseded JD document '%s' for JD %s.",
+                    old_file_path, jd_id,
+                )
 
     except StageExecutionError as stage_exc:
         should_retry = False

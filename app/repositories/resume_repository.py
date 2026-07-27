@@ -143,6 +143,7 @@ class ResumeRepository:
         match_tier: str,
         status: str,
         scoring_weight: float = 1.0,
+        unknown_skill_id: UUID | None = None,
     ) -> CandidateSkill:
         candidate_skill = CandidateSkill(
             candidate_id=candidate_id,
@@ -153,6 +154,7 @@ class ResumeRepository:
             match_tier=match_tier,
             status=status,
             scoring_weight=scoring_weight,
+            unknown_skill_id=unknown_skill_id,
         )
         self.db.add(candidate_skill)
         self.db.flush()

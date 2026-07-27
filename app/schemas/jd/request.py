@@ -2,6 +2,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.jd.job_descriptions import JDVerificationStatus
+
 
 class EducationCriteria(BaseModel):
     degree: Optional[str] = None
@@ -60,6 +62,7 @@ class JDSearchRequest(BaseModel):
     jurisdiction: Optional[str] | None
     active: Optional[bool] = True
     source_format: Optional[str] | None
+    is_verified: Optional[JDVerificationStatus] | None
 
     page: int = Field(default=1, ge=1, description="Page number, must be greater than or equal to 1")
     size: int = Field(default=10, ge=1, le=100, description="Page size, must be between 1 and 100")

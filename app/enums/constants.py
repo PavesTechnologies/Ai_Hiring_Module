@@ -89,6 +89,11 @@ class ActionType(enum.Enum):
     RESUME_PARSED = "RESUME_PARSED"
     RESUME_PARSE_FAILED = "RESUME_PARSE_FAILED"
     CANDIDATE_SKILL_MATCHED = "CANDIDATE_SKILL_MATCHED"
+    # NOTE: same DB-enum caveat as RESUME_UPLOADED/CIRCUIT_BREAKER_OPENED
+    # above - needs `ALTER TYPE audit_action_type_enum ADD VALUE
+    # 'UNKNOWN_SKILL_DELETED'` (see alembic/versions/<new>_unknown_skill_deleted_audit_action.py)
+    # before this can actually be written to audit_log.
+    UNKNOWN_SKILL_DELETED = "UNKNOWN_SKILL_DELETED"
     BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
 
 class EntityType(enum.Enum):
