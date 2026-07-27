@@ -43,3 +43,10 @@ from .skills import (
     JDUnknownSkill,
     CandidateSkill,
 )
+
+from .email import (
+    EmailTemplate,
+    EmailNotification,
+    EmailTriggerEvent,
+    EmailNotificationStatus,
+)

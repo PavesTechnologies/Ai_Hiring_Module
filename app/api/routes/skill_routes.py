@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Security
+from fastapi import APIRouter, Depends, Query, Security
 
 from app.dependencies.skills import get_skill_curation_service
 from app.middleware.rbac import TokenUser, require_roles
@@ -32,9 +32,14 @@ router = APIRouter(
 def list_pending_unknown_skills(
     service: SkillCurationService = Depends(get_skill_curation_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None),
 ):
     """HR review queue — pending/under-review UnknownSkill entries, highest-frequency first."""
-    unknown_skills = service.list_pending_unknown_skills()
+    unknown_skills = service.list_pending_unknown_skills(
+        page=page, page_size=page_size, search=search,
+    )
     return APIResponse.ok(
         data=[
             UnknownSkillItem(

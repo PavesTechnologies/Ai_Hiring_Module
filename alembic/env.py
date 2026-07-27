@@ -49,6 +49,7 @@ import app.models.ai_pipeline       # noqa: F401, E402
 import app.models.compliance        # noqa: F401, E402
 import app.models.async_tasks       # noqa: F401, E402
 import app.models.search            # noqa: F401, E402
+import app.models.email             # noqa: F401, E402
 
 target_metadata = Base.metadata
 

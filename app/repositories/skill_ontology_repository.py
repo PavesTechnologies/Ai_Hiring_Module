@@ -45,6 +45,7 @@ class SkillOntologyRepository:
         search: Optional[str],
         category: Optional[str],
         confidence: Optional[str],
+        source: Optional[str],
         is_active: Optional[bool],
     ):
         if search:
@@ -71,6 +72,9 @@ class SkillOntologyRepository:
         if confidence:
             query = query.filter(SkillOntology.confidence == confidence)
 
+        if source:
+            query = query.filter(SkillOntology.source == source)
+
         if is_active is not None:
             query = query.filter(SkillOntology.is_active.is_(is_active))
 
@@ -82,6 +86,7 @@ class SkillOntologyRepository:
         search: Optional[str] = None,
         category: Optional[str] = None,
         confidence: Optional[str] = None,
+        source: Optional[str] = None,
         is_active: Optional[bool] = None,
     ) -> int:
         query = self._apply_filters(
@@ -89,6 +94,7 @@ class SkillOntologyRepository:
             search=search,
             category=category,
             confidence=confidence,
+            source=source,
             is_active=is_active,
         )
         return query.scalar() or 0
@@ -101,6 +107,7 @@ class SkillOntologyRepository:
         search: Optional[str] = None,
         category: Optional[str] = None,
         confidence: Optional[str] = None,
+        source: Optional[str] = None,
         is_active: Optional[bool] = None,
     ) -> list[tuple[SkillOntology, Optional[str]]]:
         """Returns (skill, parent_canonical_name) rows, parent resolved via a single outer join."""
@@ -108,7 +115,7 @@ class SkillOntologyRepository:
             ParentSkill, SkillOntology.parent_skill_id == ParentSkill.id
         )
         query = self._apply_filters(
-            query, search=search, category=category, confidence=confidence, is_active=is_active
+            query, search=search, category=category, confidence=confidence, source=source, is_active=is_active
         )
         return (
             query.order_by(SkillOntology.canonical_name.asc())
@@ -177,6 +184,7 @@ class SkillOntologyRepository:
         search: Optional[str] = None,
         category: Optional[str] = None,
         confidence: Optional[str] = None,
+        source: Optional[str] = None,
         is_active: Optional[bool] = None,
     ) -> list[tuple[SkillOntology, Optional[str]]]:
         """Same shape as get_skills(), but unpaginated (every matching row) for Excel export."""
@@ -184,7 +192,7 @@ class SkillOntologyRepository:
             ParentSkill, SkillOntology.parent_skill_id == ParentSkill.id
         )
         query = self._apply_filters(
-            query, search=search, category=category, confidence=confidence, is_active=is_active
+            query, search=search, category=category, confidence=confidence, source=source, is_active=is_active
         )
         return query.order_by(SkillOntology.canonical_name.asc()).all()
 

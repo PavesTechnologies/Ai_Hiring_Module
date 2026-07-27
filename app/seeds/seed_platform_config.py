@@ -190,6 +190,32 @@ try:
             value="0.15",
             description="Weight of the education validation sub-score in the combined deterministic_score blend",
         ),
+        # M07-E03 S04: HR Override reporting
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="OVERRIDE_RATE_ALERT_THRESHOLD",
+            value="20",
+            description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
+        ),
+        # M07-E03 S05: Deterministic Rejection Analytics
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_CANDIDATES_FOR_ANALYTICS",
+            value="20",
+            description="Minimum candidates a campaign must have before JD calibration recommendations are generated in the Rejection Analytics report",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SKILL_MISMATCH_RATE_THRESHOLD",
+            value="60",
+            description="If a single mandatory skill is MISSING in more than this % of a campaign's deterministic rejections, recommend making it preferred instead of mandatory",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EXPERIENCE_ONLY_RATE_THRESHOLD",
+            value="40",
+            description="If more than this % of a campaign's deterministic rejections are experience-only failures, recommend reducing minimum experience or increasing tolerance",
+        ),
     ]
 
     for config in configs:

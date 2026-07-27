@@ -121,3 +121,24 @@ class CeleryTaskLogService:
         self.repository.commit()          # <-- IMPORTANT
 
         return log
+
+    def mark_dead(
+        self,
+        log: CeleryTaskLog,
+        error_message: str,
+    ) -> CeleryTaskLog:
+        """
+        M07-E03 S01 T03: a still-QUEUED downstream task (e.g. AI_EVALUATE)
+        that must never run because its candidate was already rejected at
+        an earlier layer - TaskStatus.DEAD is terminal (unlike PAUSED,
+        which implies a resumable soft-cancel), matching this ticket's
+        "Cancel it" wording exactly.
+        """
+        log.status = TaskStatus.DEAD
+        log.error_message = error_message
+        log.completed_at = datetime.now(timezone.utc)
+
+        log = self.repository.update(log)
+        self.repository.commit()          # <-- IMPORTANT
+
+        return log

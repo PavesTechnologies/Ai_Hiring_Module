@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.campaigns import HiringCampaign
 from app.models.skills import (
     CandidateSkill,
     JDSkill,
@@ -344,16 +345,37 @@ class SkillRepository:
     def get_unknown_skill_by_id(self, unknown_skill_id: UUID) -> UnknownSkill | None:
         return self.db.query(UnknownSkill).filter(UnknownSkill.id == unknown_skill_id).first()
 
-    def get_pending_unknown_skills(self) -> list[UnknownSkill]:
-        """HR review queue, highest-frequency (most impactful to resolve) first."""
-        return (
-            self.db.query(UnknownSkill)
-            .filter(
-                UnknownSkill.status.in_(
-                    [UnknownSkillStatus.PENDING, UnknownSkillStatus.UNDER_REVIEW]
+    def get_pending_unknown_skills(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        search: str | None = None,
+    ) -> list[UnknownSkill]:
+        """
+        HR review queue, highest-frequency (most impactful to resolve)
+        first. search does a case-insensitive partial match against
+        raw_text OR normalized_key; filtering is applied before the
+        offset/limit pagination.
+        """
+        query = self.db.query(UnknownSkill).filter(
+            UnknownSkill.status.in_(
+                [UnknownSkillStatus.PENDING, UnknownSkillStatus.UNDER_REVIEW]
+            )
+        )
+
+        if search:
+            pattern = f"%{search.strip()}%"
+            query = query.filter(
+                or_(
+                    UnknownSkill.raw_text.ilike(pattern),
+                    UnknownSkill.normalized_key.ilike(pattern),
                 )
             )
-            .order_by(UnknownSkill.frequency.desc())
+
+        return (
+            query.order_by(UnknownSkill.frequency.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
             .all()
         )
 
@@ -409,6 +431,34 @@ class SkillRepository:
             )
             .all()
         )
+
+    def get_campaign_requirement_counts_by_skill(
+        self,
+        canonical_skill_ids: list[UUID],
+    ) -> dict[UUID, int]:
+        """
+        M07-E03 S05 T03: for each canonical_skill_id, the number of DISTINCT
+        campaigns whose JD requires it as mandatory (JDSkill.mandatory=True,
+        joined onto HiringCampaign.jd_id) - backs the Skill Gap Analysis
+        export sheet's "campaigns requiring skill" column. Batched (one
+        query for every skill the caller cares about) rather than one
+        query per skill.
+        """
+        if not canonical_skill_ids:
+            return {}
+        stmt = (
+            self.db.query(
+                JDSkill.canonical_skill_id,
+                func.count(func.distinct(HiringCampaign.id)),
+            )
+            .join(HiringCampaign, HiringCampaign.jd_id == JDSkill.jd_id)
+            .filter(
+                JDSkill.mandatory.is_(True),
+                JDSkill.canonical_skill_id.in_(canonical_skill_ids),
+            )
+            .group_by(JDSkill.canonical_skill_id)
+        )
+        return {skill_id: count for skill_id, count in stmt.all()}
 
     def get_candidate_normalized_skills(
         self,
