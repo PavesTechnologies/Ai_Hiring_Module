@@ -23,6 +23,7 @@ class BulkUploadJobSummary(BaseModel):
     original_filename: str
     status: str
     total_files: int
+    queued_count: int
     processed_count: int
     failed_count: int
     duplicate_count: int
@@ -42,6 +43,14 @@ class BulkUploadJobFileItem(BaseModel):
     original_filename: str
     status: str
     retry_count: int | None = None
+
+
+class BulkUploadFileReplayResponse(BaseModel):
+    file_id: UUID
+    bulk_upload_job_id: UUID
+    original_filename: str
+    status: str
+    new_task_id: str
 
 
 class BulkUploadJobDetailResponse(BaseModel):

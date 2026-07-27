@@ -143,6 +143,26 @@ class BulkUploadJobFileRepository:
         self.db.flush()
         return (result.rowcount or 0) > 0
 
+    def requeue_for_replay(self, file_id: UUID, new_task_id: str) -> bool:
+        """
+        Atomically claims a FAILED file for replay: resets it to QUEUED
+        under a fresh task_id (the dead-lettered original task_id is
+        already terminal in celery_task_log and cannot be reused). Scoped
+        to status == FAILED so a concurrent replay attempt on the same file
+        can only ever succeed once. Returns False if the file was no longer
+        FAILED by the time this ran.
+        """
+        result = self.db.execute(
+            update(BulkUploadJobFile)
+            .where(
+                BulkUploadJobFile.id == file_id,
+                BulkUploadJobFile.status == BulkUploadFileStatus.FAILED,
+            )
+            .values(status=BulkUploadFileStatus.QUEUED, task_id=new_task_id)
+        )
+        self.db.flush()
+        return (result.rowcount or 0) > 0
+
     def cancel_queued_files(self, bulk_upload_job_id: UUID) -> int:
         """
         Bulk-cancels every still-QUEUED file for this job. Files already

@@ -225,8 +225,8 @@ if "%_HTTP_CODE%"=="200" (
     goto :eof
 )
  
-echo   [START] Starting FastAPI ...
-start "AIRS - FastAPI" cmd /k call "%VENV_ACTIVATE%" ^&^& uvicorn %FASTAPI_APP% --host %FASTAPI_HOST% --port %FASTAPI_PORT%
+echo   [START] Starting FastAPI (auto-reload on code changes) ...
+start "AIRS - FastAPI" cmd /k call "%VENV_ACTIVATE%" ^&^& uvicorn %FASTAPI_APP% --host %FASTAPI_HOST% --port %FASTAPI_PORT% --reload
  
 set /a _elapsed=0
 :wait_fastapi
