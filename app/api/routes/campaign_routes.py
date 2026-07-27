@@ -1,19 +1,32 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
+from fastapi.responses import StreamingResponse
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignWeightHistoryResponse, HiringCampaignResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
+from app.schemas.campaign.campaign_comparison_response import CampaignComparisonResponse
+from app.schemas.campaign.campaign_weight_change_report_response import WeightChangeReportResponse
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
+from app.schemas.campaign.campaign_closure_schema import (
+    CampaignCloseRequest,
+    CampaignClosureImpactSummaryResponse,
+    CampaignClosureResultResponse,
+)
+from app.schemas.campaign.campaign_reopen_schema import (
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_service import CampaignService
-from app.middleware.rbac import TokenUser, require_roles, get_current_user
+from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.models.campaigns import CampaignStatus
 
@@ -48,6 +61,22 @@ def create_campaign(
     return APIResponse.ok(
         data=campaign,
         message="Campaign created successfully"
+    )
+
+@router.get(
+    "/active",
+    response_model=APIResponse[list[CampaignMinimalResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Get all active campaigns (id + name only)",
+    description="Lightweight list of ACTIVE campaigns for dropdowns/pickers.",
+)
+def get_active_campaigns(
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    return APIResponse.ok(
+        data=service.get_active_campaigns_minimal(),
+        message="Active campaigns retrieved successfully",
     )
 
 @router.get(
@@ -89,11 +118,11 @@ def get_all_campaigns(
     status_code=status.HTTP_200_OK,
     summary="Get all campaigns (HR_ADMIN)",
     description="Retrieve every campaign in the organisation, with JD and hiring manager details.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def get_campaigns_by_manager(
     show_closed: bool = Query(False),
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     campaigns = service.get_all_campaigns_for_hrAdmin(show_closed=show_closed)
 
@@ -108,12 +137,11 @@ def get_campaigns_by_manager(
     status_code=status.HTTP_200_OK,
     summary="Get campaigns by hiring manager ID",
     description="Retrieve a list of campaigns by hiring manager ID with JD and hiring manager details.",
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER))]
 )
 def get_campaigns_by_hiring_manager(
     show_closed: bool = Query(False),
-    user: TokenUser = Depends(get_current_user),
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER)),
 ):
     campaigns = service.get_all_campaigns_for_hiring_manager(user.user_id, show_closed=show_closed)
 
@@ -121,22 +149,6 @@ def get_campaigns_by_hiring_manager(
         data=campaigns,
         message="Campaigns retrieved successfully"
     )
-
-@router.put(
-    "/{campaign_id}/status/update",
-    response_model=APIResponse[None],
-    status_code=status.HTTP_200_OK,
-    summary="Update campaign status",
-    description="Update the status of a campaign.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
-)
-def update_campaign_status(
-    campaign_id: UUID,
-    service: CampaignService = Depends(get_campaign_service),
-):
-    campaign = service.update_campaign_status(campaign_id=campaign_id, status=CampaignStatus.PAUSED)
-    return APIResponse.ok(data=None, message="Campaign status updated successfully.")
-
 
 # ── S01 — Pause an Active Campaign ──────────────────────────────────────────
 
@@ -177,31 +189,196 @@ def get_resume_summary(
         message="Resume summary retrieved successfully",
     )
 
+# ── S03 — Close a Campaign Manually ─────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/closure-summary",
+    response_model=APIResponse[CampaignClosureImpactSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Closure impact summary",
+    description="Impact summary shown in the close confirmation dialog (HR_ADMIN).",
+)
+def get_closure_summary(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_closure_impact_summary(campaign_id),
+        message="Closure impact summary retrieved successfully",
+    )
+
+@router.post(
+    "/{campaign_id}/close",
+    response_model=APIResponse[CampaignClosureResultResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Manually close a campaign",
+    description="Terminal closure — cancels in-flight processing and uploads, then returns the closure summary.",
+)
+def close_campaign(
+    campaign_id: UUID,
+    request: CampaignCloseRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.close_campaign(campaign_id, request, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign closed successfully")
+
+# ── S04 — Reopen a Closed Campaign ──────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/reopen-readiness",
+    response_model=APIResponse[CampaignReopenReadinessResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen readiness check",
+    description="JD/skill readiness validation + current config, for the reopen confirmation dialog (HR_ADMIN).",
+)
+def get_reopen_readiness(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_reopen_readiness(campaign_id),
+        message="Reopen readiness retrieved successfully",
+    )
+
+@router.post(
+    "/{campaign_id}/reopen",
+    response_model=APIResponse[CampaignReopenResultResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reopen a closed campaign",
+    description="Re-validates JD readiness, restores ACTIVE status, clears an already-passed deadline, and records CAMPAIGN_REOPENED.",
+)
+def reopen_campaign(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reopen_campaign(campaign_id, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign reopened successfully")
+
+# ── S06 — Duplicate a Campaign Configuration ────────────────────────────────
+
+@router.post(
+    "/{campaign_id}/duplicate",
+    response_model=APIResponse[CampaignResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate a campaign's configuration",
+    description="Creates a new, fully independent campaign copying the source's scoring weights/thresholds. Works regardless of the source campaign's status. Candidate data is never copied.",
+)
+def duplicate_campaign(
+    campaign_id: UUID,
+    request: CampaignDuplicateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.duplicate_campaign(campaign_id, request, created_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign duplicated successfully")
+
 @router.get(
     "/scoring-presets",
     response_model=list[CampaignWeightPresetResponse],
     status_code=status.HTTP_200_OK,
     summary="Get Campaign Weight Presets",
     description="Returns system presets and organization custom presets.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def get_weight_presets(
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     return service.get_weight_presets(
         org_id=SYSTEM_ORG,
     )
 
+# Compare Weight Configurations Across Campaigns ────────────────────
+
+@router.get(
+    "/compare",
+    response_model=APIResponse[CampaignComparisonResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Compare scoring configs across 2-4 campaigns",
+    description="Side-by-side weight/threshold config and score distribution for 2-4 campaigns.",
+)
+def compare_campaigns(
+    campaign_ids: list[UUID] = Query(..., min_length=2, max_length=4),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    comparison = service.compare_campaigns(campaign_ids)
+    return APIResponse.ok(data=comparison, message="Campaign comparison retrieved successfully")
+
+
+# ── S05 — Reset Weights to Platform Defaults ────────────────────────────────
+
+@router.put(
+    "/platform-defaults/scoring",
+    response_model=APIResponse[CampaignScoringDefaultsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Update platform default scoring weights",
+    description=(
+        "Updates the org-wide scoring defaults used by new campaigns and the "
+        "Reset to Defaults option. Existing campaigns are not affected."
+    ),
+)
+def update_platform_default_weights(
+    request: PlatformDefaultWeightsUpdateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    defaults = service.update_platform_default_weights(request, updated_by=user.user_id)
+    return APIResponse.ok(data=defaults, message="Platform default scoring weights updated successfully")
+
+
+@router.get(
+    "/reports/weight-changes",
+    response_model=APIResponse[WeightChangeReportResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Consolidated weight change report",
+    description="All scoring weight changes across every campaign, for compliance review.",
+)
+def get_weight_change_report(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    campaign_status: CampaignStatus | None = Query(default=None),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    report = service.get_weight_change_report(date_from, date_to, campaign_status)
+    return APIResponse.ok(data=report, message="Weight change report retrieved successfully")
+
+
+@router.get(
+    "/reports/weight-changes/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export the weight change report as XLSX",
+)
+def export_weight_change_report(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    campaign_status: CampaignStatus | None = Query(default=None),
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    excel_file = service.export_weight_change_report_xlsx(date_from, date_to, campaign_status)
+    filename = f"Weight_Change_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get(
     "/{campaign_id}",
     response_model=APIResponse[CampaignResponse],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def get_campaign(
     campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     campaign = service.get_campaign_by_id(campaign_id)
 
@@ -235,6 +412,7 @@ def get_scoring_configuration(
 def get_scoring_history(
     campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     history = service.get_scoring_history(campaign_id)
@@ -267,17 +445,51 @@ def update_scoring_configuration(
     return configuration
 
 @router.post(
+    "/{campaign_id}/scoring-config/copy",
+    response_model=APIResponse[CopyScoringConfigResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Copy scoring config to other campaigns",
+    description="Copies this campaign's weights/thresholds onto one or more target campaigns.",
+)
+def copy_scoring_configuration(
+    campaign_id: UUID,
+    request: CopyScoringConfigRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.copy_scoring_configuration(
+        source_campaign_id=campaign_id,
+        request=request,
+        updated_by=user.user_id,
+    )
+    return APIResponse.ok(data=result, message="Scoring configuration copied successfully")
+
+@router.post(
+    "/{campaign_id}/scoring-config/reset",
+    response_model=APIResponse[CampaignScoringConfigurationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reset scoring config to platform defaults",
+    description="Resets weight_deterministic/semantic/ai and semantic_threshold/ai_threshold to the current platform defaults.",
+)
+def reset_scoring_configuration(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reset_scoring_to_defaults(campaign_id, updated_by=user.user_id)
+    return APIResponse.ok(data=result, message="Scoring configuration reset to platform defaults")
+
+@router.post(
     "/scoring-presets",
     response_model=CampaignWeightPresetResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Campaign Weight Preset",
     description="Creates a custom campaign scoring weight preset.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def create_weight_preset(
     request: CampaignWeightPresetCreateRequest,
     service: CampaignService = Depends(get_campaign_service),
-    current_user: TokenUser = Depends(get_current_user),
+    current_user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     return service.create_weight_preset(
         request=request,
@@ -290,13 +502,12 @@ def create_weight_preset(
     response_model=CampaignWeightPresetResponse,
     status_code=status.HTTP_200_OK,
     summary="Update Campaign Weight Preset",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def update_weight_preset(
     preset_id: UUID,
     request: CampaignWeightPresetUpdateRequest,
     service: CampaignService = Depends(get_campaign_service),
-    current_user: TokenUser = Depends(get_current_user),
+    current_user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     return service.update_weight_preset(
@@ -310,12 +521,11 @@ def update_weight_preset(
     "/scoring-presets/{preset_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Campaign Weight Preset",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))]
 )
 def delete_weight_preset(
     preset_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
-    current_user: TokenUser = Depends(get_current_user),
+    current_user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
 
     service.delete_weight_preset(

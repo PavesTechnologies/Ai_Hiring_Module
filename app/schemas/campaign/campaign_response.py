@@ -23,6 +23,14 @@ class CampaignResponse(BaseModel):
     overdue_review: bool = False
     pipeline_stalled: bool = False
     warning: str | None = None
+    duplicated_from_campaign_id: UUID | None = None
+    duplicated_from_campaign_name: str | None = None
+
+class CampaignMinimalResponse(BaseModel):
+    """id + name only — for dropdowns/pickers that don't need the full campaign shape."""
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str
 
 class CampaignScoringDefaultsResponse(BaseModel):
     weight_deterministic: float
@@ -51,6 +59,10 @@ class CampaignScoringConfigurationResponse(BaseModel):
     defaults: CampaignScoringDefaultsResponse
     warning: str | None = None  # S02-T03: set when candidates were already processed
 
+class CopyScoringConfigResponse(BaseModel):
+    source_campaign_id: UUID
+    results: list[CampaignScoringConfigurationResponse]
+
 class WeightHistoryItemResponse(BaseModel):
     changed_by: str
     changed_at: datetime
@@ -59,7 +71,7 @@ class WeightHistoryItemResponse(BaseModel):
 
 class CampaignWeightHistoryResponse(BaseModel):
     history: list[WeightHistoryItemResponse]
-
+    message: str | None = None  
 
 class HiringCampaignResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

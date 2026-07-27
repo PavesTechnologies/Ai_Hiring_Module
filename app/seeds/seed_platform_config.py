@@ -141,6 +141,37 @@ try:
             value="3",
             description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
         ),
+        # M07-E02: Experience & Education Validation config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EXPERIENCE_TOLERANCE_YEARS",
+            value="0.0",
+            description="Years a candidate's total experience may fall short of a JD's min_experience_years and still pass",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EQUIVALENT_EXPERIENCE_YEARS",
+            value="8.0",
+            description="Total years of experience that substitute for an insufficient/missing degree in education validation",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_SKILLS",
+            value="0.70",
+            description="Weight of the skill-based sub-score in the combined deterministic_score blend (with experience/education)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_EXPERIENCE",
+            value="0.15",
+            description="Weight of the experience validation sub-score in the combined deterministic_score blend",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_WEIGHT_EDUCATION",
+            value="0.15",
+            description="Weight of the education validation sub-score in the combined deterministic_score blend",
+        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="HM_REVIEW_SLA_DAYS",
@@ -152,6 +183,22 @@ try:
             key="STALE_CAMPAIGN_DAYS",
             value="7",
             description="Days without a new candidate before a campaign is flagged pipeline_stalled",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_LAYER_WEIGHT",
+            value="5.00",
+            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DEADLINE_CHECK_INTERVAL_HOURS",
+            value="1",
+            description=(
+                "Hours between Celery Beat runs of the deadline-based campaign "
+                "auto-close task. Read once at Celery process startup — changing "
+                "this value requires restarting the beat process to take effect."
+            ),
         ),
     ]
 

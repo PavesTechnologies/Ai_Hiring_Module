@@ -46,7 +46,11 @@ def auto_close_expired_campaigns():
         # Mark success
         task_log_service.mark_success(
             task_log,
-            summary=f"Closed {closed} expired campaigns.",
+            summary=(
+                "No expired campaigns found."
+                if closed == 0
+                else f"Closed {closed} expired campaigns."
+            ),
         )
 
         print(f"Closed {closed} expired campaigns.")

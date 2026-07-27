@@ -85,6 +85,48 @@ class CampaignScoringUpdateRequest(BaseModel):
     )
 
 
+class CopyScoringConfigRequest(BaseModel):
+    """copy a source campaign's scoring config onto one or more targets."""
+    target_campaign_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+
+
+class CampaignDuplicateRequest(BaseModel):
+    """
+    S06-T01/T02: everything the duplication form lets HR_ADMIN keep/change.
+    Scoring weights/thresholds are NOT here — those are always copied
+    verbatim from the source, never re-entered. jd_id is required (never
+    defaulted to the source's) since JD content may have changed since the
+    source campaign was created.
+    """
+    name: str = Field(..., min_length=1, max_length=255)
+    jd_id: UUID
+    hiring_manager_id: Optional[str] = None
+    recruiter_id: Optional[str] = None
+    max_candidates: Optional[int] = Field(default=None, gt=0, le=100000)
+    deadline: Optional[datetime] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str):
+        value = value.strip()
+        if not value:
+            raise ValueError("Campaign name cannot be empty.")
+        return value
+
+
+class PlatformDefaultWeightsUpdateRequest(BaseModel):
+    """
+    S05-T02: updates the org-wide scoring defaults (platform_config) — only
+    affects campaigns created after the change and the Reset to Defaults
+    option; existing campaigns are untouched.
+    """
+    weight_deterministic: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    weight_semantic: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    weight_ai: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    semantic_threshold: Decimal = Field(..., ge=Decimal("0.0000"), le=Decimal("1.0000"), decimal_places=4)
+    ai_threshold: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+
+
 class CampaignUpdateRequest(BaseModel):
     """
     PATCH body for editing a campaign — every field optional; only what is

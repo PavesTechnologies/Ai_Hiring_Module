@@ -10,8 +10,8 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
-from app.models.skills import JDSkill
-from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory
+from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
@@ -116,7 +116,19 @@ class CampaignRepository:
             )
         result = self.db.execute(stmt)
         return result.scalars().all()
-    
+
+    def get_active_campaigns_minimal(self):
+        """
+        id + name only, for dropdowns/pickers — a column projection instead
+        of loading full HiringCampaign rows (no job_description join needed).
+        """
+        stmt = (
+            select(HiringCampaign.id, HiringCampaign.name)
+            .where(HiringCampaign.status == CampaignStatus.ACTIVE)
+            .order_by(HiringCampaign.name)
+        )
+        return self.db.execute(stmt).all()
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
@@ -243,6 +255,83 @@ class CampaignRepository:
         cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
         return latest_added_at <= cutoff
 
+    def get_score_distribution(self, campaign_id: UUID) -> dict:
+        """
+        composite_score stats (excluding REJECTED) plus per-layer
+        rejection counts, for the campaign comparison view. Computed in
+        Python over the raw rows rather than DB-side percentile_cont — these
+        are report-scale volumes (a handful of compared campaigns), and this
+        avoids a Postgres-version/dialect dependency for the median.
+        """
+        rows = (
+            self.db.query(
+                CampaignCandidate.composite_score,
+                CampaignCandidate.rejection_layer,
+                CampaignCandidate.pipeline_stage,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .all()
+        )
+
+        scored = sorted(
+            float(r.composite_score)
+            for r in rows
+            if r.composite_score is not None and r.pipeline_stage != PipelineStage.REJECTED
+        )
+
+        passed_all_layers_count = sum(
+            1 for r in rows if r.rejection_layer is None and r.composite_score is not None
+        )
+        rejected_deterministic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.DETERMINISTIC)
+        rejected_semantic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.SEMANTIC)
+        rejected_ai_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.AI)
+
+        if not scored:
+            return {
+                "average": None,
+                "median": None,
+                "highest": None,
+                "lowest": None,
+                "passed_all_layers_count": passed_all_layers_count,
+                "rejected_deterministic_count": rejected_deterministic_count,
+                "rejected_semantic_count": rejected_semantic_count,
+                "rejected_ai_count": rejected_ai_count,
+            }
+
+        n = len(scored)
+        mid = n // 2
+        median = scored[mid] if n % 2 == 1 else (scored[mid - 1] + scored[mid]) / 2
+
+        return {
+            "average": sum(scored) / n,
+            "median": median,
+            "highest": scored[-1],
+            "lowest": scored[0],
+            "passed_all_layers_count": passed_all_layers_count,
+            "rejected_deterministic_count": rejected_deterministic_count,
+            "rejected_semantic_count": rejected_semantic_count,
+            "rejected_ai_count": rejected_ai_count,
+        }
+
+    def count_candidates_in_window(
+        self,
+        campaign_id: UUID,
+        start: datetime,
+        end: datetime | None,
+    ) -> int:
+        """
+        S05-T03: candidates added to this campaign in [start, end) — end=None
+        means open-ended (through now), used for a config's most recent
+        window in the Weight Change Report.
+        """
+        stmt = select(func.count(CampaignCandidate.id)).where(
+            CampaignCandidate.campaign_id == campaign_id,
+            CampaignCandidate.created_at >= start,
+        )
+        if end is not None:
+            stmt = stmt.where(CampaignCandidate.created_at < end)
+        return self.db.execute(stmt).scalar() or 0
+
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
         self.db.flush()
@@ -256,19 +345,23 @@ class CampaignRepository:
         self.db.rollback()
 
 
-    def get_expired_campaigns(self) -> list[HiringCampaign]:
+    def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
         """
-        Returns all ACTIVE campaigns whose deadline has passed.
+        Returns ACTIVE campaigns whose deadline has passed. S05-T02: an
+        optional limit lets the caller process expired campaigns in batches
+        instead of locking every expired row in one huge transaction.
         """
-        return (
+        stmt = (
             self.db.query(HiringCampaign)
             .filter(
                 HiringCampaign.status == CampaignStatus.ACTIVE,
                 HiringCampaign.deadline.isnot(None),
                 HiringCampaign.deadline < datetime.now(timezone.utc),
             )
-            .all()
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return stmt.all()
     
     def close_campaign(self, campaign: HiringCampaign) -> HiringCampaign:
         campaign.status = CampaignStatus.CLOSED
@@ -381,6 +474,33 @@ class CampaignRepository:
             .filter(JDSkill.jd_id == jd_id, JDSkill.mandatory == True)
             .count()
         )
+
+    def get_mandatory_unverified_skill_count(self, jd_id) -> int:
+        """S04-T01: mandatory jd_skills not yet AUTO_VERIFIED (still PENDING_REVIEW)."""
+        return (
+            self.db.query(JDSkill)
+            .filter(
+                JDSkill.jd_id == jd_id,
+                JDSkill.mandatory == True,
+                JDSkill.verification_status == JDSkillVerificationStatus.PENDING_REVIEW,
+            )
+            .count()
+        )
+
+    def get_unresolved_unknown_skill_count(self, jd_id) -> int:
+        """
+        S04-T01: "no blocking parse failures" — the closest concrete, queryable
+        signal is unknown skills the extraction pipeline couldn't confidently
+        match to skill_ontology, still sitting unresolved for this JD.
+        """
+        return (
+            self.db.query(JDUnknownSkill)
+            .filter(
+                JDUnknownSkill.jd_id == jd_id,
+                JDUnknownSkill.status == JDUnknownSkillStatus.PENDING,
+            )
+            .count()
+        )
     
     def get_candidate_count(self,campaign_id) -> int:
         return (
@@ -427,15 +547,6 @@ class CampaignRepository:
             .order_by(BulkUploadJob.created_at.desc())
             .all()
         )
-
-    def update_campaign_status(self, campaign_status: CampaignStatus, campaign_id: UUID) -> HiringCampaign:
-        campaign = self.db.query(HiringCampaign).filter(HiringCampaign.id == campaign_id).first()
-        if not campaign:
-            return None
-        campaign.status = campaign_status
-        self.db.commit()
-        self.db.refresh(campaign)
-        return campaign
 
     # ── S01 Pause an Active Campaign ────────────────────────────────────────
 
@@ -530,10 +641,69 @@ class CampaignRepository:
             or 0
         )
 
-    def requeue_suspended_tasks(self, campaign_id: UUID) -> int:
+    def get_paused_tasks(self, campaign_id: UUID) -> list[CeleryTaskLog]:
         """
-        T02: re-queue suspended tasks by flipping PAUSED → QUEUED for this
-        campaign. Mirror of suspend_queued_tasks. Returns the number re-queued.
+        T02: hydrated PAUSED CeleryTaskLog rows for this campaign — unlike a
+        bulk UPDATE, these need to be loaded so each one can actually be
+        resubmitted to the Celery broker before its status flips to QUEUED.
+        """
+        return (
+            self.db.query(CeleryTaskLog)
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CeleryTaskLog.status == TaskStatus.PAUSED,
+            )
+            .all()
+        )
+
+    def set_resume_task_id(self, resume: Resume, task_id: str) -> Resume:
+        """Mirrors ResumeRepository.set_task_id — persists the processing task's id at enqueue time."""
+        resume.task_id = task_id
+        self.db.flush()
+        return resume
+
+    def get_pending_resumes(self, campaign_id: UUID) -> list[Resume]:
+        """
+        T02: hydrated Resume rows with parse_status = PENDING for this
+        campaign — these need a new RESUME_PARSE task actually submitted on
+        resume, not just counted.
+        """
+        return (
+            self.db.query(Resume)
+            .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                Resume.parse_status == ParseStatus.PENDING,
+            )
+            .distinct()
+            .all()
+        )
+
+    # ── S03 Close a Campaign Manually ───────────────────────────────────────
+
+    def count_pending_human_decision(self, campaign_id: UUID) -> int:
+        """T01: candidates in INTERVIEW or HM_REVIEW — need a human decision before closing."""
+        return (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage.in_(
+                    [PipelineStage.INTERVIEW, PipelineStage.HM_REVIEW]
+                ),
+            )
+            .scalar()
+            or 0
+        )
+
+    def kill_queued_tasks(self, campaign_id: UUID) -> int:
+        """
+        T02: closure is terminal (unlike pause) — QUEUED tasks are killed to
+        DEAD, not soft-cancelled to PAUSED, since there's no resume to
+        re-queue them later. RUNNING tasks are left to finish naturally.
         """
         candidate_ids = (
             select(CampaignCandidate.id)
@@ -544,9 +714,49 @@ class CampaignRepository:
             update(CeleryTaskLog)
             .where(
                 CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
-                CeleryTaskLog.status == TaskStatus.PAUSED,
+                CeleryTaskLog.status == TaskStatus.QUEUED,
             )
-            .values(status=TaskStatus.QUEUED)
+            .values(
+                status=TaskStatus.DEAD,
+                error_message="Campaign closed by HR_ADMIN before task could execute.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    def cancel_pending_bulk_jobs(self, campaign_id: UUID) -> int:
+        """T02: bulk_upload_jobs still PENDING/EXTRACTING are cancelled outright on closure."""
+        result = self.db.execute(
+            update(BulkUploadJob)
+            .where(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status.in_([BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING]),
+            )
+            .values(
+                status=BulkUploadStatus.FAILED,
+                error_summary="Campaign closed during upload.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    def mark_processing_bulk_jobs_partial_failure(self, campaign_id: UUID) -> int:
+        """
+        E03-S05-T01: when a campaign auto-closes because its candidate cap was
+        just reached, any bulk_upload_jobs still PROCESSING get marked
+        PARTIAL_FAILURE (some files were processed before the cap hit, not a
+        clean FAILED) rather than left to run against a now-closed campaign.
+        """
+        result = self.db.execute(
+            update(BulkUploadJob)
+            .where(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status == BulkUploadStatus.PROCESSING,
+            )
+            .values(
+                status=BulkUploadStatus.PARTIAL_FAILURE,
+                error_summary="Campaign reached maximum candidate limit during upload.",
+            )
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0

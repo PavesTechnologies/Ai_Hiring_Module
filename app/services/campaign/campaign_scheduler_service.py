@@ -15,53 +15,64 @@ class CampaignSchedulerService:
         self.campaign_repo = campaign_repo
         self.audit_service = audit_service
 
-    def auto_close_expired_campaigns(self) -> int:
+    def auto_close_expired_campaigns(self, batch_size: int = 100) -> int:
         """
         Auto close campaigns whose deadline has expired.
+
+        E03-S05-T02: processed in batches (each batch committed separately)
+        rather than one giant transaction locking every expired row at once
+        — the ACTIVE-status filter in get_expired_campaigns() naturally
+        excludes campaigns already closed by a prior batch, so no offset
+        bookkeeping is needed for the loop to converge.
 
         Returns:
             int: Number of campaigns closed.
         """
 
+        total_closed = 0
+
         try:
-            expired_campaigns = self.campaign_repo.get_expired_campaigns()
+            while True:
+                batch = self.campaign_repo.get_expired_campaigns(limit=batch_size)
+                if not batch:
+                    break
 
-            if not expired_campaigns:
-                return 0
+                for campaign in batch:
 
-            closed_count = 0
+                    self.campaign_repo.close_campaign(campaign)
 
-            for campaign in expired_campaigns:
+                    # Audit log — attributed to the HR_ADMIN who created the campaign,
+                    # since the closure is triggered by the scheduler on their behalf.
+                    self.audit_service.log(
+                        actor_id=campaign.created_by,
+                        actor_role="HR_ADMIN",
+                        action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
+                        entity_type=EntityType.CAMPAIGN.value,
+                        entity_id=campaign.id,
+                        campaign_id=campaign.id,
+                        details={
+                            "title": f"Campaign '{campaign.name}' auto-closed",
+                            "reason": "DEADLINE_EXPIRED",
+                            "deadline": campaign.deadline.isoformat()
+                            if campaign.deadline
+                            else None,
+                            "closed_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
 
-                self.campaign_repo.close_campaign(campaign)
+                    # Email notification
+                    # TODO:
+                    # Notify HR Admin
+                    # Notify Hiring Manager
 
-                # Audit log — attributed to the HR_ADMIN who created the campaign,
-                # since the closure is triggered by the scheduler on their behalf.
-                self.audit_service.log(
-                    actor_id=campaign.created_by,
-                    actor_role="HR_ADMIN",
-                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
-                    entity_type=EntityType.CAMPAIGN.value,
-                    entity_id=campaign.id,
-                    campaign_id=campaign.id,
-                    details={
-                        "deadline": campaign.deadline.isoformat()
-                        if campaign.deadline
-                        else None,
-                        "closed_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
+                    total_closed += 1
 
-                # Email notification
-                # TODO:
-                # Notify HR Admin
-                # Notify Hiring Manager
+                self.campaign_repo.commit()
 
-                closed_count += 1
+                if len(batch) < batch_size:
+                    break
 
-            self.campaign_repo.commit()
-
-            return closed_count
+            return total_closed
 
         except Exception:
             self.campaign_repo.rollback()

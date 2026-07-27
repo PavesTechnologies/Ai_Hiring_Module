@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib import request
-from fastapi import HTTPException
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import timedelta
 from app.middleware.rbac import TokenUser
+from app.models.async_tasks import TaskStatus
+from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
+from app.tasks.resume_processing_tasks import process_resume_document
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -19,11 +21,21 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
+from app.schemas.campaign.campaign_closure_schema import (
+    CampaignCloseRequest,
+    CampaignClosureImpactSummaryResponse,
+    CampaignClosureResultResponse,
+)
+from app.schemas.campaign.campaign_reopen_schema import (
+    JDReadinessIssue,
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.campaign.campaign_response import (
     CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
@@ -42,6 +54,16 @@ from app.schemas.campaign.campaign_detail_response import (
 from app.models.pipeline import PipelineStage
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
+from app.schemas.campaign.campaign_comparison_response import (
+    CampaignComparisonColumn,
+    CampaignComparisonResponse,
+    ScoreDistributionResponse,
+)
+from app.schemas.campaign.campaign_weight_change_report_response import (
+    WeightChangeReportRow,
+    WeightChangeReportResponse,
+)
+from app.utils.excel_export import ExcelExport
 
 
 class CampaignService:
@@ -87,6 +109,49 @@ class CampaignService:
         hm_review_sla_days = int(configs.get("HM_REVIEW_SLA_DAYS", "5"))
         stale_campaign_days = int(configs.get("STALE_CAMPAIGN_DAYS", "7"))
         return hm_review_sla_days, stale_campaign_days
+
+    def _validate_scoring_weights(
+        self,
+        weight_deterministic: Decimal,
+        weight_semantic: Decimal,
+        weight_ai: Decimal,
+    ) -> None:
+        """
+        shared by every scoring-edit path (update_scoring_configuration
+        and update_campaign) so the two can never drift out of sync again — weights
+        must sum to 100.00 (also enforced by the DB CHECK constraint
+        chk_weights_sum_100; this gives a clean 4xx before that's ever reached),
+        and no single layer may fall below MIN_LAYER_WEIGHT, which would bypass
+        that layer from the composite score entirely.
+        """
+        if weight_deterministic + weight_semantic + weight_ai != Decimal("100.00"):
+            raise CampaignException("Scoring weights must sum to 100.00", 422)
+
+        min_layer_weight = Decimal(
+            self.config_repo.get_configs_by_keys(["MIN_LAYER_WEIGHT"]).get(
+                "MIN_LAYER_WEIGHT", "5.00"
+            )
+        )
+        if any(
+            w < min_layer_weight
+            for w in (weight_deterministic, weight_semantic, weight_ai)
+        ):
+            raise CampaignException(
+                f"Each scoring layer must be at least {min_layer_weight}%.", 400,
+            )
+
+    def _already_processed_warning(self, candidate_count: int) -> str | None:
+        """
+        S02-T03: shared by every scoring-edit path — "a warning must notify
+        HR_ADMIN that changes only affect newly submitted candidates."
+        """
+        if candidate_count <= 0:
+            return None
+        return (
+            f"{candidate_count} candidate(s) were already processed with "
+            f"the previous configuration. Their scores will not be "
+            f"automatically recalculated."
+        )
 
     def _hiring_manager_name_map(self, campaigns: list[HiringCampaign]) -> dict[str, str]:
         ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
@@ -240,7 +305,68 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    
+    def duplicate_campaign(
+        self,
+        source_campaign_id: UUID,
+        request: CampaignDuplicateRequest,
+        created_by: str,
+    ) -> CampaignResponse:
+        """
+        S06-T01/T02/T03: creates a fully independent new campaign, copying the
+        source's scoring weights/thresholds verbatim. Reuses create_campaign()
+        for everything else (JD validation, weight-sum check, name-uniqueness,
+        the INSERT itself, and the CAMPAIGN_CREATED audit entry) instead of a
+        second copy of that validation — this is allowed to run against a
+        source campaign in ANY status (spec: "for campaigns in any status"),
+        since it only ever reads the source, never writes to it. Adds one
+        CAMPAIGN_DUPLICATED audit entry on top, carrying the lineage back to
+        the source campaign.
+        """
+        source = self.campaign_repo.get_by_id(source_campaign_id)
+        if not source:
+            raise CampaignException(f"Campaign '{source_campaign_id}' not found", 404)
+
+        create_request = CampaignCreateRequest(
+            name=request.name,
+            jd_id=request.jd_id,
+            max_candidates=request.max_candidates,
+            deadline=request.deadline,
+            weight_deterministic=Decimal(str(source.weight_deterministic)),
+            weight_semantic=Decimal(str(source.weight_semantic)),
+            weight_ai=Decimal(str(source.weight_ai)),
+            semantic_threshold=Decimal(str(source.semantic_threshold)),
+            ai_threshold=Decimal(str(source.ai_threshold)),
+            deterministic_threshold=Decimal(str(source.deterministic_threshold)),
+            hiring_manager_id=request.hiring_manager_id or source.hiring_manager_id,
+            recruiter_id=request.recruiter_id or source.recruiter_id,
+        )
+
+        # create_campaign() already commits the new campaign + its own
+        # CAMPAIGN_CREATED audit entry before returning.
+        new_campaign = self.create_campaign(
+            create_request, org_id=source.org_id, created_by=created_by,
+        )
+
+        self.audit_service.log(
+            actor_id=created_by,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_DUPLICATED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=new_campaign.id,
+            campaign_id=new_campaign.id,
+            details={
+                "title": f"Campaign '{new_campaign.name}' duplicated from '{source.name}'",
+                "source_campaign_id": str(source.id),
+                "source_campaign_name": source.name,
+            },
+        )
+        self.audit_service.repository.save()
+
+        new_campaign.duplicated_from_campaign_id = source.id
+        new_campaign.duplicated_from_campaign_name = source.name
+
+        return new_campaign
+
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -307,11 +433,11 @@ class CampaignService:
 
         configs = self.config_repo.get_configs_by_keys(
             [
-                "DEFAULT_WEIGHT_DETERMINISTIC",
-                "DEFAULT_WEIGHT_SEMANTIC",
-                "DEFAULT_WEIGHT_AI",
-                "DEFAULT_SEMANTIC_THRESHOLD",
-                "DEFAULT_AI_THRESHOLD",
+                "CAMPAIGN_WEIGHT_DETERMINISTIC",
+                "CAMPAIGN_WEIGHT_SEMANTIC",
+                "CAMPAIGN_WEIGHT_AI",
+                "SEMANTIC_PASS_THRESHOLD",
+                "AI_PASS_THRESHOLD",
             ]
         )
         formula = "((det × w_det) + (sem × 100 × w_sem) + (eff_ai × w_ai)) / 100"
@@ -354,25 +480,20 @@ class CampaignService:
             formula=formula,
             layers=layers,
             defaults=CampaignScoringDefaultsResponse(
-                # NOTE: platform_config has no DEFAULT_WEIGHT_* rows yet (only
-                # SEMANTIC_PASS_THRESHOLD / AI_PASS_THRESHOLD exist, under the
-                # names S02 already uses). Falling back to the HiringCampaign
-                # column defaults — same values — instead of crashing with a
-                # KeyError until the platform_config keys are decided/seeded.
                 weight_deterministic=float(
-                    configs.get("DEFAULT_WEIGHT_DETERMINISTIC", "30.00")
+                    configs.get("CAMPAIGN_WEIGHT_DETERMINISTIC", "30.00")
                 ),
                 weight_semantic=float(
-                    configs.get("DEFAULT_WEIGHT_SEMANTIC", "40.00")
+                    configs.get("CAMPAIGN_WEIGHT_SEMANTIC", "40.00")
                 ),
                 weight_ai=float(
-                    configs.get("DEFAULT_WEIGHT_AI", "30.00")
+                    configs.get("CAMPAIGN_WEIGHT_AI", "30.00")
                 ),
                 semantic_threshold=float(
-                    configs.get("DEFAULT_SEMANTIC_THRESHOLD", "0.6500")
+                    configs.get("SEMANTIC_PASS_THRESHOLD", "0.6500")
                 ),
                 ai_threshold=float(
-                    configs.get("DEFAULT_AI_THRESHOLD", "50.00")
+                    configs.get("AI_PASS_THRESHOLD", "50.00")
                 ),
             ),
         )
@@ -400,19 +521,33 @@ class CampaignService:
         for record in history:
 
             detail = record.detail or {}
+            field_changes = detail.get("changes", {})
 
             history_items.append(
                 WeightHistoryItemResponse(
-                    changed_by=str(record.actor_id),
+                    changed_by=self._resolve_actor(record.actor_id),
                     changed_at=record.created_at,
-                    before=detail.get("before", {}),
-                    after=detail.get("after", {}),
+                    before={field: v.get("before") for field, v in field_changes.items()},
+                    after={field: v.get("after") for field, v in field_changes.items()},
                 )
             )
 
+        message = None
+        if not history_items:
+            message = (
+                f"No changes — using initial configuration set on "
+                f"{campaign.created_at.date().isoformat()}."
+            )
+
         return CampaignWeightHistoryResponse(
-            history=history_items
+            history=history_items,
+            message=message,
         )
+    def get_active_campaigns_minimal(self) -> list[CampaignMinimalResponse]:
+        """id + name only, for dropdowns/pickers — HR_ADMIN/RECRUITER (enforced at the route)."""
+        rows = self.campaign_repo.get_active_campaigns_minimal()
+        return [CampaignMinimalResponse(id=row.id, name=row.name) for row in rows]
+
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
@@ -575,55 +710,22 @@ class CampaignService:
                 None,
             )
 
-        total_weight = (
-            request.weight_deterministic
-            + request.weight_semantic
-            + request.weight_ai
+        self._validate_scoring_weights(
+            request.weight_deterministic,
+            request.weight_semantic,
+            request.weight_ai,
         )
-
-        if total_weight != Decimal("100.00"):
-            raise CampaignException(
-                "Total scoring weight must equal 100%.",
-                400,
-                None,
-            )
-
-        configs = self.config_repo.get_configs_by_keys(
-            [
-                "MIN_LAYER_WEIGHT",
-            ]
-        )
-
-        min_layer_weight = Decimal(
-            configs.get(
-                "MIN_LAYER_WEIGHT",
-                "5.00",
-            )
-        )
-
-        if (
-            request.weight_deterministic < min_layer_weight
-            or request.weight_semantic < min_layer_weight
-            or request.weight_ai < min_layer_weight
-        ):
-            raise CampaignException(
-                f"Each scoring layer must be at least {min_layer_weight}%.",
-                400,
-                None,
-            )
 
         # T03: capture before/after for every field that actually changed,
         # atomically with the save (audit is written in the same transaction).
-        threshold_fields = (
-            "weight_deterministic", "weight_semantic", "weight_ai",
-            "semantic_threshold", "ai_threshold",
-        )
+        # Uses the same field list as update_campaign()'s scoring path so both
+        # edit paths record identical shapes in the Weight Change History.
         changes = {
             field: {
                 "before": str(getattr(campaign, field)),
                 "after": str(getattr(request, field)),
             }
-            for field in threshold_fields
+            for field in self._SCORING_FIELDS
             if Decimal(str(getattr(campaign, field))) != getattr(request, field)
         }
 
@@ -637,10 +739,12 @@ class CampaignService:
         )
 
         if changes:
+            # S01-T03: same action_type update_campaign() uses for scoring edits,
+            # so both edit paths land in the same Weight Change History query.
             self.audit_service.log(
                 actor_id=updated_by,
                 actor_role="HR_ADMIN",
-                action_type=ActionType.CAMPAIGN_THRESHOLDS_UPDATED,
+                action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED,
                 entity_type=EntityType.CAMPAIGN,
                 entity_id=campaign.id,
                 campaign_id=campaign.id,
@@ -654,15 +758,7 @@ class CampaignService:
         self.campaign_repo.commit()
 
         result = self.get_scoring_configuration(campaign.id)
-
-        if candidate_count > 0:
-            # T03: "a warning must notify HR_ADMIN that threshold changes only
-            # affect newly submitted candidates" — surfaced on the response.
-            result.warning = (
-                f"{candidate_count} candidate(s) were already processed with "
-                f"the previous configuration. Their scores will not be "
-                f"automatically recalculated."
-            )
+        result.warning = self._already_processed_warning(candidate_count)
 
         return result
     
@@ -758,18 +854,11 @@ class CampaignService:
                 None,
             )
 
-        total_weight = (
-            request.weight_deterministic
-            + request.weight_semantic
-            + request.weight_ai
+        self._validate_scoring_weights(
+            request.weight_deterministic,
+            request.weight_semantic,
+            request.weight_ai,
         )
-
-        if total_weight != Decimal("100.00"):
-            raise CampaignException(
-                "Total scoring weight must equal 100.",
-                400,
-                None,
-            )
 
         preset = CampaignWeightPreset(
             org_id=org_id,
@@ -790,12 +879,12 @@ class CampaignService:
 
         self.audit_service.log(
             actor_id=created_by,
-            actor_role=None,
-            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
-            entity_type=EntityType.CAMPAIGN.value,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_CREATED.value,
+            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
             entity_id=preset.id,
             details={
-                "message": f"Created campaign weight preset '{preset.name}'"
+                "title": f"Created campaign weight preset '{preset.name}'"
             },
             campaign_id=None,
             jurisdiction=None,
@@ -808,6 +897,17 @@ class CampaignService:
             preset
         )
     
+    # System presets (Technical/Managerial/Balanced/Entry Level) are hardcoded
+    # in get_weight_presets() with these fixed ids — they're never rows in
+    # campaign_weight_presets, so update/delete must reject them explicitly
+    # instead of relying on a misleading "not found" from a failed lookup.
+    _SYSTEM_PRESET_IDS = {
+        UUID("00000000-0000-0000-0000-000000000001"),
+        UUID("00000000-0000-0000-0000-000000000002"),
+        UUID("00000000-0000-0000-0000-000000000003"),
+        UUID("00000000-0000-0000-0000-000000000004"),
+    }
+
     def update_weight_preset(
         self,
         preset_id: UUID,
@@ -815,7 +915,13 @@ class CampaignService:
         org_id: UUID,
         updated_by: str,
     ) -> CampaignWeightPresetResponse:
-        
+
+        if preset_id in self._SYSTEM_PRESET_IDS:
+            raise CampaignException(
+                "System presets are read-only and cannot be modified.",
+                403,
+                None,
+            )
 
         preset = self.preset_repo.get_by_id(
             preset_id
@@ -847,24 +953,18 @@ class CampaignService:
                 None,
             )
 
-        total_weight = (
-            request.weight_deterministic
-            + request.weight_semantic
-            + request.weight_ai
+        self._validate_scoring_weights(
+            request.weight_deterministic,
+            request.weight_semantic,
+            request.weight_ai,
         )
-
-        if total_weight != Decimal("100.00"):
-            raise CampaignException(
-                "Total scoring weight must equal 100.",
-                400,
-                None,
-            )
 
         preset.name = request.name.strip()
         preset.description = request.description
         preset.weight_deterministic = request.weight_deterministic
         preset.weight_semantic = request.weight_semantic
         preset.weight_ai = request.weight_ai
+        preset.deterministic_threshold = request.deterministic_threshold
         preset.semantic_threshold = request.semantic_threshold
         preset.ai_threshold = request.ai_threshold
 
@@ -876,12 +976,12 @@ class CampaignService:
 
         self.audit_service.log(
             actor_id=updated_by,
-            actor_role=None,
-            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
-            entity_type=EntityType.CAMPAIGN.value,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_UPDATED.value,
+            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
             entity_id=preset.id,
             details={
-                "message": f"Updated preset '{preset.name}'"
+                "title": f"Updated preset '{preset.name}'"
             },
         )
 
@@ -897,6 +997,13 @@ class CampaignService:
         org_id: UUID,
         deleted_by: str,
     ) -> None:
+
+        if preset_id in self._SYSTEM_PRESET_IDS:
+            raise CampaignException(
+                "System presets are read-only and cannot be deleted.",
+                403,
+                None,
+            )
 
         preset = self.preset_repo.get_by_id(
             preset_id
@@ -924,12 +1031,12 @@ class CampaignService:
 
         self.audit_service.log(
             actor_id=deleted_by,
-            actor_role=None,
-            action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED.value,
-            entity_type=EntityType.CAMPAIGN.value,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_DELETED.value,
+            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
             entity_id=preset.id,
             details={
-                "message": f"Deleted preset '{preset.name}'"
+                "title": f"Deleted preset '{preset.name}'"
             },
         )
 
@@ -957,6 +1064,19 @@ class CampaignService:
             and UserRole.RECRUITER.value not in user.roles
         )
 
+        # S06-T03: "Duplicated from [source name]" — sourced from the
+        # CAMPAIGN_DUPLICATED audit entry rather than a dedicated column,
+        # reusing the same audit-lookup pattern as pause-duration/reopen.
+        duplication_entry = self.audit_service.get_latest_entry(
+            campaign.id, ActionType.CAMPAIGN_DUPLICATED.value,
+        )
+        duplicated_from_id = None
+        duplicated_from_name = None
+        if duplication_entry is not None:
+            detail = duplication_entry.detail or {}
+            duplicated_from_id = detail.get("source_campaign_id")
+            duplicated_from_name = detail.get("source_campaign_name")
+
         return CampaignDetailResponse(
             id=campaign.id,
             campaign_info=CampaignInfoSection(
@@ -965,6 +1085,8 @@ class CampaignService:
                 created_by_name=creator.full_name if creator else None,
                 created_at=campaign.created_at,
                 updated_at=campaign.updated_at,
+                duplicated_from_campaign_id=duplicated_from_id,
+                duplicated_from_campaign_name=duplicated_from_name,
             ),
             jd_configuration=JDConfigSection(
                 jd_id=jd.id,
@@ -1109,6 +1231,364 @@ class CampaignService:
             return "System"
         user = self.campaign_repo.get_user(actor_id)
         return user.full_name if user else "System"
+
+    _COMPARISON_FIELDS = (
+        "weight_deterministic",
+        "weight_semantic",
+        "weight_ai",
+        "semantic_threshold",
+        "ai_threshold",
+    )
+
+    def compare_campaigns(self, campaign_ids: list[UUID]) -> CampaignComparisonResponse:
+        """
+        S04-T01/T03: side-by-side scoring config + score distribution for
+        2-4 campaigns, with a per-field "identical across all" flag so the
+        frontend doesn't have to recompute the diff itself.
+        """
+        if not (2 <= len(campaign_ids) <= 4):
+            raise CampaignException(
+                "Select between 2 and 4 campaigns to compare.", 422,
+            )
+
+        columns = []
+        for campaign_id in campaign_ids:
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+            jd = self.jd_repo.get_by_id(campaign.jd_id)
+            distribution = self.campaign_repo.get_score_distribution(campaign.id)
+
+            columns.append(
+                CampaignComparisonColumn(
+                    campaign_id=campaign.id,
+                    campaign_name=campaign.name,
+                    status=campaign.status.value,
+                    jd_title=jd.title if jd else "",
+                    weight_deterministic=campaign.weight_deterministic,
+                    weight_semantic=campaign.weight_semantic,
+                    weight_ai=campaign.weight_ai,
+                    semantic_threshold=campaign.semantic_threshold,
+                    ai_threshold=campaign.ai_threshold,
+                    total_candidates=self.campaign_repo.get_candidate_count(campaign.id),
+                    score_distribution=ScoreDistributionResponse(
+                        has_processed_candidates=distribution["average"] is not None,
+                        message=None if distribution["average"] is not None else "No candidates processed yet.",
+                        average_composite_score=distribution["average"],
+                        median_composite_score=distribution["median"],
+                        highest_composite_score=distribution["highest"],
+                        lowest_composite_score=distribution["lowest"],
+                        passed_all_layers_count=distribution["passed_all_layers_count"],
+                        rejected_deterministic_count=distribution["rejected_deterministic_count"],
+                        rejected_semantic_count=distribution["rejected_semantic_count"],
+                        rejected_ai_count=distribution["rejected_ai_count"],
+                    ),
+                )
+            )
+
+        consistent_fields = {
+            field: len({str(getattr(c, field)) for c in columns}) == 1
+            for field in self._COMPARISON_FIELDS
+        }
+
+        return CampaignComparisonResponse(campaigns=columns, consistent_fields=consistent_fields)
+
+    _COPYABLE_SCORING_FIELDS = (
+        "weight_deterministic",
+        "weight_semantic",
+        "weight_ai",
+        "semantic_threshold",
+        "ai_threshold",
+    )
+
+    def copy_scoring_configuration(
+        self,
+        source_campaign_id: UUID,
+        request: CopyScoringConfigRequest,
+        updated_by: str,
+    ) -> CopyScoringConfigResponse:
+        """
+        S04-T02: copy source's weight_deterministic/semantic/ai and
+        semantic_threshold/ai_threshold onto every target campaign (per spec —
+        deterministic_threshold is deliberately excluded from the copy scope).
+        All-or-nothing: any failing target rolls back every target already
+        applied in this call.
+        """
+        try:
+            source = self.campaign_repo.get_by_id(source_campaign_id)
+            if not source:
+                raise CampaignException(f"Campaign '{source_campaign_id}' not found", 404)
+
+            if source_campaign_id in request.target_campaign_ids:
+                raise CampaignException("Source campaign cannot also be a copy target.", 422)
+
+            # Source's weights were already validated when they were saved —
+            # this is a defensive re-check before fanning them out to others.
+            self._validate_scoring_weights(
+                Decimal(str(source.weight_deterministic)),
+                Decimal(str(source.weight_semantic)),
+                Decimal(str(source.weight_ai)),
+            )
+
+            results = []
+            for target_id in request.target_campaign_ids:
+                target = self.campaign_repo.get_by_id(target_id)
+                if not target:
+                    raise CampaignException(f"Campaign '{target_id}' not found", 404)
+
+                if target.status == CampaignStatus.CLOSED:
+                    raise CampaignException(
+                        f"Campaign '{target.name}' is closed and cannot be edited. "
+                        f"Reopen the campaign to make changes.",
+                        403,
+                    )
+
+                changes = {
+                    field: {
+                        "before": str(getattr(target, field)),
+                        "after": str(getattr(source, field)),
+                    }
+                    for field in self._COPYABLE_SCORING_FIELDS
+                    if Decimal(str(getattr(target, field))) != Decimal(str(getattr(source, field)))
+                }
+
+                candidate_count = self.campaign_repo.get_candidate_count(target.id)
+
+                for field in self._COPYABLE_SCORING_FIELDS:
+                    setattr(target, field, getattr(source, field))
+                target.updated_at = datetime.now(timezone.utc)
+                target = self.campaign_repo.update(target)
+
+                if changes:
+                    self.audit_service.log(
+                        actor_id=updated_by,
+                        actor_role="HR_ADMIN",
+                        action_type=ActionType.CAMPAIGN_SCORING_CONFIG_COPIED.value,
+                        entity_type=EntityType.CAMPAIGN.value,
+                        entity_id=target.id,
+                        campaign_id=target.id,
+                        details={
+                            "title": f"Scoring configuration copied from '{source.name}' to '{target.name}'",
+                            "source_campaign_id": str(source.id),
+                            "target_campaign_id": str(target.id),
+                            "changes": changes,
+                        },
+                    )
+
+                result = self.get_scoring_configuration(target.id)
+                result.warning = self._already_processed_warning(candidate_count)
+                results.append(result)
+
+            self.campaign_repo.commit()
+
+            return CopyScoringConfigResponse(
+                source_campaign_id=source_campaign_id,
+                results=results,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
+    def reset_scoring_to_defaults(
+        self,
+        campaign_id: UUID,
+        updated_by: str,
+    ) -> CampaignScoringConfigurationResponse:
+        """
+        S05-T01: resets weight_deterministic/semantic/ai and semantic_threshold/
+        ai_threshold to the current platform defaults. deterministic_threshold
+        is left as-is — the spec's default list doesn't include it. Delegates
+        to update_scoring_configuration() so validation, audit logging, and the
+        already-processed warning all come from that one implementation rather
+        than a second copy of the same rules.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        configs = self.config_repo.get_configs_by_keys(
+            [
+                "CAMPAIGN_WEIGHT_DETERMINISTIC",
+                "CAMPAIGN_WEIGHT_SEMANTIC",
+                "CAMPAIGN_WEIGHT_AI",
+                "SEMANTIC_PASS_THRESHOLD",
+                "AI_PASS_THRESHOLD",
+            ]
+        )
+
+        request = CampaignScoringUpdateRequest(
+            weight_deterministic=Decimal(configs.get("CAMPAIGN_WEIGHT_DETERMINISTIC", "30.00")),
+            weight_semantic=Decimal(configs.get("CAMPAIGN_WEIGHT_SEMANTIC", "40.00")),
+            weight_ai=Decimal(configs.get("CAMPAIGN_WEIGHT_AI", "30.00")),
+            semantic_threshold=Decimal(configs.get("SEMANTIC_PASS_THRESHOLD", "0.6500")),
+            ai_threshold=Decimal(configs.get("AI_PASS_THRESHOLD", "50.00")),
+            deterministic_threshold=Decimal(str(campaign.deterministic_threshold)),
+        )
+
+        return self.update_scoring_configuration(campaign_id, request, updated_by)
+
+    # Mirrors JDService.EXPORT_AUDIT_ENTITY_ID / BulkUploadService.EXPORT_AUDIT_ENTITY_ID —
+    # the fixed sentinel used for audit events with no single owning entity row.
+    _PLATFORM_CONFIG_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    def update_platform_default_weights(
+        self,
+        request: PlatformDefaultWeightsUpdateRequest,
+        updated_by: str,
+    ) -> CampaignScoringDefaultsResponse:
+        """
+        S05-T02: updates the platform_config rows backing get_scoring_configuration's
+        "defaults" section and reset_scoring_to_defaults(). Existing campaigns keep
+        their own stored weight values untouched — only future defaults/resets change.
+        """
+        self._validate_scoring_weights(
+            request.weight_deterministic,
+            request.weight_semantic,
+            request.weight_ai,
+        )
+
+        updates = {
+            "CAMPAIGN_WEIGHT_DETERMINISTIC": str(request.weight_deterministic),
+            "CAMPAIGN_WEIGHT_SEMANTIC": str(request.weight_semantic),
+            "CAMPAIGN_WEIGHT_AI": str(request.weight_ai),
+            "SEMANTIC_PASS_THRESHOLD": str(request.semantic_threshold),
+            "AI_PASS_THRESHOLD": str(request.ai_threshold),
+        }
+
+        before = self.config_repo.get_configs_by_keys(list(updates.keys()))
+        updated = self.config_repo.update_configs(updates, updated_by)
+        self.config_repo.commit()
+
+        self.audit_service.log(
+            actor_id=updated_by,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.PLATFORM_CONFIG_UPDATED.value,
+            entity_type=EntityType.PLATFORM_CONFIG.value,
+            entity_id=self._PLATFORM_CONFIG_AUDIT_ENTITY_ID,
+            campaign_id=None,
+            details={
+                "title": "Platform default scoring weights updated",
+                "before": before,
+                "after": updated,
+            },
+        )
+        self.audit_service.repository.save()
+
+        return CampaignScoringDefaultsResponse(
+            weight_deterministic=float(updated["CAMPAIGN_WEIGHT_DETERMINISTIC"]),
+            weight_semantic=float(updated["CAMPAIGN_WEIGHT_SEMANTIC"]),
+            weight_ai=float(updated["CAMPAIGN_WEIGHT_AI"]),
+            semantic_threshold=float(updated["SEMANTIC_PASS_THRESHOLD"]),
+            ai_threshold=float(updated["AI_PASS_THRESHOLD"]),
+        )
+
+    def get_weight_change_report(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        campaign_status: CampaignStatus | None = None,
+    ) -> WeightChangeReportResponse:
+        """
+        S05-T03: one row per CAMPAIGN_SCORING_CONFIG_CHANGED event across every
+        campaign in the org. "Candidates processed with this configuration" is
+        computed by windowing each campaign's own changes chronologically —
+        candidates counted for a given change are those added between it and
+        whichever change (if any) superseded it for that same campaign.
+        """
+        audit_rows = self.audit_service.get_all_scoring_changes(
+            date_from=date_from, date_to=date_to, campaign_status=campaign_status,
+        )
+
+        by_campaign: dict[UUID, list] = {}
+        for log, campaign_name, campaign_status_value, actor_name in audit_rows:
+            by_campaign.setdefault(log.campaign_id, []).append(
+                (log, campaign_name, campaign_status_value, actor_name)
+            )
+
+        rows = []
+        for campaign_id, entries in by_campaign.items():
+            entries_sorted = sorted(entries, key=lambda e: e[0].created_at)
+            for i, (log, campaign_name, campaign_status_value, actor_name) in enumerate(entries_sorted):
+                window_end = (
+                    entries_sorted[i + 1][0].created_at
+                    if i + 1 < len(entries_sorted)
+                    else None
+                )
+                candidate_count = self.campaign_repo.count_candidates_in_window(
+                    campaign_id, log.created_at, window_end,
+                )
+
+                detail = log.detail or {}
+                field_changes = detail.get("changes", {})
+
+                rows.append(
+                    WeightChangeReportRow(
+                        campaign_id=campaign_id,
+                        campaign_name=campaign_name,
+                        campaign_status=campaign_status_value.value,
+                        change_date=log.created_at,
+                        changed_by=actor_name or self._resolve_actor(log.actor_id),
+                        previous_weights={f: v.get("before") for f, v in field_changes.items()},
+                        new_weights={f: v.get("after") for f, v in field_changes.items()},
+                        candidates_processed_with_this_config=candidate_count,
+                    )
+                )
+
+        rows.sort(key=lambda r: r.change_date, reverse=True)
+
+        return WeightChangeReportResponse(rows=rows, total_count=len(rows))
+
+    def export_weight_change_report_xlsx(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        campaign_status: CampaignStatus | None = None,
+    ):
+        report = self.get_weight_change_report(date_from, date_to, campaign_status)
+        return ExcelExport.export_weight_change_report(report.rows)
+
+    def _resubmit_paused_tasks(self, campaign_id: UUID) -> int:
+        """
+        actually resubmits each PAUSED task to the Celery broker,
+        reusing its original task_id (so the task's own get_by_task_id()
+        lookup finds and reuses this same log row instead of creating a
+        duplicate — the same convention resume_processing_tasks.py uses for
+        first-submission). Only DETERMINISTIC_SCORE is ever linked to a
+        campaign_candidate_id today; anything else is skipped defensively
+        rather than guessed at, and left PAUSED for manual follow-up.
+        """
+        requeued = 0
+        for task in self.campaign_repo.get_paused_tasks(campaign_id):
+            if task.task_type != DETERMINISTIC_SCORE_TASK_TYPE:
+                continue
+            calculate_deterministic_score_task.apply_async(
+                kwargs={"campaign_candidate_id": str(task.campaign_candidate_id)},
+                task_id=str(task.task_id),
+            )
+            task.status = TaskStatus.QUEUED
+            requeued += 1
+        self.campaign_repo.db.flush()
+        return requeued
+
+    def _enqueue_pending_resume_parses(self, campaign_id: UUID) -> int:
+        """
+        S02-T02: submits a fresh resume.process_document task for every
+        resume that was uploaded while the campaign was paused and never got
+        parsed (parse_status = PENDING) — mirroring the exact submission
+        pattern resume_intake_service.py uses on a normal upload.
+        """
+        enqueued = 0
+        for resume in self.campaign_repo.get_pending_resumes(campaign_id):
+            task_id = uuid4()
+            self.campaign_repo.set_resume_task_id(resume, str(task_id))
+            process_resume_document.apply_async(
+                kwargs={"resume_id": str(resume.id)},
+                task_id=str(task_id),
+            )
+            enqueued += 1
+        return enqueued
 
     _SCORING_FIELDS = (
         "weight_deterministic",
@@ -1274,8 +1754,10 @@ class CampaignService:
                     field: scoring_changes.get(field, Decimal(str(getattr(campaign, field))))
                     for field in ("weight_deterministic", "weight_semantic", "weight_ai")
                 }
-                if sum(merged_weights.values()) != Decimal("100.00"):
-                    raise CampaignException("Scoring weights must sum to 100.00", 422)
+                # S02-T01/T02: same validation update_scoring_configuration() runs —
+                # sum must equal 100.00 and no layer may fall below MIN_LAYER_WEIGHT,
+                # so this endpoint can't be used to bypass either rule.
+                self._validate_scoring_weights(**merged_weights)
 
                 for field, new_value in scoring_changes.items():
                     changes[field] = {
@@ -1302,8 +1784,21 @@ class CampaignService:
                 # S02-T02: re-queue suspended tasks (PAUSED → QUEUED); uploads are
                 # re-permitted immediately by the ACTIVE status.
                 detail["title"] = f"Campaign '{campaign.name}' resumed"
-                detail["tasks_requeued"] = self.campaign_repo.requeue_suspended_tasks(campaign.id)
-                detail["resumes_enqueued"] = self.campaign_repo.count_pending_resumes(campaign.id)
+                detail["tasks_requeued"] = self._resubmit_paused_tasks(campaign.id)
+                detail["resumes_enqueued"] = self._enqueue_pending_resume_parses(campaign.id)
+
+                # S02-T03: pause duration, from the matching CAMPAIGN_PAUSED
+                # entry's timestamp to now.
+                last_pause = self.audit_service.get_latest_entry(
+                    campaign.id, ActionType.CAMPAIGN_PAUSED.value,
+                )
+                if last_pause is not None:
+                    paused_at = last_pause.created_at
+                    detail["paused_at"] = paused_at.isoformat()
+                    detail["pause_duration_seconds"] = (
+                        datetime.now(timezone.utc) - paused_at
+                    ).total_seconds()
+
                 action_type = ActionType.CAMPAIGN_RESUMED
             elif scoring_changes:
                 action_type = ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED
@@ -1359,34 +1854,29 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(campaign.deadline, deadline_warning_days),
             )
 
+            warnings = []
             if hm_review_pending_count > 0:
-                # T03: "a specific warning must alert HR_ADMIN that pending HM
+                # S03-T03: "a specific warning must alert HR_ADMIN that pending HM
                 # review decisions may need to be re-communicated to the new manager"
-                response.warning = (
+                warnings.append(
                     f"{hm_review_pending_count} candidate(s) are currently awaiting "
                     f"hiring-manager review. These pending decisions may need to be "
                     f"re-communicated to the newly assigned hiring manager."
                 )
+            if scoring_changes:
+                # S02-T03: same warning update_scoring_configuration() shows — must
+                # appear regardless of which endpoint made the scoring change.
+                scoring_warning = self._already_processed_warning(candidate_count)
+                if scoring_warning:
+                    warnings.append(scoring_warning)
+            if warnings:
+                response.warning = " ".join(warnings)
 
             return response
 
         except Exception:
             self.campaign_repo.rollback()
             raise
-
-    
-    def update_campaign_status(self, campaign_id: UUID, status: CampaignStatus) -> HiringCampaign:
-        campaign = self.campaign_repo.get_by_id(campaign_id)  # or a small read-only lookup
-        if not campaign:
-            raise HTTPException(status_code=404, detail="Campaign not found")
-        if campaign.status == CampaignStatus.CLOSED:
-            raise HTTPException(status_code=400, detail="Cannot change status of a closed campaign")
-        if campaign.status == CampaignStatus.ACTIVE:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.PAUSED, campaign_id)
-        elif status == CampaignStatus.PAUSED:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.ACTIVE, campaign_id)
-
-        return campaign
 
     # ── S01 — Pause an Active Campaign ──────────────────────────────────────
 
@@ -1442,6 +1932,259 @@ class CampaignService:
             pending_resume_count=pending,
             estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
+
+    # ── S03 — Close a Campaign Manually ──────────────────────────────────────
+
+    def get_closure_impact_summary(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignClosureImpactSummaryResponse:
+        """
+        S03-T01: read-only data for the close confirmation dialog. HR_ADMIN
+        only (enforced at the route). Only an ACTIVE or PAUSED campaign can
+        be closed.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+            raise CampaignException(
+                "Only an active or paused campaign can be closed.", 409,
+            )
+
+        return CampaignClosureImpactSummaryResponse(
+            candidate_count=self.campaign_repo.get_candidate_count(campaign_id),
+            stage_counts=self.campaign_repo.get_stage_counts(campaign_id),
+            in_progress_task_count=self.campaign_repo.count_active_queue_tasks(campaign_id),
+            pending_human_decision_count=self.campaign_repo.count_pending_human_decision(campaign_id),
+            in_progress_bulk_job_count=self.campaign_repo.count_processing_bulk_jobs(campaign_id),
+        )
+
+    def close_campaign(
+        self,
+        campaign_id: UUID,
+        request: CampaignCloseRequest,
+        updated_by: str,
+    ) -> CampaignClosureResultResponse:
+        """
+        S03-T02/T03: manual, terminal closure — distinct from the automated
+        auto-close paths (deadline expiry, candidate cap): those already call
+        CampaignRepository.close_campaign() directly. This is the only path
+        that kills QUEUED tasks (DEAD, not PAUSED — there's no resume to
+        re-queue them later) and cancels in-flight bulk uploads, then builds
+        the closure summary and records CAMPAIGN_CLOSED.
+        """
+        try:
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+            if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+                raise CampaignException(
+                    "Only an active or paused campaign can be closed.", 409,
+                )
+
+            tasks_cancelled = self.campaign_repo.kill_queued_tasks(campaign_id)
+            bulk_uploads_cancelled = self.campaign_repo.cancel_pending_bulk_jobs(campaign_id)
+
+            self.campaign_repo.close_campaign(campaign)
+
+            stage_counts = self.campaign_repo.get_stage_counts(campaign_id)
+            candidate_count = sum(stage_counts.values())
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_CLOSED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' closed",
+                    "closure_reason": request.closure_reason.value,
+                    "final_pipeline_state": stage_counts,
+                    "tasks_cancelled": tasks_cancelled,
+                    "bulk_uploads_cancelled": bulk_uploads_cancelled,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignClosureResultResponse(
+                campaign_id=str(campaign.id),
+                campaign_name=campaign.name,
+                closed_at=campaign.updated_at,
+                closure_reason=request.closure_reason,
+                candidate_count=candidate_count,
+                stage_counts=stage_counts,
+                selected_count=stage_counts.get(PipelineStage.SELECTED.value, 0),
+                rejected_count=stage_counts.get(PipelineStage.REJECTED.value, 0),
+                tasks_cancelled_count=tasks_cancelled,
+                bulk_uploads_cancelled_count=bulk_uploads_cancelled,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
+    # ── S04 — Reopen a Closed Campaign ───────────────────────────────────────
+
+    def get_reopen_readiness(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignReopenReadinessResponse:
+        """
+        S04-T01: read-only readiness check for the reopen confirmation dialog.
+        HR_ADMIN only (enforced at the route). Only a CLOSED campaign can be
+        reopened.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status != CampaignStatus.CLOSED:
+            raise CampaignException(
+                "Only a closed campaign can be reopened.", 409,
+            )
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        issues: list[JDReadinessIssue] = []
+
+        if not jd:
+            issues.append(JDReadinessIssue(
+                code="JD_NOT_FOUND",
+                message="The linked job description could not be found.",
+            ))
+        else:
+            if not jd.is_active_version:
+                issues.append(JDReadinessIssue(
+                    code="JD_NOT_ACTIVE_VERSION",
+                    message=f"'{jd.title}' is no longer the active version. Update this campaign to an active JD version before reopening.",
+                ))
+            if jd.closed_at is not None:
+                issues.append(JDReadinessIssue(
+                    code="JD_CLOSED",
+                    message=f"'{jd.title}' has been closed. Update this campaign to an active, open JD before reopening.",
+                ))
+
+            unverified_count = self.campaign_repo.get_mandatory_unverified_skill_count(jd.id)
+            if unverified_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="MANDATORY_SKILLS_UNVERIFIED",
+                    message=f"{unverified_count} mandatory skill(s) on '{jd.title}' are still pending verification.",
+                ))
+
+            unresolved_count = self.campaign_repo.get_unresolved_unknown_skill_count(jd.id)
+            if unresolved_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="UNRESOLVED_SKILL_EXTRACTION",
+                    message=f"{unresolved_count} skill(s) extracted from '{jd.title}' are still unresolved.",
+                ))
+
+        return CampaignReopenReadinessResponse(
+            is_ready=not issues,
+            issues=issues,
+            campaign_id=campaign.id,
+            campaign_name=campaign.name,
+            jd_id=campaign.jd_id,
+            jd_title=jd.title if jd else "",
+            max_candidates=campaign.max_candidates,
+            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            deadline=campaign.deadline,
+            weight_deterministic=campaign.weight_deterministic,
+            weight_semantic=campaign.weight_semantic,
+            weight_ai=campaign.weight_ai,
+        )
+
+    def reopen_campaign(
+        self,
+        campaign_id: UUID,
+        updated_by: str,
+    ) -> CampaignReopenResultResponse:
+        """
+        S04-T02/T03: reopens a closed campaign back to ACTIVE, re-validating
+        readiness first. An already-passed deadline is cleared automatically
+        (spec: it must be re-set, not silently kept expired). A cap already
+        at/over max_candidates blocks reopen rather than silently allowing an
+        over-cap campaign — HR_ADMIN raises/clears it via the existing edit
+        endpoint first, reusing that validation instead of duplicating it.
+        """
+        try:
+            readiness = self.get_reopen_readiness(campaign_id)
+            if not readiness.is_ready:
+                raise CampaignException(
+                    "Campaign is not ready to reopen: "
+                    + "; ".join(issue.message for issue in readiness.issues),
+                    422,
+                )
+
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+
+            if campaign.max_candidates is not None:
+                candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+                if candidate_count >= campaign.max_candidates:
+                    raise CampaignException(
+                        f"This campaign already has {candidate_count} candidate(s), at or "
+                        f"above its cap of {campaign.max_candidates}. Raise or clear the "
+                        f"candidate cap (PATCH the campaign) before reopening.",
+                        422,
+                    )
+
+            deadline_cleared = False
+            if campaign.deadline is not None and campaign.deadline <= datetime.now(timezone.utc):
+                campaign.deadline = None
+                deadline_cleared = True
+
+            campaign.status = CampaignStatus.ACTIVE
+            campaign.updated_at = datetime.now(timezone.utc)
+            campaign = self.campaign_repo.update(campaign)
+
+            last_closure = self.audit_service.get_latest_entry(
+                campaign.id, ActionType.CAMPAIGN_CLOSED.value,
+            )
+            original_closure_reason = None
+            closed_at = None
+            duration_closed_days = None
+            if last_closure is not None:
+                closed_at = last_closure.created_at
+                original_closure_reason = (last_closure.detail or {}).get("closure_reason")
+                duration_closed_days = (
+                    datetime.now(timezone.utc) - closed_at
+                ).total_seconds() / 86400
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_REOPENED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' reopened",
+                    "original_closure_reason": original_closure_reason,
+                    "closed_at": closed_at.isoformat() if closed_at else None,
+                    "duration_closed_days": duration_closed_days,
+                    "deadline_cleared": deadline_cleared,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignReopenResultResponse(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                status=campaign.status.value,
+                reopened_at=campaign.updated_at,
+                deadline_cleared=deadline_cleared,
+                original_closure_reason=original_closure_reason,
+                closed_at=closed_at,
+                duration_closed_days=duration_closed_days,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
 
     def calculate_deterministic_score(
         self,
