@@ -53,6 +53,13 @@ class JDProcessingContext:
     skill_matches: list[SkillMatchResult] | None = None
     content_hash: str | None = None
     is_duplicate: bool = False
+    # Set alongside is_duplicate (file-path TEXT_EXTRACTION check) or by
+    # PERSISTENCE catching JDService's own DuplicateJDException (final
+    # safety-net check) — either way, run() re-raises it as a
+    # DuplicateJDException once the stage that found it is done, so the
+    # duplicate stays out of the stage-failure/retry/dead-letter machinery
+    # meant for genuine pipeline errors.
+    duplicate_jd_info: dict | None = None
     embedding_text: str | None = None
     embedding: list[float] | None = None
     embedding_model_version_id: UUID | None = None

@@ -14,12 +14,13 @@ async def duplicate_jd_exception_handler(
     exc: DuplicateJDException,
 ):
     """Handle duplicate JD exceptions."""
+    existing_jd = exc.existing_jd.existing_jd
     response = APIResponse.fail(
         message="Duplicate Job Description found",
         data={
-            "existing_jd_id": str(exc.existing_jd.id),
-            "title": exc.existing_jd.title,
-            "version_number": exc.existing_jd.version_number,
+            "existing_jd_id": str(existing_jd.id),
+            "title": existing_jd.title,
+            "version_number": existing_jd.version_number,
         }
     )
     return JSONResponse(

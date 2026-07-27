@@ -133,13 +133,16 @@ class JDService:
         version_number: int = 1,
         parent_jd_id: UUID | None = None,
         lineage_root_id: UUID | None = None,
-    ) -> UUID | None:
+    ) -> UUID:
         """
         The Persistence stage of the async JD processing pipeline: writes
         JobDescription + JDSkill + UnknownSkill + JDEmbedding + audit log in
-        one transaction. Returns the new jd_id, or None if a duplicate was
+        one transaction. Raises DuplicateJDException if a duplicate was
         detected right before insert (final safety net against the race
-        widened by asynchronous processing).
+        widened by asynchronous processing) — the same exception the
+        synchronous pre-checks raise, so every duplicate-content path is
+        handled consistently instead of some of them completing silently
+        with no JD created.
 
         existing_jd_id absent (default) means this is a normal create run.
         When present, this is an update-triggered reprocess run: the given
@@ -156,7 +159,18 @@ class JDService:
                 else self.repository.get_by_content_hash(content_hash)
             )
             if duplicate:
-                return None
+                raise DuplicateJDException(
+                    DuplicateJDInfo(
+                        message="Duplicate job description found.",
+                        existing_jd=ExistingJDInfo(
+                            id=duplicate.id,
+                            title=duplicate.title,
+                            version_number=duplicate.version_number,
+                            created_at=duplicate.created_at,
+                        ),
+                        actions=["View Existing", "Create New Version"],
+                    )
+                )
 
             if is_reprocess:
                 # Re-check now, immediately before mutating anything: the
@@ -643,7 +657,13 @@ class JDService:
     )-> PaginatedJDResponse:
         records, total = self.repository.search(request=request)
 
-        items = [JDMapper.to_list_item(jd) for jd in records]
+        campaign_counts = self.repository.get_campaign_status_counts(
+            jd_ids=[jd.id for jd in records]
+        )
+        items = [
+            JDMapper.to_list_item(jd, campaign_counts.get(jd.id))
+            for jd in records
+        ]
 
         return PaginatedJDResponse(
             total=total,

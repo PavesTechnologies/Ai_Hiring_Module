@@ -38,3 +38,14 @@ class BulkUploadJobNotCancellableException(ResumeException):
 
     def __init__(self, message: str, data=None):
         super().__init__(message, status_code=409, data=data)
+
+
+class BulkUploadFileNotReplayableException(ResumeException):
+    """
+    Raised when replay is attempted on a file that isn't FAILED, has no
+    dead-lettered attempt to replay, or belongs to a job/campaign that can
+    no longer accept processing (CANCELLED job, PAUSED/CLOSED campaign).
+    """
+
+    def __init__(self, message: str, data=None):
+        super().__init__(message, status_code=409, data=data)

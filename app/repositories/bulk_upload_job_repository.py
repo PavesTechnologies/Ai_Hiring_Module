@@ -60,6 +60,23 @@ class BulkUploadJobRepository:
     def increment_duplicate_count(self, job_id: UUID, by: int = 1) -> None:
         self._atomic_increment(job_id, BulkUploadJob.duplicate_count, by)
 
+    def decrement_failed_count(self, job_id: UUID, by: int = 1) -> None:
+        self._atomic_increment(job_id, BulkUploadJob.failed_count, -by)
+
+    def requeue_after_replay(self, job_id: UUID) -> None:
+        """
+        Reopens a job that had already reached a terminal state
+        (FAILED/PARTIAL_FAILURE) back to PROCESSING and clears completed_at,
+        since a replayed file means the job is no longer fully resolved.
+        _maybe_finalize_job will re-close it once every file resolves again.
+        """
+        self.db.execute(
+            update(BulkUploadJob)
+            .where(BulkUploadJob.id == job_id)
+            .values(status=BulkUploadStatus.PROCESSING, completed_at=None)
+        )
+        self.db.flush()
+
     def _atomic_increment(self, job_id: UUID, column, by: int) -> None:
         """
         SQL-level UPDATE x = x + :by, not an ORM read-modify-write — the
