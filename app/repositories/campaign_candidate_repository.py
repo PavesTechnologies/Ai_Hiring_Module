@@ -88,6 +88,23 @@ class CampaignCandidateRepository:
         self.db.refresh(history)
         return history
 
+    def update_pipeline_stage(
+        self,
+        campaign_candidate: CampaignCandidate,
+        to_stage: PipelineStage,
+    ) -> CampaignCandidate:
+        """
+        Epic 3 (M05-E03) Phase C0 — mutates the already-loaded row directly
+        and flushes, matching this repo's existing single-field-update style
+        (create_stage_history, etc.) rather than a raw atomic UPDATE: unlike
+        the bulk job counters, a stage transition isn't a concurrent-increment
+        scenario, so there's no lost-update race to guard against here.
+        """
+        campaign_candidate.pipeline_stage = to_stage
+        self.db.flush()
+        self.db.refresh(campaign_candidate)
+        return campaign_candidate
+
     def get_by_id(
         self,
         campaign_candidate_id: UUID,

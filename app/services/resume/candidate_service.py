@@ -2,9 +2,11 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from app.core.encryption_service import EncryptionService
+from app.enums.constants import ActionType, EntityType
 from app.exceptions.candidate_exceptions import CandidateErasureBlockedException
 from app.models.candidates import Candidate
 from app.repositories.candidate_repository import CandidateRepository
+from app.services.audit_service import AuditService
 from app.services.compliance.consent_service import ConsentService
 
 CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
@@ -16,10 +18,12 @@ class CandidateService:
         candidate_repo: CandidateRepository,
         encryption_service: EncryptionService,
         consent_service: ConsentService,
+        audit_service: AuditService,
     ):
         self.candidate_repo = candidate_repo
         self.encryption_service = encryption_service
         self.consent_service = consent_service
+        self.audit_service = audit_service
 
     def get_or_create(
         self,
@@ -27,6 +31,8 @@ class CandidateService:
         email: str,
         jurisdiction: str,
         consent_source: str,
+        actor_id: str,
+        actor_role: str | None = None,
         phone: str | None = None,
         org_id: UUID | None = None,
         source_campaign_id: UUID | None = None,
@@ -70,6 +76,18 @@ class CandidateService:
                 source=consent_source,
                 ip_address=ip_address,
                 user_agent=user_agent,
+            )
+
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.CONSENT_RECORDED,
+                entity_type=EntityType.CONSENT,
+                entity_id=candidate.id,
+                campaign_id=source_campaign_id,
+                jurisdiction=jurisdiction,
+                ip_address=ip_address,
+                details={"consent_source": consent_source},
             )
 
             # Denormalized snapshot on the candidate row itself, per spec.

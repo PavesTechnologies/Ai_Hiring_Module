@@ -22,6 +22,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import (
     CampaignCandidateService,
 )
+from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 
@@ -87,6 +88,18 @@ def get_allowed_transition_repository(
     db: Session = Depends(get_db),
 ) -> AllowedTransitionRepository:
     return AllowedTransitionRepository(db)
+
+
+def get_pipeline_transition_service(
+    allowed_transition_repo: AllowedTransitionRepository = Depends(get_allowed_transition_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> PipelineTransitionService:
+    return PipelineTransitionService(
+        allowed_transition_repo=allowed_transition_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        audit_service=audit_service,
+    )
 
 
 def get_stage_transition_service(

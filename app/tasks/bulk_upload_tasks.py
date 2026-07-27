@@ -9,7 +9,7 @@ from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
 from app.core.storage_service import StorageService
 from app.db.session import SessionLocal
-from app.enums.constants import ActionType, EntityType, Jurisdiction
+from app.enums.constants import ActionType, EntityType
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaigns import CampaignStatus
@@ -106,6 +106,18 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         job = job_repo.get_by_id(UUID(bulk_upload_job_id))
         if job is None:
             raise ValueError(f"bulk_upload_jobs row {bulk_upload_job_id} not found.")
+
+        if not job.consent_confirmed:
+            # Defense-in-depth: the upload route's Pydantic validator
+            # already guarantees this is True at submission time, but this
+            # re-check ensures nothing ever unpacks/processes a job whose
+            # persisted consent flag isn't actually True (e.g. a future
+            # code path that bypasses the schema-level validation).
+            error_summary = "Bulk upload rejected — consent not confirmed."
+            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=error_summary)
+            job_repo.commit()
+            task_log_service.mark_failure(task_log, error_summary)
+            return
 
         job_repo.update_status(job.id, BulkUploadStatus.EXTRACTING)
         job_repo.commit()
@@ -293,9 +305,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
 
         encryption_service = EncryptionService(encryption_key_repo)
         consent_service = ConsentService(consent_repo, config_repo)
-        candidate_service = CandidateService(candidate_repo, encryption_service, consent_service)
-        file_validation_service = FileValidationService(config_repo)
         audit_service = AuditService(audit_repo)
+        candidate_service = CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
+        file_validation_service = FileValidationService(config_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
         extraction_service = GeminiExtractionService()
         preprocessing_service = PreprocessingService()
@@ -410,7 +422,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
 
-        extracted = context.validated_extraction
+        identity = context.validated_extraction
 
         if not identity.full_name or not identity.email:
             raise ValueError(
@@ -420,10 +432,13 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         candidate = candidate_service.get_or_create(
             full_name=identity.full_name,
             email=identity.email,
-            jurisdiction=Jurisdiction.GLOBAL.value,
+            jurisdiction=job.jurisdiction,
             consent_source=BULK_UPLOAD_CONSENT_SOURCE,
             phone=identity.phone,
             source_campaign_id=job.campaign_id,
+            ip_address=job.ip_address,
+            user_agent=job.user_agent,
+            actor_id=job.uploaded_by,
         )
 
         page_count = (
@@ -433,7 +448,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         )
 
         resume = Resume(
-            candidate_id=candidate.id,
+            candidate_id=candidate.id,     
             file_path=job_file.storage_path,
             file_format=validation_result.file_format,
             file_hash=hashlib.md5(file_bytes).hexdigest(),

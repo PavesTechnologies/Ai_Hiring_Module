@@ -5,11 +5,42 @@ from app.models.pipeline import AllowedTransition, PipelineStage
 
 db = SessionLocal()
 
-# M07-E03 S02 T01: allowed_transitions had zero rows in the live database -
-# StageTransitionService.transition_to_rejected checks this table before
-# ever moving a candidate to REJECTED, so without this row every
-# deterministic/semantic/AI rejection would hit the "abort" branch.
+# Epic 3 (M05-E03) Phase C0 fraud-review edges (C5/C7) plus the M07-E03
+# rejection-handling edges - StageTransitionService.transition_to_rejected
+# checks this table before ever moving a candidate to REJECTED, so without
+# those rows every deterministic/semantic/AI rejection would hit the
+# "abort" branch. The rest of the "normal" pipeline graph
+# (UPLOADED->SCREENING etc.) is deliberately not seeded: nothing drives
+# those transitions today either.
 _TRANSITIONS = [
+    {
+        "from_stage": PipelineStage.UPLOADED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN confirms a fraud flag and rejects the candidate (M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to screening (M05-E03 S06).",
+    },
     {
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.REJECTED,
