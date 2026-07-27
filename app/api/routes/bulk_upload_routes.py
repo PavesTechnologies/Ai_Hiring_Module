@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Security, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from app.dependencies.bulk_upload import get_bulk_upload_monitoring_service, get_bulk_upload_service
-from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
+from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.async_tasks import BulkUploadFileStatus
@@ -42,7 +42,9 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 def upload_bulk_zip(
+    request: Request,
     campaign_id: UUID = Form(...),
+    jurisdiction: str = Form(default=Jurisdiction.GLOBAL.value),
     consent_confirmed: bool = Form(...),
     file: UploadFile = File(...),
     service: BulkUploadService = Depends(get_bulk_upload_service),
@@ -52,10 +54,13 @@ def upload_bulk_zip(
     Validates and stores the ZIP archive, creates the bulk_upload_jobs
     record at status=PENDING, and enqueues the BULK_EXTRACT task, which
     unpacks the archive asynchronously. Per-file parsing is a later phase.
+    Every file inside the ZIP is treated as the same jurisdiction and
+    inherits this one submission's consent context (IP/user-agent).
     """
     try:
         validated = BulkUploadRequest(
             campaign_id=campaign_id,
+            jurisdiction=jurisdiction,
             consent_confirmed=consent_confirmed,
         )
     except ValidationError as exc:
@@ -70,6 +75,9 @@ def upload_bulk_zip(
         filename=filename,
         uploaded_by=user.user_id,
         consent_confirmed=validated.consent_confirmed,
+        jurisdiction=validated.jurisdiction,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
 
     return APIResponse.ok(

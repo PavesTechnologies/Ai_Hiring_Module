@@ -108,13 +108,13 @@ try:
         PlatformConfig(
             id=uuid.uuid4(),
             key="ZIP_MAX_SIZE_MB",
-            value="500",
+            value="200",
             description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="MAX_FILES_PER_ZIP",
-            value="200",
+            value="20",
             description=(
                 "Maximum number of resume files processed from a single bulk-upload "
                 "ZIP archive; extraction stops and the uploader is asked to split the "

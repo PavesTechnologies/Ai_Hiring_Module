@@ -5,6 +5,7 @@ from app.core.encryption_service import EncryptionService
 from app.db.session import get_db
 
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import (
     CampaignCandidateRepository,
 )
@@ -15,6 +16,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import (
     CampaignCandidateService,
 )
+from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 
 
 def get_campaign_repository(
@@ -54,6 +56,24 @@ def get_encryption_service(
     repository: EncryptionKeyRepository = Depends(get_encryption_key_repository),
 ) -> EncryptionService:
     return EncryptionService(repository)
+
+
+def get_allowed_transition_repository(
+    db: Session = Depends(get_db),
+) -> AllowedTransitionRepository:
+    return AllowedTransitionRepository(db)
+
+
+def get_pipeline_transition_service(
+    allowed_transition_repo: AllowedTransitionRepository = Depends(get_allowed_transition_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> PipelineTransitionService:
+    return PipelineTransitionService(
+        allowed_transition_repo=allowed_transition_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        audit_service=audit_service,
+    )
 
 
 def get_campaign_candidate_service(
