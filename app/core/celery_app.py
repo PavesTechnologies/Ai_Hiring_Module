@@ -38,14 +38,48 @@ celery_app.conf.imports = (
     "app.tasks.deterministic_scoring_tasks",
 )
 
+
+def _get_deadline_check_interval_hours() -> int:
+    """
+    E03-S05-T02: sourced from platform_config.DEADLINE_CHECK_INTERVAL_HOURS —
+    read once here at Celery process startup, since beat_schedule is a static
+    dict evaluated at import time, not a live per-tick DB read. Changing the
+    config value later requires restarting the beat process to take effect.
+    Falls back to hourly if the DB isn't reachable yet at import time.
+    """
+    try:
+        from app.db.session import SessionLocal
+        from app.repositories.config_repository import ConfigRepository
+
+        db = SessionLocal()
+        try:
+            value = ConfigRepository(db).get_configs_by_keys(
+                ["DEADLINE_CHECK_INTERVAL_HOURS"]
+            ).get("DEADLINE_CHECK_INTERVAL_HOURS")
+            return int(value) if value else 1
+        finally:
+            db.close()
+    except Exception:
+        return 1
+
+
+_deadline_check_interval_hours = _get_deadline_check_interval_hours()
+
 celery_app.conf.beat_schedule = {
     "auto-close-expired-campaigns": {
         "task": "campaign.auto_close_expired_campaigns",
-        "schedule": crontab( minute=0, hour=0 ),
+        "schedule": crontab(minute=0, hour=f"*/{_deadline_check_interval_hours}"),
     },
     "detect-duplicate-skill-aliases": {
         "task": "skill.detect_duplicate_aliases",
         # Nightly, off-peak — a full skill_ontology scan, not time-sensitive.
         "schedule": crontab(minute=0, hour=2),
+    },
+    "evaluate-campaign-health-alerts": {
+        "task": "campaign.evaluate_health_alerts",
+        # spec says "daily" with no config-sourced interval, so
+        # this one is a plain fixed off-peak hour, distinct from the other
+        # two daily/hourly jobs.
+        "schedule": crontab(minute=0, hour=3),
     },
 }

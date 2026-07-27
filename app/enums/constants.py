@@ -40,6 +40,8 @@ class ActionType(enum.Enum):
     CAMPAIGN_RESUMED= "CAMPAIGN_RESUMED"
     CAMPAIGN_CLOSED= "CAMPAIGN_CLOSED"
     CAMPAIGN_REOPENED = "CAMPAIGN_REOPENED"
+    CAMPAIGN_DUPLICATED = "CAMPAIGN_DUPLICATED"
+    CAMPAIGN_HEALTH_ALERT = "CAMPAIGN_HEALTH_ALERT"
     CAMPAIGN_ACTIVATED= "CAMPAIGN_ACTIVATED"
     CAMPAIGN_AUTO_CLOSED = "CAMPAIGN_AUTO_CLOSED"
     CAMPAIGN_EDIT_BLOCKED = "CAMPAIGN_EDIT_BLOCKED"
@@ -92,6 +94,7 @@ class ActionType(enum.Enum):
     # 'UNKNOWN_SKILL_DELETED'` (see alembic/versions/<new>_unknown_skill_deleted_audit_action.py)
     # before this can actually be written to audit_log.
     UNKNOWN_SKILL_DELETED = "UNKNOWN_SKILL_DELETED"
+    BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
@@ -109,6 +112,7 @@ class EntityType(enum.Enum):
     CONSENT = "CONSENT"
     # Bulk ZIP Upload (M05-E02) Phase B0 — also already in the live enum.
     BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
+    BULK_UPLOAD_JOB_FILE = "BULK_UPLOAD_JOB_FILE"
     CANDIDATE_SKILL = "CANDIDATE_SKILL"
 
 

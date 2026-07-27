@@ -21,8 +21,8 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
@@ -53,6 +53,10 @@ from app.schemas.campaign.campaign_detail_response import (
 )
 from app.models.pipeline import PipelineStage
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
+from app.schemas.campaign.campaign_processing_status_response import (
+    ProcessingStatusSummaryResponse,
+    DeadLetterQueueEntryResponse,
+)
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 from app.schemas.campaign.campaign_comparison_response import (
     CampaignComparisonColumn,
@@ -305,7 +309,68 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    
+    def duplicate_campaign(
+        self,
+        source_campaign_id: UUID,
+        request: CampaignDuplicateRequest,
+        created_by: str,
+    ) -> CampaignResponse:
+        """
+        S06-T01/T02/T03: creates a fully independent new campaign, copying the
+        source's scoring weights/thresholds verbatim. Reuses create_campaign()
+        for everything else (JD validation, weight-sum check, name-uniqueness,
+        the INSERT itself, and the CAMPAIGN_CREATED audit entry) instead of a
+        second copy of that validation — this is allowed to run against a
+        source campaign in ANY status (spec: "for campaigns in any status"),
+        since it only ever reads the source, never writes to it. Adds one
+        CAMPAIGN_DUPLICATED audit entry on top, carrying the lineage back to
+        the source campaign.
+        """
+        source = self.campaign_repo.get_by_id(source_campaign_id)
+        if not source:
+            raise CampaignException(f"Campaign '{source_campaign_id}' not found", 404)
+
+        create_request = CampaignCreateRequest(
+            name=request.name,
+            jd_id=request.jd_id,
+            max_candidates=request.max_candidates,
+            deadline=request.deadline,
+            weight_deterministic=Decimal(str(source.weight_deterministic)),
+            weight_semantic=Decimal(str(source.weight_semantic)),
+            weight_ai=Decimal(str(source.weight_ai)),
+            semantic_threshold=Decimal(str(source.semantic_threshold)),
+            ai_threshold=Decimal(str(source.ai_threshold)),
+            deterministic_threshold=Decimal(str(source.deterministic_threshold)),
+            hiring_manager_id=request.hiring_manager_id or source.hiring_manager_id,
+            recruiter_id=request.recruiter_id or source.recruiter_id,
+        )
+
+        # create_campaign() already commits the new campaign + its own
+        # CAMPAIGN_CREATED audit entry before returning.
+        new_campaign = self.create_campaign(
+            create_request, org_id=source.org_id, created_by=created_by,
+        )
+
+        self.audit_service.log(
+            actor_id=created_by,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_DUPLICATED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=new_campaign.id,
+            campaign_id=new_campaign.id,
+            details={
+                "title": f"Campaign '{new_campaign.name}' duplicated from '{source.name}'",
+                "source_campaign_id": str(source.id),
+                "source_campaign_name": source.name,
+            },
+        )
+        self.audit_service.repository.save()
+
+        new_campaign.duplicated_from_campaign_id = source.id
+        new_campaign.duplicated_from_campaign_name = source.name
+
+        return new_campaign
+
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -482,6 +547,11 @@ class CampaignService:
             history=history_items,
             message=message,
         )
+    def get_active_campaigns_minimal(self) -> list[CampaignMinimalResponse]:
+        """id + name only, for dropdowns/pickers — HR_ADMIN/RECRUITER (enforced at the route)."""
+        rows = self.campaign_repo.get_active_campaigns_minimal()
+        return [CampaignMinimalResponse(id=row.id, name=row.name) for row in rows]
+
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
@@ -998,6 +1068,19 @@ class CampaignService:
             and UserRole.RECRUITER.value not in user.roles
         )
 
+        # S06-T03: "Duplicated from [source name]" — sourced from the
+        # CAMPAIGN_DUPLICATED audit entry rather than a dedicated column,
+        # reusing the same audit-lookup pattern as pause-duration/reopen.
+        duplication_entry = self.audit_service.get_latest_entry(
+            campaign.id, ActionType.CAMPAIGN_DUPLICATED.value,
+        )
+        duplicated_from_id = None
+        duplicated_from_name = None
+        if duplication_entry is not None:
+            detail = duplication_entry.detail or {}
+            duplicated_from_id = detail.get("source_campaign_id")
+            duplicated_from_name = detail.get("source_campaign_name")
+
         return CampaignDetailResponse(
             id=campaign.id,
             campaign_info=CampaignInfoSection(
@@ -1006,6 +1089,8 @@ class CampaignService:
                 created_by_name=creator.full_name if creator else None,
                 created_at=campaign.created_at,
                 updated_at=campaign.updated_at,
+                duplicated_from_campaign_id=duplicated_from_id,
+                duplicated_from_campaign_name=duplicated_from_name,
             ),
             jd_configuration=JDConfigSection(
                 jd_id=jd.id,
@@ -1082,6 +1167,43 @@ class CampaignService:
             total_candidates=sum(counts.values()),
             stages=stages,
         )
+
+    def get_processing_status_summary(self, campaign_id: UUID) -> ProcessingStatusSummaryResponse:
+        """S01-T02: celery_task_log status breakdown + DLQ count for this campaign."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        counts = self.campaign_repo.get_task_status_counts(campaign_id)
+        dlq_count = len(self.campaign_repo.get_dead_letter_queue_entries(campaign_id))
+
+        return ProcessingStatusSummaryResponse(
+            queued_count=counts.get(TaskStatus.QUEUED.value, 0),
+            running_count=counts.get(TaskStatus.RUNNING.value, 0),
+            retry_count=counts.get(TaskStatus.RETRY.value, 0),
+            dead_count=counts.get(TaskStatus.DEAD.value, 0),
+            paused_count=counts.get(TaskStatus.PAUSED.value, 0),
+            dead_letter_queue_count=dlq_count,
+        )
+
+    def get_dead_letter_queue_for_campaign(self, campaign_id: UUID) -> list[DeadLetterQueueEntryResponse]:
+        """S01-T02: the destination for clicking the DEAD metric card."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        entries = self.campaign_repo.get_dead_letter_queue_entries(campaign_id)
+        return [
+            DeadLetterQueueEntryResponse(
+                id=e.id,
+                task_type=e.task_type,
+                final_error_message=e.final_error_message,
+                retry_count=e.retry_count,
+                moved_to_dlq_at=e.moved_to_dlq_at,
+                campaign_candidate_id=e.campaign_candidate_id,
+            )
+            for e in entries
+        ]
 
     def get_campaign_timeline(
         self,

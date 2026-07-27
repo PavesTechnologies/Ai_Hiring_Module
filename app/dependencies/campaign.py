@@ -65,8 +65,10 @@ def get_campaign_service(
 def get_campaign_scheduler_service(
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    config_repo: ConfigRepository = Depends(get_config_repository),
 ) -> CampaignSchedulerService:
     return CampaignSchedulerService(
         campaign_repo=campaign_repo,
         audit_service=audit_service,
+        config_repo=config_repo,
     )

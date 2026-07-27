@@ -57,6 +57,7 @@ def get_bulk_upload_service(
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
     audit_service: AuditService = Depends(get_audit_service),
     celery_task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
 ) -> BulkUploadService:
     return BulkUploadService(
         bulk_upload_job_repo=bulk_upload_job_repo,
@@ -66,6 +67,7 @@ def get_bulk_upload_service(
         campaign_repo=campaign_repo,
         audit_service=audit_service,
         celery_task_log_repo=celery_task_log_repo,
+        dead_letter_queue_repo=dead_letter_queue_repo,
     )
 
 

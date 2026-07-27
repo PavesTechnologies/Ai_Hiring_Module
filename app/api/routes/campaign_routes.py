@@ -6,10 +6,14 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
+from app.schemas.campaign.campaign_processing_status_response import (
+    ProcessingStatusSummaryResponse,
+    DeadLetterQueueEntryResponse,
+)
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
 from app.schemas.campaign.campaign_comparison_response import CampaignComparisonResponse
 from app.schemas.campaign.campaign_weight_change_report_response import WeightChangeReportResponse
@@ -61,6 +65,22 @@ def create_campaign(
     return APIResponse.ok(
         data=campaign,
         message="Campaign created successfully"
+    )
+
+@router.get(
+    "/active",
+    response_model=APIResponse[list[CampaignMinimalResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Get all active campaigns (id + name only)",
+    description="Lightweight list of ACTIVE campaigns for dropdowns/pickers.",
+)
+def get_active_campaigns(
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    return APIResponse.ok(
+        data=service.get_active_campaigns_minimal(),
+        message="Active campaigns retrieved successfully",
     )
 
 @router.get(
@@ -241,6 +261,24 @@ def reopen_campaign(
 ):
     result = service.reopen_campaign(campaign_id, updated_by=user.user_id)
     return APIResponse.ok(data=result, message="Campaign reopened successfully")
+
+# ── S06 — Duplicate a Campaign Configuration ────────────────────────────────
+
+@router.post(
+    "/{campaign_id}/duplicate",
+    response_model=APIResponse[CampaignResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate a campaign's configuration",
+    description="Creates a new, fully independent campaign copying the source's scoring weights/thresholds. Works regardless of the source campaign's status. Candidate data is never copied.",
+)
+def duplicate_campaign(
+    campaign_id: UUID,
+    request: CampaignDuplicateRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.duplicate_campaign(campaign_id, request, created_by=user.user_id)
+    return APIResponse.ok(data=result, message="Campaign duplicated successfully")
 
 @router.get(
     "/scoring-presets",
@@ -533,6 +571,38 @@ def get_pipeline_summary(
 ):
     summary = service.get_pipeline_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
+
+
+@router.get(
+    "/{campaign_id}/processing-status",
+    response_model=APIResponse[ProcessingStatusSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Processing status summary",
+    description="celery_task_log status breakdown (QUEUED/RUNNING/RETRY/DEAD/PAUSED) + dead_letter_queue count for this campaign.",
+)
+def get_processing_status(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    summary = service.get_processing_status_summary(campaign_id)
+    return APIResponse.ok(data=summary, message="Processing status summary retrieved successfully.")
+
+
+@router.get(
+    "/{campaign_id}/dead-letter-queue",
+    response_model=APIResponse[list[DeadLetterQueueEntryResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Dead letter queue entries for this campaign",
+    description="Destination for the DEAD metric card click-through.",
+)
+def get_dead_letter_queue(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    entries = service.get_dead_letter_queue_for_campaign(campaign_id)
+    return APIResponse.ok(data=entries, message="Dead letter queue entries retrieved successfully.")
 
 
 @router.get(

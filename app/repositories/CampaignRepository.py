@@ -12,7 +12,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
-from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus
+from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus, DeadLetterQueue
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
 
@@ -116,7 +116,19 @@ class CampaignRepository:
             )
         result = self.db.execute(stmt)
         return result.scalars().all()
-    
+
+    def get_active_campaigns_minimal(self):
+        """
+        id + name only, for dropdowns/pickers — a column projection instead
+        of loading full HiringCampaign rows (no job_description join needed).
+        """
+        stmt = (
+            select(HiringCampaign.id, HiringCampaign.name)
+            .where(HiringCampaign.status == CampaignStatus.ACTIVE)
+            .order_by(HiringCampaign.name)
+        )
+        return self.db.execute(stmt).all()
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (
             select(HiringCampaign)
@@ -333,19 +345,23 @@ class CampaignRepository:
         self.db.rollback()
 
 
-    def get_expired_campaigns(self) -> list[HiringCampaign]:
+    def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
         """
-        Returns all ACTIVE campaigns whose deadline has passed.
+        Returns ACTIVE campaigns whose deadline has passed. S05-T02: an
+        optional limit lets the caller process expired campaigns in batches
+        instead of locking every expired row in one huge transaction.
         """
-        return (
+        stmt = (
             self.db.query(HiringCampaign)
             .filter(
                 HiringCampaign.status == CampaignStatus.ACTIVE,
                 HiringCampaign.deadline.isnot(None),
                 HiringCampaign.deadline < datetime.now(timezone.utc),
             )
-            .all()
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return stmt.all()
     
     def close_campaign(self, campaign: HiringCampaign) -> HiringCampaign:
         campaign.status = CampaignStatus.CLOSED
@@ -723,3 +739,110 @@ class CampaignRepository:
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0
+
+    def mark_processing_bulk_jobs_partial_failure(self, campaign_id: UUID) -> int:
+        """
+        E03-S05-T01: when a campaign auto-closes because its candidate cap was
+        just reached, any bulk_upload_jobs still PROCESSING get marked
+        PARTIAL_FAILURE (some files were processed before the cap hit, not a
+        clean FAILED) rather than left to run against a now-closed campaign.
+        """
+        result = self.db.execute(
+            update(BulkUploadJob)
+            .where(
+                BulkUploadJob.campaign_id == campaign_id,
+                BulkUploadJob.status == BulkUploadStatus.PROCESSING,
+            )
+            .values(
+                status=BulkUploadStatus.PARTIAL_FAILURE,
+                error_summary="Campaign reached maximum candidate limit during upload.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
+    # Monitor Campaign Pipeline Health ────────────────────────────
+
+    def get_task_status_counts(self, campaign_id: UUID) -> dict[str, int]:
+        """T02: celery_task_log status breakdown for this campaign's tasks."""
+        rows = (
+            self.db.query(CeleryTaskLog.status, func.count())
+            .join(
+                CampaignCandidate,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CeleryTaskLog.status)
+            .all()
+        )
+        return {status.value: count for status, count in rows}
+
+    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+        """T02: dead_letter_queue rows tied to this campaign's candidates."""
+        return (
+            self.db.query(DeadLetterQueue)
+            .join(
+                CampaignCandidate,
+                DeadLetterQueue.campaign_candidate_id == CampaignCandidate.id,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .all()
+        )
+
+    def get_deterministic_rejection_rate(self, campaign_id: UUID) -> float:
+        """
+        T03: percentage of this campaign's total candidates rejected at the
+        DETERMINISTIC layer. 0.0 for a campaign with no candidates yet
+        (nothing to alert on).
+        """
+        total = self.get_candidate_count(campaign_id)
+        if total == 0:
+            return 0.0
+
+        rejected = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.rejection_layer == RejectionLayer.DETERMINISTIC,
+            )
+            .scalar()
+            or 0
+        )
+        return (rejected / total) * 100
+
+    def get_average_screening_hours(self, campaign_id: UUID) -> float | None:
+        """
+        T03: average hours-in-SCREENING for candidates CURRENTLY in that
+        stage (i.e. "stuck", not a historical average over completed
+        transitions) — measured from each candidate's most recent
+        transition into SCREENING to now. None if nobody is in SCREENING.
+        """
+        latest_entry = (
+            select(
+                CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        rows = (
+            self.db.query(latest_entry.c.entered_at)
+            .join(
+                CampaignCandidate,
+                CampaignCandidate.id == latest_entry.c.campaign_candidate_id,
+            )
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+            )
+            .all()
+        )
+        if not rows:
+            return None
+
+        now = datetime.now(timezone.utc)
+        hours = [(now - r.entered_at).total_seconds() / 3600 for r in rows]
+        return sum(hours) / len(hours)

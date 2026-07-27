@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.core.encryption_service import DecryptionError, EncryptionService
@@ -109,34 +110,15 @@ class CampaignCandidateService:
             )
             )
 
-            # --------------------------------------------------
-            # Auto Close Campaign when Candidate Cap is Reached
-            # --------------------------------------------------
+            # Defensive backstop: the cap should already have closed this
+            # campaign (see the post-insert check below) by the time it's
+            # actually at/over the limit, so this should rarely fire in
+            # practice — it exists in case max_candidates was lowered below
+            # the current count after the campaign was already reopened/edited.
             if (
                 campaign.max_candidates
                 and current_count >= campaign.max_candidates
             ):
-
-                campaign.status = CampaignStatus.CLOSED
-
-                self.campaign_repo.update(campaign)
-                self.campaign_repo.commit()
-
-                # Audit Log
-                self.audit_service.log(
-                    actor_id=actor_id,
-                    actor_role=actor_role,
-                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
-                    entity_type=EntityType.CAMPAIGN,
-                    entity_id=campaign.id,
-                    campaign_id=campaign.id,
-                    details={
-                        "reason": "Maximum candidate limit reached",
-                        "max_candidates": campaign.max_candidates,
-                        "current_candidates": current_count,
-                    },
-                )
-
                 raise CampaignException(
                     "This campaign has reached its maximum candidate limit and is now closed.",
                     409,
@@ -175,6 +157,39 @@ class CampaignCandidateService:
                 to_stage=PipelineStage.UPLOADED,
                 transition_source=TransitionSource.SYSTEM,
             )
+
+            # --------------------------------------------------
+            # E03-S05-T01: auto-close the moment the cap-reaching candidate
+            # is inserted — still holding this transaction's row lock on
+            # `campaign` (acquired via get_by_id_for_update above), so no
+            # concurrent insert can race past this check. current_count was
+            # read before this insert, so +1 accounts for the row just added.
+            # --------------------------------------------------
+            bulk_jobs_marked = 0
+            if campaign.max_candidates and (current_count + 1) >= campaign.max_candidates:
+                campaign.status = CampaignStatus.CLOSED
+                campaign.updated_at = datetime.now(timezone.utc)
+                self.campaign_repo.update(campaign)
+
+                bulk_jobs_marked = self.campaign_repo.mark_processing_bulk_jobs_partial_failure(
+                    campaign.id
+                )
+
+                self.audit_service.log(
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"Campaign '{campaign.name}' auto-closed",
+                        "reason": "CAP_REACHED",
+                        "max_candidates": campaign.max_candidates,
+                        "final_candidate_count": current_count + 1,
+                        "bulk_jobs_marked_partial_failure": bulk_jobs_marked,
+                    },
+                )
 
             self.campaign_candidate_repo.commit()
 
