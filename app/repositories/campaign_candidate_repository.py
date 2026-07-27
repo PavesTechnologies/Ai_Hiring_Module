@@ -148,6 +148,48 @@ class CampaignCandidateRepository:
             or 0
         )
 
+    def get_rejected_by_campaign(
+        self,
+        campaign_id: UUID,
+    ) -> list[CampaignCandidate]:
+        """
+        M07-E03 S03 T03: every REJECTED campaign_candidate in a campaign,
+        for export. Filters at the DB level (same campaign-scoping
+        convention as get_all_by_campaign) rather than fetching every
+        candidate and filtering in Python.
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.REJECTED,
+            )
+            .all()
+        )
+
+    def get_overridden(
+        self,
+        campaign_id: UUID | None = None,
+        date_from=None,
+        date_to=None,
+    ) -> list[CampaignCandidate]:
+        """
+        M07-E03 S04 T03: every campaign_candidate with hr_override=True,
+        optionally scoped to one campaign and/or an hr_override_at date
+        range - backs the Override Report's rows, weekly trend and
+        per-campaign alert, all of which call this with different filter
+        combinations rather than each running their own query.
+        """
+        stmt = select(CampaignCandidate).where(CampaignCandidate.hr_override.is_(True))
+        if campaign_id is not None:
+            stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
+        if date_from is not None:
+            stmt = stmt.where(CampaignCandidate.hr_override_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(CampaignCandidate.hr_override_at <= date_to)
+        stmt = stmt.order_by(CampaignCandidate.hr_override_at.desc())
+        return self.db.execute(stmt).scalars().all()
+
     def get_all_by_campaign(
         self,
         campaign_id: UUID,

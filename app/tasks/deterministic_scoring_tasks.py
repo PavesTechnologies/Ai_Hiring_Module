@@ -6,15 +6,19 @@ from uuid import UUID
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
+from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import CandidateRejection, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, CandidateRejection, RejectionLayer
+from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.email_notification_repository import EmailNotificationRepository
+from app.repositories.email_template_repository import EmailTemplateRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
@@ -27,7 +31,10 @@ from app.services.campaign.candidate_scoring_service import (
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
+from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
+from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +52,77 @@ _EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+
+# M07-E03 S01 T03: task_type this task's rejection must cancel if still
+# QUEUED. Not yet produced by anything in this codebase (M09 AI Evaluation
+# isn't built) - this check is a no-op today and activates automatically
+# once that task exists, without requiring any further change here.
+AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
+_AI_EVALUATION_SKIPPED_ERROR_MESSAGE = "Candidate rejected at DETERMINISTIC layer — AI evaluation skipped."
+
+
+def _cancel_downstream_ai_evaluation(
+    campaign_candidate,
+    task_log_repo: CeleryTaskLogRepository,
+    task_log_service: CeleryTaskLogService,
+    campaign_candidate_repo: CampaignCandidateRepository,
+) -> None:
+    """
+    M07-E03 S01 T03: a candidate rejected at the DETERMINISTIC layer must
+    never have a queued AI_EVALUATE task run against it. Only QUEUED
+    AI_EVALUATE logs for THIS campaign_candidate_id are touched - never
+    other candidates, never other campaigns. EMBED_RESUME is deliberately
+    never inspected or touched here: embedding generation is independent of
+    the deterministic outcome and left to run to completion regardless.
+    """
+    queued_ai_evaluate_logs = [
+        log for log in task_log_repo.get_by_campaign_candidate_and_task_type(
+            campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
+        )
+        if log.status == TaskStatus.QUEUED
+    ]
+    if not queued_ai_evaluate_logs:
+        return
+
+    for log in queued_ai_evaluate_logs:
+        task_log_service.mark_dead(log, _AI_EVALUATION_SKIPPED_ERROR_MESSAGE)
+        logger.info(
+            "Cancelled queued AI_EVALUATE task | task_id=%s campaign_candidate_id=%s",
+            log.task_id, campaign_candidate.id,
+        )
+
+    campaign_candidate.ai_evaluation_status = AIEvaluationStatus.SKIPPED
+    campaign_candidate_repo.update(campaign_candidate)
+
+
+def _queue_rejection_email(db, campaign_candidate) -> None:
+    """
+    M07-E03 S02 T02: queues the CANDIDATE_REJECTED email, but only ever
+    called after the scoring/rejection/stage-transition transaction has
+    already committed (see the call site) - a failure here must never
+    crash or mask that already-successful outcome, same reasoning as
+    _enqueue_deterministic_scoring's own try/except in
+    resume_processing_tasks.py.
+    """
+    try:
+        email_template_repo = EmailTemplateRepository(db)
+        email_notification_repo = EmailNotificationRepository(db)
+        email_service = CandidateRejectionEmailService(email_template_repo, email_notification_repo)
+
+        notification = email_service.queue_rejection_email(
+            candidate_id=campaign_candidate.candidate_id,
+            campaign_candidate_id=campaign_candidate.id,
+        )
+        if notification is None:
+            return  # already logged inside queue_rejection_email (no active template)
+
+        send_candidate_email_task.apply_async(
+            kwargs={"email_notification_id": str(notification.id)},
+        )
+    except Exception:
+        logger.exception(
+            "Failed to queue rejection email for campaign_candidate_id=%s", campaign_candidate.id,
+        )
 
 
 @celery_app.task(name="scoring.calculate_deterministic_score", bind=True)
@@ -69,9 +147,11 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         skill_ontology_repo = SkillOntologyRepository(db)
         config_repo = ConfigRepository(db)
         candidate_rejection_repo = CandidateRejectionRepository(db)
+        allowed_transition_repo = AllowedTransitionRepository(db)
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
+        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
 
         # Root cause: _enqueue_deterministic_scoring captures a valid
         # campaign_candidate_id at enqueue time, but resume processing (AI
@@ -85,6 +165,19 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
+
+        # M07-E03 S01 T01: a broker redelivery of this exact task_id after
+        # it already ran to completion must never re-run scoring or insert
+        # a second candidate_rejections row for the same evaluation. A
+        # FAILURE/RUNNING log is still reprocessed (the work never actually
+        # finished), only SUCCESS short-circuits.
+        if existing_task_log is not None and existing_task_log.status == TaskStatus.SUCCESS:
+            logger.info(
+                "Deterministic scoring already completed for task_id=%s campaign_candidate_id=%s "
+                "- skipping duplicate run.", task_id, campaign_candidate_id,
+            )
+            return
+
         if existing_task_log is None:
             existing_task_log = task_log_service.create_log(
                 task_id=task_id,
@@ -130,6 +223,8 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             )
 
         job_description = jd_repo.get_by_id(campaign.jd_id)
+        if job_description is None:
+            raise ValueError(f"Job description '{campaign.jd_id}' not found.")
 
         # M07-E02 S01/S02: read whatever the AI extraction pipeline already
         # captured on the resume - no new columns, this is the same
@@ -195,55 +290,49 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             if skill["match_type"] == MandatorySkillMatchType.MISSING.value
         ]
 
-        # T02: a rejection must be recorded on ANY deterministic failure, not
-        # only when a mandatory skill is outright MISSING - a candidate whose
-        # mandatory skills all matched at low-multiplier hierarchy tiers
-        # (SIBLING/SEMANTIC) can still fall short of deterministic_threshold,
-        # and that case must not silently skip candidate_rejections.
+        # M07-E03 S01: a rejection must be recorded on ANY deterministic
+        # failure, not only when a mandatory skill is outright MISSING - a
+        # candidate whose mandatory skills all matched at low-multiplier
+        # hierarchy tiers (SIBLING/SEMANTIC) can still fall short of
+        # deterministic_threshold, and that case must not silently skip
+        # candidate_rejections.
+        rejection_reason = None
+        stage_transition_succeeded = False
         if not breakdown["deterministic_passed"]:
-            if breakdown.get("NO_VERIFIED_SKILLS"):
-                # S04-T01: distinct from both "some mandatory skills missing"
-                # and a resume parse failure (that raises ValueError earlier
-                # and never reaches this point) - the resume parsed fine but
-                # nothing it extracted normalized to a usable, in-play skill.
-                rejection_reason = "No verifiable skills extracted from resume."
-                rejection_detail = {"NO_VERIFIED_SKILLS": True}
-            elif missing_entries:
-                missing_skill_names = []
-                for entry in missing_entries:
-                    skill = skill_ontology_repo.get_skill_by_id(UUID(entry["canonical_skill_id"]))
-                    missing_skill_names.append(skill.canonical_name if skill else entry["canonical_skill_id"])
-                rejection_reason = "Missing mandatory skills"
-                rejection_detail = {"missing_skills": missing_skill_names}
-            elif not experience_result["passed"]:
-                # M07-E02 S01/S04: a SKIPPED or DATA_MISSING experience_result
-                # is always passed=True (never held against the candidate),
-                # so reaching here means the JD required a minimum and the
-                # candidate's parsed experience fell short of it.
-                rejection_reason = "Experience requirement not met"
-                rejection_detail = {
-                    "candidate_years": experience_result["candidate_years"],
-                    "min_years": experience_result["min_years"],
-                }
-            elif not education_result["passed"]:
-                rejection_reason = "Education requirement not met"
-                rejection_detail = {
-                    "candidate_level": education_result["candidate_level"],
-                    "required_level": education_result["required_level"],
-                }
-            else:
-                rejection_reason = "Deterministic score below threshold"
-                rejection_detail = {
-                    "deterministic_score": breakdown["deterministic_score"],
-                    "deterministic_threshold": breakdown["deterministic_threshold"],
-                }
-
+            # T02: one dynamically-built, human-readable reason covering
+            # every applicable failure (skills/experience/education),
+            # never a database field name/UUID/internal code.
+            rejection_reason = CandidateScoringService.build_rejection_reason(
+                breakdown, experience_result, education_result,
+            )
+            # T01: rejection_detail is the complete score_breakdown snapshot
+            # - not a curated per-branch subset - so nothing about this
+            # evaluation is ever lost. The UPDATE (campaign_candidate,
+            # flushed above) and this INSERT share the same uncommitted
+            # transaction; the whole task's shared except-block rolls both
+            # back together on any failure before the final commit below.
             candidate_rejection_repo.create(CandidateRejection(
                 campaign_candidate_id=campaign_candidate.id,
                 rejection_layer=RejectionLayer.DETERMINISTIC,
                 rejection_reason=rejection_reason,
-                rejection_detail=rejection_detail,
+                rejection_detail=breakdown,
             ))
+
+            # M07-E03 S02 T01: SCREENING -> REJECTED, validated against
+            # allowed_transitions - if the transition is blocked (not
+            # configured as allowed), pipeline_stage/stage_history are
+            # left untouched and the candidate stays in SCREENING.
+            stage_transition_succeeded = stage_transition_service.transition_to_rejected(
+                campaign_candidate,
+                change_reason="Deterministic filter rejection",
+                scores_snapshot=breakdown,
+            )
+
+            # T03: a rejected candidate must never have a queued AI_EVALUATE
+            # task run against them.
+            _cancel_downstream_ai_evaluation(
+                campaign_candidate, task_log_repo, task_log_service, campaign_candidate_repo,
+            )
 
         matched_count = len(breakdown["mandatory_skills"]) - len(missing_entries)
         summary_payload = {
@@ -256,6 +345,9 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             # persisted to campaign_candidate.deterministic_score.
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
+            # M07-E03 S01 T02: the same human-readable reason recorded on
+            # candidate_rejections, None when the candidate passed.
+            "rejection_reason": rejection_reason,
             # Versioning: campaign_candidates.score_breakdown only ever holds
             # the latest computation and is overwritten on every rescoring.
             # This audit_log row is append-only and timestamped, so embedding
@@ -282,6 +374,12 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         campaign_candidate_repo.commit()
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
+
+        # M07-E03 S02 T02: only after the transaction above has committed -
+        # never send a rejection email for a candidate whose pipeline_stage
+        # didn't actually move to REJECTED (transition blocked - see T01).
+        if not breakdown["deterministic_passed"] and stage_transition_succeeded:
+            _queue_rejection_email(db, campaign_candidate)
 
     except Exception as ex:
         db.rollback()

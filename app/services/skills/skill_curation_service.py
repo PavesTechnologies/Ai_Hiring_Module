@@ -51,8 +51,15 @@ class SkillCurationService:
         self.encryption_service = encryption_service
         self.resume_repository = resume_repository
 
-    def list_pending_unknown_skills(self) -> list[UnknownSkill]:
-        return self.skill_repository.get_pending_unknown_skills()
+    def list_pending_unknown_skills(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        search: str | None = None,
+    ) -> list[UnknownSkill]:
+        return self.skill_repository.get_pending_unknown_skills(
+            page=page, page_size=page_size, search=search,
+        )
 
     def list_jd_skills(self, jd_id: UUID):
         """Resolved (canonical) skills matched for a JD."""
