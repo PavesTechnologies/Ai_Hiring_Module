@@ -171,6 +171,7 @@ try:
             key="DETERMINISTIC_WEIGHT_EDUCATION",
             value="0.15",
             description="Weight of the education validation sub-score in the combined deterministic_score blend",
+        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="HM_REVIEW_SLA_DAYS",
@@ -188,6 +189,25 @@ try:
             key="MIN_LAYER_WEIGHT",
             value="5.00",
             description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
+        ),
+        # Unknown Skill Suggestion (HR_ADMIN manual verification) config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_TOP_K",
+            value="10",
+            description="Max number of suggestions returned per Unknown Skill suggestion endpoint (RapidFuzz/semantic x canonical/alias)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_RAPIDFUZZ_THRESHOLD",
+            value="85.00",
+            description="RapidFuzz similarity score (0-100) above which a canonical/alias suggestion is considered a strong match",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_SEMANTIC_THRESHOLD",
+            value="0.80",
+            description="Cosine similarity (0.0-1.0) above which a canonical/alias semantic suggestion is considered a strong match",
         ),
     ]
 

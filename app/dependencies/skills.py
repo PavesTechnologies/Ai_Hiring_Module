@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.encryption_service import EncryptionService
 from app.db.session import get_db
 from app.dependencies.jd import get_audit_service
+from app.dependencies.resume import get_resume_repository
 from app.dependencies.skill_ontology import get_embedding_queue_service
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueService
@@ -39,10 +41,12 @@ def get_skill_curation_service(
     audit_service: AuditService = Depends(get_audit_service),
     embedding_queue_service: EmbeddingQueueService = Depends(get_embedding_queue_service),
     encryption_service: EncryptionService = Depends(get_encryption_service),
+    resume_repository: ResumeRepository = Depends(get_resume_repository),
 ) -> SkillCurationService:
     return SkillCurationService(
         skill_repository=skill_repository,
         audit_service=audit_service,
         embedding_queue_service=embedding_queue_service,
         encryption_service=encryption_service,
+        resume_repository=resume_repository,
     )

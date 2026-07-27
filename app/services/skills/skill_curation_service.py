@@ -11,11 +11,17 @@ from app.models.skills import (
     UnknownSkill,
     UnknownSkillStatus,
 )
+from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
+from app.schemas.unknown_skill.skill_resolution_request import UnknownSkillResolutionType
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
 from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
-from app.services.skills.skill_normalization_service import SkillMatchTier
+from app.services.skills.skill_normalization_service import (
+    SkillMatchTier,
+    scoring_weight_for_tier,
+    verification_status_for_tier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +43,13 @@ class SkillCurationService:
         audit_service: AuditService,
         embedding_queue_service: EmbeddingQueueService,
         encryption_service: EncryptionService,
+        resume_repository: ResumeRepository,
     ):
         self.skill_repository = skill_repository
         self.audit_service = audit_service
         self.embedding_queue_service = embedding_queue_service
         self.encryption_service = encryption_service
+        self.resume_repository = resume_repository
 
     def list_pending_unknown_skills(self) -> list[UnknownSkill]:
         return self.skill_repository.get_pending_unknown_skills()
@@ -162,19 +170,232 @@ class SkillCurationService:
             details={"raw_text": unknown_skill.raw_text, "canonical_skill_id": str(new_skill.id)},
         )
         self.skill_repository.commit()
+        self._enqueue_skill_embedding(new_skill.id)
+        return new_skill
 
-        # Fire-and-forget: the promotion has already committed above, so a
-        # broker outage here must never undo it or fail this call — only
-        # logged. The Missing Skill Embedding Recovery utility picks up
-        # anything left un-queued.
-        try:
-            self.embedding_queue_service.queue_skill_embedding(new_skill.id)
-        except EmbeddingQueueError:
-            logger.exception(
-                "Failed to enqueue embedding generation for promoted skill '%s'.", new_skill.id,
+    def create_canonical_skill_from_unknown(
+        self,
+        unknown_skill_id: UUID,
+        actor_id: str,
+        canonical_name: str,
+        aliases: list[str] | None = None,
+        category: str | None = None,
+        parent_skill_id: UUID | None = None,
+        confidence: str = "unverified",
+        source: str = "manual entry",
+        is_active: bool = True,
+    ) -> dict:
+        """
+        Fuller variant of promote_to_canonical: HR supplies the canonical
+        name plus the full set of SkillOntology fields (aliases/category/
+        parent/confidence/source/is_active) up front instead of getting
+        bare defaults derived from raw_text. Every JD and candidate
+        occurrence still linked to the UnknownSkill is migrated onto the
+        new skill as a verified (MANUAL_HR) match, and the UnknownSkill row
+        itself - along with its JDUnknownSkill/CandidateSkill links - is
+        then hard-deleted rather than left around with a terminal status.
+        """
+        result = self._create_canonical_skill_from_unknown_core(
+            unknown_skill_id,
+            actor_id,
+            canonical_name=canonical_name,
+            aliases=aliases,
+            category=category,
+            parent_skill_id=parent_skill_id,
+            confidence=confidence,
+            source=source,
+            is_active=is_active,
+        )
+        self.skill_repository.commit()
+        self._enqueue_skill_embedding(result["skill"].id)
+        return result
+
+    def bulk_approve_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
+        """
+        Bulk version of create_canonical_skill_from_unknown: each id is
+        promoted to its own new canonical skill (canonical_name is that
+        UnknownSkill's own raw_text - bulk mode has no per-item field
+        overrides), migrated and hard-deleted exactly like the single
+        endpoint. Each id commits independently so one failure doesn't roll
+        back ids already processed earlier in the batch; a failed id only
+        rolls back its own (uncommitted) work so the next id starts from a
+        clean transaction.
+        """
+        results = []
+        for unknown_skill_id in unknown_skill_ids:
+            try:
+                result = self._create_canonical_skill_from_unknown_core(unknown_skill_id, actor_id)
+                self.skill_repository.commit()
+            except (NotFoundError, BadRequestError) as exc:
+                self.skill_repository.rollback()
+                results.append({
+                    "unknown_skill_id": unknown_skill_id,
+                    "success": False,
+                    "message": str(exc),
+                })
+                continue
+
+            self._enqueue_skill_embedding(result["skill"].id)
+            results.append({
+                "unknown_skill_id": unknown_skill_id,
+                "success": True,
+                "message": "Approved.",
+                "canonical_skill_id": result["skill"].id,
+                "canonical_name": result["skill"].canonical_name,
+                "jd_skills_migrated": result["jd_skills_migrated"],
+                "candidate_skills_migrated": result["candidate_skills_migrated"],
+            })
+        return results
+
+    def _create_canonical_skill_from_unknown_core(
+        self,
+        unknown_skill_id: UUID,
+        actor_id: str,
+        canonical_name: str | None = None,
+        aliases: list[str] | None = None,
+        category: str | None = None,
+        parent_skill_id: UUID | None = None,
+        confidence: str = "unverified",
+        source: str = "manual entry",
+        is_active: bool = True,
+    ) -> dict:
+        """
+        Uncommitted core shared by the single create-canonical endpoint and
+        bulk approve - callers own commit()/rollback() and the embedding
+        enqueue, since bulk approve needs those to happen per item rather
+        than once for the whole batch. canonical_name defaults to the
+        UnknownSkill's own raw_text when not supplied (bulk approve's case,
+        which has no per-item field overrides).
+        """
+        unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+
+        resolved_name = (canonical_name if canonical_name is not None else unknown_skill.raw_text).strip()
+        if not resolved_name:
+            raise BadRequestError("canonical_name cannot be empty.")
+
+        existing = self.skill_repository.find_skill_by_name_or_alias(resolved_name)
+        if existing:
+            raise BadRequestError(
+                f"'{resolved_name}' already exists in the skill ontology "
+                f"as '{existing.canonical_name}' — map to it instead of creating a new skill."
             )
 
-        return new_skill
+        if parent_skill_id is not None:
+            self._get_skill_or_404(parent_skill_id)
+
+        cleaned_aliases = self._clean_aliases(aliases)
+        for alias in cleaned_aliases:
+            collision = self.skill_repository.find_skill_by_name_or_alias(alias)
+            if collision:
+                raise BadRequestError(
+                    f"'{alias}' cannot be added as an alias — it already belongs to "
+                    f"'{collision.canonical_name}'. Aliases must be globally unique."
+                )
+
+        new_skill = self.skill_repository.create_skill_ontology(
+            canonical_name=resolved_name,
+            source=source,
+            category=category,
+            aliases=cleaned_aliases,
+            parent_skill_id=parent_skill_id,
+            confidence=confidence,
+            is_active=is_active,
+        )
+
+        migration = self._finalize_unknown_skill_resolution(unknown_skill, new_skill.id)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.UNKNOWN_SKILL_PROMOTED,
+            entity_type=EntityType.SKILL_ONTOLOGY,
+            entity_id=new_skill.id,
+            jurisdiction=None,
+            details={
+                "unknown_skill_id": str(unknown_skill_id),
+                "raw_text": unknown_skill.raw_text,
+                "canonical_name": new_skill.canonical_name,
+                "canonical_skill_id": str(new_skill.id),
+                **migration,
+            },
+        )
+
+        return {"skill": new_skill, **migration}
+
+    def resolve_unknown_skill(
+        self,
+        unknown_skill_id: UUID,
+        canonical_skill_id: UUID,
+        resolution_type: UnknownSkillResolutionType,
+        actor_id: str,
+    ) -> None:
+        """
+        Unknown Skill Resolution API: migrates every JDUnknownSkill and
+        CandidateSkill occurrence of this UnknownSkill onto the selected
+        canonical skill, deleting the processed occurrence rows once each
+        is migrated (duplicate-checked first), then marks the UnknownSkill
+        MAPPED_TO_EXISTING - the existing status enum's value for "HR
+        mapped this to an existing canonical skill"; there is no separate
+        RESOLVED value. ADD_AS_ALIAS additionally records raw_text as a new
+        alias of the target skill before migrating.
+
+        Distinct from map_to_existing_skill(): that method marks
+        JDUnknownSkill links RESOLVED and keeps them for audit/history.
+        This endpoint's contract instead deletes the processed rows
+        outright once migrated, so it reuses _create_retroactive_jd_skills
+        for the JD side (zero duplicated logic) and just deletes each link
+        it resolved as a follow-up step.
+        """
+        unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+        target_skill = self._get_skill_or_404(canonical_skill_id)
+
+        if unknown_skill.status != UnknownSkillStatus.PENDING:
+            raise BadRequestError(
+                f"Unknown skill '{unknown_skill_id}' is not pending "
+                f"(status={unknown_skill.status.value})."
+            )
+
+        if resolution_type == UnknownSkillResolutionType.ADD_AS_ALIAS:
+            self._append_alias_validated(target_skill, unknown_skill.raw_text, actor_id)
+
+        jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
+        jd_ids = {link.jd_id for link in jd_links}
+        self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
+        for link in jd_links:
+            self.skill_repository.delete_jd_unknown_skill(link)
+
+        for candidate_skill in self.skill_repository.get_candidate_skills_by_unknown_skill_id(unknown_skill.id):
+            if not self.skill_repository.get_candidate_skill_by_canonical(candidate_skill.resume_id, target_skill.id):
+                self.resume_repository.create_candidate_skill(
+                    candidate_id=candidate_skill.candidate_id,
+                    resume_id=candidate_skill.resume_id,
+                    canonical_skill_id=target_skill.id,
+                    raw_extracted_text=candidate_skill.raw_extracted_text,
+                    confidence=1.0,
+                    match_tier=SkillMatchTier.MANUAL_HR.value,
+                    status=verification_status_for_tier(SkillMatchTier.MANUAL_HR).value,
+                    scoring_weight=scoring_weight_for_tier(SkillMatchTier.MANUAL_HR),
+                )
+                self.skill_repository.bump_occurrence_count(target_skill.id)
+            self.skill_repository.delete_candidate_skill(candidate_skill)
+
+        self.skill_repository.update_unknown_skill_status(unknown_skill, UnknownSkillStatus.MAPPED_TO_EXISTING)
+        self._refresh_jd_verification_status(jd_ids)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.UNKNOWN_SKILL_MAPPED,
+            entity_type=EntityType.UNKNOWN_SKILL,
+            entity_id=unknown_skill.id,
+            jurisdiction=None,
+            details={
+                "raw_text": unknown_skill.raw_text,
+                "mapped_to_skill_id": str(target_skill.id),
+                "resolution_type": resolution_type.value,
+            },
+        )
+        self.skill_repository.commit()
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
         """
@@ -196,6 +417,69 @@ class SkillCurationService:
         )
         self.skill_repository.commit()
         return unknown_skill
+
+    def delete_unknown_skill(self, unknown_skill_id: UUID, actor_id: str) -> dict:
+        """
+        Hard-deletes an UnknownSkill along with its JDUnknownSkill links and
+        CandidateSkill occurrences (see SkillRepository.delete_unknown_skill_cascade
+        for exactly what that touches). Unlike map/promote/dismiss, this is
+        destructive and irreversible - allowed regardless of the unknown
+        skill's current status.
+        """
+        result = self._delete_unknown_skill_core(unknown_skill_id, actor_id)
+        self.skill_repository.commit()
+        return result
+
+    def bulk_delete_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
+        """
+        Bulk version of delete_unknown_skill - each id commits independently
+        so one failure doesn't roll back ids already deleted earlier in the
+        batch (see bulk_approve_unknown_skills for the same reasoning).
+        """
+        results = []
+        for unknown_skill_id in unknown_skill_ids:
+            try:
+                result = self._delete_unknown_skill_core(unknown_skill_id, actor_id)
+                self.skill_repository.commit()
+            except NotFoundError as exc:
+                self.skill_repository.rollback()
+                results.append({
+                    "unknown_skill_id": unknown_skill_id,
+                    "success": False,
+                    "message": str(exc),
+                })
+                continue
+
+            results.append({
+                "unknown_skill_id": unknown_skill_id,
+                "success": True,
+                "message": "Deleted.",
+                "jd_unknown_skills_deleted": result["jd_unknown_skills_deleted"],
+                "candidate_skills_deleted": result["candidate_skills_deleted"],
+            })
+        return results
+
+    def _delete_unknown_skill_core(self, unknown_skill_id: UUID, actor_id: str) -> dict:
+        unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+        raw_text = unknown_skill.raw_text
+
+        counts = self._finalize_unknown_skill_resolution(unknown_skill, None)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.UNKNOWN_SKILL_DELETED,
+            entity_type=EntityType.UNKNOWN_SKILL,
+            entity_id=unknown_skill_id,
+            jurisdiction=None,
+            details={"raw_text": raw_text, **counts},
+        )
+        return {
+            "id": unknown_skill_id,
+            "raw_text": raw_text,
+            "jd_unknown_skills_deleted": counts["jd_unknown_skills_deleted"],
+            "candidate_skills_deleted": counts["candidate_skills_deleted"],
+        }
 
     def remap_jd_skill(self, jd_skill_id: UUID, new_canonical_skill_id: UUID, actor_id: str):
         """
@@ -252,6 +536,73 @@ class SkillCurationService:
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
 
+    def _finalize_unknown_skill_resolution(
+        self, unknown_skill: UnknownSkill, canonical_skill_id: UUID | None
+    ) -> dict:
+        """
+        Common tail shared by every "resolve this UnknownSkill for good"
+        flow (create-canonical, bulk approve, delete, bulk delete): when
+        canonical_skill_id is given, migrates every JD/candidate occurrence
+        still linked to unknown_skill onto it as a verified (MANUAL_HR)
+        match first; either way, hard-deletes the UnknownSkill row (and
+        whatever JDUnknownSkill/CandidateSkill links remain) and recomputes
+        is_verified for every JD that was touched.
+        """
+        jd_skills_migrated = 0
+        candidate_skills_migrated = 0
+
+        if canonical_skill_id is not None:
+            jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
+            jd_ids = {link.jd_id for link in jd_links}
+            self._create_retroactive_jd_skills(unknown_skill, canonical_skill_id)
+            jd_skills_migrated = len(jd_links)
+            for link in jd_links:
+                self.skill_repository.delete_jd_unknown_skill(link)
+
+            for candidate_skill in self.skill_repository.get_candidate_skills_by_unknown_skill_id(unknown_skill.id):
+                if not self.skill_repository.get_candidate_skill_by_canonical(
+                    candidate_skill.resume_id, canonical_skill_id
+                ):
+                    self.resume_repository.create_candidate_skill(
+                        candidate_id=candidate_skill.candidate_id,
+                        resume_id=candidate_skill.resume_id,
+                        canonical_skill_id=canonical_skill_id,
+                        raw_extracted_text=candidate_skill.raw_extracted_text,
+                        confidence=1.0,
+                        match_tier=SkillMatchTier.MANUAL_HR.value,
+                        status=verification_status_for_tier(SkillMatchTier.MANUAL_HR).value,
+                        scoring_weight=scoring_weight_for_tier(SkillMatchTier.MANUAL_HR),
+                    )
+                    self.skill_repository.bump_occurrence_count(canonical_skill_id)
+                    candidate_skills_migrated += 1
+                self.skill_repository.delete_candidate_skill(candidate_skill)
+        else:
+            # Pure delete: no migration target, so gather every linked
+            # jd_id (pending or already resolved) rather than just pending
+            # ones, since the cascade below wipes both kinds of link.
+            jd_ids = {
+                jd.id for _link, jd in self.skill_repository.get_jd_links_by_unknown_skill_id(unknown_skill.id)
+            }
+
+        delete_counts = self.skill_repository.delete_unknown_skill_cascade(unknown_skill)
+        self._refresh_jd_verification_status(jd_ids)
+
+        return {
+            "jd_skills_migrated": jd_skills_migrated,
+            "candidate_skills_migrated": candidate_skills_migrated,
+            **delete_counts,
+        }
+
+    def _enqueue_skill_embedding(self, skill_id: UUID) -> None:
+        # Fire-and-forget: the caller's mutation has already committed, so a
+        # broker outage here must never undo it or fail the request - only
+        # logged. The Missing Skill Embedding Recovery utility picks up
+        # anything left un-queued.
+        try:
+            self.embedding_queue_service.queue_skill_embedding(skill_id)
+        except EmbeddingQueueError:
+            logger.exception("Failed to enqueue embedding generation for skill '%s'.", skill_id)
+
     def _append_alias_validated(self, skill: SkillOntology, alias: str, actor_id: str) -> None:
         # Acquire before validating: aliases have no DB uniqueness
         # constraint, so two concurrent "add this alias" calls for
@@ -278,6 +629,29 @@ class SkillCurationService:
             jurisdiction=None,
             details={"canonical_skill_id": str(skill.id), "alias": alias},
         )
+
+    @staticmethod
+    def _clean_aliases(aliases: list[str] | None) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for alias in aliases or []:
+            trimmed = alias.strip()
+            if not trimmed or trimmed in seen:
+                continue
+            seen.add(trimmed)
+            cleaned.append(trimmed)
+        return cleaned
+
+    def _refresh_jd_verification_status(self, jd_ids: set[UUID]) -> None:
+        """
+        Recomputes is_verified for every JD that was touched by an unknown-
+        skill resolution action - cheap (indexed COUNT + at most a 1-row
+        UPDATE per JD), so it runs inline in the same transaction rather
+        than being pushed to a background task. Called before commit() so
+        the flip to VERIFIED lands atomically with the rest of the action.
+        """
+        for jd_id in jd_ids:
+            self.skill_repository.mark_jd_verified_if_fully_resolved(jd_id)
 
     def _get_unknown_skill_or_404(self, unknown_skill_id: UUID) -> UnknownSkill:
         unknown_skill = self.skill_repository.get_unknown_skill_by_id(unknown_skill_id)

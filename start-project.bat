@@ -126,65 +126,103 @@ REM ============================================================================
 REM  Stage: Redis - Docker
 REM =============================================================================
 :ensure_redis
- 
-REM Check whether the Redis Docker container is already running
-docker inspect -f "{{.State.Running}}" %REDIS_CONTAINER% 2>nul | findstr /i "true" >nul
- 
-if not errorlevel 1 (
-    echo   [SKIP]  Redis Docker container is already running - reusing it.
-    goto :wait_redis
+
+REM -----------------------------------------------------------------
+REM Ensure Docker is running
+REM -----------------------------------------------------------------
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo   [ERROR] Docker Desktop is not running.
+    exit /b 1
 )
- 
-REM Check whether the container already exists but is stopped
+
+REM -----------------------------------------------------------------
+REM Does the container exist?
+REM -----------------------------------------------------------------
 docker inspect %REDIS_CONTAINER% >nul 2>&1
- 
-if not errorlevel 1 (
-    echo   [START] Redis container exists but is stopped - starting it ...
-    docker start %REDIS_CONTAINER% >nul
- 
+if errorlevel 1 (
+    goto :create_container
+)
+
+REM -----------------------------------------------------------------
+REM Verify required port mapping exists
+REM -----------------------------------------------------------------
+set "_PORT_OK="
+for /f "delims=" %%P in ('docker port %REDIS_CONTAINER% 6379/tcp 2^>nul') do (
+    set "_PORT_OK=1"
+)
+
+if not defined _PORT_OK (
+    echo   [FIX] Existing Redis container has no host port mapping.
+    echo   [FIX] Recreating container...
+
+    docker rm -f %REDIS_CONTAINER% >nul 2>&1
+
     if errorlevel 1 (
-        echo   [ERROR] Failed to start Redis Docker container.
+        echo   [ERROR] Failed to remove Redis container.
         exit /b 1
     )
- 
-    goto :wait_redis
+
+    goto :create_container
 )
- 
-REM Container does not exist - create it
-echo   [START] Redis container does not exist - creating it ...
- 
+
+REM -----------------------------------------------------------------
+REM Start container if stopped
+REM -----------------------------------------------------------------
+docker inspect -f "{{.State.Running}}" %REDIS_CONTAINER% | findstr /i "true" >nul
+
+if errorlevel 1 (
+    echo   [START] Starting Redis container...
+    docker start %REDIS_CONTAINER% >nul
+
+    if errorlevel 1 (
+        echo   [ERROR] Failed to start Redis container.
+        exit /b 1
+    )
+) else (
+    echo   [SKIP] Redis container already running.
+)
+
+goto :wait_redis
+
+:create_container
+
+echo   [START] Creating Redis container...
+
 docker run -d ^
     --name %REDIS_CONTAINER% ^
     -p %REDIS_PORT%:6379 ^
+    --restart unless-stopped ^
     redis
- 
+
 if errorlevel 1 (
-    echo   [ERROR] Failed to create Redis Docker container.
-    echo   Make sure Docker Desktop is running.
+    echo   [ERROR] Failed to create Redis container.
     exit /b 1
 )
- 
-REM Wait until Redis responds
-set /a _elapsed=0
- 
+
 :wait_redis
- 
-docker exec %REDIS_CONTAINER% redis-cli ping 2>nul | findstr /i "PONG" >nul
- 
+
+set /a _elapsed=0
+
+:wait_loop
+
+powershell -Command ^
+"$r=Test-NetConnection -ComputerName %REDIS_HOST% -Port %REDIS_PORT% -WarningAction SilentlyContinue; if($r.TcpTestSucceeded){exit 0}else{exit 1}" >nul 2>&1
+
 if not errorlevel 1 (
-    echo   [READY] Redis is up on %REDIS_HOST%:%REDIS_PORT%.
+    echo   [READY] Redis is available at %REDIS_HOST%:%REDIS_PORT%.
     goto :eof
 )
- 
+
 if %_elapsed% GEQ %READY_TIMEOUT_SECONDS% (
     echo   [ERROR] Redis did not become ready within %READY_TIMEOUT_SECONDS% seconds.
     exit /b 1
 )
- 
-ping -n %POLL_INTERVAL_SECONDS% 127.0.0.1 >nul
+
+timeout /t %POLL_INTERVAL_SECONDS% /nobreak >nul
 set /a _elapsed+=%POLL_INTERVAL_SECONDS%
- 
-goto :wait_redis
+
+goto :wait_loop
  
 REM =============================================================================
 REM  Stage: Celery Worker
