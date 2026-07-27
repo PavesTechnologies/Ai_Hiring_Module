@@ -61,19 +61,19 @@ class ActionType(enum.Enum):
     UNKNOWN_SKILL_DISMISSED = "UNKNOWN_SKILL_DISMISSED"
     JD_SKILL_REMAPPED = "JD_SKILL_REMAPPED"
     ALIAS_ADDED = "ALIAS_ADDED"
-    # Resume Intake (M05) — NOTE: the DB-side audit_action_type_enum does not
-    # yet contain these values (verified against the live DB). Writing an
-    # AuditLog row with any of these will fail with "invalid input value for
-    # enum" until `ALTER TYPE audit_action_type_enum ADD VALUE ...` is run
-    # against the database (see the CAMPAIGN_RESUMED precedent in
-    # alembic/versions/d5c1a0b2e3f4_pause_campaign_support.py). Needed before
-    # Phase 7 actually logs a RESUME_UPLOADED event.
+    # Resume Intake (M05) — RESUME_UPLOADED/CONSENT_RECORDED/
+    # UPLOAD_BLOCKED_ERASURE_REQUEST are all already present in the live
+    # audit_action_type_enum (re-verified directly against the DB) — usable
+    # now, unlike the note below.
     RESUME_UPLOADED = "RESUME_UPLOADED"
     CONSENT_RECORDED = "CONSENT_RECORDED"
     UPLOAD_BLOCKED_ERASURE_REQUEST = "UPLOAD_BLOCKED_ERASURE_REQUEST"
-    # Resume Intake (M05) Phase 11 — same DB-enum caveat as above: needs
-    # `ALTER TYPE audit_action_type_enum ADD VALUE 'CIRCUIT_BREAKER_OPENED'`
-    # before this can actually be written to audit_log.
+    # Resume Intake (M05) Phase 11 — the DB-side audit_action_type_enum does
+    # NOT yet contain this value (verified against the live DB). Writing an
+    # AuditLog row with it will fail with "invalid input value for enum"
+    # until `ALTER TYPE audit_action_type_enum ADD VALUE 'CIRCUIT_BREAKER_OPENED'`
+    # is run against the database (see the CAMPAIGN_RESUMED precedent in
+    # alembic/versions/d5c1a0b2e3f4_pause_campaign_support.py).
     CIRCUIT_BREAKER_OPENED = "CIRCUIT_BREAKER_OPENED"
     # Bulk ZIP Upload (M05-E02) Phase B0 — added to the native Postgres
     # enum in the SAME migration that adds these Python members
@@ -89,6 +89,19 @@ class ActionType(enum.Enum):
     RESUME_PARSED = "RESUME_PARSED"
     RESUME_PARSE_FAILED = "RESUME_PARSE_FAILED"
     CANDIDATE_SKILL_MATCHED = "CANDIDATE_SKILL_MATCHED"
+    # Epic 3 (M05-E03) Phase C0 — the DB-side audit_action_type_enum does NOT
+    # yet contain this value (verified against the live DB). Needs
+    # `ALTER TYPE audit_action_type_enum ADD VALUE 'PIPELINE_STAGE_TRANSITIONED'`
+    # before PipelineTransitionService can log it — see the migration added
+    # alongside this Python member.
+    PIPELINE_STAGE_TRANSITIONED = "PIPELINE_STAGE_TRANSITIONED"
+    # M07-E03 S03 T03
+    REJECTED_CANDIDATES_EXPORTED = "REJECTED_CANDIDATES_EXPORTED"
+    # M07-E03 S04
+    DETERMINISTIC_OVERRIDE_APPLIED = "DETERMINISTIC_OVERRIDE_APPLIED"
+    OVERRIDE_REPORT_EXPORTED = "OVERRIDE_REPORT_EXPORTED"
+    # M07-E03 S05
+    DETERMINISTIC_ANALYTICS_EXPORTED = "DETERMINISTIC_ANALYTICS_EXPORTED"
     # NOTE: same DB-enum caveat as RESUME_UPLOADED/CIRCUIT_BREAKER_OPENED
     # above - needs `ALTER TYPE audit_action_type_enum ADD VALUE
     # 'UNKNOWN_SKILL_DELETED'` (see alembic/versions/<new>_unknown_skill_deleted_audit_action.py)

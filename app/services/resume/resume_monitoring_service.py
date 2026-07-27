@@ -20,6 +20,7 @@ from app.schemas.resume.monitoring import (
     ResumeDetailResponse,
     ResumeListItem,
     ResumeListResponse,
+    ResumeParsedJsonResponse,
     ResumeSummary,
     ResumeTimelineResponse,
     SkillSummary,
@@ -262,6 +263,18 @@ class ResumeMonitoringService:
             )
 
         return ResumeListResponse(items=items, total=total, page=page, size=size)
+
+    def get_parsed_json_by_candidate(self, candidate_id: UUID) -> ResumeParsedJsonResponse:
+        resume = self.resume_repository.get_active_by_candidate(candidate_id)
+        if resume is None:
+            raise NotFoundError(f"No active resume found for candidate {candidate_id}.")
+
+        return ResumeParsedJsonResponse(
+            resume_id=resume.id,
+            candidate_id=resume.candidate_id,
+            parse_status=resume.parse_status.value,
+            parsed_json=resume.parsed_json,
+        )
 
     def _get_resume_or_404(self, resume_id: UUID):
         resume = self.resume_repository.get_by_id(resume_id)

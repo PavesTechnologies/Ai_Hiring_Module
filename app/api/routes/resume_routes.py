@@ -18,6 +18,7 @@ from app.schemas.resume.monitoring import (
     ParseAttemptItem,
     ResumeDetailResponse,
     ResumeListResponse,
+    ResumeParsedJsonResponse,
     ResumeTimelineResponse,
 )
 from app.schemas.resume.request import ResumeUploadRequest
@@ -157,6 +158,23 @@ def get_resume_processing_status(
     return APIResponse.ok(
         data=service.get_status(task_id),
         message="Processing status retrieved successfully.",
+    )
+
+
+@router.get(
+    "/candidate/{candidate_id}/parsed-json",
+    response_model=APIResponse[ResumeParsedJsonResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_parsed_json_by_candidate(
+    candidate_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Read-only monitoring endpoint — returns the candidate's active resume's parsed_json."""
+    return APIResponse.ok(
+        data=service.get_parsed_json_by_candidate(candidate_id),
+        message="Parsed resume data retrieved successfully.",
     )
 
 

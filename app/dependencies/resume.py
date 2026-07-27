@@ -72,8 +72,9 @@ def get_candidate_service(
     candidate_repo: CandidateRepository = Depends(get_candidate_repository),
     encryption_service: EncryptionService = Depends(get_encryption_service),
     consent_service: ConsentService = Depends(get_consent_service),
+    audit_service: AuditService = Depends(get_audit_service),
 ) -> CandidateService:
-    return CandidateService(candidate_repo, encryption_service, consent_service)
+    return CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
 
 
 def get_resume_repository(

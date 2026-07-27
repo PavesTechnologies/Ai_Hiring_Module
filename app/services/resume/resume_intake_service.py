@@ -63,6 +63,7 @@ class ResumeIntakeService:
             jurisdiction=jurisdiction,
             consent_source=UPLOAD_CONSENT_SOURCE,
             uploaded_by=uploaded_by,
+            actor_role=actor_role,
             content_type=content_type,
             candidate_phone=candidate_phone,
             source_campaign_id=campaign_id,

@@ -108,13 +108,13 @@ try:
         PlatformConfig(
             id=uuid.uuid4(),
             key="ZIP_MAX_SIZE_MB",
-            value="500",
+            value="200",
             description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="MAX_FILES_PER_ZIP",
-            value="200",
+            value="20",
             description=(
                 "Maximum number of resume files processed from a single bulk-upload "
                 "ZIP archive; extraction stops and the uploader is asked to split the "
@@ -140,6 +140,24 @@ try:
             key="DEADLINE_WARNING_DAYS",
             value="3",
             description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="HM_REVIEW_SLA_DAYS",
+            value="5",
+            description="Days a candidate can sit in HM_REVIEW before the campaign is flagged overdue_review",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="STALE_CAMPAIGN_DAYS",
+            value="7",
+            description="Days without a new candidate before a campaign is flagged pipeline_stalled",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_LAYER_WEIGHT",
+            value="5.00",
+            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
         ),
         # M07-E02: Experience & Education Validation config
         PlatformConfig(
@@ -174,21 +192,28 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="HM_REVIEW_SLA_DAYS",
-            value="5",
-            description="Days a candidate can sit in HM_REVIEW before the campaign is flagged overdue_review",
+            key="OVERRIDE_RATE_ALERT_THRESHOLD",
+            value="20",
+            description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
+        ),
+        # M07-E03 S05: Deterministic Rejection Analytics
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_CANDIDATES_FOR_ANALYTICS",
+            value="20",
+            description="Minimum candidates a campaign must have before JD calibration recommendations are generated in the Rejection Analytics report",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="STALE_CAMPAIGN_DAYS",
-            value="7",
-            description="Days without a new candidate before a campaign is flagged pipeline_stalled",
+            key="SKILL_MISMATCH_RATE_THRESHOLD",
+            value="60",
+            description="If a single mandatory skill is MISSING in more than this % of a campaign's deterministic rejections, recommend making it preferred instead of mandatory",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="MIN_LAYER_WEIGHT",
-            value="5.00",
-            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
+            key="EXPERIENCE_ONLY_RATE_THRESHOLD",
+            value="40",
+            description="If more than this % of a campaign's deterministic rejections are experience-only failures, recommend reducing minimum experience or increasing tolerance",
         ),
         # Unknown Skill Suggestion (HR_ADMIN manual verification) config
         PlatformConfig(

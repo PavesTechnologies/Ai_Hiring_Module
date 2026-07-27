@@ -1,32 +1,127 @@
 import hashlib
 import logging
-from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
+
+from datetime import datetime, timedelta, timezone
+
+from fastapi.responses import StreamingResponse
 
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.dependencies import campaign
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.campaigns import CampaignStatus
+from app.models.async_tasks import TaskStatus
+from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, Resume
 from app.models.pipeline import (
+    AIEvaluationStatus,
     CampaignCandidate,
+    CandidateRejection,
     PipelineStage,
+    RejectionLayer,
     TransitionSource,
 )
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import (
     CampaignCandidateRepository,
 )
+from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
+from app.repositories.candidate_repository import CandidateRepository
+from app.repositories.config_repository import ConfigRepository
+from app.repositories.resume_repository import ResumeRepository
+from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
+    CampaignOverrideAlert,
+    CampaignRejectionAnalyticsResponse,
+    CandidateRejectionHistoryEntryResponse,
+    CandidateScorecardResponse,
     CampaignCandidateResponse,
+    JdCalibrationRecommendation,
+    MissingSkillOccurrence,
+    OverrideReportResponse,
+    OverrideReportRow,
+    OverrideWeeklyTrendPoint,
+    RejectionBreakdownEntry,
 )
 from app.services.audit_service import AuditService
+from app.services.campaign.stage_transition_service import StageTransitionService
+from app.services.celery_task_log_service import CeleryTaskLogService
+from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
 
 CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
+
+# M07-E03 S03 T01: this story's exact, explicit scope - a SEMANTIC/AI-layer
+# rejection (a different, not-yet-built epic) never sets has_rejection.
+_SCORECARD_BANNER_REJECTION_LAYER = RejectionLayer.DETERMINISTIC
+
+# M07-E03 S04 T02: task_type strings this service queues after an override.
+# Neither has a real Celery task implementation anywhere in this codebase
+# yet (M09 AI Evaluation / semantic scoring aren't built) - mirrors the
+# exact same forward-compatible placeholder already established by
+# deterministic_scoring_tasks.py's AI_EVALUATE_TASK_TYPE/
+# _cancel_downstream_ai_evaluation (M07-E03 S01 T03): "queuing" is recorded
+# as a QUEUED celery_task_log row, which the real tasks will activate
+# against once built, without requiring any further change here. Must
+# match deterministic_scoring_tasks.AI_EVALUATE_TASK_TYPE exactly.
+AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
+SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
+
+_HR_OVERRIDE_CHANGE_REASON = "HR_ADMIN override of deterministic rejection"
+_OVERRIDE_RATE_ALERT_THRESHOLD_KEY = "OVERRIDE_RATE_ALERT_THRESHOLD"
+_DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
+_OVERRIDE_RECOMMENDATION = "Review campaign JD skills or thresholds."
+_WEEKLY_TREND_WEEKS = 8
+
+# M07-E03 S05: Deterministic Rejection Analytics
+_MIN_CANDIDATES_FOR_ANALYTICS_KEY = "MIN_CANDIDATES_FOR_ANALYTICS"
+_DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS = 20
+# Reuses the exact same platform_config key deterministic_scoring_tasks.py
+# already reads for scoring (never a second, S05-local key).
+_EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
+
+# The 7 mandatory-skill/experience/education failure-combination buckets,
+# in the exact order this story lists them.
+_SKILLS_ONLY = "SKILLS_ONLY"
+_EXPERIENCE_ONLY = "EXPERIENCE_ONLY"
+_EDUCATION_ONLY = "EDUCATION_ONLY"
+_SKILLS_EXPERIENCE = "SKILLS_EXPERIENCE"
+_SKILLS_EDUCATION = "SKILLS_EDUCATION"
+_EXPERIENCE_EDUCATION = "EXPERIENCE_EDUCATION"
+_SKILLS_EXPERIENCE_EDUCATION = "SKILLS_EXPERIENCE_EDUCATION"
+
+_BREAKDOWN_CATEGORY_ORDER = [
+    _SKILLS_ONLY,
+    _EXPERIENCE_ONLY,
+    _EDUCATION_ONLY,
+    _SKILLS_EXPERIENCE,
+    _SKILLS_EDUCATION,
+    _EXPERIENCE_EDUCATION,
+    _SKILLS_EXPERIENCE_EDUCATION,
+]
+
+_BREAKDOWN_CATEGORY_DISPLAY = {
+    _SKILLS_ONLY: "Missing Skills Only",
+    _EXPERIENCE_ONLY: "Experience Only",
+    _EDUCATION_ONLY: "Education Only",
+    _SKILLS_EXPERIENCE: "Skills + Experience",
+    _SKILLS_EDUCATION: "Skills + Education",
+    _EXPERIENCE_EDUCATION: "Experience + Education",
+    _SKILLS_EXPERIENCE_EDUCATION: "Skills + Experience + Education",
+}
+
+# T02 Rule 1/2 thresholds - "do not hardcode thresholds, always read
+# PlatformConfig" applies here too, not only to OVERRIDE_RATE_ALERT_THRESHOLD -
+# these keys are new (S05), seeded with the ticket's own stated percentages
+# as the default value; the numeric constants below are ONLY the in-code
+# fallback used if PlatformConfig is unreachable, never the value actually
+# compared against.
+_SKILL_MISMATCH_RATE_THRESHOLD_KEY = "SKILL_MISMATCH_RATE_THRESHOLD"
+_DEFAULT_SKILL_MISMATCH_RATE_THRESHOLD = 60.0
+_EXPERIENCE_ONLY_RATE_THRESHOLD_KEY = "EXPERIENCE_ONLY_RATE_THRESHOLD"
+_DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD = 40.0
 
 
 class CampaignCandidateService:
@@ -37,11 +132,30 @@ class CampaignCandidateService:
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
         encryption_service: EncryptionService | None = None,
+        candidate_repo: CandidateRepository | None = None,
+        resume_repo: ResumeRepository | None = None,
+        candidate_rejection_repo: CandidateRejectionRepository | None = None,
+        stage_transition_service: StageTransitionService | None = None,
+        config_repo: ConfigRepository | None = None,
+        celery_task_log_service: CeleryTaskLogService | None = None,
+        skill_repo: SkillRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
         self.encryption_service = encryption_service
+        # M07-E03 S03: optional, additive - every pre-existing call site
+        # (create/list/delete) never passes these, so their behavior is
+        # completely unchanged.
+        self.candidate_repo = candidate_repo
+        self.resume_repo = resume_repo
+        self.candidate_rejection_repo = candidate_rejection_repo
+        # M07-E03 S04: optional, additive - same reasoning as above.
+        self.stage_transition_service = stage_transition_service
+        self.config_repo = config_repo
+        self.celery_task_log_service = celery_task_log_service
+        # M07-E03 S05: optional, additive - same reasoning as above.
+        self.skill_repo = skill_repo
 
     def create_campaign_candidate(
         self,
@@ -334,6 +448,940 @@ class CampaignCandidateService:
             designation = entry.get("title")
 
         return designation, experience
+
+    # ------------------------------------------------------------------
+    # M07-E03 S03 T01: Candidate Scorecard rejection banner
+    # ------------------------------------------------------------------
+
+    def get_campaign_candidate_scorecard(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> CandidateScorecardResponse:
+        """
+        Single-candidate detail view - extends the exact same fields
+        get_campaign_candidates already returns, plus the rejection
+        banner. Nothing here is recalculated: score_breakdown and the
+        rejection fields are read exactly as already stored/computed by
+        the deterministic scoring task (M07-E01/E02, M07-E03 S01).
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        candidate = (
+            self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
+            if self.candidate_repo is not None else None
+        )
+        resume = (
+            self.resume_repo.get_by_id(campaign_candidate.resume_id)
+            if self.resume_repo is not None else None
+        )
+        base = self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
+        banner = self._build_rejection_banner(campaign_candidate)
+
+        return CandidateScorecardResponse(**base.model_dump(), **banner)
+
+    def _build_rejection_banner(self, campaign_candidate: CampaignCandidate) -> dict:
+        is_overridden = bool(campaign_candidate.hr_override)
+        has_rejection = False
+        rejection_layer = None
+        rejection_reason = None
+        rejected_at = None
+
+        # M07-E03 S04: a real override (S04 T02) moves pipeline_stage away
+        # from REJECTED, so the lookup must still run for an overridden
+        # candidate - otherwise "preserving original rejection_reason and
+        # rejected_at" (this story's own S03 T01 requirement) would go
+        # unmet the moment an override actually happens. has_rejection
+        # itself stays scoped to "currently REJECTED" - only the
+        # reason/timestamp/layer are preserved once overridden.
+        if self.candidate_rejection_repo is not None and (
+            campaign_candidate.pipeline_stage == PipelineStage.REJECTED or is_overridden
+        ):
+            rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate.id)
+            latest = rejections[0] if rejections else None  # already newest-first
+            if latest is not None and latest.rejection_layer == _SCORECARD_BANNER_REJECTION_LAYER:
+                has_rejection = campaign_candidate.pipeline_stage == PipelineStage.REJECTED
+                rejection_layer = latest.rejection_layer
+                # Preserved unchanged even when overridden - the override
+                # never rewrites the original rejection_reason/rejected_at.
+                rejection_reason = latest.rejection_reason
+                rejected_at = latest.rejected_at
+
+        return {
+            "has_rejection": has_rejection,
+            "rejection_layer": rejection_layer,
+            "rejection_reason": rejection_reason,
+            "rejected_at": rejected_at,
+            "score_breakdown": campaign_candidate.score_breakdown,
+            "is_overridden": is_overridden,
+            "status": "Overridden — Previously Rejected" if is_overridden else None,
+        }
+
+    # ------------------------------------------------------------------
+    # M07-E03 S03 T02: Rejection History (read-only)
+    # ------------------------------------------------------------------
+
+    def get_rejection_history(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> list[CandidateRejectionHistoryEntryResponse]:
+        """
+        Every candidate_rejections row for this campaign_candidate,
+        newest first (CandidateRejectionRepository.get_by_campaign_candidate_id
+        already orders this way - reused as-is). Read-only: no edit/delete
+        endpoint exists or is added here.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if self.candidate_rejection_repo is None:
+            return []
+
+        rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate_id)
+        total = len(rejections)
+
+        return [
+            CandidateRejectionHistoryEntryResponse(
+                id=rejection.id,
+                rejection_layer=rejection.rejection_layer,
+                rejection_reason=rejection.rejection_reason,
+                rejected_at=rejection.rejected_at,
+                hr_override=bool(campaign_candidate.hr_override),
+                evaluation_round=total - index,  # oldest=1, newest=total
+                current_status=(index == 0),
+            )
+            for index, rejection in enumerate(rejections)
+        ]
+
+    # ------------------------------------------------------------------
+    # M07-E03 S03 T03: Export Rejected Candidates (HR_ADMIN only - enforced at the route)
+    # ------------------------------------------------------------------
+
+    def export_rejected_candidates(
+        self,
+        campaign_id: UUID,
+        actor_id: str,
+        actor_role: str | None,
+    ) -> StreamingResponse:
+        """
+        Reuses ExcelExport (no new XLSX engine) and AuditService (no
+        manual audit_log insert) - same StreamingResponse convention as
+        SkillOntologyService.export_skills. Never includes candidate name/
+        email/phone/resume - only the opaque candidate_id plus rejection/
+        score fields, all already computed by the deterministic scoring
+        pipeline, never recalculated here.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        rejected_candidates = self.campaign_candidate_repo.get_rejected_by_campaign(campaign_id)
+
+        rows = [
+            self._to_export_row(campaign_candidate)
+            for campaign_candidate in rejected_candidates
+        ]
+
+        excel_file = ExcelExport.export_rejected_candidates(rows)
+        filename = f"rejected_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.REJECTED_CANDIDATES_EXPORTED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign_id,
+            campaign_id=campaign_id,
+            details={"exported_count": len(rows)},
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def _to_export_row(self, campaign_candidate: CampaignCandidate) -> dict:
+        """
+        One row per rejected candidate, scoped to this story's exact
+        DETERMINISTIC-layer condition (matching T01's scorecard banner
+        rule). missing_mandatory_skills/experience_gap/education_gap are
+        the score_breakdown sub-fields called out explicitly as required
+        export columns - derived from the same score_breakdown already
+        computed and stored, never recalculated.
+        """
+        rejection: CandidateRejection | None = None
+        if self.candidate_rejection_repo is not None:
+            rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate.id)
+            rejection = rejections[0] if rejections else None
+
+        breakdown = campaign_candidate.score_breakdown or {}
+
+        return {
+            "candidate_uuid": str(campaign_candidate.candidate_id),
+            "rejection_layer": rejection.rejection_layer.value if rejection else "",
+            "rejection_reason": rejection.rejection_reason if rejection else "",
+            "rejected_at": rejection.rejected_at if rejection else None,
+            "deterministic_score": (
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            "missing_mandatory_skills": self._missing_mandatory_skills_display(breakdown),
+            "experience_gap": self._experience_gap_display(breakdown),
+            "education_gap": self._education_gap_display(breakdown),
+            "hr_override": bool(campaign_candidate.hr_override),
+            "override_reason": campaign_candidate.hr_override_reason or "",
+        }
+
+    @staticmethod
+    def _missing_mandatory_skills_display(breakdown: dict) -> str:
+        missing = [
+            skill.get("canonical_name") or skill.get("canonical_skill_id")
+            for skill in breakdown.get("mandatory_skills", [])
+            if skill.get("match_type") == "MISSING"
+        ]
+        return ", ".join(missing)
+
+    @staticmethod
+    def _experience_gap_display(breakdown: dict) -> str:
+        experience_result = breakdown.get("experience_validation")
+        if not experience_result or experience_result.get("passed"):
+            return ""
+        candidate_years = experience_result.get("candidate_years")
+        min_years = experience_result.get("min_years")
+        if candidate_years is None or min_years is None:
+            return ""
+        gap = round(min_years - candidate_years, 1)
+        return f"{candidate_years} years provided, {min_years} years required (gap: {gap} years)"
+
+    @staticmethod
+    def _education_gap_display(breakdown: dict) -> str:
+        education_result = breakdown.get("education_validation")
+        if not education_result or education_result.get("passed"):
+            return ""
+        from app.services.campaign.candidate_scoring_service import _degree_level_display
+        required = _degree_level_display(education_result.get("required_level"))
+        found = _degree_level_display(education_result.get("candidate_level"))
+        return f"{required} required, {found} found"
+
+    # ------------------------------------------------------------------
+    # M07-E03 S04 T01/T02: HR_ADMIN Override of a Deterministic Rejection
+    # ------------------------------------------------------------------
+
+    # Mirrors JDService.EXPORT_AUDIT_ENTITY_ID / BulkUploadService's
+    # EXPORT_AUDIT_ENTITY_ID exactly - a sentinel entity_id for an export
+    # that isn't scoped to a single entity (audit_log.entity_id is
+    # NOT NULL).
+    EXPORT_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    def apply_hr_override(
+        self,
+        campaign_candidate_id: UUID,
+        override_reason: str,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> CandidateScorecardResponse:
+        """
+        HR_ADMIN override of a deterministic rejection - re-enters the
+        candidate into SCREENING. Applies only to this single
+        campaign_candidate_id; never touches any other candidate or
+        campaign. candidate_rejections is never deleted - the override is
+        an additive fact layered on top of the existing rejection history
+        (T02: Rejection History already shows both).
+        """
+        try:
+            campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+            if not campaign_candidate:
+                raise CampaignException("Campaign candidate not found.", 404)
+
+            if campaign_candidate.pipeline_stage != PipelineStage.REJECTED:
+                raise CampaignException(
+                    "HR override can only be applied to a candidate currently in the REJECTED stage.",
+                    409,
+                )
+
+            latest_rejection = None
+            if self.candidate_rejection_repo is not None:
+                rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate_id)
+                latest_rejection = rejections[0] if rejections else None  # newest-first
+
+            if latest_rejection is None or latest_rejection.rejection_layer != RejectionLayer.DETERMINISTIC:
+                raise CampaignException(
+                    "HR override is only available for candidates rejected at the deterministic layer.",
+                    409,
+                )
+
+            campaign_candidate.hr_override = True
+            campaign_candidate.hr_override_reason = override_reason
+            campaign_candidate.hr_override_by = actor_id
+            campaign_candidate.hr_override_at = datetime.now(timezone.utc)
+            campaign_candidate.deterministic_passed = True
+            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.PENDING
+            self.campaign_candidate_repo.update(campaign_candidate)
+
+            if self.stage_transition_service is None:
+                raise CampaignException("Stage transition service is not configured.", 500)
+
+            # Validated against allowed_transitions (REJECTED -> SCREENING)
+            # before the stage actually changes - reuses StageTransitionService,
+            # extended with apply_hr_override rather than duplicated.
+            transitioned = self.stage_transition_service.apply_hr_override(
+                campaign_candidate,
+                changed_by=actor_id,
+                change_reason=_HR_OVERRIDE_CHANGE_REASON,
+            )
+            if not transitioned:
+                raise CampaignException(
+                    "Stage transition REJECTED -> SCREENING is not allowed - override not applied.",
+                    409,
+                )
+
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.DETERMINISTIC_OVERRIDE_APPLIED,
+                entity_type=EntityType.CAMPAIGN_CANDIDATE,
+                entity_id=campaign_candidate.id,
+                campaign_id=campaign_candidate.campaign_id,
+                details={
+                    "override_reason": override_reason,
+                    "original_rejection_reason": latest_rejection.rejection_reason,
+                },
+            )
+
+            self.campaign_candidate_repo.commit()
+
+            # Best-effort, after commit - never undoes the already-committed
+            # override (same reasoning as _queue_rejection_email, M07-E03 S02 T02).
+            self._queue_post_override_evaluation(campaign_candidate)
+
+            return self.get_campaign_candidate_scorecard(campaign_candidate_id)
+
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise
+
+    def _queue_post_override_evaluation(self, campaign_candidate: CampaignCandidate) -> None:
+        if self.celery_task_log_service is None:
+            return
+        try:
+            self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
+
+            if (
+                self.resume_repo is not None
+                and self.resume_repo.get_embedding(campaign_candidate.resume_id) is not None
+            ):
+                self._queue_task_log_if_not_duplicate(campaign_candidate, SEMANTIC_SCORE_TASK_TYPE)
+        except Exception:
+            logger.exception(
+                "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
+
+    def _queue_task_log_if_not_duplicate(self, campaign_candidate: CampaignCandidate, task_type: str) -> None:
+        task_log_repo = self.celery_task_log_service.repository
+        already_queued = any(
+            log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
+            for log in task_log_repo.get_by_campaign_candidate_and_task_type(campaign_candidate.id, task_type)
+        )
+        if already_queued:
+            return
+        self.celery_task_log_service.create_log(
+            task_id=str(uuid4()),
+            task_type=task_type,
+            campaign_candidate_id=campaign_candidate.id,
+        )
+
+    # ------------------------------------------------------------------
+    # M07-E03 S04 T03: Override Report
+    # ------------------------------------------------------------------
+
+    def get_override_report(
+        self,
+        campaign_id: UUID | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> OverrideReportResponse:
+        overridden = self.campaign_candidate_repo.get_overridden(
+            campaign_id=campaign_id, date_from=date_from, date_to=date_to,
+        )
+
+        campaign_cache: dict[UUID, HiringCampaign | None] = {}
+        hr_user_ids = [cc.hr_override_by for cc in overridden if cc.hr_override_by]
+        # Reuses CampaignRepository.get_hiring_manager_names - despite its
+        # name, it is a generic user_id -> full_name batch lookup (any list
+        # of user ids) - reused here instead of adding a dedicated
+        # UserRepository/method for this one lookup.
+        hr_names = self.campaign_repo.get_hiring_manager_names(hr_user_ids)
+
+        rows = []
+        for cc in overridden:
+            campaign = self._get_campaign_cached(cc.campaign_id, campaign_cache)
+            rows.append(self._to_override_report_row(cc, campaign, hr_names))
+
+        weekly_trend = self._compute_weekly_trend(campaign_id)
+        campaign_alerts = self._compute_campaign_alerts(campaign_id, rows, campaign_cache)
+
+        return OverrideReportResponse(
+            rows=rows,
+            total_count=len(rows),
+            weekly_trend=weekly_trend,
+            campaign_alerts=campaign_alerts,
+        )
+
+    def _get_campaign_cached(
+        self, campaign_id: UUID, campaign_cache: dict[UUID, HiringCampaign | None],
+    ) -> HiringCampaign | None:
+        if campaign_id not in campaign_cache:
+            campaign_cache[campaign_id] = self.campaign_repo.get_by_id(campaign_id)
+        return campaign_cache[campaign_id]
+
+    def _to_override_report_row(
+        self,
+        campaign_candidate: CampaignCandidate,
+        campaign: HiringCampaign | None,
+        hr_names: dict[str, str],
+    ) -> OverrideReportRow:
+        original_reason = None
+        if self.candidate_rejection_repo is not None:
+            rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate.id)
+            if rejections:
+                original_reason = rejections[-1].rejection_reason  # oldest = original (newest-first list)
+
+        return OverrideReportRow(
+            campaign_id=campaign_candidate.campaign_id,
+            campaign_name=campaign.name if campaign is not None else "",
+            candidate_uuid=campaign_candidate.candidate_id,
+            original_rejection_reason=original_reason,
+            override_reason=campaign_candidate.hr_override_reason or "",
+            hr_full_name=hr_names.get(campaign_candidate.hr_override_by),
+            override_timestamp=campaign_candidate.hr_override_at,
+            current_pipeline_stage=campaign_candidate.pipeline_stage,
+        )
+
+    def _compute_weekly_trend(self, campaign_id: UUID | None) -> list[OverrideWeeklyTrendPoint]:
+        """
+        Fixed last-8-weeks window (independent of the report's date_from/
+        date_to row filters, per this story's "Trend: last 8 weeks" spec),
+        Monday-anchored week buckets.
+        """
+        now = datetime.now(timezone.utc)
+        current_week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        window_start = current_week_start - timedelta(weeks=_WEEKLY_TREND_WEEKS - 1)
+
+        overridden = self.campaign_candidate_repo.get_overridden(
+            campaign_id=campaign_id, date_from=window_start, date_to=None,
+        )
+
+        buckets = {
+            (current_week_start - timedelta(weeks=offset)).date(): 0
+            for offset in range(_WEEKLY_TREND_WEEKS)
+        }
+        for cc in overridden:
+            if cc.hr_override_at is None:
+                continue
+            week_start = (cc.hr_override_at - timedelta(days=cc.hr_override_at.weekday())).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            ).date()
+            if week_start in buckets:
+                buckets[week_start] += 1
+
+        return [
+            OverrideWeeklyTrendPoint(week_start=week_start, override_count=count)
+            for week_start, count in sorted(buckets.items())
+        ]
+
+    def _compute_campaign_alerts(
+        self,
+        campaign_id: UUID | None,
+        rows: list[OverrideReportRow],
+        campaign_cache: dict[UUID, HiringCampaign | None],
+    ) -> list[CampaignOverrideAlert]:
+        threshold = _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD
+        if self.config_repo is not None:
+            configs = self.config_repo.get_configs_by_keys([_OVERRIDE_RATE_ALERT_THRESHOLD_KEY])
+            raw_threshold = configs.get(_OVERRIDE_RATE_ALERT_THRESHOLD_KEY)
+            if raw_threshold is not None:
+                threshold = float(raw_threshold)
+
+        campaign_ids = {campaign_id} if campaign_id is not None else {row.campaign_id for row in rows}
+
+        override_counts: dict[UUID, int] = {}
+        for row in rows:
+            override_counts[row.campaign_id] = override_counts.get(row.campaign_id, 0) + 1
+
+        alerts = []
+        for cid in campaign_ids:
+            campaign = self._get_campaign_cached(cid, campaign_cache)
+            if campaign is None:
+                continue
+
+            override_count = override_counts.get(cid, 0)
+            # Denominator: all-time rejected candidates in this campaign
+            # (reuses S03's get_rejected_by_campaign) - override_rate
+            # answers "of the candidates this campaign's deterministic
+            # filter rejected, what fraction did HR decide to override",
+            # which is what "review campaign JD skills or thresholds"
+            # is actually about.
+            rejected_count = len(self.campaign_candidate_repo.get_rejected_by_campaign(cid))
+            override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
+            alert = override_rate > threshold
+
+            alerts.append(CampaignOverrideAlert(
+                campaign_id=cid,
+                campaign_name=campaign.name,
+                override_count=override_count,
+                rejected_count=rejected_count,
+                override_rate=round(override_rate, 2),
+                override_alert=alert,
+                recommendation=_OVERRIDE_RECOMMENDATION if alert else None,
+            ))
+
+        return alerts
+
+    def export_override_report(
+        self,
+        campaign_id: UUID | None,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        actor_id: str,
+        actor_role: str | None,
+    ) -> StreamingResponse:
+        """
+        Reuses ExcelExport (no new XLSX engine) and AuditService, same
+        StreamingResponse convention as export_rejected_candidates. Never
+        includes candidate name/email/phone/resume - only the opaque
+        candidate_uuid. HR full name is not candidate PII and is included
+        as explicitly required by this report.
+        """
+        report = self.get_override_report(campaign_id=campaign_id, date_from=date_from, date_to=date_to)
+
+        rows = [self._to_override_export_row(row) for row in report.rows]
+
+        excel_file = ExcelExport.export_override_report(rows)
+        filename = f"override_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.OVERRIDE_REPORT_EXPORTED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=campaign_id if campaign_id is not None else self.EXPORT_AUDIT_ENTITY_ID,
+            campaign_id=campaign_id,
+            details={"exported_count": len(rows)},
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @staticmethod
+    def _to_override_export_row(row: OverrideReportRow) -> dict:
+        return {
+            "campaign_name": row.campaign_name,
+            "candidate_uuid": str(row.candidate_uuid),
+            "original_rejection_reason": row.original_rejection_reason or "",
+            "override_reason": row.override_reason,
+            "hr_full_name": row.hr_full_name or "",
+            "override_timestamp": row.override_timestamp,
+            "current_pipeline_stage": row.current_pipeline_stage.value,
+        }
+
+    # ------------------------------------------------------------------
+    # M07-E03 S05 T01/T02: Campaign Rejection Analytics + JD Calibration
+    # ------------------------------------------------------------------
+
+    def get_campaign_rejection_analytics(self, campaign_id: UUID) -> CampaignRejectionAnalyticsResponse:
+        """
+        Rejection-reason distribution, top missing mandatory skills, and
+        (once MIN_CANDIDATES_FOR_ANALYTICS is reached) JD-calibration
+        recommendations for one campaign. Computed entirely from
+        candidate_rejections.rejection_detail snapshots - never
+        recalculated scoring, never touches score_breakdown live.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        rejection_rows = self.candidate_rejection_repo.get_by_campaign(
+            campaign_id=campaign_id, rejection_layer=RejectionLayer.DETERMINISTIC,
+        )
+        rejections = [rejection for rejection, _campaign_id in rejection_rows]
+        total_rejections = len(rejections)
+
+        breakdown = self._build_breakdown(rejections, total_rejections)
+        top_missing_skills = self._build_top_missing_skills(rejections, total_rejections, limit=5)
+
+        total_candidates = self.campaign_candidate_repo.get_candidate_count(campaign_id)
+        min_candidates = self._get_min_candidates_for_analytics()
+
+        recommendations = []
+        if total_candidates >= min_candidates:
+            recommendations = self._build_calibration_recommendations(
+                campaign, breakdown, top_missing_skills,
+            )
+
+        return CampaignRejectionAnalyticsResponse(
+            campaign_id=campaign_id,
+            total_candidates=total_candidates,
+            total_deterministic_rejections=total_rejections,
+            min_candidates_for_analytics=min_candidates,
+            breakdown=breakdown,
+            top_missing_skills=top_missing_skills,
+            recommendations=recommendations,
+        )
+
+    def _classify_rejection(self, rejection: CandidateRejection) -> str | None:
+        """
+        Buckets one rejection into exactly one of the 7 mandatory-skill/
+        experience/education failure combinations, reusing the exact same
+        pass/fail logic already used to build the human-readable rejection
+        reason (_missing_mandatory_skills_display/_experience_gap_display/
+        _education_gap_display - each returns "" when that dimension did
+        NOT fail). Returns None for the rare edge case where none of the
+        three individually failed (e.g. the combined weighted score alone
+        fell below threshold) - such rejections still count toward
+        total_deterministic_rejections but are not part of the 7-bucket
+        breakdown, since this story defines exactly those 7 buckets and no
+        "other" catch-all.
+        """
+        breakdown = rejection.rejection_detail or {}
+        skills_failed = bool(self._missing_mandatory_skills_display(breakdown))
+        experience_failed = bool(self._experience_gap_display(breakdown))
+        education_failed = bool(self._education_gap_display(breakdown))
+
+        if skills_failed and experience_failed and education_failed:
+            return _SKILLS_EXPERIENCE_EDUCATION
+        if skills_failed and experience_failed:
+            return _SKILLS_EXPERIENCE
+        if skills_failed and education_failed:
+            return _SKILLS_EDUCATION
+        if experience_failed and education_failed:
+            return _EXPERIENCE_EDUCATION
+        if skills_failed:
+            return _SKILLS_ONLY
+        if experience_failed:
+            return _EXPERIENCE_ONLY
+        if education_failed:
+            return _EDUCATION_ONLY
+        return None
+
+    def _build_breakdown(
+        self, rejections: list[CandidateRejection], total_rejections: int,
+    ) -> list[RejectionBreakdownEntry]:
+        category_counts: dict[str, int] = {}
+        for rejection in rejections:
+            category = self._classify_rejection(rejection)
+            if category is None:
+                continue
+            category_counts[category] = category_counts.get(category, 0) + 1
+
+        return [
+            RejectionBreakdownEntry(
+                category=category,
+                count=category_counts.get(category, 0),
+                percentage=(
+                    round(category_counts.get(category, 0) / total_rejections * 100, 2)
+                    if total_rejections else 0.0
+                ),
+            )
+            for category in _BREAKDOWN_CATEGORY_ORDER
+        ]
+
+    @staticmethod
+    def _aggregate_missing_skills(rejections: list[CandidateRejection]) -> list[dict]:
+        """
+        One entry per distinct canonical skill that appeared as a MISSING
+        mandatory skill across `rejections`, keyed by canonical_skill_id
+        (falling back to canonical_name if the id is ever absent) so a
+        platform-wide caller can join against JDSkill.canonical_skill_id.
+        Sorted by occurrence count, descending.
+        """
+        counts: dict = {}
+        for rejection in rejections:
+            detail = rejection.rejection_detail or {}
+            for skill in detail.get("mandatory_skills", []):
+                if skill.get("match_type") != "MISSING":
+                    continue
+                canonical_name = skill.get("canonical_name") or "Unknown skill"
+                key = skill.get("canonical_skill_id") or canonical_name
+                if key not in counts:
+                    counts[key] = {
+                        "canonical_skill_id": skill.get("canonical_skill_id"),
+                        "canonical_name": canonical_name,
+                        "count": 0,
+                    }
+                counts[key]["count"] += 1
+
+        return sorted(counts.values(), key=lambda entry: entry["count"], reverse=True)
+
+    def _build_top_missing_skills(
+        self, rejections: list[CandidateRejection], total_rejections: int, limit: int,
+    ) -> list[MissingSkillOccurrence]:
+        aggregated = self._aggregate_missing_skills(rejections)[:limit]
+        return [
+            MissingSkillOccurrence(
+                canonical_name=entry["canonical_name"],
+                occurrence_count=entry["count"],
+                percentage_of_rejections=(
+                    round(entry["count"] / total_rejections * 100, 2) if total_rejections else 0.0
+                ),
+            )
+            for entry in aggregated
+        ]
+
+    def _get_min_candidates_for_analytics(self) -> int:
+        if self.config_repo is None:
+            return _DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
+        configs = self.config_repo.get_configs_by_keys([_MIN_CANDIDATES_FOR_ANALYTICS_KEY])
+        raw = configs.get(_MIN_CANDIDATES_FOR_ANALYTICS_KEY)
+        return int(raw) if raw is not None else _DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
+
+    def _build_calibration_recommendations(
+        self,
+        campaign: HiringCampaign,
+        breakdown: list[RejectionBreakdownEntry],
+        top_missing_skills: list[MissingSkillOccurrence],
+    ) -> list[JdCalibrationRecommendation]:
+        recommendations = []
+
+        skill_mismatch_threshold = self._read_config_float(
+            _SKILL_MISMATCH_RATE_THRESHOLD_KEY, _DEFAULT_SKILL_MISMATCH_RATE_THRESHOLD,
+        )
+        for skill in top_missing_skills:
+            if skill.percentage_of_rejections > skill_mismatch_threshold:
+                recommendations.append(JdCalibrationRecommendation(
+                    rule="SKILL_MISMATCH",
+                    message=(
+                        f"Consider making {skill.canonical_name} preferred rather than "
+                        "mandatory, or adding aliases."
+                    ),
+                    action="review_skill_ontology",
+                    details={
+                        "skill": skill.canonical_name,
+                        "missing_rate": skill.percentage_of_rejections,
+                        "threshold": skill_mismatch_threshold,
+                    },
+                ))
+
+        experience_only_threshold = self._read_config_float(
+            _EXPERIENCE_ONLY_RATE_THRESHOLD_KEY, _DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD,
+        )
+        experience_only_entry = next(
+            (entry for entry in breakdown if entry.category == _EXPERIENCE_ONLY), None,
+        )
+        if experience_only_entry is not None and experience_only_entry.percentage > experience_only_threshold:
+            current_min_years, current_tolerance = self._current_experience_config(campaign)
+            recommendations.append(JdCalibrationRecommendation(
+                rule="EXPERIENCE_MISMATCH",
+                message="Consider reducing minimum experience or increasing tolerance.",
+                action="review_campaign_configuration",
+                details={
+                    "experience_only_rate": experience_only_entry.percentage,
+                    "threshold": experience_only_threshold,
+                    "current_min_experience_years": current_min_years,
+                    "recommended_min_experience_years": (
+                        max(0.0, current_min_years - 1) if current_min_years is not None else None
+                    ),
+                    "current_experience_tolerance_years": current_tolerance,
+                    "recommended_experience_tolerance_years": (
+                        current_tolerance + 0.5 if current_tolerance is not None else None
+                    ),
+                },
+            ))
+
+        override_rate, override_threshold = self._compute_rule3_override_rate(campaign.id)
+        if override_rate > override_threshold:
+            recommendations.append(JdCalibrationRecommendation(
+                rule="HIGH_OVERRIDE_RATE",
+                message="High override rate detected. Review JD skills or deterministic thresholds.",
+                action="review_campaign_configuration",
+                details={"override_rate": override_rate, "threshold": override_threshold},
+            ))
+
+        return recommendations
+
+    def _read_config_float(self, key: str, default: float) -> float:
+        if self.config_repo is None:
+            return default
+        raw = self.config_repo.get_configs_by_keys([key]).get(key)
+        return float(raw) if raw is not None else default
+
+    def _current_experience_config(self, campaign: HiringCampaign) -> tuple[float | None, float | None]:
+        current_min_years = None
+        job_description = getattr(campaign, "job_description", None)
+        if job_description is not None and job_description.min_experience_years is not None:
+            current_min_years = float(job_description.min_experience_years)
+
+        current_tolerance = None
+        if self.config_repo is not None:
+            raw = self.config_repo.get_configs_by_keys([_EXPERIENCE_TOLERANCE_YEARS_KEY]).get(
+                _EXPERIENCE_TOLERANCE_YEARS_KEY,
+            )
+            current_tolerance = float(raw) if raw is not None else None
+
+        return current_min_years, current_tolerance
+
+    def _compute_rule3_override_rate(self, campaign_id: UUID) -> tuple[float, float]:
+        """
+        Same override_rate formula as the Override Report's per-campaign
+        alert (overrides / all-time REJECTED candidates) - deliberately the
+        SAME denominator convention as _compute_campaign_alerts (M07-E03
+        S04), so this rule and that report's alert always agree.
+        """
+        threshold = self._read_config_float(
+            _OVERRIDE_RATE_ALERT_THRESHOLD_KEY, _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD,
+        )
+        override_count = len(self.campaign_candidate_repo.get_overridden(campaign_id=campaign_id))
+        rejected_count = len(self.campaign_candidate_repo.get_rejected_by_campaign(campaign_id))
+        override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
+        return round(override_rate, 2), threshold
+
+    # ------------------------------------------------------------------
+    # M07-E03 S05 T03: Platform-wide Deterministic Rejection Summary Export
+    # ------------------------------------------------------------------
+
+    def export_deterministic_rejection_summary(
+        self,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        actor_id: str,
+        actor_role: str | None,
+    ) -> StreamingResponse:
+        """
+        Reuses ExcelExport (no new XLSX engine) and AuditService. 3 sheets:
+        Campaign Summary, Skill Gap Analysis, Override Log. Never includes
+        candidate name/email/phone/resume - only the opaque candidate_uuid
+        on the Override Log sheet.
+        """
+        campaigns = self.campaign_repo.get_all_campaigns(show_closed=True)
+
+        rejection_rows = self.candidate_rejection_repo.get_by_campaign(
+            rejection_layer=RejectionLayer.DETERMINISTIC, date_from=date_from, date_to=date_to,
+        )
+        rejections_by_campaign: dict[UUID, list[CandidateRejection]] = {}
+        for rejection, campaign_id in rejection_rows:
+            rejections_by_campaign.setdefault(campaign_id, []).append(rejection)
+
+        campaign_summary_rows = [
+            self._to_campaign_summary_row(campaign, rejections_by_campaign.get(campaign.id, []), date_from, date_to)
+            for campaign in campaigns
+        ]
+
+        all_rejections = [rejection for rejections in rejections_by_campaign.values() for rejection in rejections]
+        skill_gap_rows = self._build_skill_gap_rows(all_rejections)
+
+        override_report = self.get_override_report(campaign_id=None, date_from=date_from, date_to=date_to)
+        override_log_rows = [self._to_override_log_row(row) for row in override_report.rows]
+
+        excel_file = ExcelExport.export_deterministic_rejection_summary(
+            campaign_summary_rows, skill_gap_rows, override_log_rows,
+        )
+        filename = f"deterministic_rejection_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.DETERMINISTIC_ANALYTICS_EXPORTED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=self.EXPORT_AUDIT_ENTITY_ID,
+            campaign_id=None,
+            details={
+                "campaign_count": len(campaign_summary_rows),
+                "skill_count": len(skill_gap_rows),
+                "override_count": len(override_log_rows),
+            },
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    def _to_campaign_summary_row(
+        self,
+        campaign: HiringCampaign,
+        campaign_rejections: list[CandidateRejection],
+        date_from: datetime | None,
+        date_to: datetime | None,
+    ) -> dict:
+        total_candidates = self.campaign_candidate_repo.get_candidate_count(campaign.id)
+        deterministic_rejections = len(campaign_rejections)
+        rejection_rate = (
+            round(deterministic_rejections / total_candidates * 100, 2) if total_candidates else 0.0
+        )
+
+        category_counts: dict[str, int] = {}
+        for rejection in campaign_rejections:
+            category = self._classify_rejection(rejection)
+            if category is None:
+                continue
+            category_counts[category] = category_counts.get(category, 0) + 1
+        top_category = max(category_counts, key=category_counts.get) if category_counts else None
+        top_rejection_reason = _BREAKDOWN_CATEGORY_DISPLAY.get(top_category, "") if top_category else ""
+
+        # Date-scoped together with deterministic_rejections above, so this
+        # column stays internally consistent with the rest of THIS report's
+        # row - a deliberately different denominator convention from
+        # _compute_rule3_override_rate's all-time one, since that rule must
+        # instead match the already-shipped Override Report's alert exactly.
+        override_count = len(
+            self.campaign_candidate_repo.get_overridden(campaign_id=campaign.id, date_from=date_from, date_to=date_to)
+        )
+        override_rate = (
+            round(override_count / deterministic_rejections * 100, 2) if deterministic_rejections else 0.0
+        )
+
+        return {
+            "campaign_name": campaign.name,
+            "total_candidates": total_candidates,
+            "deterministic_rejections": deterministic_rejections,
+            "rejection_rate": rejection_rate,
+            "top_rejection_reason": top_rejection_reason,
+            "override_count": override_count,
+            "override_rate": override_rate,
+        }
+
+    def _build_skill_gap_rows(self, all_rejections: list[CandidateRejection]) -> list[dict]:
+        aggregated = self._aggregate_missing_skills(all_rejections)
+        total_rejections = len(all_rejections)
+
+        skill_ids = [entry["canonical_skill_id"] for entry in aggregated if entry["canonical_skill_id"]]
+        requirement_counts = (
+            self.skill_repo.get_campaign_requirement_counts_by_skill(skill_ids)
+            if self.skill_repo is not None else {}
+        )
+
+        return [
+            {
+                "canonical_name": entry["canonical_name"],
+                "campaigns_requiring_skill": requirement_counts.get(entry["canonical_skill_id"], 0),
+                "missing_count": entry["count"],
+                "missing_rate": (
+                    round(entry["count"] / total_rejections * 100, 2) if total_rejections else 0.0
+                ),
+            }
+            for entry in aggregated
+        ]
+
+    @staticmethod
+    def _to_override_log_row(row: OverrideReportRow) -> dict:
+        return {
+            "campaign_name": row.campaign_name,
+            "candidate_uuid": str(row.candidate_uuid),
+            "rejection_reason": row.original_rejection_reason or "",
+            "override_reason": row.override_reason,
+            "override_by": row.hr_full_name or "",
+            "override_timestamp": row.override_timestamp,
+            "current_pipeline_stage": row.current_pipeline_stage.value,
+        }
 
     def delete_campaign_candidate(
         self,
