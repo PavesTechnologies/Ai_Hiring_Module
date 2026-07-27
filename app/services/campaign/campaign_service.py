@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib import request
-from fastapi import HTTPException
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import timedelta
 from app.middleware.rbac import TokenUser
+from app.models.async_tasks import TaskStatus
+from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
+from app.tasks.resume_processing_tasks import process_resume_document
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -19,11 +21,21 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
+from app.schemas.campaign.campaign_closure_schema import (
+    CampaignCloseRequest,
+    CampaignClosureImpactSummaryResponse,
+    CampaignClosureResultResponse,
+)
+from app.schemas.campaign.campaign_reopen_schema import (
+    JDReadinessIssue,
+    CampaignReopenReadinessResponse,
+    CampaignReopenResultResponse,
+)
 from app.schemas.campaign.campaign_response import (
     CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
@@ -41,6 +53,10 @@ from app.schemas.campaign.campaign_detail_response import (
 )
 from app.models.pipeline import PipelineStage
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
+from app.schemas.campaign.campaign_processing_status_response import (
+    ProcessingStatusSummaryResponse,
+    DeadLetterQueueEntryResponse,
+)
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 from app.schemas.campaign.campaign_comparison_response import (
     CampaignComparisonColumn,
@@ -293,7 +309,68 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    
+    def duplicate_campaign(
+        self,
+        source_campaign_id: UUID,
+        request: CampaignDuplicateRequest,
+        created_by: str,
+    ) -> CampaignResponse:
+        """
+        S06-T01/T02/T03: creates a fully independent new campaign, copying the
+        source's scoring weights/thresholds verbatim. Reuses create_campaign()
+        for everything else (JD validation, weight-sum check, name-uniqueness,
+        the INSERT itself, and the CAMPAIGN_CREATED audit entry) instead of a
+        second copy of that validation — this is allowed to run against a
+        source campaign in ANY status (spec: "for campaigns in any status"),
+        since it only ever reads the source, never writes to it. Adds one
+        CAMPAIGN_DUPLICATED audit entry on top, carrying the lineage back to
+        the source campaign.
+        """
+        source = self.campaign_repo.get_by_id(source_campaign_id)
+        if not source:
+            raise CampaignException(f"Campaign '{source_campaign_id}' not found", 404)
+
+        create_request = CampaignCreateRequest(
+            name=request.name,
+            jd_id=request.jd_id,
+            max_candidates=request.max_candidates,
+            deadline=request.deadline,
+            weight_deterministic=Decimal(str(source.weight_deterministic)),
+            weight_semantic=Decimal(str(source.weight_semantic)),
+            weight_ai=Decimal(str(source.weight_ai)),
+            semantic_threshold=Decimal(str(source.semantic_threshold)),
+            ai_threshold=Decimal(str(source.ai_threshold)),
+            deterministic_threshold=Decimal(str(source.deterministic_threshold)),
+            hiring_manager_id=request.hiring_manager_id or source.hiring_manager_id,
+            recruiter_id=request.recruiter_id or source.recruiter_id,
+        )
+
+        # create_campaign() already commits the new campaign + its own
+        # CAMPAIGN_CREATED audit entry before returning.
+        new_campaign = self.create_campaign(
+            create_request, org_id=source.org_id, created_by=created_by,
+        )
+
+        self.audit_service.log(
+            actor_id=created_by,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_DUPLICATED.value,
+            entity_type=EntityType.CAMPAIGN.value,
+            entity_id=new_campaign.id,
+            campaign_id=new_campaign.id,
+            details={
+                "title": f"Campaign '{new_campaign.name}' duplicated from '{source.name}'",
+                "source_campaign_id": str(source.id),
+                "source_campaign_name": source.name,
+            },
+        )
+        self.audit_service.repository.save()
+
+        new_campaign.duplicated_from_campaign_id = source.id
+        new_campaign.duplicated_from_campaign_name = source.name
+
+        return new_campaign
+
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -470,6 +547,11 @@ class CampaignService:
             history=history_items,
             message=message,
         )
+    def get_active_campaigns_minimal(self) -> list[CampaignMinimalResponse]:
+        """id + name only, for dropdowns/pickers — HR_ADMIN/RECRUITER (enforced at the route)."""
+        rows = self.campaign_repo.get_active_campaigns_minimal()
+        return [CampaignMinimalResponse(id=row.id, name=row.name) for row in rows]
+
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
@@ -986,6 +1068,19 @@ class CampaignService:
             and UserRole.RECRUITER.value not in user.roles
         )
 
+        # S06-T03: "Duplicated from [source name]" — sourced from the
+        # CAMPAIGN_DUPLICATED audit entry rather than a dedicated column,
+        # reusing the same audit-lookup pattern as pause-duration/reopen.
+        duplication_entry = self.audit_service.get_latest_entry(
+            campaign.id, ActionType.CAMPAIGN_DUPLICATED.value,
+        )
+        duplicated_from_id = None
+        duplicated_from_name = None
+        if duplication_entry is not None:
+            detail = duplication_entry.detail or {}
+            duplicated_from_id = detail.get("source_campaign_id")
+            duplicated_from_name = detail.get("source_campaign_name")
+
         return CampaignDetailResponse(
             id=campaign.id,
             campaign_info=CampaignInfoSection(
@@ -994,6 +1089,8 @@ class CampaignService:
                 created_by_name=creator.full_name if creator else None,
                 created_at=campaign.created_at,
                 updated_at=campaign.updated_at,
+                duplicated_from_campaign_id=duplicated_from_id,
+                duplicated_from_campaign_name=duplicated_from_name,
             ),
             jd_configuration=JDConfigSection(
                 jd_id=jd.id,
@@ -1070,6 +1167,43 @@ class CampaignService:
             total_candidates=sum(counts.values()),
             stages=stages,
         )
+
+    def get_processing_status_summary(self, campaign_id: UUID) -> ProcessingStatusSummaryResponse:
+        """S01-T02: celery_task_log status breakdown + DLQ count for this campaign."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        counts = self.campaign_repo.get_task_status_counts(campaign_id)
+        dlq_count = len(self.campaign_repo.get_dead_letter_queue_entries(campaign_id))
+
+        return ProcessingStatusSummaryResponse(
+            queued_count=counts.get(TaskStatus.QUEUED.value, 0),
+            running_count=counts.get(TaskStatus.RUNNING.value, 0),
+            retry_count=counts.get(TaskStatus.RETRY.value, 0),
+            dead_count=counts.get(TaskStatus.DEAD.value, 0),
+            paused_count=counts.get(TaskStatus.PAUSED.value, 0),
+            dead_letter_queue_count=dlq_count,
+        )
+
+    def get_dead_letter_queue_for_campaign(self, campaign_id: UUID) -> list[DeadLetterQueueEntryResponse]:
+        """S01-T02: the destination for clicking the DEAD metric card."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        entries = self.campaign_repo.get_dead_letter_queue_entries(campaign_id)
+        return [
+            DeadLetterQueueEntryResponse(
+                id=e.id,
+                task_type=e.task_type,
+                final_error_message=e.final_error_message,
+                retry_count=e.retry_count,
+                moved_to_dlq_at=e.moved_to_dlq_at,
+                campaign_candidate_id=e.campaign_candidate_id,
+            )
+            for e in entries
+        ]
 
     def get_campaign_timeline(
         self,
@@ -1456,6 +1590,47 @@ class CampaignService:
         report = self.get_weight_change_report(date_from, date_to, campaign_status)
         return ExcelExport.export_weight_change_report(report.rows)
 
+    def _resubmit_paused_tasks(self, campaign_id: UUID) -> int:
+        """
+        actually resubmits each PAUSED task to the Celery broker,
+        reusing its original task_id (so the task's own get_by_task_id()
+        lookup finds and reuses this same log row instead of creating a
+        duplicate — the same convention resume_processing_tasks.py uses for
+        first-submission). Only DETERMINISTIC_SCORE is ever linked to a
+        campaign_candidate_id today; anything else is skipped defensively
+        rather than guessed at, and left PAUSED for manual follow-up.
+        """
+        requeued = 0
+        for task in self.campaign_repo.get_paused_tasks(campaign_id):
+            if task.task_type != DETERMINISTIC_SCORE_TASK_TYPE:
+                continue
+            calculate_deterministic_score_task.apply_async(
+                kwargs={"campaign_candidate_id": str(task.campaign_candidate_id)},
+                task_id=str(task.task_id),
+            )
+            task.status = TaskStatus.QUEUED
+            requeued += 1
+        self.campaign_repo.db.flush()
+        return requeued
+
+    def _enqueue_pending_resume_parses(self, campaign_id: UUID) -> int:
+        """
+        S02-T02: submits a fresh resume.process_document task for every
+        resume that was uploaded while the campaign was paused and never got
+        parsed (parse_status = PENDING) — mirroring the exact submission
+        pattern resume_intake_service.py uses on a normal upload.
+        """
+        enqueued = 0
+        for resume in self.campaign_repo.get_pending_resumes(campaign_id):
+            task_id = uuid4()
+            self.campaign_repo.set_resume_task_id(resume, str(task_id))
+            process_resume_document.apply_async(
+                kwargs={"resume_id": str(resume.id)},
+                task_id=str(task_id),
+            )
+            enqueued += 1
+        return enqueued
+
     _SCORING_FIELDS = (
         "weight_deterministic",
         "weight_semantic",
@@ -1650,8 +1825,21 @@ class CampaignService:
                 # S02-T02: re-queue suspended tasks (PAUSED → QUEUED); uploads are
                 # re-permitted immediately by the ACTIVE status.
                 detail["title"] = f"Campaign '{campaign.name}' resumed"
-                detail["tasks_requeued"] = self.campaign_repo.requeue_suspended_tasks(campaign.id)
-                detail["resumes_enqueued"] = self.campaign_repo.count_pending_resumes(campaign.id)
+                detail["tasks_requeued"] = self._resubmit_paused_tasks(campaign.id)
+                detail["resumes_enqueued"] = self._enqueue_pending_resume_parses(campaign.id)
+
+                # S02-T03: pause duration, from the matching CAMPAIGN_PAUSED
+                # entry's timestamp to now.
+                last_pause = self.audit_service.get_latest_entry(
+                    campaign.id, ActionType.CAMPAIGN_PAUSED.value,
+                )
+                if last_pause is not None:
+                    paused_at = last_pause.created_at
+                    detail["paused_at"] = paused_at.isoformat()
+                    detail["pause_duration_seconds"] = (
+                        datetime.now(timezone.utc) - paused_at
+                    ).total_seconds()
+
                 action_type = ActionType.CAMPAIGN_RESUMED
             elif scoring_changes:
                 action_type = ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED
@@ -1731,20 +1919,6 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    
-    def update_campaign_status(self, campaign_id: UUID, status: CampaignStatus) -> HiringCampaign:
-        campaign = self.campaign_repo.get_by_id(campaign_id)  # or a small read-only lookup
-        if not campaign:
-            raise HTTPException(status_code=404, detail="Campaign not found")
-        if campaign.status == CampaignStatus.CLOSED:
-            raise HTTPException(status_code=400, detail="Cannot change status of a closed campaign")
-        if campaign.status == CampaignStatus.ACTIVE:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.PAUSED, campaign_id)
-        elif status == CampaignStatus.PAUSED:
-            campaign = self.campaign_repo.update_campaign_status(CampaignStatus.ACTIVE, campaign_id)
-
-        return campaign
-
     # ── S01 — Pause an Active Campaign ──────────────────────────────────────
 
     def get_pause_impact_summary(
@@ -1799,6 +1973,259 @@ class CampaignService:
             pending_resume_count=pending,
             estimated_processing_seconds=(total * AVG_SECONDS_PER_ITEM) or None,
         )
+
+    # ── S03 — Close a Campaign Manually ──────────────────────────────────────
+
+    def get_closure_impact_summary(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignClosureImpactSummaryResponse:
+        """
+        S03-T01: read-only data for the close confirmation dialog. HR_ADMIN
+        only (enforced at the route). Only an ACTIVE or PAUSED campaign can
+        be closed.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+            raise CampaignException(
+                "Only an active or paused campaign can be closed.", 409,
+            )
+
+        return CampaignClosureImpactSummaryResponse(
+            candidate_count=self.campaign_repo.get_candidate_count(campaign_id),
+            stage_counts=self.campaign_repo.get_stage_counts(campaign_id),
+            in_progress_task_count=self.campaign_repo.count_active_queue_tasks(campaign_id),
+            pending_human_decision_count=self.campaign_repo.count_pending_human_decision(campaign_id),
+            in_progress_bulk_job_count=self.campaign_repo.count_processing_bulk_jobs(campaign_id),
+        )
+
+    def close_campaign(
+        self,
+        campaign_id: UUID,
+        request: CampaignCloseRequest,
+        updated_by: str,
+    ) -> CampaignClosureResultResponse:
+        """
+        S03-T02/T03: manual, terminal closure — distinct from the automated
+        auto-close paths (deadline expiry, candidate cap): those already call
+        CampaignRepository.close_campaign() directly. This is the only path
+        that kills QUEUED tasks (DEAD, not PAUSED — there's no resume to
+        re-queue them later) and cancels in-flight bulk uploads, then builds
+        the closure summary and records CAMPAIGN_CLOSED.
+        """
+        try:
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+            if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
+                raise CampaignException(
+                    "Only an active or paused campaign can be closed.", 409,
+                )
+
+            tasks_cancelled = self.campaign_repo.kill_queued_tasks(campaign_id)
+            bulk_uploads_cancelled = self.campaign_repo.cancel_pending_bulk_jobs(campaign_id)
+
+            self.campaign_repo.close_campaign(campaign)
+
+            stage_counts = self.campaign_repo.get_stage_counts(campaign_id)
+            candidate_count = sum(stage_counts.values())
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_CLOSED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' closed",
+                    "closure_reason": request.closure_reason.value,
+                    "final_pipeline_state": stage_counts,
+                    "tasks_cancelled": tasks_cancelled,
+                    "bulk_uploads_cancelled": bulk_uploads_cancelled,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignClosureResultResponse(
+                campaign_id=str(campaign.id),
+                campaign_name=campaign.name,
+                closed_at=campaign.updated_at,
+                closure_reason=request.closure_reason,
+                candidate_count=candidate_count,
+                stage_counts=stage_counts,
+                selected_count=stage_counts.get(PipelineStage.SELECTED.value, 0),
+                rejected_count=stage_counts.get(PipelineStage.REJECTED.value, 0),
+                tasks_cancelled_count=tasks_cancelled,
+                bulk_uploads_cancelled_count=bulk_uploads_cancelled,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
+    # ── S04 — Reopen a Closed Campaign ───────────────────────────────────────
+
+    def get_reopen_readiness(
+        self,
+        campaign_id: UUID,
+    ) -> CampaignReopenReadinessResponse:
+        """
+        S04-T01: read-only readiness check for the reopen confirmation dialog.
+        HR_ADMIN only (enforced at the route). Only a CLOSED campaign can be
+        reopened.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        if campaign.status != CampaignStatus.CLOSED:
+            raise CampaignException(
+                "Only a closed campaign can be reopened.", 409,
+            )
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        issues: list[JDReadinessIssue] = []
+
+        if not jd:
+            issues.append(JDReadinessIssue(
+                code="JD_NOT_FOUND",
+                message="The linked job description could not be found.",
+            ))
+        else:
+            if not jd.is_active_version:
+                issues.append(JDReadinessIssue(
+                    code="JD_NOT_ACTIVE_VERSION",
+                    message=f"'{jd.title}' is no longer the active version. Update this campaign to an active JD version before reopening.",
+                ))
+            if jd.closed_at is not None:
+                issues.append(JDReadinessIssue(
+                    code="JD_CLOSED",
+                    message=f"'{jd.title}' has been closed. Update this campaign to an active, open JD before reopening.",
+                ))
+
+            unverified_count = self.campaign_repo.get_mandatory_unverified_skill_count(jd.id)
+            if unverified_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="MANDATORY_SKILLS_UNVERIFIED",
+                    message=f"{unverified_count} mandatory skill(s) on '{jd.title}' are still pending verification.",
+                ))
+
+            unresolved_count = self.campaign_repo.get_unresolved_unknown_skill_count(jd.id)
+            if unresolved_count > 0:
+                issues.append(JDReadinessIssue(
+                    code="UNRESOLVED_SKILL_EXTRACTION",
+                    message=f"{unresolved_count} skill(s) extracted from '{jd.title}' are still unresolved.",
+                ))
+
+        return CampaignReopenReadinessResponse(
+            is_ready=not issues,
+            issues=issues,
+            campaign_id=campaign.id,
+            campaign_name=campaign.name,
+            jd_id=campaign.jd_id,
+            jd_title=jd.title if jd else "",
+            max_candidates=campaign.max_candidates,
+            candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+            deadline=campaign.deadline,
+            weight_deterministic=campaign.weight_deterministic,
+            weight_semantic=campaign.weight_semantic,
+            weight_ai=campaign.weight_ai,
+        )
+
+    def reopen_campaign(
+        self,
+        campaign_id: UUID,
+        updated_by: str,
+    ) -> CampaignReopenResultResponse:
+        """
+        S04-T02/T03: reopens a closed campaign back to ACTIVE, re-validating
+        readiness first. An already-passed deadline is cleared automatically
+        (spec: it must be re-set, not silently kept expired). A cap already
+        at/over max_candidates blocks reopen rather than silently allowing an
+        over-cap campaign — HR_ADMIN raises/clears it via the existing edit
+        endpoint first, reusing that validation instead of duplicating it.
+        """
+        try:
+            readiness = self.get_reopen_readiness(campaign_id)
+            if not readiness.is_ready:
+                raise CampaignException(
+                    "Campaign is not ready to reopen: "
+                    + "; ".join(issue.message for issue in readiness.issues),
+                    422,
+                )
+
+            campaign = self.campaign_repo.get_by_id(campaign_id)
+
+            if campaign.max_candidates is not None:
+                candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+                if candidate_count >= campaign.max_candidates:
+                    raise CampaignException(
+                        f"This campaign already has {candidate_count} candidate(s), at or "
+                        f"above its cap of {campaign.max_candidates}. Raise or clear the "
+                        f"candidate cap (PATCH the campaign) before reopening.",
+                        422,
+                    )
+
+            deadline_cleared = False
+            if campaign.deadline is not None and campaign.deadline <= datetime.now(timezone.utc):
+                campaign.deadline = None
+                deadline_cleared = True
+
+            campaign.status = CampaignStatus.ACTIVE
+            campaign.updated_at = datetime.now(timezone.utc)
+            campaign = self.campaign_repo.update(campaign)
+
+            last_closure = self.audit_service.get_latest_entry(
+                campaign.id, ActionType.CAMPAIGN_CLOSED.value,
+            )
+            original_closure_reason = None
+            closed_at = None
+            duration_closed_days = None
+            if last_closure is not None:
+                closed_at = last_closure.created_at
+                original_closure_reason = (last_closure.detail or {}).get("closure_reason")
+                duration_closed_days = (
+                    datetime.now(timezone.utc) - closed_at
+                ).total_seconds() / 86400
+
+            self.audit_service.log(
+                actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_REOPENED.value,
+                entity_type=EntityType.CAMPAIGN.value,
+                entity_id=campaign.id,
+                campaign_id=campaign.id,
+                details={
+                    "title": f"Campaign '{campaign.name}' reopened",
+                    "original_closure_reason": original_closure_reason,
+                    "closed_at": closed_at.isoformat() if closed_at else None,
+                    "duration_closed_days": duration_closed_days,
+                    "deadline_cleared": deadline_cleared,
+                },
+            )
+
+            self.campaign_repo.commit()
+
+            return CampaignReopenResultResponse(
+                campaign_id=campaign.id,
+                campaign_name=campaign.name,
+                status=campaign.status.value,
+                reopened_at=campaign.updated_at,
+                deadline_cleared=deadline_cleared,
+                original_closure_reason=original_closure_reason,
+                closed_at=closed_at,
+                duration_closed_days=duration_closed_days,
+            )
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
 
     def calculate_deterministic_score(
         self,

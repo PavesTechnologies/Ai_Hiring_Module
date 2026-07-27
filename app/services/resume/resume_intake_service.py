@@ -126,7 +126,7 @@ class ResumeIntakeService:
             )
         if campaign.status != CampaignStatus.ACTIVE:
             raise CampaignException(
-                "Campaign is closed. Resume uploads are not allowed.", 409,
+                "This campaign is closed and no longer accepting applications.", 403,
             )
 
         if campaign.max_candidates:

@@ -190,7 +190,6 @@ try:
             value="0.15",
             description="Weight of the education validation sub-score in the combined deterministic_score blend",
         ),
-        # M07-E03 S04: HR Override reporting
         PlatformConfig(
             id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
@@ -215,6 +214,60 @@ try:
             key="EXPERIENCE_ONLY_RATE_THRESHOLD",
             value="40",
             description="If more than this % of a campaign's deterministic rejections are experience-only failures, recommend reducing minimum experience or increasing tolerance",
+        ),
+        # Unknown Skill Suggestion (HR_ADMIN manual verification) config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_TOP_K",
+            value="10",
+            description="Max number of suggestions returned per Unknown Skill suggestion endpoint (RapidFuzz/semantic x canonical/alias)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_RAPIDFUZZ_THRESHOLD",
+            value="85.00",
+            description="RapidFuzz similarity score (0-100) above which a canonical/alias suggestion is considered a strong match",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="UNKNOWN_SKILL_SUGGESTION_SEMANTIC_THRESHOLD",
+            value="0.80",
+            description="Cosine similarity (0.0-1.0) above which a canonical/alias semantic suggestion is considered a strong match"
+            ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DEADLINE_CHECK_INTERVAL_HOURS",
+            value="1",
+            description=(
+                "Hours between Celery Beat runs of the deadline-based campaign "
+                "auto-close task. Read once at Celery process startup — changing "
+                "this value requires restarting the beat process to take effect."
+            ),
+        ),
+        # E04-S01-T03: campaign pipeline health-alert thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DEAD_TASK_ALERT_THRESHOLD",
+            value="5",
+            description="DEAD celery_task_log count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_REJECTION_ALERT_THRESHOLD",
+            value="80.00",
+            description="Deterministic-layer rejection rate (%, 0-100) above which a CAMPAIGN_HEALTH_ALERT is raised",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SCREENING_SLA_HOURS",
+            value="48",
+            description="Average hours a campaign's currently-SCREENING candidates may sit before a CAMPAIGN_HEALTH_ALERT is raised",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="FRAUD_ALERT_THRESHOLD",
+            value="3",
+            description="FRAUD_REVIEW candidate count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
         ),
     ]
 

@@ -173,6 +173,10 @@ class CandidateSkill(Base):
     candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
     resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=False)
     canonical_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=True)
+    # Set only when canonical_skill_id is NULL - traces this unmatched raw
+    # skill to the deduped UnknownSkill row it upserted into (shared with
+    # JD-origin unknown skills, same raw_text pool/frequency counter).
+    unknown_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("unknown_skills.id"), nullable=True)
     raw_extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)

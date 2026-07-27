@@ -83,5 +83,22 @@ class AuditRepository:
 
         return self.db.execute(stmt).all()
 
+    def get_latest_entry(
+        self,
+        campaign_id: UUID,
+        action_type: str,
+    ) -> AuditLog | None:
+        """most recent audit entry of a given type for a campaign — used to compute pause duration on resume."""
+        stmt = (
+            select(AuditLog)
+            .where(
+                AuditLog.campaign_id == campaign_id,
+                AuditLog.action_type == action_type,
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalars().first()
+
     def save(self):
         self.db.commit()

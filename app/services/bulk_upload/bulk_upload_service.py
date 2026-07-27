@@ -3,21 +3,26 @@ from uuid import UUID, uuid4
 
 from app.core.storage_service import StorageService
 from app.enums.constants import ActionType, EntityType
+from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.bulk_upload_exceptions import (
+    BulkUploadFileNotReplayableException,
     BulkUploadJobNotCancellableException,
     BulkUploadJobNotFoundException,
 )
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.async_tasks import BulkUploadJob, BulkUploadStatus
+from app.models.async_tasks import BulkUploadFileStatus, BulkUploadJob, BulkUploadJobFile, BulkUploadStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.services.audit_service import AuditService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
-from app.tasks.bulk_upload_tasks import extract_bulk_upload_zip
+from app.tasks.bulk_upload_tasks import extract_bulk_upload_zip, parse_bulk_upload_file
 from app.utils.excel_export import ExcelExport
+
+_NON_REPLAYABLE_JOB_STATUSES = (BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING, BulkUploadStatus.CANCELLED)
 
 _TERMINAL_JOB_STATUSES = (
     BulkUploadStatus.COMPLETED,
@@ -51,6 +56,7 @@ class BulkUploadService:
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
         celery_task_log_repo: CeleryTaskLogRepository,
+        dead_letter_queue_repo: DeadLetterQueueRepository,
     ):
         self.bulk_upload_job_repo = bulk_upload_job_repo
         self.bulk_upload_job_file_repo = bulk_upload_job_file_repo
@@ -59,6 +65,7 @@ class BulkUploadService:
         self.campaign_repo = campaign_repo
         self.audit_service = audit_service
         self.celery_task_log_repo = celery_task_log_repo
+        self.dead_letter_queue_repo = dead_letter_queue_repo
 
     def upload_zip(
         self,
@@ -122,7 +129,7 @@ class BulkUploadService:
             )
         if campaign.status != CampaignStatus.ACTIVE:
             raise CampaignException(
-                "Campaign is closed. Resume uploads are not allowed.", 409,
+                "This campaign is closed and no longer accepting applications.", 403,
             )
 
         if campaign.max_candidates:
@@ -185,6 +192,104 @@ class BulkUploadService:
 
         job = self.bulk_upload_job_repo.get_by_id(job_id)
         return job, files_cancelled
+
+    def replay_failed_file(
+        self,
+        job_id: UUID,
+        file_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> tuple[BulkUploadJobFile, str]:
+        """
+        Re-enqueues a single permanently-failed file's BULK_RESUME_PARSE
+        task under a fresh task_id. Only files that actually reached the
+        dead letter queue are replayable — a duplicate-candidate or
+        unexpected-exception failure is a deterministic outcome (per
+        parse_bulk_upload_file's own docstring: "retrying those could never
+        succeed differently") and never creates a DLQ row in the first
+        place, so there is nothing safe to replay for those.
+        """
+        job = self.bulk_upload_job_repo.get_by_id(job_id)
+        if job is None:
+            raise BulkUploadJobNotFoundException("Bulk upload job not found.")
+        if job.status in _NON_REPLAYABLE_JOB_STATUSES:
+            raise BulkUploadFileNotReplayableException(
+                f"This bulk upload job is {job.status.value.lower()} and cannot accept a replay."
+            )
+
+        job_file = self.bulk_upload_job_file_repo.get_by_id_and_job(file_id, job_id)
+        if job_file is None:
+            raise NotFoundError(f"File {file_id} not found in bulk upload job {job_id}.")
+        if job_file.status != BulkUploadFileStatus.FAILED:
+            raise BulkUploadFileNotReplayableException(
+                f"Only a FAILED file can be replayed (current status: {job_file.status.value})."
+            )
+
+        campaign = self.campaign_repo.get_by_id(job.campaign_id)
+        if campaign is None:
+            raise CampaignException("Campaign not found.", 404)
+        if campaign.status == CampaignStatus.PAUSED:
+            raise CampaignException(
+                "This campaign is currently paused — replay is not allowed.", 409,
+            )
+        if campaign.status != CampaignStatus.ACTIVE:
+            raise CampaignException(
+                "This campaign is closed and no longer accepting applications.", 403,
+            )
+
+        dlq_entry = (
+            self.dead_letter_queue_repo.get_by_task_id(job_file.task_id) if job_file.task_id else None
+        )
+        if dlq_entry is None:
+            raise BulkUploadFileNotReplayableException(
+                "This file's failure was never dead-lettered and cannot be replayed."
+            )
+
+        original_task_id = job_file.task_id
+        new_task_id = str(uuid4())
+
+        try:
+            requeued = self.bulk_upload_job_file_repo.requeue_for_replay(file_id, new_task_id)
+            if not requeued:
+                raise BulkUploadFileNotReplayableException(
+                    "This file is no longer FAILED — it may already be replaying."
+                )
+
+            self.bulk_upload_job_repo.decrement_failed_count(job_id)
+            if job.status != BulkUploadStatus.PROCESSING:
+                self.bulk_upload_job_repo.requeue_after_replay(job_id)
+
+            self.dead_letter_queue_repo.mark_replayed(
+                dlq_entry.id, replayed_by=actor_id, replayed_at=datetime.now(timezone.utc),
+            )
+
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.BULK_UPLOAD_FILE_REPLAYED,
+                entity_type=EntityType.BULK_UPLOAD_JOB_FILE,
+                entity_id=job_file.id,
+                campaign_id=job.campaign_id,
+                details={
+                    "bulk_upload_job_id": str(job_id),
+                    "original_filename": job_file.original_filename,
+                    "original_task_id": original_task_id,
+                    "new_task_id": new_task_id,
+                    "dead_letter_queue_id": str(dlq_entry.id),
+                },
+            )
+            self.bulk_upload_job_repo.commit()
+        except Exception:
+            self.bulk_upload_job_repo.rollback()
+            raise
+
+        parse_bulk_upload_file.apply_async(
+            kwargs={"task_id": new_task_id, "bulk_upload_job_file_id": str(file_id)},
+            task_id=new_task_id,
+        )
+
+        job_file = self.bulk_upload_job_file_repo.get_by_id(file_id)
+        return job_file, new_task_id
 
     def get_job_detail(self, job_id: UUID) -> tuple[BulkUploadJob, list, dict[str, int]]:
         """

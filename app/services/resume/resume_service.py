@@ -115,12 +115,19 @@ class ResumeService:
 
             # Unmatched skills have no canonical_skill_id, so the unique
             # constraint (scoped to non-null canonical_skill_id) doesn't
-            # apply — every unknown raw skill gets its own row directly,
-            # unlike JD's separate unknown_skills/jd_unknown_skills tables,
-            # since candidate_skills already carries raw_extracted_text.
+            # apply — every unknown raw skill gets its own candidate_skills
+            # row directly (unlike JD, which only stores matches in
+            # jd_skills). Each one also dedupes into the same unknown_skills
+            # pool JD unmatched skills already share, via the same
+            # upsert_unknown_skill used by JDService — a resume's "X" and a
+            # JD's "X" merge into one UnknownSkill row/frequency counter.
+            newly_created_unknown_skills = []
             for match in skill_matches:
                 if match.canonical_skill_id:
                     continue
+                unknown_skill, was_created = skill_repository.upsert_unknown_skill(
+                    match.raw_text, normalized_key=match.normalized_text
+                )
                 self.repository.create_candidate_skill(
                     candidate_id=resume.candidate_id,
                     resume_id=resume.id,
@@ -130,7 +137,10 @@ class ResumeService:
                     match_tier=match.match_tier.value,
                     status=verification_status_for_tier(match.match_tier).value,
                     scoring_weight=scoring_weight_for_tier(match.match_tier),
+                    unknown_skill_id=unknown_skill.id,
                 )
+                if was_created:
+                    newly_created_unknown_skills.append(unknown_skill)
             logger.warning(
                 "=== persist_processed_resume: unmatched candidate_skills persisted === resume_id=%s", resume.id,
             )
@@ -181,6 +191,21 @@ class ResumeService:
                         "resume_id": str(resume.id),
                         "canonical_skill_id": str(match.canonical_skill_id),
                         "match_tier": match.match_tier.value,
+                    },
+                )
+
+            for unknown_skill in newly_created_unknown_skills:
+                self.audit_service.log(
+                    actor_id=resume.uploaded_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.UNKNOWN_SKILL_CREATED,
+                    entity_type=EntityType.UNKNOWN_SKILL,
+                    entity_id=unknown_skill.id,
+                    jurisdiction=None,
+                    details={
+                        "raw_text": unknown_skill.raw_text,
+                        "resume_id": str(resume.id),
+                        "candidate_id": str(resume.candidate_id),
                     },
                 )
             logger.warning(
