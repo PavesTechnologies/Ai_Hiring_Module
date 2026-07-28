@@ -225,6 +225,42 @@ try:
             value="3",
             description="FRAUD_REVIEW candidate count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_DLQ_REPLAYS_PER_TASK",
+            value="3",
+            description="Maximum times a dead-lettered task chain may be replayed before further replays are blocked (M04-E04-S03-T02 infinite-loop guard)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="INTERVIEW_SLA_DAYS",
+            value="7",
+            description="Days a candidate may sit in INTERVIEW before being flagged as stalled (M04-E04-S04)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_HIGH_REJECTION_THRESHOLD",
+            value="60.00",
+            description="DETERMINISTIC-layer rejection rate (%, of total rejections) above which the rejection-analytics panel recommends reviewing JD mandatory skills (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SEMANTIC_HIGH_REJECTION_THRESHOLD",
+            value="40.00",
+            description="SEMANTIC-layer rejection rate (%) above which the rejection-analytics panel recommends lowering semantic_threshold (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="AI_HIGH_REJECTION_THRESHOLD",
+            value="40.00",
+            description="AI-layer rejection rate (%) above which the rejection-analytics panel recommends lowering ai_threshold (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_CANDIDATES_FOR_ANALYTICS",
+            value="10",
+            description="Minimum processed candidates before rejection-analytics recommendations are shown (M04-E04-S05-T02)",
+        ),
     ]
 
     for config in configs:

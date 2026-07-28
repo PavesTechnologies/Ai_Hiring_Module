@@ -14,6 +14,19 @@ from app.schemas.campaign.campaign_processing_status_response import (
     ProcessingStatusSummaryResponse,
     DeadLetterQueueEntryResponse,
 )
+from app.schemas.campaign.campaign_processing_queue_response import (
+    ProcessingQueueResponse,
+    DLQReplayRequest,
+    DLQReplayResponse,
+)
+from app.schemas.campaign.campaign_monitoring_schema import (
+    StalledCandidatesResponse,
+    StalledActionResponse,
+    StageOverrideRequest,
+    FlagReviewRequest,
+    EscalateStallRequest,
+    RejectionAnalyticsResponse,
+)
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse
 from app.schemas.campaign.campaign_comparison_response import CampaignComparisonResponse
 from app.schemas.campaign.campaign_weight_change_report_response import WeightChangeReportResponse
@@ -603,6 +616,222 @@ def get_dead_letter_queue(
 ):
     entries = service.get_dead_letter_queue_for_campaign(campaign_id)
     return APIResponse.ok(data=entries, message="Dead letter queue entries retrieved successfully.")
+
+
+# ── S03 — View Campaign Processing Queue Status ─────────────────────────────
+
+@router.get(
+    "/{campaign_id}/processing-queue",
+    response_model=APIResponse[ProcessingQueueResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Processing queue breakdown by task type",
+    description=(
+        "Per-task-type status counts, average duration, cumulative LLM token "
+        "usage, circuit-breaker states, and estimated completion time."
+    ),
+)
+def get_processing_queue(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_processing_queue(campaign_id),
+        message="Processing queue retrieved successfully.",
+    )
+
+
+@router.post(
+    "/{campaign_id}/dead-letter-queue/replay",
+    response_model=APIResponse[DLQReplayResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Replay selected dead-letter-queue tasks",
+    description=(
+        "Re-enqueues the selected DLQ entries under fresh task ids, with "
+        "per-entry outcomes. A replay limit from platform_config "
+        "(MAX_DLQ_REPLAYS_PER_TASK) blocks infinite replay loops."
+    ),
+)
+def replay_dead_letter_tasks(
+    campaign_id: UUID,
+    request: DLQReplayRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.replay_dead_letter_tasks(
+        campaign_id,
+        request.dlq_ids,
+        replayed_by=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(data=result, message="Replay completed.")
+
+
+# ── S04 — Identify & Action Stalled Candidates ──────────────────────────────
+
+@router.get(
+    "/{campaign_id}/stalled-candidates",
+    response_model=APIResponse[StalledCandidatesResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Stalled candidates for this campaign",
+    description="Candidates stuck in SCREENING/HM_REVIEW/INTERVIEW past their platform_config SLA, with stall reason and last actor.",
+)
+def get_stalled_candidates(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    return APIResponse.ok(
+        data=service.get_stalled_candidates(campaign_id),
+        message="Stalled candidates retrieved successfully.",
+    )
+
+
+@router.post(
+    "/{campaign_id}/stalled-candidates/{campaign_candidate_id}/reprocess",
+    response_model=APIResponse[StalledActionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Re-process a stalled candidate's failed tasks",
+    description="Replays the candidate's dead-lettered tasks via the S03 replay engine (same limits and audit trail).",
+)
+def reprocess_stalled_candidate(
+    campaign_id: UUID,
+    campaign_candidate_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.reprocess_stalled_candidate(
+        campaign_id, campaign_candidate_id,
+        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(data=result, message="Re-process completed.")
+
+
+@router.post(
+    "/{campaign_id}/stalled-candidates/{campaign_candidate_id}/escalate",
+    response_model=APIResponse[StalledActionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Escalate an HM_REVIEW stall to the hiring manager",
+)
+def escalate_stalled_candidate(
+    campaign_id: UUID,
+    campaign_candidate_id: UUID,
+    request: EscalateStallRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.escalate_stalled_candidate(
+        campaign_id, campaign_candidate_id, request,
+        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(data=result, message="Escalation recorded.")
+
+
+@router.post(
+    "/{campaign_id}/stalled-candidates/{campaign_candidate_id}/override-stage",
+    response_model=APIResponse[StalledActionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Manually advance a stalled candidate's pipeline stage",
+    description="Mandatory reason; records a stage-history row with transition_source=OVERRIDE plus an audit entry.",
+)
+def override_candidate_stage(
+    campaign_id: UUID,
+    campaign_candidate_id: UUID,
+    request: StageOverrideRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.override_candidate_stage(
+        campaign_id, campaign_candidate_id, request,
+        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(data=result, message="Stage overridden successfully.")
+
+
+@router.post(
+    "/{campaign_id}/stalled-candidates/{campaign_candidate_id}/flag-review",
+    response_model=APIResponse[StalledActionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Flag a stalled candidate for manual (fraud) review",
+)
+def flag_candidate_for_review(
+    campaign_id: UUID,
+    campaign_candidate_id: UUID,
+    request: FlagReviewRequest,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.flag_candidate_for_review(
+        campaign_id, campaign_candidate_id, request,
+        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(data=result, message="Candidate flagged for manual review.")
+
+
+# ── S05 — Campaign Rejection Analytics ──────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/rejection-analytics",
+    response_model=APIResponse[RejectionAnalyticsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Rejection breakdown by layer and reason",
+    description="Layer counts, top-10 reasons, missing-mandatory-skill analysis, and threshold-based recommendations.",
+)
+def get_rejection_analytics(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    return APIResponse.ok(
+        data=service.get_rejection_analytics(campaign_id),
+        message="Rejection analytics retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_id}/rejection-analytics/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export rejection analytics as XLSX",
+)
+def export_rejection_analytics(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    excel_file = service.export_rejection_analytics_xlsx(
+        campaign_id, actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+    filename = f"Rejection_Analytics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── S06 — Campaign Summary Report ────────────────────────────────────────────
+
+@router.get(
+    "/{campaign_id}/summary-report/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export the 6-sheet campaign summary report as XLSX",
+)
+def export_campaign_summary(
+    campaign_id: UUID,
+    service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    excel_file = service.export_campaign_summary_xlsx(
+        campaign_id, actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+    )
+    filename = f"Campaign_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(

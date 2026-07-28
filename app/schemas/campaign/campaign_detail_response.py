@@ -10,6 +10,8 @@ class CampaignInfoSection(BaseModel):
     updated_at: datetime | None
     duplicated_from_campaign_id: UUID | None = None
     duplicated_from_campaign_name: str | None = None
+    # S06-T03: weekly summary report opt-in state (email delivery is TODO)
+    report_scheduled: bool = False
 
 class JDConfigSection(BaseModel):
     jd_id: UUID

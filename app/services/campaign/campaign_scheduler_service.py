@@ -166,6 +166,87 @@ class CampaignSchedulerService:
             self.campaign_repo.rollback()
             raise
 
+    def detect_stalled_candidate_alerts(self) -> int:
+        """
+        M04-E04-S04 T01/T03: daily stall sweep across ACTIVE campaigns. Each
+        campaign with stalled candidates gets ONE STALLED_CANDIDATES_ALERT
+        audit entry per run — but only when the stall count has INCREASED
+        since the previous alert (T03's no-repeat rule): re-alerting the same
+        unchanged stalls every day is noise, a shrinking count means things
+        are being resolved, and a growing count is a new breach worth surfacing.
+
+        The stalled list itself is computed live by the /stalled-candidates
+        endpoint — this task only maintains the alert trail (and, later,
+        emails). Returns the number of alerts raised.
+        """
+        configs = self.config_repo.get_configs_by_keys([
+            "SCREENING_SLA_HOURS", "HM_REVIEW_SLA_DAYS", "INTERVIEW_SLA_DAYS",
+        ])
+        screening_sla_hours = float(configs.get("SCREENING_SLA_HOURS", "48"))
+        hm_review_sla_days = float(configs.get("HM_REVIEW_SLA_DAYS", "5"))
+        interview_sla_days = float(configs.get("INTERVIEW_SLA_DAYS", "7"))
+
+        alerts_raised = 0
+        try:
+            active_campaigns = [
+                c for c in self.campaign_repo.get_all_campaigns(show_closed=False)
+                if c.status == CampaignStatus.ACTIVE
+            ]
+
+            for campaign in active_campaigns:
+                stalled = self.campaign_repo.get_stalled_candidates(
+                    campaign.id,
+                    screening_sla_hours=screening_sla_hours,
+                    hm_review_sla_days=hm_review_sla_days,
+                    interview_sla_days=interview_sla_days,
+                )
+                if not stalled:
+                    continue
+
+                # T03 dedup: only re-alert when the count increased
+                previous = self.audit_service.get_latest_entry(
+                    campaign.id, ActionType.STALLED_CANDIDATES_ALERT.value,
+                )
+                previous_count = 0
+                if previous is not None:
+                    previous_count = int((previous.detail or {}).get("total_stalled", 0))
+                if len(stalled) <= previous_count:
+                    continue
+
+                by_stage: dict[str, int] = {}
+                by_reason: dict[str, int] = {}
+                for row in stalled:
+                    by_stage[row["pipeline_stage"]] = by_stage.get(row["pipeline_stage"], 0) + 1
+                    by_reason[row["stall_reason"]] = by_reason.get(row["stall_reason"], 0) + 1
+
+                self.audit_service.log(
+                    actor_id=campaign.created_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.STALLED_CANDIDATES_ALERT.value,
+                    entity_type=EntityType.CAMPAIGN.value,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"{len(stalled)} stalled candidate(s) in '{campaign.name}'",
+                        "total_stalled": len(stalled),
+                        "previous_total": previous_count,
+                        "by_stage": by_stage,
+                        "by_reason": by_reason,
+                    },
+                )
+                # Email notification
+                # TODO: SCREENING stalls -> HR_ADMIN (count + likely cause + link)
+                # TODO: HM_REVIEW stalls -> HR_ADMIN + assigned HIRING_MANAGER
+                # TODO: INTERVIEW stalls -> HR_ADMIN + HIRING_MANAGER
+                alerts_raised += 1
+
+            self.campaign_repo.commit()
+            return alerts_raised
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
     def _raise_health_alert(self, campaign, condition: str, metric_detail: dict) -> None:
         # Email notification
         # TODO:

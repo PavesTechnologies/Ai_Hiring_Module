@@ -158,6 +158,9 @@ class CampaignUpdateRequest(BaseModel):
     # required when changing scoring config on an ACTIVE campaign.
     confirm_scoring_change: bool = False
 
+    # S06-T03: weekly automated summary report opt-in toggle.
+    report_scheduled: Optional[bool] = None
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: Optional[str]):

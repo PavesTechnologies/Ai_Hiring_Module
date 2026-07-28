@@ -74,6 +74,64 @@ def auto_close_expired_campaigns():
         db.close()
 
 
+@celery_app.task(name="campaign.detect_stalled_candidates")
+def detect_stalled_candidates():
+    """
+    M04-E04-S04: daily sweep flagging candidates stuck past their per-stage
+    SLA, raising a STALLED_CANDIDATES_ALERT audit entry per campaign whose
+    stall count increased since the previous alert. Email delivery is TODO.
+    """
+
+    db = SessionLocal()
+
+    task_log = None
+    try:
+        campaign_repo = CampaignRepository(db)
+        audit_repo = AuditRepository(db)
+        task_log_repo = CeleryTaskLogRepository(db)
+        config_repo = ConfigRepository(db)
+
+        audit_service = AuditService(audit_repo)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+
+        task_log = task_log_service.create_log(
+            task_id=detect_stalled_candidates.request.id,
+            task_type="CAMPAIGN_STALL_CHECK",
+        )
+
+        scheduler_service = CampaignSchedulerService(
+            campaign_repo=campaign_repo,
+            audit_service=audit_service,
+            config_repo=config_repo,
+        )
+
+        alerts_raised = scheduler_service.detect_stalled_candidate_alerts()
+
+        task_log_service.mark_success(
+            task_log,
+            summary=(
+                "No new stalled-candidate alerts."
+                if alerts_raised == 0
+                else f"Raised {alerts_raised} stalled-candidate alert(s)."
+            ),
+        )
+
+        return alerts_raised
+
+    except Exception as ex:
+
+        if task_log:
+            task_log_service.mark_failure(
+                task_log,
+                str(ex),
+            )
+
+        raise
+
+    finally:
+        db.close()
+
+
 @celery_app.task(name="campaign.evaluate_health_alerts")
 def evaluate_campaign_health_alerts():
     """

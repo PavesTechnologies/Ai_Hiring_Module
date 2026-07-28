@@ -1,3 +1,5 @@
+import math
+import statistics
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib import request
@@ -51,12 +53,34 @@ from app.schemas.campaign.campaign_detail_response import (
     PipelineLimitsSection,
     HiringManagerSection,
 )
-from app.models.pipeline import PipelineStage
+from app.models.pipeline import PipelineStage, RejectionLayer, TransitionSource
+from app.schemas.campaign.campaign_monitoring_schema import (
+    StalledCandidateItem,
+    StalledCandidatesResponse,
+    StageOverrideRequest,
+    FlagReviewRequest,
+    EscalateStallRequest,
+    StalledActionResponse,
+    RejectionReasonItem,
+    MissingSkillItem,
+    RejectionRecommendation,
+    RejectionAnalyticsResponse,
+)
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
 from app.schemas.campaign.campaign_processing_status_response import (
     ProcessingStatusSummaryResponse,
     DeadLetterQueueEntryResponse,
 )
+from app.schemas.campaign.campaign_processing_queue_response import (
+    TaskTypeBreakdownResponse,
+    CircuitBreakerSummaryResponse,
+    EstimatedCompletionResponse,
+    ProcessingQueueResponse,
+    DLQReplayResultItem,
+    DLQReplayResponse,
+)
+from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 from app.schemas.campaign.campaign_comparison_response import (
     CampaignComparisonColumn,
@@ -80,7 +104,8 @@ class CampaignService:
         config_repo: ConfigRepository,
         preset_repo: CampaignWeightPresetRepository,
         db: Session,
-
+        circuit_breaker_repo: CircuitBreakerRepository | None = None,
+        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
@@ -88,6 +113,10 @@ class CampaignService:
         self.config_repo = config_repo
         self.preset_repo = preset_repo
         self.db = db
+        # S03 (processing queue / DLQ replay) deps — defaulted from the same
+        # session so pre-existing constructor call sites keep working unchanged.
+        self.circuit_breaker_repo = circuit_breaker_repo or CircuitBreakerRepository(db)
+        self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(db)
 
     def _get_warning_thresholds(self) -> tuple[float, int]:
         """
@@ -1091,6 +1120,7 @@ class CampaignService:
                 updated_at=campaign.updated_at,
                 duplicated_from_campaign_id=duplicated_from_id,
                 duplicated_from_campaign_name=duplicated_from_name,
+                report_scheduled=campaign.report_scheduled,
             ),
             jd_configuration=JDConfigSection(
                 jd_id=jd.id,
@@ -1169,13 +1199,16 @@ class CampaignService:
         )
 
     def get_processing_status_summary(self, campaign_id: UUID) -> ProcessingStatusSummaryResponse:
-        """S01-T02: celery_task_log status breakdown + DLQ count for this campaign."""
+        """S01-T02 + S03-T03: status breakdown + DLQ count + completion estimate."""
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
         counts = self.campaign_repo.get_task_status_counts(campaign_id)
         dlq_count = len(self.campaign_repo.get_dead_letter_queue_entries(campaign_id))
+
+        breakdown = self.campaign_repo.get_task_type_breakdown(campaign_id)
+        estimate = self._estimate_completion(breakdown, self._circuit_breaker_summaries())
 
         return ProcessingStatusSummaryResponse(
             queued_count=counts.get(TaskStatus.QUEUED.value, 0),
@@ -1184,10 +1217,11 @@ class CampaignService:
             dead_count=counts.get(TaskStatus.DEAD.value, 0),
             paused_count=counts.get(TaskStatus.PAUSED.value, 0),
             dead_letter_queue_count=dlq_count,
+            estimated_completion=estimate,
         )
 
     def get_dead_letter_queue_for_campaign(self, campaign_id: UUID) -> list[DeadLetterQueueEntryResponse]:
-        """S01-T02: the destination for clicking the DEAD metric card."""
+        """S01-T02 + S03-T02: DLQ entries with replay metadata."""
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
@@ -1201,9 +1235,622 @@ class CampaignService:
                 retry_count=e.retry_count,
                 moved_to_dlq_at=e.moved_to_dlq_at,
                 campaign_candidate_id=e.campaign_candidate_id,
+                last_attempted_at=e.last_attempted_at,
+                resolution_notes=e.resolution_notes,
+                replayed_at=e.replayed_at,
+                replay_supported=e.task_type in self._DLQ_REPLAY_BUILDERS,
             )
             for e in entries
         ]
+
+    # ── S03 — Processing Queue ────────────────────────────────────────────
+
+    # Services whose OPEN breaker means candidate processing is genuinely
+    # stalled. NOTE: only SUPABASE_STORAGE / ENCRYPTION_SERVICE are actually
+    # written to circuit_breaker_state today (M05 Phase 11 scope) — the
+    # GEMINI_FLASH / EMBEDDING_SERVICE entries the spec names will read
+    # CLOSED until those callers start recording failures (owned by M05/M06).
+    _MONITORED_BREAKER_SERVICES = (
+        "GEMINI_FLASH",
+        "EMBEDDING_SERVICE",
+        "SUPABASE_STORAGE",
+        "ENCRYPTION_SERVICE",
+    )
+    _ACTIVE_TASK_STATUSES = ("QUEUED", "RUNNING", "RETRY")
+
+    def _circuit_breaker_summaries(self) -> list[CircuitBreakerSummaryResponse]:
+        summaries = []
+        for name in self._MONITORED_BREAKER_SERVICES:
+            row = self.circuit_breaker_repo.get_by_service_name(name)
+            summaries.append(CircuitBreakerSummaryResponse(
+                service_name=name,
+                state=row.state.value if row else "CLOSED",  # absent row == never failed
+                failure_count=row.failure_count if row else 0,
+                opened_at=row.opened_at if row else None,
+                retry_after=row.retry_after if row else None,
+            ))
+        return summaries
+
+    def get_processing_queue(self, campaign_id: UUID) -> ProcessingQueueResponse:
+        """S03-T01 + T03: task-type breakdown, breaker states, completion estimate."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        breakdown = self.campaign_repo.get_task_type_breakdown(campaign_id)
+        breakers = self._circuit_breaker_summaries()
+
+        return ProcessingQueueResponse(
+            task_types=[TaskTypeBreakdownResponse(**b) for b in breakdown],
+            circuit_breakers=breakers,
+            estimated_completion=self._estimate_completion(breakdown, breakers),
+        )
+
+    def _estimate_completion(
+        self,
+        breakdown: list[dict],
+        breakers: list[CircuitBreakerSummaryResponse],
+    ) -> EstimatedCompletionResponse:
+        """
+        S03-T03: Σ per-type (remaining × avg duration of that type's completed
+        tasks). The range is ±25% of the point estimate — honest about queue
+        variance without pretending worker-level precision we don't have.
+        """
+        open_breaker = next((b for b in breakers if b.state == "OPEN"), None)
+
+        remaining_total = 0
+        estimated_seconds = 0.0
+        missing_history = False
+        for entry in breakdown:
+            remaining = sum(
+                entry["status_counts"].get(s, 0) for s in self._ACTIVE_TASK_STATUSES
+            )
+            if remaining == 0:
+                continue
+            remaining_total += remaining
+            if entry["avg_duration_ms"] is None:
+                # tasks pending, but nothing of this type has ever completed —
+                # no defensible basis for an estimate
+                missing_history = True
+                continue
+            estimated_seconds += remaining * (entry["avg_duration_ms"] / 1000.0)
+
+        if remaining_total == 0:
+            return EstimatedCompletionResponse(
+                remaining_task_count=0,
+                estimate_available=False,
+                message="No tasks queued — processing is up to date.",
+            )
+        if open_breaker is not None:
+            return EstimatedCompletionResponse(
+                remaining_task_count=remaining_total,
+                estimate_available=False,
+                message="Processing paused — external service degraded.",
+            )
+        if missing_history or estimated_seconds <= 0:
+            return EstimatedCompletionResponse(
+                remaining_task_count=remaining_total,
+                estimate_available=False,
+                message="Completion time unavailable — check back shortly.",
+            )
+
+        lo = max(1, math.ceil(estimated_seconds * 0.75 / 60))
+        hi = max(lo, math.ceil(estimated_seconds * 1.25 / 60))
+        return EstimatedCompletionResponse(
+            remaining_task_count=remaining_total,
+            estimate_available=True,
+            min_minutes=lo,
+            max_minutes=hi,
+            message=f"Estimated completion: {lo} to {hi} minutes",
+        )
+
+    # ── S03-T02: DLQ replay ──────────────────────────────────────────────
+    # dead_letter_queue.input_payload holds the retry CHECKPOINT's context
+    # (stage data), NOT task kwargs — so kwargs are rebuilt from the DLQ
+    # row's own linkage columns. Each replayed task creates its own new
+    # celery_task_log row on entry (the codebase-wide pattern), which is
+    # exactly the INSERT the spec asks for.
+    #
+    # BULK_RESUME_PARSE is deliberately absent: those failures are replayed
+    # per-file from the bulk-upload screen (POST /bulk-uploads/.../replay),
+    # which owns the job/file counter bookkeeping a bare re-enqueue would skip.
+    _DLQ_REPLAY_BUILDERS = {
+        DETERMINISTIC_SCORE_TASK_TYPE: lambda e: (
+            calculate_deterministic_score_task,
+            {"campaign_candidate_id": str(e.campaign_candidate_id)},
+            e.campaign_candidate_id is not None,
+        ),
+        "RESUME_DOCUMENT_PROCESSING": lambda e: (
+            process_resume_document,
+            {"resume_id": str(e.resume_id)},
+            e.resume_id is not None,
+        ),
+    }
+
+    def replay_dead_letter_tasks(
+        self,
+        campaign_id: UUID,
+        dlq_ids: list[UUID],
+        replayed_by: str,
+        actor_role: str | None,
+    ) -> DLQReplayResponse:
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        max_replays = int(
+            self.config_repo.get_configs_by_keys(["MAX_DLQ_REPLAYS_PER_TASK"])
+            .get("MAX_DLQ_REPLAYS_PER_TASK") or 3
+        )
+
+        entries = self.campaign_repo.get_dlq_entries_by_ids(campaign_id, dlq_ids)
+        found_ids = {e.id for e in entries}
+        results: list[DLQReplayResultItem] = []
+
+        for missing in set(dlq_ids) - found_ids:
+            results.append(DLQReplayResultItem(
+                dlq_id=missing, status="SKIPPED",
+                reason="Entry not found for this campaign.",
+            ))
+
+        to_enqueue = []  # (task_fn, kwargs, new_task_id) — fired only after commit
+        for entry in entries:
+            if entry.replayed_at is not None:
+                results.append(DLQReplayResultItem(
+                    dlq_id=entry.id, status="SKIPPED", reason="Already replayed.",
+                ))
+                continue
+            builder = self._DLQ_REPLAY_BUILDERS.get(entry.task_type)
+            if builder is None:
+                results.append(DLQReplayResultItem(
+                    dlq_id=entry.id, status="SKIPPED",
+                    reason=f"Replay not supported for task type '{entry.task_type}'.",
+                ))
+                continue
+            task_fn, kwargs, linkable = builder(entry)
+            if not linkable:
+                results.append(DLQReplayResultItem(
+                    dlq_id=entry.id, status="SKIPPED",
+                    reason="Entry has no entity reference to rebuild the task from.",
+                ))
+                continue
+            if self.campaign_repo.count_dlq_chain(entry) >= max_replays:
+                results.append(DLQReplayResultItem(
+                    dlq_id=entry.id, status="SKIPPED",
+                    reason=f"Replay limit reached ({max_replays}).",
+                ))
+                continue
+
+            new_task_id = str(uuid4())
+            self.dead_letter_queue_repo.mark_replayed(
+                entry.id,
+                replayed_by=replayed_by,
+                replayed_at=datetime.now(timezone.utc),
+            )
+            self.audit_service.log(
+                actor_id=replayed_by,
+                actor_role=actor_role,
+                action_type=ActionType.DLQ_TASK_REPLAYED,
+                entity_type=EntityType.DEAD_LETTER_QUEUE,
+                entity_id=entry.id,
+                campaign_id=campaign_id,
+                details={
+                    "task_type": entry.task_type,
+                    "original_task_id": entry.original_task_id,
+                    "new_task_id": new_task_id,
+                    "final_error_message": entry.final_error_message[:500],
+                },
+            )
+            to_enqueue.append((task_fn, kwargs, new_task_id))
+            results.append(DLQReplayResultItem(
+                dlq_id=entry.id, status="REPLAYED", new_task_id=new_task_id,
+            ))
+
+        # commit DLQ marks + audit rows BEFORE enqueueing, so a broker hiccup
+        # can't leave enqueued tasks whose bookkeeping was rolled back
+        self.campaign_repo.commit()
+
+        for task_fn, kwargs, new_task_id in to_enqueue:
+            task_fn.apply_async(kwargs=kwargs, task_id=new_task_id)
+
+        replayed = sum(1 for r in results if r.status == "REPLAYED")
+        return DLQReplayResponse(
+            replayed_count=replayed,
+            skipped_count=len(results) - replayed,
+            results=results,
+        )
+
+    # ── S04 — Stalled candidates ──────────────────────────────────────────
+
+    def _get_stall_slas(self) -> dict[str, float]:
+        configs = self.config_repo.get_configs_by_keys([
+            "SCREENING_SLA_HOURS", "HM_REVIEW_SLA_DAYS", "INTERVIEW_SLA_DAYS",
+        ])
+        return {
+            "screening_sla_hours": float(configs.get("SCREENING_SLA_HOURS", "48")),
+            "hm_review_sla_days": float(configs.get("HM_REVIEW_SLA_DAYS", "5")),
+            "interview_sla_days": float(configs.get("INTERVIEW_SLA_DAYS", "7")),
+        }
+
+    def get_stalled_candidates(self, campaign_id: UUID) -> StalledCandidatesResponse:
+        """S04-T01/T02: the computed stalled-candidates 'view' for one campaign."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        slas = self._get_stall_slas()
+        rows = self.campaign_repo.get_stalled_candidates(
+            campaign_id,
+            screening_sla_hours=slas["screening_sla_hours"],
+            hm_review_sla_days=slas["hm_review_sla_days"],
+            interview_sla_days=slas["interview_sla_days"],
+        )
+        return StalledCandidatesResponse(
+            items=[StalledCandidateItem(**r) for r in rows],
+            total=len(rows),
+            sla_config=slas,
+        )
+
+    def _get_stalled_candidate_or_raise(self, campaign_id: UUID, campaign_candidate_id: UUID):
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+        cc = self.campaign_repo.get_campaign_candidate(campaign_id, campaign_candidate_id)
+        if cc is None:
+            raise CampaignException(
+                f"Candidate '{campaign_candidate_id}' not found in this campaign.", 404,
+            )
+        return cc
+
+    def reprocess_stalled_candidate(
+        self, campaign_id: UUID, campaign_candidate_id: UUID, actor_id: str, actor_role: str | None,
+    ) -> StalledActionResponse:
+        """S04-T02 Re-Process: replays this candidate's dead-lettered tasks (delegates to the S03 replay engine — same limits, same audit)."""
+        cc = self._get_stalled_candidate_or_raise(campaign_id, campaign_candidate_id)
+
+        dlq_ids = self.campaign_repo.get_unreplayed_dlq_ids_for_candidate(cc.id)
+        if not dlq_ids:
+            raise CampaignException(
+                "No replayable failed tasks found for this candidate.", 409,
+            )
+        replay = self.replay_dead_letter_tasks(
+            campaign_id, dlq_ids, replayed_by=actor_id, actor_role=actor_role,
+        )
+        return StalledActionResponse(
+            campaign_candidate_id=cc.id,
+            action="REPROCESSED",
+            detail=f"Replayed {replay.replayed_count} task(s), skipped {replay.skipped_count}.",
+            replayed_count=replay.replayed_count,
+        )
+
+    def escalate_stalled_candidate(
+        self, campaign_id: UUID, campaign_candidate_id: UUID,
+        request: EscalateStallRequest, actor_id: str, actor_role: str | None,
+    ) -> StalledActionResponse:
+        """S04-T02 Escalate to HM — audit-recorded; the reminder email itself is TODO."""
+        cc = self._get_stalled_candidate_or_raise(campaign_id, campaign_candidate_id)
+        if cc.pipeline_stage != PipelineStage.HM_REVIEW:
+            raise CampaignException(
+                f"Escalation applies to HM_REVIEW stalls; this candidate is in {cc.pipeline_stage.value}.",
+                409,
+            )
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CANDIDATE_STALL_ESCALATED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=cc.id,
+            campaign_id=campaign_id,
+            details={
+                "title": "Stalled HM review escalated to hiring manager",
+                "hiring_manager_id": campaign.hiring_manager_id,
+                "note": request.note,
+            },
+        )
+        self.campaign_repo.commit()
+        # Email notification
+        # TODO: send HM_REVIEW reminder email to the assigned hiring manager
+        return StalledActionResponse(
+            campaign_candidate_id=cc.id,
+            action="ESCALATED",
+            detail="Escalation recorded. Reminder email delivery is pending email integration.",
+        )
+
+    # Natural next stage for a manual override — REJECTED/FRAUD_REVIEW are
+    # deliberately NOT reachable here (rejection has its own flow; fraud has
+    # the dedicated flag endpoint below).
+    _STAGE_OVERRIDE_NEXT = {
+        PipelineStage.UPLOADED: PipelineStage.SCREENING,
+        PipelineStage.SCREENING: PipelineStage.SHORTLISTED,
+        PipelineStage.SHORTLISTED: PipelineStage.HM_REVIEW,
+        PipelineStage.HM_REVIEW: PipelineStage.INTERVIEW,
+        PipelineStage.INTERVIEW: PipelineStage.SELECTED,
+        PipelineStage.HOLD: PipelineStage.HM_REVIEW,
+    }
+    _OVERRIDE_FORBIDDEN_TARGETS = {PipelineStage.REJECTED, PipelineStage.FRAUD_REVIEW, PipelineStage.UPLOADED}
+
+    def override_candidate_stage(
+        self, campaign_id: UUID, campaign_candidate_id: UUID,
+        request: StageOverrideRequest, actor_id: str, actor_role: str | None,
+    ) -> StalledActionResponse:
+        """S04-T02 Override Stage: manual advance with mandatory reason."""
+        cc = self._get_stalled_candidate_or_raise(campaign_id, campaign_candidate_id)
+        from_stage = cc.pipeline_stage
+
+        if request.target_stage:
+            try:
+                target = PipelineStage(request.target_stage)
+            except ValueError:
+                raise CampaignException(f"Unknown pipeline stage '{request.target_stage}'.", 422)
+            if target in self._OVERRIDE_FORBIDDEN_TARGETS:
+                raise CampaignException(
+                    f"Stage '{target.value}' cannot be set via override — use the dedicated flow.", 422,
+                )
+            if target == from_stage:
+                raise CampaignException("Candidate is already in that stage.", 409)
+        else:
+            target = self._STAGE_OVERRIDE_NEXT.get(from_stage)
+            if target is None:
+                raise CampaignException(
+                    f"No natural next stage from {from_stage.value} — pass target_stage explicitly.", 409,
+                )
+
+        self.campaign_repo.transition_candidate_stage(
+            cc, target,
+            changed_by=actor_id,
+            change_reason=request.reason,
+            transition_source=TransitionSource.OVERRIDE,
+        )
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CANDIDATE_STAGE_OVERRIDDEN,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=cc.id,
+            campaign_id=campaign_id,
+            details={
+                "title": "Pipeline stage manually overridden",
+                "from_stage": from_stage.value,
+                "to_stage": target.value,
+                "reason": request.reason,
+            },
+        )
+        self.campaign_repo.commit()
+        return StalledActionResponse(
+            campaign_candidate_id=cc.id,
+            action="STAGE_OVERRIDDEN",
+            detail=f"Moved from {from_stage.value} to {target.value}.",
+            from_stage=from_stage.value,
+            to_stage=target.value,
+        )
+
+    def flag_candidate_for_review(
+        self, campaign_id: UUID, campaign_candidate_id: UUID,
+        request: FlagReviewRequest, actor_id: str, actor_role: str | None,
+    ) -> StalledActionResponse:
+        """S04-T02 Flag for Manual Review: routes the candidate to FRAUD_REVIEW."""
+        cc = self._get_stalled_candidate_or_raise(campaign_id, campaign_candidate_id)
+        from_stage = cc.pipeline_stage
+        if from_stage == PipelineStage.FRAUD_REVIEW:
+            raise CampaignException("Candidate is already in FRAUD_REVIEW.", 409)
+
+        self.campaign_repo.transition_candidate_stage(
+            cc, PipelineStage.FRAUD_REVIEW,
+            changed_by=actor_id,
+            change_reason=request.reason,
+            transition_source=TransitionSource.MANUAL,
+            set_fraud_flag=True,
+        )
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CANDIDATE_FLAGGED_FOR_REVIEW,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=cc.id,
+            campaign_id=campaign_id,
+            details={
+                "title": "Candidate flagged for manual review",
+                "from_stage": from_stage.value,
+                "reason": request.reason,
+            },
+        )
+        self.campaign_repo.commit()
+        return StalledActionResponse(
+            campaign_candidate_id=cc.id,
+            action="FLAGGED_FOR_REVIEW",
+            detail=f"Moved from {from_stage.value} to FRAUD_REVIEW.",
+            from_stage=from_stage.value,
+            to_stage=PipelineStage.FRAUD_REVIEW.value,
+        )
+
+    # ── S05 — Rejection analytics ─────────────────────────────────────────
+
+    def get_rejection_analytics(self, campaign_id: UUID) -> RejectionAnalyticsResponse:
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        total_candidates = self.campaign_repo.get_candidate_count(campaign_id)
+        layer_breakdown = self.campaign_repo.get_rejection_layer_breakdown(campaign_id)
+        total_rejections = sum(layer_breakdown.values())
+
+        raw_reasons = self.campaign_repo.get_top_rejection_reasons(campaign_id, limit=10)
+        top_reasons = [
+            RejectionReasonItem(
+                reason=r["reason"],
+                count=r["count"],
+                percentage=round(r["count"] / total_rejections * 100, 1) if total_rejections else 0.0,
+            )
+            for r in raw_reasons
+        ]
+
+        det_total = layer_breakdown.get(RejectionLayer.DETERMINISTIC.value, 0)
+        missing = [
+            MissingSkillItem(
+                canonical_name=name,
+                count=count,
+                percentage_of_deterministic=round(count / det_total * 100, 1) if det_total else 0.0,
+            )
+            for name, count in self.campaign_repo.get_missing_mandatory_skill_counts(campaign_id)
+        ]
+
+        configs = self.config_repo.get_configs_by_keys([
+            "DETERMINISTIC_HIGH_REJECTION_THRESHOLD",
+            "SEMANTIC_HIGH_REJECTION_THRESHOLD",
+            "AI_HIGH_REJECTION_THRESHOLD",
+            "MIN_CANDIDATES_FOR_ANALYTICS",
+        ])
+        min_candidates = int(configs.get("MIN_CANDIDATES_FOR_ANALYTICS", "10"))
+        analytics_ready = total_candidates >= min_candidates
+
+        recommendations: list[RejectionRecommendation] = []
+        if analytics_ready and total_candidates > 0:
+            thresholds = [
+                (
+                    RejectionLayer.DETERMINISTIC.value,
+                    float(configs.get("DETERMINISTIC_HIGH_REJECTION_THRESHOLD", "60.00")),
+                    "High deterministic rejection rate — review the JD's mandatory skills or lower the experience requirement.",
+                    "REVIEW_JD_SKILLS",
+                ),
+                (
+                    RejectionLayer.SEMANTIC.value,
+                    float(configs.get("SEMANTIC_HIGH_REJECTION_THRESHOLD", "40.00")),
+                    "High semantic rejection rate — consider lowering the campaign's semantic_threshold.",
+                    "ADJUST_THRESHOLD",
+                ),
+                (
+                    RejectionLayer.AI.value,
+                    float(configs.get("AI_HIGH_REJECTION_THRESHOLD", "40.00")),
+                    "High AI rejection rate — consider lowering ai_threshold or reviewing the active prompt version.",
+                    "REVIEW_PROMPT",
+                ),
+            ]
+            for layer, threshold, message, action in thresholds:
+                rate = layer_breakdown.get(layer, 0) / total_candidates * 100
+                if rate > threshold:
+                    recommendations.append(RejectionRecommendation(
+                        condition=f"{layer}_REJECTION_RATE_HIGH",
+                        layer=layer,
+                        rate_pct=round(rate, 1),
+                        threshold_pct=threshold,
+                        recommendation=message,
+                        action=action,
+                    ))
+
+        return RejectionAnalyticsResponse(
+            total_candidates=total_candidates,
+            total_rejections=total_rejections,
+            layer_breakdown=layer_breakdown,
+            top_reasons=top_reasons,
+            top_missing_skill=missing[0] if missing else None,
+            missing_skills=missing,
+            analytics_ready=analytics_ready,
+            min_candidates_required=min_candidates,
+            recommendations=recommendations,
+        )
+
+    def export_rejection_analytics_xlsx(self, campaign_id: UUID, actor_id: str, actor_role: str | None):
+        """S05-T03: 3-sheet XLSX + REJECTION_REPORT_EXPORTED audit entry."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        analytics = self.get_rejection_analytics(campaign_id)
+        raw_reasons = self.campaign_repo.get_top_rejection_reasons(campaign_id, limit=10)
+        excel_file = ExcelExport.export_rejection_analytics(campaign.name, analytics, raw_reasons)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.REJECTION_REPORT_EXPORTED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign_id,
+            campaign_id=campaign_id,
+            details={"title": f"Rejection analytics exported for '{campaign.name}'",
+                     "total_rejections": analytics.total_rejections},
+        )
+        self.campaign_repo.commit()
+        return excel_file
+
+    # ── S06 — Campaign summary export ─────────────────────────────────────
+
+    @staticmethod
+    def _score_stats(values: list[float]) -> dict:
+        if not values:
+            return {"count": 0, "average": None, "median": None, "min": None,
+                    "max": None, "p25": None, "p75": None}
+        ordered = sorted(values)
+        if len(ordered) >= 2:
+            quartiles = statistics.quantiles(ordered, n=4, method="inclusive")
+            p25, p75 = quartiles[0], quartiles[2]
+        else:
+            p25 = p75 = ordered[0]
+        return {
+            "count": len(ordered),
+            "average": round(statistics.fmean(ordered), 2),
+            "median": round(statistics.median(ordered), 2),
+            "min": round(ordered[0], 2),
+            "max": round(ordered[-1], 2),
+            "p25": round(p25, 2),
+            "p75": round(p75, 2),
+        }
+
+    def export_campaign_summary_xlsx(self, campaign_id: UUID, actor_id: str, actor_role: str | None):
+        """S06-T01/T02: 6-sheet campaign summary export + audit entry."""
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
+
+        jd = self.jd_repo.get_by_id(campaign.jd_id)
+        funnel = self.get_pipeline_summary(campaign_id)
+        breakdown = self.campaign_repo.get_task_type_breakdown(campaign_id)
+        analytics = self.get_rejection_analytics(campaign_id)
+        bulk_jobs = self.campaign_repo.get_bulk_jobs_for_campaign(campaign_id)
+
+        rows = self.campaign_repo.get_candidate_outcome_rows(campaign_id)
+        composite = [float(r.composite_score) for r in rows if r.composite_score is not None]
+        det_passed = [float(r.deterministic_score) for r in rows
+                      if r.deterministic_passed and r.deterministic_score is not None]
+        semantic = [float(r.semantic_score) for r in rows if r.semantic_score is not None]
+        ai_scores = [float(r.ai_ats_score) for r in rows if r.ai_ats_score is not None]
+        reco_counts: dict[str, int] = {}
+        for r in rows:
+            if r.ai_recommendation is not None:
+                key = getattr(r.ai_recommendation, "value", str(r.ai_recommendation))
+                reco_counts[key] = reco_counts.get(key, 0) + 1
+        outcomes = {
+            "total_candidates": len(rows),
+            "composite_stats": self._score_stats(composite),
+            "avg_deterministic_passed": round(statistics.fmean(det_passed), 2) if det_passed else None,
+            "avg_semantic": round(statistics.fmean(semantic), 2) if semantic else None,
+            "avg_ai": round(statistics.fmean(ai_scores), 2) if ai_scores else None,
+            "ai_recommendation_counts": reco_counts,
+            "hr_override_count": sum(1 for r in rows if r.hr_override),
+            "selected_count": sum(1 for r in rows if r.pipeline_stage == PipelineStage.SELECTED),
+            "rejected_count": sum(1 for r in rows if r.pipeline_stage == PipelineStage.REJECTED),
+        }
+        outcomes["in_pipeline_count"] = (
+            outcomes["total_candidates"] - outcomes["selected_count"] - outcomes["rejected_count"]
+        )
+
+        excel_file = ExcelExport.export_campaign_summary(
+            campaign=campaign, jd=jd, funnel=funnel,
+            task_breakdown=breakdown, analytics=analytics,
+            bulk_jobs=bulk_jobs, outcomes=outcomes,
+        )
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CAMPAIGN_SUMMARY_EXPORTED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign_id,
+            campaign_id=campaign_id,
+            details={"title": f"Campaign summary exported for '{campaign.name}'"},
+        )
+        self.campaign_repo.commit()
+        return excel_file
 
     def get_campaign_timeline(
         self,
@@ -1726,6 +2373,16 @@ class CampaignService:
                     "after": request.max_candidates,
                 }
                 campaign.max_candidates = request.max_candidates
+
+            # S06-T03: weekly summary report opt-in toggle. Report generation +
+            # email delivery are TODO (email excluded from backend scope) —
+            # this persists the stakeholder preference the toggle controls.
+            if request.report_scheduled is not None and request.report_scheduled != campaign.report_scheduled:
+                changes["report_scheduled"] = {
+                    "before": campaign.report_scheduled,
+                    "after": request.report_scheduled,
+                }
+                campaign.report_scheduled = request.report_scheduled
 
             if request.clear_deadline:
                 if campaign.deadline is not None:

@@ -117,6 +117,7 @@ def list_bulk_upload_history(
                     duplicate_count=job.duplicate_count,
                     created_at=job.created_at,
                     completed_at=job.completed_at,
+                    error_summary=job.error_summary,
                 )
                 for job in items
             ],

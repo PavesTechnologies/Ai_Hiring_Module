@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload, lazyload
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from datetime import datetime, timezone, timedelta
@@ -11,7 +11,13 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
-from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, RejectionLayer
+from app.models.pipeline import (
+    CampaignCandidate,
+    CampaignCandidateStageHistory,
+    CandidateRejection,
+    RejectionLayer,
+    TransitionSource,
+)
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus, DeadLetterQueue
 from app.models.candidates import Resume, ParseStatus
 from app.models.identity import User, UserRole
@@ -778,15 +784,338 @@ class CampaignRepository:
         return {status.value: count for status, count in rows}
 
     def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
-        """T02: dead_letter_queue rows tied to this campaign's candidates."""
+        """
+        S03-T02 (widened from the E04-S01 candidate-only join): campaign-linked
+        DLQ rows via campaign_candidate_id OR resume_id. Tasks that died before
+        their CampaignCandidate row existed carry only resume_id, and the old
+        candidate-only join silently hid them from the campaign view.
+        """
+        candidate_ids = select(CampaignCandidate.id).where(
+            CampaignCandidate.campaign_id == campaign_id
+        )
+        resume_ids = select(CampaignCandidate.resume_id).where(
+            CampaignCandidate.campaign_id == campaign_id
+        )
         return (
             self.db.query(DeadLetterQueue)
+            .filter(
+                or_(
+                    DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
+                    DeadLetterQueue.resume_id.in_(resume_ids),
+                )
+            )
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .all()
+        )
+
+    def get_task_type_breakdown(self, campaign_id: UUID) -> list[dict]:
+        """
+        S03-T01: per-task_type status counts + avg duration + token usage for
+        this campaign's tasks. Grouped by the ACTUAL task_type strings in
+        celery_task_log (the spec's RESUME_PARSE/EMBED_RESUME/... taxonomy
+        doesn't exist — embedding/normalization run as stages inside the parse
+        task, not as separate Celery tasks). avg_duration_ms is derived from
+        completed_at - started_at since no duration column exists.
+        """
+        rows = (
+            self.db.query(
+                CeleryTaskLog.task_type,
+                CeleryTaskLog.status,
+                func.count(CeleryTaskLog.id),
+                func.avg(
+                    func.extract("epoch", CeleryTaskLog.completed_at)
+                    - func.extract("epoch", CeleryTaskLog.started_at)
+                ),
+                func.coalesce(func.sum(CeleryTaskLog.token_count), 0),
+            )
             .join(
                 CampaignCandidate,
-                DeadLetterQueue.campaign_candidate_id == CampaignCandidate.id,
+                CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
             .filter(CampaignCandidate.campaign_id == campaign_id)
-            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .group_by(CeleryTaskLog.task_type, CeleryTaskLog.status)
+            .all()
+        )
+
+        by_type: dict[str, dict] = {}
+        for task_type, task_status, count, avg_seconds, tokens in rows:
+            entry = by_type.setdefault(
+                task_type,
+                {
+                    "task_type": task_type,
+                    "status_counts": {},
+                    "avg_duration_ms": None,
+                    "total_token_count": 0,
+                },
+            )
+            entry["status_counts"][task_status.value] = count
+            entry["total_token_count"] += int(tokens or 0)
+            # duration only means anything for rows that actually completed
+            if task_status == TaskStatus.SUCCESS and avg_seconds is not None:
+                entry["avg_duration_ms"] = round(float(avg_seconds) * 1000, 1)
+        return list(by_type.values())
+
+    def get_dlq_entries_by_ids(
+        self, campaign_id: UUID, dlq_ids: list[UUID]
+    ) -> list[DeadLetterQueue]:
+        """S03-T02: the selected entries, re-validated as belonging to this campaign."""
+        wanted = set(dlq_ids)
+        return [
+            e for e in self.get_dead_letter_queue_entries(campaign_id)
+            if e.id in wanted
+        ]
+
+    def count_dlq_chain(self, entry: DeadLetterQueue) -> int:
+        """
+        S03-T02 replay-limit guard: how many times has this same piece of work
+        already dead-lettered? Every failed replay produces a NEW dlq row for
+        the same (task_type, entity), so the chain length IS the attempt count.
+        """
+        conditions = [DeadLetterQueue.task_type == entry.task_type]
+        if entry.campaign_candidate_id is not None:
+            conditions.append(
+                DeadLetterQueue.campaign_candidate_id == entry.campaign_candidate_id
+            )
+        elif entry.resume_id is not None:
+            conditions.append(DeadLetterQueue.resume_id == entry.resume_id)
+        else:
+            return 1  # unlinkable entry — no chain to count
+        return (
+            self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar()
+            or 1
+        )
+
+    # ── S04 — Stalled candidates ─────────────────────────────────────────
+
+    def get_stalled_candidates(
+        self,
+        campaign_id: UUID,
+        screening_sla_hours: float,
+        hm_review_sla_days: float,
+        interview_sla_days: float,
+    ) -> list[dict]:
+        """
+        S04-T01: campaign_candidates sitting in the same stage past their
+        per-stage SLA (updated_at is the last-touched marker per spec).
+        Computed live — no stalled_candidates table exists; the "view" is
+        this query. Returns dicts with stall context; last_action_by is the
+        actor of the most recent audit_log entry for that candidate entity.
+        """
+        now = datetime.now(timezone.utc)
+        cutoffs = {
+            PipelineStage.SCREENING: now - timedelta(hours=screening_sla_hours),
+            PipelineStage.HM_REVIEW: now - timedelta(days=hm_review_sla_days),
+            PipelineStage.INTERVIEW: now - timedelta(days=interview_sla_days),
+        }
+        rows = (
+            self.db.query(CampaignCandidate)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                or_(*[
+                    and_(
+                        CampaignCandidate.pipeline_stage == stage,
+                        CampaignCandidate.updated_at < cutoff,
+                    )
+                    for stage, cutoff in cutoffs.items()
+                ]),
+            )
+            .order_by(CampaignCandidate.updated_at.asc())
+            .all()
+        )
+        if not rows:
+            return []
+
+        ids = [r.id for r in rows]
+
+        # batch: which stalled SCREENING candidates have a dead task / DLQ row
+        failed_ids = {
+            cid for (cid,) in self.db.query(CeleryTaskLog.campaign_candidate_id)
+            .filter(
+                CeleryTaskLog.campaign_candidate_id.in_(ids),
+                CeleryTaskLog.status == TaskStatus.DEAD,
+            ).all()
+        } | {
+            cid for (cid,) in self.db.query(DeadLetterQueue.campaign_candidate_id)
+            .filter(DeadLetterQueue.campaign_candidate_id.in_(ids)).all()
+        }
+
+        # batch: latest audit actor per candidate entity
+        last_actor: dict = {}
+        audit_rows = (
+            self.db.query(AuditLog.entity_id, AuditLog.actor_id)
+            .filter(AuditLog.entity_id.in_(ids))
+            .order_by(AuditLog.created_at.desc())
+            .all()
+        )
+        for entity_id, actor_id in audit_rows:
+            last_actor.setdefault(entity_id, actor_id)
+
+        actor_names = self.get_hiring_manager_names(
+            [a for a in last_actor.values() if a]
+        )
+
+        stall_reasons = {
+            PipelineStage.SCREENING: "SCREENING_OVERDUE",
+            PipelineStage.HM_REVIEW: "HM_REVIEW_OVERDUE",
+            PipelineStage.INTERVIEW: "INTERVIEW_NOT_SCHEDULED",
+        }
+        result = []
+        for cc in rows:
+            reason = stall_reasons[cc.pipeline_stage]
+            if cc.pipeline_stage == PipelineStage.SCREENING and cc.id in failed_ids:
+                reason = "AI_EVALUATION_FAILED"
+            actor_id = last_actor.get(cc.id)
+            result.append({
+                "campaign_candidate_id": cc.id,
+                "pipeline_stage": cc.pipeline_stage.value,
+                "days_stalled": round((now - cc.updated_at).total_seconds() / 86400, 1),
+                "last_updated_at": cc.updated_at,
+                "stall_reason": reason,
+                "last_action_by": actor_names.get(actor_id) or actor_id,
+                "has_dead_letter_tasks": cc.id in failed_ids,
+            })
+        return result
+
+    def get_campaign_candidate(self, campaign_id: UUID, campaign_candidate_id: UUID) -> CampaignCandidate | None:
+        """Scoped fetch — validates the candidate actually belongs to this campaign."""
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(
+                CampaignCandidate.id == campaign_candidate_id,
+                CampaignCandidate.campaign_id == campaign_id,
+            )
+            .first()
+        )
+
+    def transition_candidate_stage(
+        self,
+        cc: CampaignCandidate,
+        to_stage,
+        changed_by: str,
+        change_reason: str,
+        transition_source: TransitionSource,
+        set_fraud_flag: bool = False,
+    ) -> None:
+        """
+        S04-T02: the first real stage-transition writer in this codebase —
+        updates pipeline_stage AND records the campaign_candidate_stage_history
+        row (previously only the initial UPLOADED insert ever wrote history).
+        """
+        from_stage = cc.pipeline_stage
+        cc.pipeline_stage = to_stage
+        if set_fraud_flag:
+            cc.is_fraud_flagged = True
+        self.db.add(CampaignCandidateStageHistory(
+            campaign_candidate_id=cc.id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            changed_by=changed_by,
+            change_reason=change_reason,
+            transition_source=transition_source,
+            scores_snapshot={
+                "composite_score": float(cc.composite_score) if cc.composite_score is not None else None,
+                "deterministic_score": float(cc.deterministic_score) if cc.deterministic_score is not None else None,
+                "semantic_score": float(cc.semantic_score) if cc.semantic_score is not None else None,
+                "ai_ats_score": float(cc.ai_ats_score) if cc.ai_ats_score is not None else None,
+            },
+        ))
+        self.db.flush()
+
+    def get_unreplayed_dlq_ids_for_candidate(self, campaign_candidate_id: UUID) -> list[UUID]:
+        """S04-T02 Re-Process: this candidate's replayable (not-yet-replayed) DLQ entries."""
+        return [
+            row[0] for row in self.db.query(DeadLetterQueue.id)
+            .filter(
+                DeadLetterQueue.campaign_candidate_id == campaign_candidate_id,
+                DeadLetterQueue.replayed_at.is_(None),
+            ).all()
+        ]
+
+    # ── S05 — Rejection analytics ────────────────────────────────────────
+
+    def get_rejection_layer_breakdown(self, campaign_id: UUID) -> dict[str, int]:
+        rows = (
+            self.db.query(CandidateRejection.rejection_layer, func.count(CandidateRejection.id))
+            .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CandidateRejection.rejection_layer)
+            .all()
+        )
+        return {layer.value: count for layer, count in rows}
+
+    def get_top_rejection_reasons(self, campaign_id: UUID, limit: int = 10) -> list[dict]:
+        rows = (
+            self.db.query(CandidateRejection.rejection_reason, func.count(CandidateRejection.id))
+            .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(CandidateRejection.rejection_reason)
+            .order_by(func.count(CandidateRejection.id).desc())
+            .limit(limit)
+            .all()
+        )
+        result = []
+        for reason, count in rows:
+            sample = (
+                self.db.query(CandidateRejection.rejection_detail)
+                .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
+                .filter(
+                    CampaignCandidate.campaign_id == campaign_id,
+                    CandidateRejection.rejection_reason == reason,
+                    CandidateRejection.rejection_detail.isnot(None),
+                )
+                .first()
+            )
+            result.append({
+                "reason": reason,
+                "count": count,
+                "sample_detail": sample[0] if sample else None,
+            })
+        return result
+
+    def get_missing_mandatory_skill_counts(self, campaign_id: UUID) -> list[tuple[str, int]]:
+        """
+        S05-T01/T03: per-skill counts from rejection_detail->'missing_skills'
+        (a JSONB array of canonical skill NAMES — the shape the deterministic
+        scoring task actually writes). Raw SQL because jsonb_array_elements_text
+        has no clean ORM equivalent.
+        """
+        rows = self.db.execute(text("""
+            SELECT skill, COUNT(*) AS cnt
+            FROM candidate_rejections cr
+            JOIN campaign_candidates cc ON cc.id = cr.campaign_candidate_id,
+            LATERAL jsonb_array_elements_text(cr.rejection_detail->'missing_skills') AS skill
+            WHERE cc.campaign_id = :campaign_id
+              AND cr.rejection_layer = 'DETERMINISTIC'
+              AND cr.rejection_detail ? 'missing_skills'
+            GROUP BY skill
+            ORDER BY cnt DESC
+        """), {"campaign_id": str(campaign_id)}).all()
+        return [(r.skill, r.cnt) for r in rows]
+
+    # ── S06 — Campaign summary export ────────────────────────────────────
+
+    def get_bulk_jobs_for_campaign(self, campaign_id: UUID) -> list[BulkUploadJob]:
+        return (
+            self.db.query(BulkUploadJob)
+            .filter(BulkUploadJob.campaign_id == campaign_id)
+            .order_by(BulkUploadJob.created_at.desc())
+            .all()
+        )
+
+    def get_candidate_outcome_rows(self, campaign_id: UUID) -> list:
+        """S06-T02: score/outcome columns only — anonymised, UUIDs never exported with PII."""
+        return (
+            self.db.query(
+                CampaignCandidate.composite_score,
+                CampaignCandidate.deterministic_score,
+                CampaignCandidate.semantic_score,
+                CampaignCandidate.ai_ats_score,
+                CampaignCandidate.ai_recommendation,
+                CampaignCandidate.hr_override,
+                CampaignCandidate.pipeline_stage,
+                CampaignCandidate.deterministic_passed,
+            )
+            .filter(CampaignCandidate.campaign_id == campaign_id)
             .all()
         )
 

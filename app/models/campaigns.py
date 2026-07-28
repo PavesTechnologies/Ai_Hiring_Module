@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
-    CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
+    Boolean, CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
     Integer, Numeric, String, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -45,6 +45,12 @@ class HiringCampaign(Base):
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
     recruiter_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    # M04-E04-S06-T03: opt-in flag for the weekly automated summary report.
+    # The report generation/email delivery itself is TODO (email excluded);
+    # this stores the stakeholder preference the spec requires.
+    report_scheduled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

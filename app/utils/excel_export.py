@@ -701,7 +701,7 @@ class ExcelExport:
                 row += 1
         else:
                 ws.cell(row=row, column=1).value = "No linked campaigns"
-        
+
         for column_cells in ws.columns:
 
             max_length = 0
@@ -731,3 +731,208 @@ class ExcelExport:
         output.seek(0)
 
         return output
+
+    # ── M04-E04 S05/S06 — multi-sheet report exports ─────────────────────────
+    # The first multi-sheet workbooks in this util: every prior method used
+    # wb.active as a single sheet. _report_sheet keeps their exact header
+    # styling/borders/auto-width conventions.
+
+    @staticmethod
+    def _now_stamp():
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    @staticmethod
+    def _report_sheet(wb, title, campaign_name, headers):
+        ws = wb.create_sheet(title=title[:31])
+        ws.append([f"{campaign_name} — {title}", f"Generated: {ExcelExport._now_stamp()}"])
+        for cell in ws[1]:
+            cell.font = ExcelExport.BOLD_FONT
+        ws.append(headers)
+        for cell in ws[2]:
+            cell.font = ExcelExport.HEADER_FONT
+            cell.fill = ExcelExport.HEADER_FILL
+        ws.freeze_panes = "A3"
+        return ws
+
+    @staticmethod
+    def _finish_workbook(wb):
+        for ws in wb.worksheets:
+            for column_cells in ws.columns:
+                max_length = 0
+                for cell in column_cells:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except Exception:
+                        pass
+                ws.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max_length + 3, 60)
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output
+
+    @staticmethod
+    def export_rejection_analytics(campaign_name, analytics, raw_reasons):
+        """
+        S05-T03: Sheet 1 layer breakdown, Sheet 2 top reasons (+ sample
+        rejection_detail JSON), Sheet 3 missing mandatory skills.
+        """
+        import json as _json
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        ws = ExcelExport._report_sheet(wb, "Rejection Layers", campaign_name, ["Layer", "Count", "Percentage"])
+        total = analytics.total_rejections or 0
+        for layer in ("DETERMINISTIC", "SEMANTIC", "AI", "MANUAL", "FRAUD"):
+            count = analytics.layer_breakdown.get(layer, 0)
+            pct = round(count / total * 100, 1) if total else 0.0
+            ws.append([layer, count, pct])
+
+        ws = ExcelExport._report_sheet(
+            wb, "Top Rejection Reasons", campaign_name,
+            ["Reason", "Count", "Percentage", "Sample rejection_detail"],
+        )
+        sample_by_reason = {r["reason"]: r.get("sample_detail") for r in raw_reasons}
+        for item in analytics.top_reasons:
+            sample = sample_by_reason.get(item.reason)
+            ws.append([
+                item.reason, item.count, item.percentage,
+                _json.dumps(sample) if sample else "",
+            ])
+
+        ws = ExcelExport._report_sheet(
+            wb, "Missing Mandatory Skills", campaign_name,
+            ["Canonical Skill", "Candidates Missing It", "% of DETERMINISTIC Rejections"],
+        )
+        for skill in analytics.missing_skills:
+            ws.append([skill.canonical_name, skill.count, skill.percentage_of_deterministic])
+        if not analytics.missing_skills:
+            ws.append(["No missing-mandatory-skill rejections recorded", "", ""])
+
+        return ExcelExport._finish_workbook(wb)
+
+    @staticmethod
+    def export_campaign_summary(campaign, jd, funnel, task_breakdown, analytics, bulk_jobs, outcomes):
+        """
+        S06-T01/T02: the 6-sheet campaign summary. Candidate data is
+        anonymised — aggregate statistics only, no PII, per the candidates
+        RLS policy note on Sheet 6.
+        """
+        wb = Workbook()
+        wb.remove(wb.active)
+        name = campaign.name
+
+        # Sheet 1 — Campaign Configuration
+        ws = ExcelExport._report_sheet(wb, "Campaign Configuration", name, ["Field", "Value"])
+        config_rows = [
+            ("Campaign ID", str(campaign.id)),
+            ("Name", campaign.name),
+            ("Status", campaign.status.value),
+            ("JD Title", jd.title if jd else ""),
+            ("JD Version", getattr(jd, "version_number", "") if jd else ""),
+            ("Weight Deterministic", float(campaign.weight_deterministic)),
+            ("Weight Semantic", float(campaign.weight_semantic)),
+            ("Weight AI", float(campaign.weight_ai)),
+            ("Deterministic Threshold", float(campaign.deterministic_threshold)),
+            ("Semantic Threshold", float(campaign.semantic_threshold)),
+            ("AI Threshold", float(campaign.ai_threshold)),
+            ("Max Candidates", campaign.max_candidates if campaign.max_candidates is not None else "Unlimited"),
+            ("Deadline", campaign.deadline.isoformat() if campaign.deadline else "None"),
+            ("Hiring Manager ID", campaign.hiring_manager_id),
+            ("Recruiter ID", campaign.recruiter_id),
+            ("Created By", campaign.created_by),
+            ("Created At", campaign.created_at.isoformat()),
+            ("Weekly Report Scheduled", campaign.report_scheduled),
+        ]
+        for field, value in config_rows:
+            ws.append([field, value])
+
+        # Sheet 2 — Pipeline Funnel
+        ws = ExcelExport._report_sheet(
+            wb, "Pipeline Funnel", name,
+            ["Stage", "Count", "Drop-off %", "Conversion % of Total"],
+        )
+        total_candidates = funnel.total_candidates or 0
+        for stage in funnel.stages:
+            conversion = round(stage.count / total_candidates * 100, 1) if total_candidates else 0.0
+            ws.append([
+                stage.stage, stage.count,
+                stage.drop_off_pct if stage.drop_off_pct is not None else "",
+                conversion,
+            ])
+        ws.append(["TOTAL", total_candidates, "", ""])
+
+        # Sheet 3 — Processing Metrics
+        ws = ExcelExport._report_sheet(
+            wb, "Processing Metrics", name,
+            ["Task Type", "Queued", "Running", "Retry", "Success", "Failure", "Dead",
+             "Avg Duration (s)", "LLM Tokens"],
+        )
+        total_tokens = 0
+        for entry in task_breakdown:
+            counts = entry["status_counts"]
+            total_tokens += entry["total_token_count"]
+            ws.append([
+                entry["task_type"],
+                counts.get("QUEUED", 0), counts.get("RUNNING", 0), counts.get("RETRY", 0),
+                counts.get("SUCCESS", 0), counts.get("FAILURE", 0), counts.get("DEAD", 0),
+                round(entry["avg_duration_ms"] / 1000, 1) if entry["avg_duration_ms"] is not None else "",
+                entry["total_token_count"],
+            ])
+        ws.append(["TOTAL LLM TOKEN USAGE", "", "", "", "", "", "", "", total_tokens])
+
+        # Sheet 4 — Rejection Analytics
+        ws = ExcelExport._report_sheet(
+            wb, "Rejection Analytics", name, ["Layer / Reason", "Count", "Percentage"],
+        )
+        total_rej = analytics.total_rejections or 0
+        for layer in ("DETERMINISTIC", "SEMANTIC", "AI", "MANUAL", "FRAUD"):
+            count = analytics.layer_breakdown.get(layer, 0)
+            ws.append([f"Layer: {layer}", count, round(count / total_rej * 100, 1) if total_rej else 0.0])
+        for item in analytics.top_reasons:
+            ws.append([f"Reason: {item.reason}", item.count, item.percentage])
+
+        # Sheet 5 — Bulk Upload Summary
+        ws = ExcelExport._report_sheet(
+            wb, "Bulk Uploads", name,
+            ["Filename", "Status", "Total Files", "Processed", "Failed", "Duplicates",
+             "Created At", "Completed At"],
+        )
+        for job in bulk_jobs:
+            ws.append([
+                job.original_filename, job.status.value, job.total_files,
+                job.processed_count, job.failed_count, job.duplicate_count,
+                job.created_at.isoformat() if job.created_at else "",
+                job.completed_at.isoformat() if job.completed_at else "",
+            ])
+        if not bulk_jobs:
+            ws.append(["No bulk uploads for this campaign", "", "", "", "", "", "", ""])
+
+        # Sheet 6 — Candidate Outcomes (anonymised)
+        ws = ExcelExport._report_sheet(wb, "Candidate Outcomes", name, ["Metric", "Value"])
+        stats = outcomes["composite_stats"]
+        outcome_rows = [
+            ("NOTE", "Individual candidate data is anonymised (aggregates only) for compliance with the candidates RLS policy."),
+            ("Total Candidates", outcomes["total_candidates"]),
+            ("Composite Score — Average", stats["average"]),
+            ("Composite Score — Median", stats["median"]),
+            ("Composite Score — Min", stats["min"]),
+            ("Composite Score — Max", stats["max"]),
+            ("Composite Score — 25th Percentile", stats["p25"]),
+            ("Composite Score — 75th Percentile", stats["p75"]),
+            ("Avg Deterministic Score (passed layer)", outcomes["avg_deterministic_passed"]),
+            ("Avg Semantic Score (scored)", outcomes["avg_semantic"]),
+            ("Avg AI ATS Score (scored)", outcomes["avg_ai"]),
+            ("HR Overrides", outcomes["hr_override_count"]),
+            ("Final: SELECTED", outcomes["selected_count"]),
+            ("Final: REJECTED", outcomes["rejected_count"]),
+            ("Still In Pipeline", outcomes["in_pipeline_count"]),
+        ]
+        for metric, value in outcome_rows:
+            ws.append([metric, value if value is not None else "N/A"])
+        for reco, count in sorted(outcomes["ai_recommendation_counts"].items()):
+            pct = round(count / outcomes["total_candidates"] * 100, 1) if outcomes["total_candidates"] else 0.0
+            ws.append([f"AI Recommendation: {reco}", f"{count} ({pct}%)"])
+
+        return ExcelExport._finish_workbook(wb)
