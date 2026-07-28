@@ -75,11 +75,17 @@ class JDRepository:
         )
 
     def has_active_campaign(self, jd_id: UUID) -> bool:
+        """
+        A campaign still counts as active for JD-locking purposes unless it's
+        CLOSED - a PAUSED campaign can be resumed at any time, so the JD it's
+        attached to must stay locked, matching the != CLOSED convention used
+        for "ongoing" campaigns elsewhere (e.g. CampaignRepository.get_all_campaigns).
+        """
         return (
             self.db.query(HiringCampaign.id)
             .filter(
                 HiringCampaign.jd_id == jd_id,
-                HiringCampaign.status == CampaignStatus.ACTIVE,
+                HiringCampaign.status != CampaignStatus.CLOSED,
             )
             .first()
             is not None
@@ -113,6 +119,10 @@ class JDRepository:
         if request.source_format:
             query = query.filter(
                 JobDescription.source_format == request.source_format
+            )
+        if request.is_verified:
+            query = query.filter(
+                JobDescription.is_verified == request.is_verified
             )
         total = query.count()
         sort_columns = {
@@ -266,6 +276,36 @@ class JDRepository:
             .filter(HiringCampaign.jd_id == jd_id)
             .scalar()
         )
+
+    def get_campaign_status_counts(
+        self,
+        jd_ids: list[UUID],
+    ) -> dict[UUID, dict[str, int]]:
+        """
+        Active vs. passed (CLOSED) campaign counts per JD, in one grouped
+        query rather than N+1 per-JD lookups - used to annotate JD list/search
+        results. "Active" here matches the != CLOSED convention used by
+        has_active_campaign() (a PAUSED campaign can still be resumed).
+        """
+        counts = {jd_id: {"active": 0, "passed": 0} for jd_id in jd_ids}
+        if not jd_ids:
+            return counts
+
+        rows = (
+            self.db.query(
+                HiringCampaign.jd_id,
+                HiringCampaign.status,
+                func.count(HiringCampaign.id),
+            )
+            .filter(HiringCampaign.jd_id.in_(jd_ids))
+            .group_by(HiringCampaign.jd_id, HiringCampaign.status)
+            .all()
+        )
+        for jd_id, campaign_status, count in rows:
+            key = "passed" if campaign_status == CampaignStatus.CLOSED else "active"
+            counts[jd_id][key] = count
+
+        return counts
     
     def get_linked_campaigns(
         self,

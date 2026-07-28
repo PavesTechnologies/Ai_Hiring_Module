@@ -65,12 +65,14 @@ def export_skill_ontology(
     search: Optional[str] = Query(default=None),
     category: Optional[str] = Query(default=None),
     confidence: Optional[str] = Query(default=None),
+    source: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
 ):
     return service.export_skills(
         search=search,
         category=category,
         confidence=confidence,
+        source=source,
         is_active=is_active,
     )
 
@@ -170,6 +172,7 @@ def list_skill_ontology(
     search: Optional[str] = Query(default=None),
     category: Optional[str] = Query(default=None),
     confidence: Optional[str] = Query(default=None),
+    source: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
 ):
     result = service.get_skills(
@@ -178,6 +181,7 @@ def list_skill_ontology(
         search=search,
         category=category,
         confidence=confidence,
+        source=source,
         is_active=is_active,
     )
     return APIResponse.ok(data=result, message="Skill ontology list retrieved successfully.")

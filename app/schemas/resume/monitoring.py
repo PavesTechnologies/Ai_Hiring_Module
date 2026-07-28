@@ -131,3 +131,10 @@ class ResumeListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+
+class ResumeParsedJsonResponse(BaseModel):
+    resume_id: UUID
+    candidate_id: UUID
+    parse_status: str
+    parsed_json: dict | None
