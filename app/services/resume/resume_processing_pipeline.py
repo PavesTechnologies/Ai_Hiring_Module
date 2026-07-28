@@ -12,6 +12,8 @@ from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
+from app.services.pii.pii_detection_service import PIIDetectionService
+from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume import resume_embedding_text_builder
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
@@ -63,6 +65,8 @@ class ResumeProcessingPipeline:
         resume_repository: ResumeRepository,
         skill_repository: SkillRepository,
         stage_tracker: StageExecutionService,
+        pii_detection_service: PIIDetectionService,
+        pii_redaction_service: PIIRedactionService,
     ):
         self.preprocessing_service = preprocessing_service
         self.extraction_service = extraction_service
@@ -74,6 +78,8 @@ class ResumeProcessingPipeline:
         self.resume_repository = resume_repository
         self.skill_repository = skill_repository
         self.stage_tracker = stage_tracker
+        self.pii_detection_service = pii_detection_service
+        self.pii_redaction_service = pii_redaction_service
 
     def run(
         self,
@@ -119,6 +125,8 @@ class ResumeProcessingPipeline:
         for stage, output_attr, fn in (
             (ProcessingStage.TEXT_EXTRACTION, "raw_text", lambda: self._run_text_extraction(context)),
             (ProcessingStage.TEXT_CLEANING, "cleaned_text", lambda: self._run_text_cleaning(context)),
+            (ProcessingStage.PII_DETECTION, "pii_findings", lambda: self._run_pii_detection(context)),
+            (ProcessingStage.PII_REDACTION, "redacted_text", lambda: self._run_pii_redaction(context)),
             (ProcessingStage.AI_EXTRACTION, "raw_extraction", lambda: self._run_ai_extraction(context)),
             (ProcessingStage.JSON_VALIDATION, "validated_extraction", lambda: self._run_json_validation(context)),
             (ProcessingStage.SKILL_NORMALIZATION, "skill_match_results", lambda: self._run_skill_normalization(context)),
@@ -152,9 +160,15 @@ class ResumeProcessingPipeline:
     def _run_text_cleaning(self, context: ResumeProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.raw_text)
 
+    def _run_pii_detection(self, context: ResumeProcessingContext) -> None:
+        context.pii_findings = self.pii_detection_service.detect(context.cleaned_text)
+
+    def _run_pii_redaction(self, context: ResumeProcessingContext) -> None:
+        context.redacted_text = self.pii_redaction_service.redact(context.cleaned_text, context.pii_findings)
+
     def _run_ai_extraction(self, context: ResumeProcessingContext) -> None:
         context.raw_extraction = self.extraction_service.extract_raw(
-            context.cleaned_text,
+            context.redacted_text,
             prompt=RESUME_SYSTEM_PROMPT,
             response_schema=ResumeExtractionGenerationSchema,
         )

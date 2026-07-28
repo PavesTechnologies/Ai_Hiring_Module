@@ -20,51 +20,88 @@ GENERAL RULES
 
 CONTACT INFORMATION
 --------------------
-Extract full_name, email, and phone if explicitly present in the Resume.
+Extract full_name if explicitly present in the Resume.
+
+Do NOT extract email or phone number. Any occurrences of contact details in
+the text below have already been replaced with redaction placeholders such as
+[EMAIL], [PHONE], [LINKEDIN], [GITHUB], and [PORTFOLIO]. Treat these
+placeholders as removed information, not as content: never copy them into
+full_name, skills, summary, or any other field.
 
 SKILLS
 ------
-Extract all technical skills including, but not limited to:
 
-- Programming Languages
-- Frameworks
-- Libraries
-- Databases
-- Cloud Platforms
-- DevOps Tools
-- Messaging Technologies
-- AI/ML Frameworks
-- Version Control Tools
-- Operating Systems
+Extract only explicit technical skills.
 
-Examples:
+A technical skill is a named technology, programming language, framework,
+library, database, cloud platform, operating system, software tool,
+messaging technology, AI/ML framework, SDK, API, protocol, build tool,
+container technology, monitoring tool, CI/CD tool, or other identifiable
+technical product or technology.
 
-Python
-Java
-Spring Boot
-FastAPI
-React
-Angular
-Kafka
-Redis
-Docker
-Kubernetes
-AWS
-Azure
-GCP
-PostgreSQL
-MongoDB
-LangChain
-LangGraph
-CrewAI
-TensorFlow
-PyTorch
+Extract skills from all relevant sections of the resume, including:
 
-Extract every skill mentioned anywhere in the resume (skills section, work
-experience descriptions, project descriptions, summary) into a single flat
-list:
+- Skills
+- Work Experience
+- Projects
+- Professional Summary
+- Certifications (only the technology names, not the certification titles)
 
-skills
+Do NOT infer skills from context.
+
+Only extract technologies that are explicitly mentioned.
+
+Do NOT extract:
+
+- Soft skills
+- Responsibilities
+- Job duties
+- Business processes
+- Generic activities
+- Company names
+- Project names
+- Team names
+- Department names
+- Certifications (extract separately)
+- Degrees
+- Institutions
+- Generic methodologies unless explicitly listed as a technical skill
+- Generic phrases
+- Natural language descriptions
+
+Examples that should NOT be extracted as skills:
+
+- Communication
+- Leadership
+- Team Player
+- Responsible
+- Documentation
+- Requirement Analysis
+- Production Support
+- Customer Support
+- Stakeholder Management
+- Problem Solving
+- Software Development
+- SDLC
+- Agile mindset
+
+Prefer the most specific technology when multiple related terms appear.
+
+Example:
+
+- If "Spring Boot" appears, return "Spring Boot".
+- Do not additionally return "Spring" unless it is explicitly mentioned independently.
+- If "ASP.NET Core" appears, do not additionally return "ASP.NET" unless separately mentioned.
+
+Return a single flat list of unique technical skills.
+
+Remove duplicate skills.
+
+If the same skill appears multiple times across different sections of the resume, include it only once.
+
+Preserve the original spelling and casing of the first occurrence.
+
+Do not normalize, rename, expand abbreviations, or categorize skills.
 
 WORK EXPERIENCE
 ----------------
@@ -129,8 +166,6 @@ Return ONLY the following JSON structure.
 
 {
     "full_name": null,
-    "email": null,
-    "phone": null,
     "skills": [],
     "work_experience": [
         {
@@ -156,37 +191,5 @@ Return ONLY the following JSON structure.
     "total_experience_years": null,
     "summary": null,
     "metadata": {}
-}
-"""
-
-
-# Used only by the bulk-ZIP upload flow (app/tasks/bulk_upload_tasks.py) —
-# that flow has no upload form to source candidate identity from, so it
-# makes a second, narrowly-scoped Gemini call using this prompt purely to
-# resolve full_name/email/phone for Candidate creation. Deliberately
-# separate from RESUME_SYSTEM_PROMPT/ResumeExtractionResponse, which must
-# never carry PII into resumes.parsed_json.
-IDENTITY_EXTRACTION_PROMPT = """
-You are an expert AI assistant extracting candidate identity information from a resume.
-
-Extract ONLY the following three fields, nothing else:
-
-- full_name: the candidate's full name, if explicitly present.
-- email: the candidate's email address, if explicitly present.
-- phone: the candidate's phone number, if explicitly present.
-
-Do NOT extract skills, work experience, education, certifications, or any
-other content. Do NOT infer a value that is not explicitly present in the
-text. If a value is unavailable, return null.
-
-Return ONLY valid JSON. Do NOT include markdown. Do NOT explain your
-reasoning.
-
-Return ONLY the following JSON structure.
-
-{
-    "full_name": null,
-    "email": null,
-    "phone": null
 }
 """

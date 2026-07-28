@@ -21,6 +21,8 @@ STAGE_ORDER = [
     ProcessingStage.STORAGE,
     ProcessingStage.TEXT_EXTRACTION,
     ProcessingStage.TEXT_CLEANING,
+    ProcessingStage.PII_DETECTION,
+    ProcessingStage.PII_REDACTION,
     ProcessingStage.AI_EXTRACTION,
     ProcessingStage.JSON_VALIDATION,
     ProcessingStage.SKILL_NORMALIZATION,

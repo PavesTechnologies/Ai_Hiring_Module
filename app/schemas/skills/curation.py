@@ -17,6 +17,13 @@ class UnknownSkillItem(BaseModel):
     status: str
 
 
+class UnknownSkillListResponse(BaseModel):
+    items: list[UnknownSkillItem]
+    page: int
+    page_size: int
+    total: int
+
+
 class MapUnknownSkillRequest(BaseModel):
     target_skill_id: UUID
     save_as_alias: bool = False
