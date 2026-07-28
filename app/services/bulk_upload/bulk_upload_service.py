@@ -74,6 +74,9 @@ class BulkUploadService:
         filename: str,
         uploaded_by: str,
         consent_confirmed: bool,
+        jurisdiction: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> tuple[BulkUploadJob, HiringCampaign, UUID]:
         campaign = self._precheck_campaign_eligibility(campaign_id)
 
@@ -93,6 +96,9 @@ class BulkUploadService:
             original_filename=filename,
             zip_storage_path=object_path,
             consent_confirmed=consent_confirmed,
+            jurisdiction=jurisdiction,
+            ip_address=ip_address,
+            user_agent=user_agent,
             status=BulkUploadStatus.PENDING,
         )
 
