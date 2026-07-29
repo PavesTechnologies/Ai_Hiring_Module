@@ -1,5 +1,5 @@
 import logging
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
@@ -13,6 +13,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
@@ -105,7 +106,7 @@ def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLo
 
 
 @celery_app.task(name="resume.process_document", bind=True)
-def process_resume_document(self, resume_id: str) -> None:
+def process_resume_document(self, resume_id: str, prompt_template_id: str) -> None:
     """
     Background Resume document-processing pipeline: Text Extraction ->
     Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
@@ -192,6 +193,7 @@ def process_resume_document(self, resume_id: str) -> None:
             stage_tracker=stage_tracker,
             pii_detection_service=PIIDetectionService(),
             pii_redaction_service=PIIRedactionService(),
+            prompt_template_repository=PromptTemplateRepository(db),
         )
 
         attempt_number = self.request.retries + 1
@@ -202,6 +204,7 @@ def process_resume_document(self, resume_id: str) -> None:
             candidate_id=resume.candidate_id,
             file_path=resume.file_path,
             source_format=source_format,
+            prompt_template_id=UUID(prompt_template_id),
             attempt_number=attempt_number,
         )
         logger.warning("=== pipeline.run() RETURNED === resume_id=%s", processed_resume_id)

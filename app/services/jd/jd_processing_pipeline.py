@@ -299,7 +299,12 @@ class JDProcessingPipeline:
         context.cleaned_text = self.preprocessing_service.normalize(context.text)
 
     def _run_ai_extraction(self, context: JDProcessingContext) -> None:
-        context.raw_extraction = self.extraction_service.extract_raw(context.cleaned_text)
+        prompt_template = self.jd_service.prompt_template_repository.get_by_id(context.prompt_template_id)
+        if prompt_template is None:
+            raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
+        context.raw_extraction = self.extraction_service.extract_raw(
+            context.cleaned_text, prompt=prompt_template.template_text,
+        )
 
     def _run_json_validation(self, context: JDProcessingContext) -> None:
         context.extraction = JDExtractionResponse.model_validate(context.raw_extraction)

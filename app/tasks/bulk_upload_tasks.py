@@ -35,6 +35,7 @@ from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
@@ -325,6 +326,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         encryption_key_repo = EncryptionKeyRepository(db)
         consent_repo = ConsentRepository(db)
         campaign_repo = CampaignRepository(db)
+        prompt_template_repo = PromptTemplateRepository(db)
         campaign_candidate_repo = CampaignCandidateRepository(db)
         audit_repo = AuditRepository(db)
         task_log_repo = CeleryTaskLogRepository(db)
@@ -361,6 +363,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             stage_tracker=stage_tracker,
             pii_detection_service=PIIDetectionService(),
             pii_redaction_service=PIIRedactionService(),
+            prompt_template_repository=prompt_template_repo,
         )
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
@@ -395,6 +398,10 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         job = job_repo.get_by_id(job_file.bulk_upload_job_id)
         if job is None:
             raise ValueError(f"bulk_upload_jobs row {job_file.bulk_upload_job_id} not found.")
+
+        campaign = campaign_repo.get_by_id(job.campaign_id)
+        if campaign is None:
+            raise ValueError(f"hiring_campaigns row {job.campaign_id} not found.")
 
         retry_driver = RetryDriver(
             checkpoint_repo,
@@ -467,6 +474,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             task_id=task_id,
             file_path=job_file.storage_path,
             source_format=source_format,
+            prompt_template_id=campaign.prompt_template_id,
         )
 
         stage_tracker.run_stage(
@@ -567,6 +575,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             candidate_id=candidate.id,
             file_path=job_file.storage_path,
             source_format=source_format,
+            prompt_template_id=campaign.prompt_template_id,
             attempt_number=attempt_number,
             initial_context=context,
         )

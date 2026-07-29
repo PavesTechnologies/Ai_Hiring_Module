@@ -120,7 +120,7 @@ class ResumeIntakeService:
         task_id = uuid4()
         self.resume_service.record_task_id(resume, str(task_id))
         process_resume_document.apply_async(
-            kwargs={"resume_id": str(resume.id)},
+            kwargs={"resume_id": str(resume.id), "prompt_template_id": str(campaign.prompt_template_id)},
             task_id=str(task_id),
         )
 
