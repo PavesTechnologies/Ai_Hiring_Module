@@ -3,6 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 
+from app.models.candidates import ParseStatus
 from app.models.pipeline import PipelineStage, RejectionLayer
 
 class CampaignCandidateCreateRequest(BaseModel):
@@ -25,6 +26,10 @@ class CampaignCandidateResponse(BaseModel):
     resume_id: UUID
 
     pipeline_stage: PipelineStage
+    # Epic 4 (M05-E04) Phase D1 - read straight off the linked Resume row,
+    # never recalculated; null only in the defensive resume=None case
+    # (Resume is LEFT JOINed in get_all_by_campaign).
+    parse_status: ParseStatus | None = None
 
     # Candidate Listing UI fields (M03-E05-adjacent listing extension).
     # All read-only, sourced from existing stored data - never recalculated.
@@ -459,6 +464,19 @@ class CandidateSemanticResponse(BaseModel):
             }
         }
     )
+class ProcessingTimelineEntry(BaseModel):
+    """Epic 4 (M05-E04) Phase D2 - one celery_task_log row on the scorecard's Processing Timeline."""
+
+    task_type: str
+    status: str
+    queued_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    # Computed at read time - CeleryTaskLog has no stored duration column.
+    # None whenever started_at or completed_at is missing (not yet started,
+    # or still in progress).
+    duration_display: str | None = None
+    error_message: str | None = None
 
 
 class CandidateScorecardResponse(CampaignCandidateResponse):
@@ -492,9 +510,11 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
     # for any existing consumer. None until scoring has actually run.
     deterministic_score_breakdown: DeterministicScoreBreakdownResponse | None = None
 
+    processing_timeline: list[ProcessingTimelineEntry] = []
+
 
 class CandidateRejectionHistoryEntryResponse(BaseModel):
-    """M07-E03 S03 T02: one candidate_rejections row, read-only - no edit/delete APIs exist or are added."""
+ 
     id: UUID
     rejection_layer: RejectionLayer
     rejection_reason: str
@@ -513,7 +533,7 @@ class CandidateRejectionHistoryEntryResponse(BaseModel):
 
 
 class HrOverrideRequest(BaseModel):
-    """M07-E03 S04 T01: HR_ADMIN override of a deterministic rejection."""
+   
 
     override_reason: str = Field(..., min_length=20)
     confirmation: bool
@@ -583,7 +603,7 @@ class RejectionBreakdownEntry(BaseModel):
 
 
 class MissingSkillOccurrence(BaseModel):
-    """M07-E03 S05 T01: one canonical skill's occurrence among MISSING mandatory-skill matches."""
+    
 
     canonical_name: str
     occurrence_count: int
@@ -591,7 +611,7 @@ class MissingSkillOccurrence(BaseModel):
 
 
 class JdCalibrationRecommendation(BaseModel):
-    """M07-E03 S05 T02: one structured JD-calibration suggestion."""
+   
 
     rule: str
     message: str
@@ -631,7 +651,7 @@ class UpdateResumeResubmissionResponse(BaseModel):
 
 
 class CandidateCampaignHistoryEntryResponse(BaseModel):
-    """Epic 3 (M05-E03) Phase C6 — one campaign a candidate has participated in, most recent first."""
+    
 
     campaign_candidate_id: UUID
     campaign_id: UUID

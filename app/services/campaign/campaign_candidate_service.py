@@ -61,6 +61,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MissingSkillOccurrence,
     OverrideReportResponse,
     OverrideReportRow,
+    ProcessingTimelineEntry,
     OverrideWeeklyTrendPoint,
     PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
@@ -637,6 +638,7 @@ class CampaignCandidateService:
             campaign_candidate_id=campaign_candidate.id,
             resume_id=campaign_candidate.resume_id,
             pipeline_stage=campaign_candidate.pipeline_stage,
+            parse_status=resume.parse_status if resume else None,
             candidate_name=self._decrypt_candidate_name(candidate),
             current_designation=designation,
             experience=experience,
@@ -881,6 +883,44 @@ class CampaignCandidateService:
             matched_keywords=breakdown.get("matched_keywords") or [],
             semantic_explanation=breakdown.get("semantic_explanation"),
         )
+        timeline = self._build_processing_timeline(campaign_candidate_id)
+
+        return CandidateScorecardResponse(**base.model_dump(), **banner, processing_timeline=timeline)
+
+    def _build_processing_timeline(self, campaign_candidate_id: UUID) -> list[ProcessingTimelineEntry]:
+        """
+        Epic 4 (M05-E04) Phase D2 - every celery_task_log row for this
+        candidate, oldest first. Read-only; nothing here writes to
+        celery_task_log or recalculates anything the tasks themselves
+        already recorded.
+        """
+        if self.celery_task_log_service is None:
+            return []
+
+        logs = self.celery_task_log_service.repository.get_by_campaign_candidate_id(campaign_candidate_id)
+
+        return [
+            ProcessingTimelineEntry(
+                task_type=log.task_type,
+                status=log.status.value,
+                queued_at=log.queued_at,
+                started_at=log.started_at,
+                completed_at=log.completed_at,
+                duration_display=self._format_duration(log.started_at, log.completed_at),
+                error_message=log.error_message,
+            )
+            for log in logs
+        ]
+
+    @staticmethod
+    def _format_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
+        if started_at is None or completed_at is None:
+            return None
+        seconds = (completed_at - started_at).total_seconds()
+        if seconds < 60:
+            return f"{seconds:.1f} seconds"
+        minutes, remaining_seconds = divmod(int(seconds), 60)
+        return f"{minutes}m {remaining_seconds}s"
 
     def _build_rejection_banner(self, campaign_candidate: CampaignCandidate) -> dict:
         is_overridden = bool(campaign_candidate.hr_override)

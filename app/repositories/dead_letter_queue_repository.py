@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import DeadLetterQueue
@@ -55,6 +55,20 @@ class DeadLetterQueueRepository:
         self.db.flush()
         self.db.refresh(entry)
         return entry
+
+    def delete_by_resume_id(self, resume_id: UUID) -> None:
+        """
+        Candidate erasure — must run before CeleryTaskLogRepository.delete_by_resume_id,
+        since dead_letter_queue.original_task_id is a NOT NULL FK to
+        celery_task_log.task_id and would otherwise block that delete.
+        """
+        self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """Candidate erasure — same FK-ordering note as delete_by_resume_id."""
+        self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.campaign_candidate_id == campaign_candidate_id))
+        self.db.flush()
 
     def commit(self) -> None:
         self.db.commit()

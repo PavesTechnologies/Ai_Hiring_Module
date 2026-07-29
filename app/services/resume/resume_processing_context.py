@@ -35,6 +35,7 @@ class ResumeProcessingContext:
 
     # Populated progressively, one stage at a time.
     raw_text: str | None = None
+    page_count: int | None = None
     cleaned_text: str | None = None
     pii_findings: list[PIIFinding] | None = None
     redacted_text: str | None = None

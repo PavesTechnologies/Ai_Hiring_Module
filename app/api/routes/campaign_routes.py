@@ -4,7 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.campaign import get_campaign_service
+from app.dependencies.campaign import get_campaign_service, get_upload_history_service
+from app.enums.constants import MAX_PAGE_SIZE
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CopyScoringConfigResponse, HiringCampaignResponse, CampaignMinimalResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
@@ -29,7 +30,9 @@ from app.schemas.campaign.campaign_reopen_schema import (
     CampaignReopenResultResponse,
 )
 from app.schemas.response import APIResponse
+from app.schemas.upload_history.response import UnifiedUploadHistoryResponse
 from app.services.campaign.campaign_service import CampaignService
+from app.services.upload_history.upload_history_service import UploadHistoryService
 from app.middleware.rbac import TokenUser, require_roles
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.models.campaigns import CampaignStatus
@@ -571,6 +574,42 @@ def get_pipeline_summary(
 ):
     summary = service.get_pipeline_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
+
+
+@router.get(
+    "/{campaign_id}/upload-history",
+    response_model=APIResponse[UnifiedUploadHistoryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Unified Upload History",
+    description=(
+        "Epic 4 (M05-E04) Phase D7 - individual resume uploads and bulk "
+        "ZIP uploads for a campaign, combined into one chronological, "
+        "filterable view."
+    ),
+)
+def get_campaign_upload_history(
+    campaign_id: UUID,
+    uploaded_by: str | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    upload_type: str | None = Query(default=None, description="individual or bulk"),
+    outcome: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
+    service: UploadHistoryService = Depends(get_upload_history_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    history = service.get_history(
+        campaign_id,
+        uploaded_by=uploaded_by,
+        date_from=date_from,
+        date_to=date_to,
+        upload_type=upload_type,
+        outcome=outcome,
+        limit=limit,
+        offset=offset,
+    )
+    return APIResponse.ok(data=history, message="Upload history retrieved successfully.")
 
 
 @router.get(
