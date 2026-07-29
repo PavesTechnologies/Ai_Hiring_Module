@@ -1649,7 +1649,7 @@ class CampaignService:
         self.campaign_repo.db.flush()
         return requeued
 
-    def _enqueue_pending_resume_parses(self, campaign_id: UUID) -> int:
+    def _enqueue_pending_resume_parses(self, campaign_id: UUID, prompt_template_id: UUID) -> int:
         """
         S02-T02: submits a fresh resume.process_document task for every
         resume that was uploaded while the campaign was paused and never got
@@ -1661,7 +1661,7 @@ class CampaignService:
             task_id = uuid4()
             self.campaign_repo.set_resume_task_id(resume, str(task_id))
             process_resume_document.apply_async(
-                kwargs={"resume_id": str(resume.id)},
+                kwargs={"resume_id": str(resume.id), "prompt_template_id": str(prompt_template_id)},
                 task_id=str(task_id),
             )
             enqueued += 1
@@ -1877,7 +1877,7 @@ class CampaignService:
                 # re-permitted immediately by the ACTIVE status.
                 detail["title"] = f"Campaign '{campaign.name}' resumed"
                 detail["tasks_requeued"] = self._resubmit_paused_tasks(campaign.id)
-                detail["resumes_enqueued"] = self._enqueue_pending_resume_parses(campaign.id)
+                detail["resumes_enqueued"] = self._enqueue_pending_resume_parses(campaign.id, campaign.prompt_template_id)
 
                 # S02-T03: pause duration, from the matching CAMPAIGN_PAUSED
                 # entry's timestamp to now.

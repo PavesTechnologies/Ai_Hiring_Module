@@ -29,6 +29,7 @@ class ResumeProcessingContext:
     # up front the way an individual-upload context always has them.
     resume_id: UUID | None = None
     candidate_id: UUID | None = None
+    prompt_template_id: UUID | None = None
     document_type: DocumentType = DocumentType.RESUME
     attempt_number: int = 1
 
