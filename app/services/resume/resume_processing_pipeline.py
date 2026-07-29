@@ -14,6 +14,7 @@ from app.services.extractions.gemini_extraction_service import GeminiExtractionS
 from app.services.jd.hash_service import HashService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
+from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.resume import resume_embedding_text_builder
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
@@ -160,6 +161,8 @@ class ResumeProcessingPipeline:
             file_path=context.file_path,
         )
         context.raw_text = ResumeTextExtractionService.extract(file_content, context.source_format)
+        if context.source_format == ResumeSourceFormat.PDF:
+            context.page_count = TextExtractionService.get_pdf_page_count(file_content)
 
     def _run_text_cleaning(self, context: ResumeProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.raw_text)
@@ -212,4 +215,5 @@ class ResumeProcessingPipeline:
             embedding_model_version_id=context.embedding_model_version_id,
             input_text_hash=context.input_text_hash,
             attempt_number=context.attempt_number,
+            page_count=context.page_count,
         )
