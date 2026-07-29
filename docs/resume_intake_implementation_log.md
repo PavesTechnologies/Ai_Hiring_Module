@@ -1,9 +1,9 @@
 # Resume Intake Epic (M05) — Implementation Log
 
-**Module:** M05 – Resume Intake | Individual Resume Upload (Epic 1) + Bulk ZIP Upload (Epic 2)
-**Scope:** Epic 1 (M05-E01) Phases 0–11, and Epic 2 (M05-E02) Phases B0–B9 of their respective implementation roadmaps
-**Status:** All 12 Epic 1 phases and all 10 Epic 2 phases implemented. Both live-tested — Epic 1 end-to-end through a real upload → encryption → storage → pipeline-entry → Celery parse → status-poll cycle; Epic 2 through real ZIP upload → extraction → parse-first candidate creation → cap enforcement → retry/DLQ → cancellation → history/export → failure-mode cleanup, verified primarily at the service/task layer (see Epic 2's Cross-Cutting Issues — Redis was unavailable throughout this environment, so full HTTP round-trips could only be exercised for routing/schema shape, not live Celery dispatch).
-**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan, including the Epic 2 schema-changes addendum)
+**Module:** M05 – Resume Intake | Individual Resume Upload (Epic 1) + Bulk ZIP Upload (Epic 2) + Duplicate Detection & Validation (Epic 3)
+**Scope:** Epic 1 (M05-E01) Phases 0–11, Epic 2 (M05-E02) Phases B0–B9, and Epic 3 (M05-E03) Phases C0–C6 of their respective implementation roadmaps. Epic 3's Phase C7 is explicitly **not implemented** — deferred, see its own section below.
+**Status:** All 12 Epic 1 phases, all 10 Epic 2 phases, and 7 of Epic 3's 8 phases (C0–C6) implemented. Epic 1/Epic 2 live-tested as described below. Epic 3 live-tested against the real database throughout — every phase's data (test candidates, resumes, campaign_candidates rows, stage history, audit log entries, and any real storage objects created) was created via direct repository/service calls or real Celery task invocation, verified, then explicitly cleaned up afterward. Epic 3's Phase C7 (Fraud-Pattern Duplicate Flags) is deliberately deferred — see its section for why.
+**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan, including the Epic 2 schema-changes addendum and Epic 3's plan with C7 marked deferred)
 
 ## How to read this document
 
@@ -437,4 +437,142 @@ Observed twice in B4, on the same `AI_EXTRACTION` step Epic 1 had already hit th
 - **Alembic chain reconciliation** — three divergent heads still exist (this epic's, JD's, and skill-ontology's); one of the other two has its own pre-existing schema-drift bug. Neither was fixed here, as both belong to different work.
 - **Circuit-breaker coverage for bulk storage/encryption failures** — deliberately not extended to bulk uploads in B9, since the underlying mechanism (`EntityType.CIRCUIT_BREAKER`) is itself an incomplete Epic 1 loose end.
 - **Stale/stuck-job detection** — no periodic sweep exists to detect a job left permanently at `EXTRACTING`/`PROCESSING`/`RUNNING` by a hard Celery-worker crash (as opposed to a caught exception, which B9 now handles correctly). Epic 1 hit this exact scenario once and recovered manually; the same manual-recovery approach would still be needed for bulk uploads today.
-- **Epic 3** — explicitly deferred by the user until Epic 2 was complete; not started, no data provided yet.
+- **Epic 3** — was deferred by the user until Epic 2 was complete; now implemented (Phases C0–C6) — see "Epic 3 (M05-E03): Duplicate Detection & Validation — Phases C0–C6" below. Phase C7 (Fraud-Pattern Duplicate Flags) remains deliberately deferred.
+
+---
+
+# Epic 3 (M05-E03): Duplicate Detection & Validation — Phases C0–C6
+
+**Companion plan:** `docs/resume_intake_implementation_plan.md`'s Epic 3 section. Every phase below went through the same phase-gated workflow: analysis (no code) → architecture review → change plan → explicit user approval → implementation → live verification against the real database → cleanup — never skipping the approval step, never implementing beyond a phase's approved scope.
+
+## Constraints and conventions in effect throughout
+
+- **Non-transactional enum migrations.** Every new `ActionType` value needed its own `ALTER TYPE audit_action_type_enum ADD VALUE IF NOT EXISTS ...` migration with `transactional_ddl = False`, following the precedent already set in Epic 1/2 — Postgres cannot run `ALTER TYPE ... ADD VALUE` inside a transaction block on the versions this project has hit that error against.
+- **Live-testing methodology.** Every phase was verified against real database rows — created via direct repository/service calls or by invoking Celery task functions directly (bypassing the broker where relevant) — followed by explicit cleanup (deleting every created row across all FK-dependent tables, plus any real storage objects) once verification completed. Nothing was accepted as "working" on the strength of a unit-style mock alone.
+- **`app.models.pipeline.PipelineStage` vs. the stale duplicate in `app.enums.constants`.** The plan's own pre-implementation audit flagged this trap correctly — all Epic 3 code imports `PipelineStage` from `app.models.pipeline` exclusively.
+
+---
+
+## Phase C0 — Stage-Transition & Audit Foundations
+
+**Before:** Build the generic, validated pipeline-stage-transition mechanism every later phase needs, and get new audit vocabulary in place first.
+
+**After:**
+- **Created:** `app/repositories/allowed_transition_repository.py` (`get(from_stage, to_stage) -> AllowedTransition | None`), `app/services/campaign/pipeline_transition_service.py` (`PipelineTransitionService.transition_stage(campaign_candidate, to_stage, changed_by=None, actor_role=None, reason=None, source=TransitionSource.SYSTEM)`), `app/exceptions/pipeline_transition_exceptions.py` (`InvalidPipelineTransitionException`, `PipelineTransitionReasonRequiredException`), `app/seeds/seed_allowed_transitions.py`
+- **Modified:** `app/enums/constants.py`
+- **Migration:** `e3b6d9a2c5f8_audit_enum_stage_transition.py` — `ALTER TYPE audit_action_type_enum ADD VALUE IF NOT EXISTS 'PIPELINE_STAGE_TRANSITIONED'`
+- **Deviation from plan:** the plan speculated 7 new `ActionType` members would be needed (`DUPLICATE_FILE_DETECTED`, `DUPLICATE_CANDIDATE_LINKED`, `CAMPAIGN_RESUBMISSION_DETECTED`, `RESUME_VERSION_CREATED`, `PIPELINE_STAGE_TRANSITIONED`, `FRAUD_FLAG_RAISED`, `CROSS_CAMPAIGN_ALERT_SENT`). Only `PIPELINE_STAGE_TRANSITIONED` was actually needed here — C2/C3's duplicate-detection paths reuse the existing `RESUME_UPLOADED` action type rather than needing dedicated ones, and `CAMPAIGN_RESUBMISSION_DETECTED` was added later, in C4, on its own schedule. The other 4 speculative members were never added — nothing in the shipped implementation needed them.
+- **`allowed_transitions` seeded (6 initial rows):** `UPLOADED→FRAUD_REVIEW` (SYSTEM), `SCREENING→FRAUD_REVIEW` (SYSTEM), `FRAUD_REVIEW→REJECTED` (HR_ADMIN, reason required), `FRAUD_REVIEW→SCREENING` (HR_ADMIN, reason required), `SCREENING→REJECTED` (SYSTEM/HR_ADMIN/RECRUITER), `REJECTED→SCREENING` (HR_ADMIN, reason required). The fraud-review edges exist for C7's benefit even though C7 itself was ultimately deferred; the reject/override edges also back the separate, pre-existing M07-E03 rejection-handling feature.
+- **Real architectural duplication discovered, deliberately not fixed:** a second, narrower `StageTransitionService` (`app/services/campaign/stage_transition_service.py`) already existed in the codebase, built by earlier M07-E03 work — only `transition_to_rejected`/`apply_hr_override`, reading the same `AllowedTransitionRepository` data via a separate `is_transition_allowed()` boolean-wrapper method, and critically **never calling `AuditService.log(...)`**, unlike the new `PipelineTransitionService`. Both coexist correctly (confirmed no breakage), but this is a real, flagged duplication left for a future consolidation pass — explicitly out of scope for this epic.
+- **Verification:** confirmed live against the real database — an invalid transition attempt raises `InvalidPipelineTransitionException`; a valid one updates `pipeline_stage` and writes a `campaign_candidate_stage_history` row atomically; the new `ActionType.PIPELINE_STAGE_TRANSITIONED` value writes successfully via `AuditService.log(...)` post-migration.
+
+---
+
+## Phase C1 — Resume Versioning Core (S05: T01–T03)
+
+**Before:** Replace the hardcoded `version_number=1, is_active_version=True` in both upload paths with real version-increment/deactivate logic.
+
+**After:**
+- **Modified:** `app/repositories/resume_repository.py` (added `get_max_version_number(candidate_id)`, `deactivate_active_version(candidate_id)` — an atomic `UPDATE ... SET is_active_version = false WHERE candidate_id = :id AND is_active_version = true`, not a read-modify-write, closing the same lost-update race class this codebase has hit before — and `get_all_versions_by_candidate(candidate_id)`), `app/services/resume/resume_upload_service.py`, `app/tasks/bulk_upload_tasks.py` (same version-bump logic in the bulk per-file path)
+- **Created:** `ResumeVersionHistoryResponse`/`ResumeVersionItem` schemas, `GET /resumes/candidate/{candidate_id}/versions` route (`ResumeMonitoringService.get_version_history`, raising `NotFoundError` when a candidate has zero resumes — this exact no-separate-existence-check pattern became the precedent C6 later mirrored)
+- **Verification:** confirmed a second upload for an existing candidate produces `version_number=2` with the prior version correctly deactivated, atomically, in both the individual and bulk paths; the version-history endpoint lists all versions with exactly one marked active.
+
+---
+
+## Phase C2 — Exact Duplicate Detection: Individual Upload (S01-T02)
+
+**Before:** Detect a byte-identical re-upload before it's silently processed, surfacing a structured warning + resolution choice.
+
+**After:**
+- **Created:** `app/exceptions/resume_exceptions.py`'s `DuplicateResumeFileException` (`ResumeException` subclass, HTTP 409), `app/schemas/resume/response.py`'s `DuplicateFileWarningResponse` (`duplicate_resume_id`, `candidate_id`, `candidate_name`, `uploaded_at`, `current_pipeline_stage`, `campaign_names`, `original_filename` — always `null` for individual uploads since `Resume` carries no original-filename column, `available_resolutions`), `app/services/resume/upload_resume_result.py`'s `UploadResumeResult` dataclass (`resume`, `requires_processing`, `duplicate_found`, `matched_resume`, `matched_candidate` — a dedicated result object instead of a bare `Resume`/tuple, so later phases could extend it without another signature change)
+- **Modified:** `app/repositories/resume_repository.py` (added `get_by_file_hash_global(file_hash)` — unscoped by candidate, since the exact-duplicate check is system-wide), `app/services/resume/resume_upload_service.py` (`upload()` checks `get_by_file_hash_global` before any storage/candidate work; `"use_existing"` links the existing candidate to the new campaign without reprocessing, `"upload_anyway"` creates a new version via C1)
+- **Live production bug found and fixed (in this phase's own new code, surfaced by a real production log):** `resume_exception_handler` (`app/exception_handler/handlers.py`) called `response.model_dump()` (default `mode="python"`), which leaves `UUID`/`datetime` fields as native Python objects — `JSONResponse` then fails with `TypeError: Object of type UUID is not JSON serializable` the moment a real `DuplicateFileWarningResponse` (carrying real `UUID`/`datetime` fields) hit it. This was a **latent, pre-existing bug** in that handler, never triggered before this phase gave it a payload with real UUID/datetime fields. Fixed by changing to `response.model_dump(mode="json")`. Verified via direct reproduction before and after. The identical `model_dump()` pattern was noted as still present, unfixed, in the other exception handlers in that same file — flagged, not touched (out of scope).
+- **Verification:** confirmed live — re-uploading an identical file returns the structured duplicate warning instead of creating a new resume; `use_existing` and `upload_anyway` both confirmed against real rows; a separate, pre-existing 409 ("Candidate already exists in this campaign") was also observed during testing and confirmed to be an unrelated, already-correct check, not a bug.
+
+---
+
+## Phase C3 — Exact Duplicate Detection: Bulk Upload (S01-T03)
+
+**Before:** Auto-skip exact-duplicate files within a ZIP with zero manual intervention.
+
+**After:**
+- **Modified:** `app/tasks/bulk_upload_tasks.py` — inserted an exact-duplicate-file check in `parse_bulk_upload_file` immediately after file-format validation, before any stage-tracked work: on a `file_hash` match, resolves the matched candidate, links it to the campaign only if not already linked, marks the file `PROCESSED`, increments `duplicate_count` (an existing, previously-unused repository method), and marks the task log `SUCCESS` with the exact specified summary wording ("Duplicate file detected. Existing candidate linked. AI processing skipped.").
+- **Verification:** confirmed live across 6 scenarios including an "already linked" case (file hash matches, but the candidate is already linked to this exact campaign — correctly skips redundant linking).
+- **Follow-up fix, done as an explicitly scoped side-quest between C3 and C4 at the user's request ("explain the problem and possible solutions" before implementing):** `_maybe_finalize_job` was misclassifying an all-duplicate bulk job as `FAILED` (it only checked `processed_count`, treating every duplicate-only outcome as if nothing succeeded). Presented as options A–D with a recommendation; the user approved "Option B": `if job.failed_count == 0: COMPLETED; elif job.processed_count > 0 or job.duplicate_count > 0: PARTIAL_FAILURE; else: FAILED`. Implemented under its own two-phase approval (impact analysis first, then implementation only after sign-off) and live-tested across 6 scenarios, including the critical fix case (an all-duplicate job now correctly finalizes as `COMPLETED` instead of `FAILED`).
+
+---
+
+## Phase C4 — Candidate Identity Resolution & Resubmission Alerting (S02-T02, S02-T03)
+
+**Before:** Drive the version-bump path whenever an existing candidate is found, and add the daily high-frequency-resubmission detection sweep.
+
+**After:**
+- **Scope reduction found during analysis, before any code was written:** the "drive existing candidates into the version-bump path" half of this phase (Part A) was discovered to already be fully satisfied by C1 — nothing further was needed there. C4's actual scope narrowed to the resubmission-alerting half only.
+- **Created:** `app/services/campaign/resubmission_alert_service.py` (`ResubmissionAlertService.evaluate_resubmission_alerts()` — queries `get_high_frequency_resubmissions`, then for each flagged candidate resolves their most recent campaign and logs a `CAMPAIGN_RESUBMISSION_DETECTED` audit event), a Celery beat task (`evaluate_resubmission_alerts` in `app/tasks/campaign_tasks.py`, registered in `app/core/celery_app.py` at `crontab(minute=0, hour=4)`)
+- **Modified:** `app/repositories/campaign_candidate_repository.py` (added `get_high_frequency_resubmissions(window_days, threshold)`, `get_most_recent_campaign_for_candidate(candidate_id)`), `app/seeds/seed_platform_config.py` (added `CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD=3`, `CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS=30`)
+- **Migration:** `f7c1a4d8b3e6_audit_enum_resubmission_detected.py` — `ALTER TYPE audit_action_type_enum ADD VALUE IF NOT EXISTS 'CAMPAIGN_RESUBMISSION_DETECTED'`
+- **Explicit design decision approved by the user:** since `audit_log.actor_id` is a required, non-null FK to `users.id` and no synthetic `SYSTEM` actor exists anywhere in this codebase, the automated alert is attributed to the flagged candidate's most recent campaign's `created_by` — mirroring the exact precedent already set by `CampaignSchedulerService._raise_health_alert`. Documented, with the user's explicit sign-off, as technical debt pending a future real `SYSTEM` actor (or a nullable actor + system source) that every scheduled-task audit event should eventually migrate to.
+- **Known, carried-forward blocker (matches the plan's own risk call-out):** the story's "notify HR_ADMIN via email" requirement remains undeliverable — no email/alerting module exists anywhere in this codebase. This phase delivers detection + audit logging only, exactly as the plan anticipated.
+- **Verification:** confirmed live — created 3 real `campaign_candidates` rows across 3 real campaigns for a test candidate, ran the service directly, correctly flagged (and incidentally also correctly flagged a real, pre-existing production candidate that happened to cross the same threshold — left untouched, not test data).
+
+---
+
+## Phase C5 — Same-Campaign Resubmission Handling (S03: T01–T03)
+
+**Before:** Detect an existing campaign+candidate pairing before erroring on the unique constraint, and correctly re-trigger the pipeline on a resume update, with an HR_ADMIN confirmation gate once a candidate has passed `SHORTLISTED`.
+
+**After:**
+- **Modified:** `app/seeds/seed_allowed_transitions.py` (added 5 rows: `SCREENING→UPLOADED` for SYSTEM/HR_ADMIN/RECRUITER, no reason required; `SHORTLISTED/HOLD/HM_REVIEW/INTERVIEW→UPLOADED` for HR_ADMIN only, reason required each — deliberately **not** seeding `SELECTED`/`REJECTED`/`FRAUD_REVIEW→UPLOADED`, since resubmitting for a candidate in any of those states is a different, not-yet-defined business process), `app/repositories/campaign_candidate_repository.py` (added `reset_for_resubmission(campaign_candidate, new_resume_id)` — resets every score/AI/fraud/rejection/override field to its default, then flushes), `app/services/campaign/campaign_candidate_service.py` (enriched the existing "candidate already exists in this campaign" 409 with a new `data` payload; added `update_resume_for_resubmission(...)`: validates the transition via `PipelineTransitionService` first, then validates the file, uploads it, creates the new resume version via C1's logic, resets evaluation state via `reset_for_resubmission`, commits, and dispatches `process_resume_document`), `app/dependencies/campaign_candidate.py`, `app/api/routes/campaign_candidate.py`
+- **Created:** `ResubmissionInfoResponse` (attached to the existing 409's `data` field — `campaign_candidate_id`, `current_pipeline_stage`, `current_resume_id`, `can_update_resume`, `requires_hr_confirmation`), `UpdateResumeResubmissionResponse` (`campaign_candidate`, `new_resume_id`, `task_id`), new route `POST /campaign-candidates/{id}/update-resume`
+- **Bug found and fixed (in this phase's own new code, caught during live testing before it shipped):** the schema file had a stray `recommendations: list[JdCalibrationRecommendation]` field mistakenly appended to `UpdateResumeResubmissionResponse` — an editing artifact carrying a comment that actually belonged to the unrelated `CampaignRejectionAnalyticsResponse` class. Caused `pydantic_core.ValidationError` on every call to the new endpoint. Root-caused by directly inspecting the live `model_fields` at runtime (confirmed the extra field existed exactly where the traceback said, despite every static read of the intended design showing only 3 fields) and removed.
+- **Real side effect discovered during the same debugging session:** a live Celery worker was actively running against this development database — an earlier, interrupted test run's real `process_resume_document.apply_async(...)` call had actually been picked up and processed a full deterministic-scoring pass against the test data, confirming the end-to-end pipeline genuinely works, not just the isolated method. All resulting rows (across `campaign_candidates`, `candidate_rejections`, `campaign_candidate_stage_history`, `celery_task_log`, `dead_letter_queue`, `audit_log`, and one real uploaded storage object) were identified and cleaned up.
+- **Verification:** confirmed live across 5 scenarios once the bug above was fixed — success pre-`SHORTLISTED` (`SCREENING` + RECRUITER, no reason required); blocked stage (`REJECTED`, no seeded edge → 409); wrong role (`SHORTLISTED` + RECRUITER → 409, since only HR_ADMIN is in that edge's `allowed_roles`); missing reason (`SHORTLISTED` + HR_ADMIN, no reason → 400); and a fully successful HR-gated case (`SHORTLISTED` + HR_ADMIN + a reason). All 5 passed; all test data cleaned up afterward.
+
+---
+
+## Phase C6 — Cross-Campaign Candidate Tracking (S04: T01–T03)
+
+**Before:** Expose the cross-campaign history view; confirm score isolation is already structurally correct (no new logic expected for T03, just a targeted test).
+
+**After:**
+- **Modified:** `app/repositories/campaign_candidate_repository.py` (added `get_all_by_candidate_across_campaigns(candidate_id)` — a three-way join `campaign_candidates → hiring_campaigns → job_descriptions`, ordered by `created_at desc` with `id desc` as a deterministic secondary sort, added at the user's explicit request for consistent ordering when rows share a timestamp; this is the same join `get_campaign_context_for_candidate`'s own C2-era docstring had already earmarked for this phase), `app/services/campaign/campaign_candidate_service.py` (added `get_candidate_campaign_history(candidate_id)`, deriving a tri-state `outcome` — `"Selected"`/`"Rejected"`/`"In Progress"` — distinct from the raw `pipeline_stage` field, raising `NotFoundError` when a candidate has zero campaign history, mirroring C1's `get_version_history` precedent exactly), `app/main.py` (new router registration)
+- **Created:** `app/api/routes/candidate_routes.py` (the first route registered under a `/candidates` prefix — no such router existed before this phase), `GET /candidates/{candidate_id}/campaign-history` (HR_ADMIN only), `CandidateCampaignHistoryEntryResponse`/`CandidateCampaignHistoryResponse` schemas (each entry includes `campaign_candidate_id`/`campaign_id`, added beyond the plan's literal field list at the user's explicit approval, so the HR_ADMIN UI has something to link into)
+- **Verification:** confirmed live — one test candidate placed in two different campaigns with deliberately different `composite_score`/`pipeline_stage`/`rejection_reason` values came back correctly attributed to each campaign with zero cross-contamination (91.5/`Selected` vs. 12.0/`Rejected`, confirmed via direct assertion, not just eyeballing); the 404 case (a candidate with zero campaign history) confirmed separately; all test data cleaned up afterward.
+
+---
+
+## Phase C7 — Fraud-Pattern Duplicate Flags (S06: T01–T03)
+
+## ⛔ NOT IMPLEMENTED
+
+C7 was analyzed (architecture review, deviation-from-plan discovery, several open design decisions surfaced) but **deliberately not implemented**, on the user's explicit instruction after weighing the tradeoff directly. Full detail — what C7 would do, why it was deferred, and the real implementation gap discovered during analysis (the plan's literal hook point inside `resume_processing_pipeline.py` doesn't work for bulk upload's call-site timing) — is documented in `resume_intake_implementation_plan.md`'s C7 section, not duplicated here.
+
+**One-line summary of the decision:** unlike C0–C6, C7 has no deterministic right answer to build against — it needs a cosine-similarity threshold and a keyword-stuffing heuristic that have zero real resume data behind them yet, so shipping it now would mean shipping unvalidated guesses. The call made: defer until real usage volume exists to calibrate against, rather than risk wrongly blocking real candidates or missing real fraud with untuned thresholds.
+
+**What's already in place, waiting for whenever this is picked back up:** all 4 `FRAUD_REVIEW` transition edges (seeded in C0), `RejectionLayer.FRAUD` (already in the live enum), and the `resume_embeddings` table (already populated by the existing pipeline on every upload) — none of this needs to be rebuilt; only the detection service, its thresholds, and the scorecard fraud-display/clear/confirm actions remain unbuilt.
+
+---
+
+## Epic 3 Summary Table — Phases C0–C7
+
+| Phase | Focus | New HTTP surface | Status | Bugs/deviations found outside own scope |
+|---|---|---|---|---|
+| C0 | Stage-transition & audit foundations | No | ✅ Implemented | Discovered pre-existing, narrower `StageTransitionService` duplicating this phase's new service (not consolidated) |
+| C1 | Resume versioning core | `GET /resumes/candidate/{id}/versions` | ✅ Implemented | — |
+| C2 | Exact duplicate detection (individual) | Extends `POST /resumes` | ✅ Implemented | `resume_exception_handler`'s `model_dump()` → `model_dump(mode="json")` (latent bug, this phase's payload first triggered it) |
+| C3 | Exact duplicate detection (bulk) | No (extends existing bulk task) | ✅ Implemented | `_maybe_finalize_job` all-duplicate misclassification (found in C3 testing, fixed as an approved follow-up before C4) |
+| C4 | Candidate identity resolution & resubmission alerting | No (detection/audit only) | ✅ Implemented (scope reduced — Part A already done by C1) | — |
+| C5 | Same-campaign resubmission handling | `POST /campaign-candidates/{id}/update-resume` | ✅ Implemented | Stray `recommendations` field artifact in its own new schema (found and fixed pre-ship) |
+| C6 | Cross-campaign candidate tracking | `GET /candidates/{id}/campaign-history` | ✅ Implemented | — |
+| C7 | Fraud-pattern duplicate flags | Extends scorecard endpoint | ⛔ **Not implemented — deferred** | N/A |
+
+---
+
+## Known Gaps / Follow-Up Work — Epic 3
+
+- **Phase C7 (Fraud-Pattern Duplicate Flags)** — deliberately not implemented; see its section above. Revisit once there's real resume volume to calibrate a cosine-similarity threshold and a keyword-stuffing heuristic against.
+- **`StageTransitionService` vs. `PipelineTransitionService` duplication** — found during C0, never consolidated (explicitly out of scope for this epic). The narrower, older `StageTransitionService` still doesn't call `AuditService.log(...)`, unlike the newer one everything in this epic was built on.
+- **No synthetic `SYSTEM` audit actor** — C4's resubmission alert (and the pre-existing `CampaignSchedulerService` health-alert it mirrors) both attribute automated events to a real human's `campaign.created_by` as a workaround, since `audit_log.actor_id` is a required, non-null FK. A real `SYSTEM` actor (or nullable actor + system source) is still an open follow-up.
+- **C4's email-alerting half** — still undeliverable; no email/alerting module exists anywhere in this codebase (open since Epic 1, restated here for continuity).
+- **Epic 1's own already-flagged gaps** (email/alerting module, OCR for image resumes, `CIRCUIT_BREAKER` DB enum values, M16 compliance stories, connection-pool sizing) and **Epic 2's** (full HTTP+Redis end-to-end smoke test, Alembic multi-head reconciliation, circuit-breaker coverage for bulk failures, stale/stuck-job detection) — unchanged, still open, listed in full in their respective sections above.
+- **M16 (Consent Management) gap-closing work** — separately discussed and deferred until after Epic 3 wraps; not started.

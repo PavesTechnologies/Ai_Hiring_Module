@@ -95,6 +95,10 @@ class ActionType(enum.Enum):
     # before PipelineTransitionService can log it — see the migration added
     # alongside this Python member.
     PIPELINE_STAGE_TRANSITIONED = "PIPELINE_STAGE_TRANSITIONED"
+    # Epic 3 (M05-E03) Phase C4 — same DB-enum caveat as PIPELINE_STAGE_TRANSITIONED
+    # above; needs `ALTER TYPE audit_action_type_enum ADD VALUE
+    # 'CAMPAIGN_RESUBMISSION_DETECTED'` before ResubmissionAlertService can log it.
+    CAMPAIGN_RESUBMISSION_DETECTED = "CAMPAIGN_RESUBMISSION_DETECTED"
     # M07-E03 S03 T03
     REJECTED_CANDIDATES_EXPORTED = "REJECTED_CANDIDATES_EXPORTED"
     # M07-E03 S04
