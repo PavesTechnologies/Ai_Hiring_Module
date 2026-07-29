@@ -57,11 +57,7 @@ class CampaignScoringConfigurationResponse(BaseModel):
     formula:str
     layers: list[ScoringLayerExplanationResponse]
     defaults: CampaignScoringDefaultsResponse
-    warning: str | None = None  # S02-T03: set when candidates were already processed
-
-class CopyScoringConfigResponse(BaseModel):
-    source_campaign_id: UUID
-    results: list[CampaignScoringConfigurationResponse]
+    warning: str | None = None  # set when candidates were already processed
 
 class WeightHistoryItemResponse(BaseModel):
     changed_by: str

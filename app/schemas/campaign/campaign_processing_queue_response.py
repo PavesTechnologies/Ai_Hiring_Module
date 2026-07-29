@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class TaskTypeBreakdownResponse(BaseModel):
-    """S03-T01: one row per real task_type present for this campaign."""
+    """one row per real task_type present for this campaign."""
 
     task_type: str
     status_counts: dict[str, int]        # e.g. {"QUEUED": 3, "SUCCESS": 41, "DEAD": 1}
@@ -22,7 +22,7 @@ class CircuitBreakerSummaryResponse(BaseModel):
 
 
 class EstimatedCompletionResponse(BaseModel):
-    """S03-T03: human-facing completion estimate."""
+    """human-facing completion estimate."""
 
     remaining_task_count: int
     estimate_available: bool
@@ -34,7 +34,7 @@ class EstimatedCompletionResponse(BaseModel):
 
 
 class ProcessingQueueResponse(BaseModel):
-    """S03-T01/T03: the full Processing Queue section payload (HR_ADMIN)."""
+    """the full Processing Queue section payload (HR_ADMIN)."""
 
     task_types: list[TaskTypeBreakdownResponse]
     circuit_breakers: list[CircuitBreakerSummaryResponse]

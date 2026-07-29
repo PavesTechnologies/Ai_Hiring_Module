@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-# ── S04 — Stalled candidates ─────────────────────────────────────────────────
+# ── Stalled candidates ─────────────────────────────────────────────────
 
 class StalledCandidateItem(BaseModel):
     campaign_candidate_id: UUID          # anonymous UUID — no PII by design
@@ -24,7 +24,7 @@ class StalledCandidatesResponse(BaseModel):
 
 
 class StageOverrideRequest(BaseModel):
-    """S04-T02: HR_ADMIN manually advances the candidate. Reason is mandatory."""
+    """HR_ADMIN manually advances the candidate. Reason is mandatory."""
     reason: str = Field(..., min_length=1, max_length=1000)
     target_stage: Optional[str] = None   # defaults to the natural next stage
 
@@ -46,7 +46,7 @@ class StalledActionResponse(BaseModel):
     replayed_count: int | None = None
 
 
-# ── S05 — Rejection analytics ────────────────────────────────────────────────
+# ── Rejection analytics ────────────────────────────────────────────────
 
 class RejectionReasonItem(BaseModel):
     reason: str

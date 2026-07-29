@@ -11,8 +11,7 @@ from app.schemas.campaign.campaign_schema import CampaignScoringUpdateRequest
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.compliance import AuditLog
 from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
-from app.models.pipeline import (
-    CampaignCandidate,
+from app.models.pipeline import (CampaignCandidate,
     CampaignCandidateStageHistory,
     CandidateRejection,
     RejectionLayer,
@@ -27,8 +26,7 @@ class CampaignRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_campaign(
-        self,
+    def create_campaign(self,
         campaign: HiringCampaign,
     ) -> HiringCampaign:
         self.db.add(campaign)
@@ -36,18 +34,15 @@ class CampaignRepository:
         self.db.refresh(campaign)
         return campaign
 
-    def get_by_id(
-        self,
+    def get_by_id(self,
         campaign_id: UUID,
     ) -> HiringCampaign | None:
-        return (
-            self.db.query(HiringCampaign)
+        return (self.db.query(HiringCampaign)
             .filter(HiringCampaign.id == campaign_id)
             .first()
         )
 
-    def get_by_id_for_update(
-        self,
+    def get_by_id_for_update(self,
         campaign_id: UUID,
     ) -> HiringCampaign | None:
         """
@@ -63,62 +58,51 @@ class CampaignRepository:
         the eager load is overridden off here rather than changed on the
         relationship itself, leaving every other caller unaffected.
         """
-        return (
-            self.db.query(HiringCampaign)
+        return (self.db.query(HiringCampaign)
             .options(lazyload(HiringCampaign.job_description))
             .filter(HiringCampaign.id == campaign_id)
             .with_for_update()
             .first()
         )
 
-    def get_scoring_configuration(
-        self,
+    def get_scoring_configuration(self,
         campaign_id: UUID,
     ) -> HiringCampaign | None:
         """
         Fetch campaign scoring configuration.
         """
-        return (
-            self.db.query(HiringCampaign)
+        return (self.db.query(HiringCampaign)
             .filter(HiringCampaign.id == campaign_id)
             .first()
         )
-    def get_by_name(
-        self,
+    def get_by_name(self,
         org_id: UUID,
         name: str,
     ) -> HiringCampaign | None:
-        return (
-            self.db.query(HiringCampaign)
-            .filter(
-                HiringCampaign.org_id == org_id,
+        return (self.db.query(HiringCampaign)
+            .filter(HiringCampaign.org_id == org_id,
                 func.lower(HiringCampaign.name) == name.lower(),
             )
             .first()
         )
 
-    def get_all_by_org(
-        self,
+    def get_all_by_org(self,
         org_id: UUID,
     ) -> list[HiringCampaign]:
-        return (
-            self.db.query(HiringCampaign)
+        return (self.db.query(HiringCampaign)
             .filter(HiringCampaign.org_id == org_id)
             .all()
         )
     
     def get_all_campaigns(self, show_closed: bool = False) -> list[HiringCampaign]:
-        stmt = (
-            select(HiringCampaign)
-            # .where(
-            #     HiringCampaign.status == "ACTIVE",
+        stmt = (select(HiringCampaign)
+            # .where(#     HiringCampaign.status == "ACTIVE",
             # )
             .options(joinedload(HiringCampaign.job_description))
             .order_by(HiringCampaign.created_at.desc())
         )
         if not show_closed:
-            stmt = stmt.where(
-                HiringCampaign.status != CampaignStatus.CLOSED
+            stmt = stmt.where(HiringCampaign.status != CampaignStatus.CLOSED
             )
         result = self.db.execute(stmt)
         return result.scalars().all()
@@ -128,25 +112,21 @@ class CampaignRepository:
         id + name only, for dropdowns/pickers — a column projection instead
         of loading full HiringCampaign rows (no job_description join needed).
         """
-        stmt = (
-            select(HiringCampaign.id, HiringCampaign.name)
+        stmt = (select(HiringCampaign.id, HiringCampaign.name)
             .where(HiringCampaign.status == CampaignStatus.ACTIVE)
             .order_by(HiringCampaign.name)
         )
         return self.db.execute(stmt).all()
 
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
-        stmt = (
-            select(HiringCampaign)
-            .where(
-                HiringCampaign.hiring_manager_id == manager_id,
+        stmt = (select(HiringCampaign)
+            .where(HiringCampaign.hiring_manager_id == manager_id,
             )
             .options(joinedload(HiringCampaign.job_description))
             .order_by(HiringCampaign.created_at.desc())
         )
         if not show_closed:
-            stmt = stmt.where(
-                HiringCampaign.status != CampaignStatus.CLOSED
+            stmt = stmt.where(HiringCampaign.status != CampaignStatus.CLOSED
             )
         result = self.db.execute(stmt)
         return result.scalars().all()
@@ -165,41 +145,34 @@ class CampaignRepository:
         result = self.db.execute(stmt)
         return {row.id: row.full_name for row in result}
     
-    def get_candidate_count(
-        self,
+    def get_candidate_count(self,
         campaign_id: UUID,
     ) -> int:
         """
         Returns total candidates in a campaign.
         """
-        return (
-            self.db.query(func.count(CampaignCandidate.id))
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
             )
             .scalar()
             or 0
         )
     
-    def get_shortlisted_count(
-        self,
+    def get_shortlisted_count(self,
         campaign_id: UUID,
     ) -> int:
         """
         Returns total shortlisted candidates in a campaign.
         """
-        return (
-            self.db.query(func.count(CampaignCandidate.id))
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.SHORTLISTED,
             )
             .scalar()
             or 0
         )
 
-    def get_hm_review_count(
-        self,
+    def get_hm_review_count(self,
         campaign_id: UUID,
     ) -> int:
         """
@@ -207,10 +180,8 @@ class CampaignRepository:
         campaign — used to warn HR_ADMIN that pending decisions may need
         re-communicating to a newly-reassigned hiring manager.
         """
-        return (
-            self.db.query(func.count(CampaignCandidate.id))
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
             )
             .scalar()
@@ -224,9 +195,7 @@ class CampaignRepository:
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
 
-        latest_entry = (
-            select(
-                CampaignCandidateStageHistory.campaign_candidate_id,
+        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
                 func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
             )
             .where(CampaignCandidateStageHistory.to_stage == PipelineStage.HM_REVIEW)
@@ -234,11 +203,9 @@ class CampaignRepository:
             .subquery()
         )
 
-        stmt = (
-            select(func.count(CampaignCandidate.id))
+        stmt = (select(func.count(CampaignCandidate.id))
             .join(latest_entry, latest_entry.c.campaign_candidate_id == CampaignCandidate.id)
-            .where(
-                CampaignCandidate.campaign_id == campaign_id,
+            .where(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
                 latest_entry.c.entered_at <= cutoff,
             )
@@ -247,11 +214,10 @@ class CampaignRepository:
 
     def is_pipeline_stalled(self, campaign_id: UUID, stale_days: int) -> bool:
         """
-        S05-T03: True if the campaign has candidates but none have been added
+        True if the campaign has candidates but none have been added
         in the last stale_days days.
         """
-        latest_added_at = (
-            self.db.query(func.max(CampaignCandidate.created_at))
+        latest_added_at = (self.db.query(func.max(CampaignCandidate.created_at))
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .scalar()
         )
@@ -260,83 +226,6 @@ class CampaignRepository:
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
         return latest_added_at <= cutoff
-
-    def get_score_distribution(self, campaign_id: UUID) -> dict:
-        """
-        composite_score stats (excluding REJECTED) plus per-layer
-        rejection counts, for the campaign comparison view. Computed in
-        Python over the raw rows rather than DB-side percentile_cont — these
-        are report-scale volumes (a handful of compared campaigns), and this
-        avoids a Postgres-version/dialect dependency for the median.
-        """
-        rows = (
-            self.db.query(
-                CampaignCandidate.composite_score,
-                CampaignCandidate.rejection_layer,
-                CampaignCandidate.pipeline_stage,
-            )
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .all()
-        )
-
-        scored = sorted(
-            float(r.composite_score)
-            for r in rows
-            if r.composite_score is not None and r.pipeline_stage != PipelineStage.REJECTED
-        )
-
-        passed_all_layers_count = sum(
-            1 for r in rows if r.rejection_layer is None and r.composite_score is not None
-        )
-        rejected_deterministic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.DETERMINISTIC)
-        rejected_semantic_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.SEMANTIC)
-        rejected_ai_count = sum(1 for r in rows if r.rejection_layer == RejectionLayer.AI)
-
-        if not scored:
-            return {
-                "average": None,
-                "median": None,
-                "highest": None,
-                "lowest": None,
-                "passed_all_layers_count": passed_all_layers_count,
-                "rejected_deterministic_count": rejected_deterministic_count,
-                "rejected_semantic_count": rejected_semantic_count,
-                "rejected_ai_count": rejected_ai_count,
-            }
-
-        n = len(scored)
-        mid = n // 2
-        median = scored[mid] if n % 2 == 1 else (scored[mid - 1] + scored[mid]) / 2
-
-        return {
-            "average": sum(scored) / n,
-            "median": median,
-            "highest": scored[-1],
-            "lowest": scored[0],
-            "passed_all_layers_count": passed_all_layers_count,
-            "rejected_deterministic_count": rejected_deterministic_count,
-            "rejected_semantic_count": rejected_semantic_count,
-            "rejected_ai_count": rejected_ai_count,
-        }
-
-    def count_candidates_in_window(
-        self,
-        campaign_id: UUID,
-        start: datetime,
-        end: datetime | None,
-    ) -> int:
-        """
-        S05-T03: candidates added to this campaign in [start, end) — end=None
-        means open-ended (through now), used for a config's most recent
-        window in the Weight Change Report.
-        """
-        stmt = select(func.count(CampaignCandidate.id)).where(
-            CampaignCandidate.campaign_id == campaign_id,
-            CampaignCandidate.created_at >= start,
-        )
-        if end is not None:
-            stmt = stmt.where(CampaignCandidate.created_at < end)
-        return self.db.execute(stmt).scalar() or 0
 
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
@@ -353,14 +242,12 @@ class CampaignRepository:
 
     def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
         """
-        Returns ACTIVE campaigns whose deadline has passed. S05-T02: an
+        Returns ACTIVE campaigns whose deadline has passed. an
         optional limit lets the caller process expired campaigns in batches
         instead of locking every expired row in one huge transaction.
         """
-        stmt = (
-            self.db.query(HiringCampaign)
-            .filter(
-                HiringCampaign.status == CampaignStatus.ACTIVE,
+        stmt = (self.db.query(HiringCampaign)
+            .filter(HiringCampaign.status == CampaignStatus.ACTIVE,
                 HiringCampaign.deadline.isnot(None),
                 HiringCampaign.deadline < datetime.now(timezone.utc),
             )
@@ -378,70 +265,58 @@ class CampaignRepository:
 
         return campaign
     
-    def search_campaigns(
-        self,
+    def search_campaigns(self,
         filters: CampaignFilterRequest,
     ) -> list[HiringCampaign]:
 
-        stmt = (
-            select(HiringCampaign)
-            .options(
-                joinedload(HiringCampaign.job_description),
+        stmt = (select(HiringCampaign)
+            .options(joinedload(HiringCampaign.job_description),
             )
         )
 
         # Hide closed campaigns by default
         if not filters.show_closed:
-            stmt = stmt.where(
-                HiringCampaign.status != CampaignStatus.CLOSED
+            stmt = stmt.where(HiringCampaign.status != CampaignStatus.CLOSED
             )
 
         # Search by campaign name
         if filters.search:
-            stmt = stmt.where(
-                HiringCampaign.name.ilike(f"%{filters.search}%")
+            stmt = stmt.where(HiringCampaign.name.ilike(f"%{filters.search}%")
             )
 
         # Filter by status
         if filters.status:
-            stmt = stmt.where(
-                HiringCampaign.status == filters.status
+            stmt = stmt.where(HiringCampaign.status == filters.status
             )
 
         # Filter by Hiring Manager
         if filters.hiring_manager_id:
-            stmt = stmt.where(
-                HiringCampaign.hiring_manager_id
+            stmt = stmt.where(HiringCampaign.hiring_manager_id
                 == filters.hiring_manager_id
             )
 
         # Filter by JD
         if filters.jd_id:
-            stmt = stmt.where(
-                HiringCampaign.jd_id == filters.jd_id
+            stmt = stmt.where(HiringCampaign.jd_id == filters.jd_id
             )
 
         # Filter by deadline
         if filters.has_deadline is True:
-            stmt = stmt.where(
-                HiringCampaign.deadline.is_not(None)
+            stmt = stmt.where(HiringCampaign.deadline.is_not(None)
             )
 
         elif filters.has_deadline is False:
-            stmt = stmt.where(
-                HiringCampaign.deadline.is_(None)
+            stmt = stmt.where(HiringCampaign.deadline.is_(None)
             )
 
-        stmt = stmt.order_by(
-            HiringCampaign.created_at.desc()
+        stmt = stmt.order_by(HiringCampaign.created_at.desc()
         )
 
         result = self.db.execute(stmt)
 
         return result.scalars().all()
     
-    def is_deadline_soon(
-        self,
+    def is_deadline_soon(self,
         campaign: HiringCampaign,
         warning_days: int = 3,
     ) -> bool:
@@ -453,8 +328,7 @@ class CampaignRepository:
 
         return now <= campaign.deadline <= now + timedelta(days=warning_days)
     
-    def update_scoring_configuration(
-        self,
+    def update_scoring_configuration(self,
         campaign: HiringCampaign,
         request: CampaignScoringUpdateRequest,
     ) -> HiringCampaign:
@@ -475,18 +349,15 @@ class CampaignRepository:
         return campaign
 
     def get_mandatory_skill_count(self, jd_id) -> int:
-        return (
-            self.db.query(JDSkill)
+        return (self.db.query(JDSkill)
             .filter(JDSkill.jd_id == jd_id, JDSkill.mandatory == True)
             .count()
         )
 
     def get_mandatory_unverified_skill_count(self, jd_id) -> int:
-        """S04-T01: mandatory jd_skills not yet AUTO_VERIFIED (still PENDING_REVIEW)."""
-        return (
-            self.db.query(JDSkill)
-            .filter(
-                JDSkill.jd_id == jd_id,
+        """mandatory jd_skills not yet AUTO_VERIFIED (still PENDING_REVIEW)."""
+        return (self.db.query(JDSkill)
+            .filter(JDSkill.jd_id == jd_id,
                 JDSkill.mandatory == True,
                 JDSkill.verification_status == JDSkillVerificationStatus.PENDING_REVIEW,
             )
@@ -495,22 +366,19 @@ class CampaignRepository:
 
     def get_unresolved_unknown_skill_count(self, jd_id) -> int:
         """
-        S04-T01: "no blocking parse failures" — the closest concrete, queryable
+        "no blocking parse failures" — the closest concrete, queryable
         signal is unknown skills the extraction pipeline couldn't confidently
         match to skill_ontology, still sitting unresolved for this JD.
         """
-        return (
-            self.db.query(JDUnknownSkill)
-            .filter(
-                JDUnknownSkill.jd_id == jd_id,
+        return (self.db.query(JDUnknownSkill)
+            .filter(JDUnknownSkill.jd_id == jd_id,
                 JDUnknownSkill.status == JDUnknownSkillStatus.PENDING,
             )
             .count()
         )
     
     def get_candidate_count(self,campaign_id) -> int:
-        return (
-            self.db.query(CampaignCandidate)
+        return (self.db.query(CampaignCandidate)
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .count()
         )
@@ -518,8 +386,7 @@ class CampaignRepository:
         return self.db.get(User, user_id)
 
     def get_stage_counts(self, campaign_id) -> dict[str, int]:
-        rows = (
-            self.db.query(CampaignCandidate.pipeline_stage, func.count())
+        rows = (self.db.query(CampaignCandidate.pipeline_stage, func.count())
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .group_by(CampaignCandidate.pipeline_stage)
             .all()
@@ -527,18 +394,15 @@ class CampaignRepository:
         return {stage.value: count for stage, count in rows}
 
     def get_audit_entries(self, campaign_id) -> list[AuditLog]:
-        return (
-            self.db.query(AuditLog)
+        return (self.db.query(AuditLog)
             .filter(AuditLog.campaign_id == campaign_id)
             .order_by(AuditLog.created_at.desc())
             .all()
         )
 
     def get_stage_history(self, campaign_id) -> list[CampaignCandidateStageHistory]:
-        return (
-            self.db.query(CampaignCandidateStageHistory)
-            .join(
-                CampaignCandidate,
+        return (self.db.query(CampaignCandidateStageHistory)
+            .join(CampaignCandidate,
                 CampaignCandidateStageHistory.campaign_candidate_id == CampaignCandidate.id,
             )
             .filter(CampaignCandidate.campaign_id == campaign_id)
@@ -547,8 +411,7 @@ class CampaignRepository:
         )
 
     def get_bulk_upload_events(self, campaign_id) -> list[BulkUploadJob]:
-        return (
-            self.db.query(BulkUploadJob)
+        return (self.db.query(BulkUploadJob)
             .filter(BulkUploadJob.campaign_id == campaign_id)
             .order_by(BulkUploadJob.created_at.desc())
             .all()
@@ -562,14 +425,11 @@ class CampaignRepository:
         this campaign — celery_task_log with status IN (QUEUED, RUNNING) linked
         via campaign_candidate_id.
         """
-        return (
-            self.db.query(func.count(CeleryTaskLog.id))
-            .join(
-                CampaignCandidate,
+        return (self.db.query(func.count(CeleryTaskLog.id))
+            .join(CampaignCandidate,
                 CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CeleryTaskLog.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING]),
             )
             .scalar()
@@ -578,10 +438,8 @@ class CampaignRepository:
 
     def count_processing_bulk_jobs(self, campaign_id: UUID) -> int:
         """T01/T03: bulk_upload_jobs in PROCESSING state for this campaign."""
-        return (
-            self.db.query(func.count(BulkUploadJob.id))
-            .filter(
-                BulkUploadJob.campaign_id == campaign_id,
+        return (self.db.query(func.count(BulkUploadJob.id))
+            .filter(BulkUploadJob.campaign_id == campaign_id,
                 BulkUploadJob.status == BulkUploadStatus.PROCESSING,
             )
             .scalar()
@@ -597,15 +455,12 @@ class CampaignRepository:
         Bulk UPDATE (no row hydration) — the subquery scopes to this campaign's
         candidates.
         """
-        candidate_ids = (
-            select(CampaignCandidate.id)
+        candidate_ids = (select(CampaignCandidate.id)
             .where(CampaignCandidate.campaign_id == campaign_id)
             .scalar_subquery()
         )
-        result = self.db.execute(
-            update(CeleryTaskLog)
-            .where(
-                CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
+        result = self.db.execute(update(CeleryTaskLog)
+            .where(CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
                 CeleryTaskLog.status == TaskStatus.QUEUED,
             )
             .values(status=TaskStatus.PAUSED)
@@ -617,14 +472,11 @@ class CampaignRepository:
 
     def count_paused_tasks(self, campaign_id: UUID) -> int:
         """T01: Celery tasks suspended during the pause (status = PAUSED)."""
-        return (
-            self.db.query(func.count(CeleryTaskLog.id))
-            .join(
-                CampaignCandidate,
+        return (self.db.query(func.count(CeleryTaskLog.id))
+            .join(CampaignCandidate,
                 CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CeleryTaskLog.status == TaskStatus.PAUSED,
             )
             .scalar()
@@ -636,11 +488,9 @@ class CampaignRepository:
         T01: resumes uploaded but not yet queued for processing — parse_status =
         PENDING, linked to this campaign via campaign_candidates.
         """
-        return (
-            self.db.query(func.count(func.distinct(Resume.id)))
+        return (self.db.query(func.count(func.distinct(Resume.id)))
             .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 Resume.parse_status == ParseStatus.PENDING,
             )
             .scalar()
@@ -653,14 +503,11 @@ class CampaignRepository:
         bulk UPDATE, these need to be loaded so each one can actually be
         resubmitted to the Celery broker before its status flips to QUEUED.
         """
-        return (
-            self.db.query(CeleryTaskLog)
-            .join(
-                CampaignCandidate,
+        return (self.db.query(CeleryTaskLog)
+            .join(CampaignCandidate,
                 CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CeleryTaskLog.status == TaskStatus.PAUSED,
             )
             .all()
@@ -678,11 +525,9 @@ class CampaignRepository:
         campaign — these need a new RESUME_PARSE task actually submitted on
         resume, not just counted.
         """
-        return (
-            self.db.query(Resume)
+        return (self.db.query(Resume)
             .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 Resume.parse_status == ParseStatus.PENDING,
             )
             .distinct()
@@ -693,12 +538,9 @@ class CampaignRepository:
 
     def count_pending_human_decision(self, campaign_id: UUID) -> int:
         """T01: candidates in INTERVIEW or HM_REVIEW — need a human decision before closing."""
-        return (
-            self.db.query(func.count(CampaignCandidate.id))
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.pipeline_stage.in_(
-                    [PipelineStage.INTERVIEW, PipelineStage.HM_REVIEW]
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage.in_([PipelineStage.INTERVIEW, PipelineStage.HM_REVIEW]
                 ),
             )
             .scalar()
@@ -711,19 +553,15 @@ class CampaignRepository:
         DEAD, not soft-cancelled to PAUSED, since there's no resume to
         re-queue them later. RUNNING tasks are left to finish naturally.
         """
-        candidate_ids = (
-            select(CampaignCandidate.id)
+        candidate_ids = (select(CampaignCandidate.id)
             .where(CampaignCandidate.campaign_id == campaign_id)
             .scalar_subquery()
         )
-        result = self.db.execute(
-            update(CeleryTaskLog)
-            .where(
-                CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
+        result = self.db.execute(update(CeleryTaskLog)
+            .where(CeleryTaskLog.campaign_candidate_id.in_(candidate_ids),
                 CeleryTaskLog.status == TaskStatus.QUEUED,
             )
-            .values(
-                status=TaskStatus.DEAD,
+            .values(status=TaskStatus.DEAD,
                 error_message="Campaign closed by HR_ADMIN before task could execute.",
             )
             .execution_options(synchronize_session=False)
@@ -732,14 +570,11 @@ class CampaignRepository:
 
     def cancel_pending_bulk_jobs(self, campaign_id: UUID) -> int:
         """T02: bulk_upload_jobs still PENDING/EXTRACTING are cancelled outright on closure."""
-        result = self.db.execute(
-            update(BulkUploadJob)
-            .where(
-                BulkUploadJob.campaign_id == campaign_id,
+        result = self.db.execute(update(BulkUploadJob)
+            .where(BulkUploadJob.campaign_id == campaign_id,
                 BulkUploadJob.status.in_([BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING]),
             )
-            .values(
-                status=BulkUploadStatus.FAILED,
+            .values(status=BulkUploadStatus.FAILED,
                 error_summary="Campaign closed during upload.",
             )
             .execution_options(synchronize_session=False)
@@ -748,19 +583,16 @@ class CampaignRepository:
 
     def mark_processing_bulk_jobs_partial_failure(self, campaign_id: UUID) -> int:
         """
-        E03-S05-T01: when a campaign auto-closes because its candidate cap was
+        E03-when a campaign auto-closes because its candidate cap was
         just reached, any bulk_upload_jobs still PROCESSING get marked
         PARTIAL_FAILURE (some files were processed before the cap hit, not a
         clean FAILED) rather than left to run against a now-closed campaign.
         """
-        result = self.db.execute(
-            update(BulkUploadJob)
-            .where(
-                BulkUploadJob.campaign_id == campaign_id,
+        result = self.db.execute(update(BulkUploadJob)
+            .where(BulkUploadJob.campaign_id == campaign_id,
                 BulkUploadJob.status == BulkUploadStatus.PROCESSING,
             )
-            .values(
-                status=BulkUploadStatus.PARTIAL_FAILURE,
+            .values(status=BulkUploadStatus.PARTIAL_FAILURE,
                 error_summary="Campaign reached maximum candidate limit during upload.",
             )
             .execution_options(synchronize_session=False)
@@ -771,10 +603,8 @@ class CampaignRepository:
 
     def get_task_status_counts(self, campaign_id: UUID) -> dict[str, int]:
         """T02: celery_task_log status breakdown for this campaign's tasks."""
-        rows = (
-            self.db.query(CeleryTaskLog.status, func.count())
-            .join(
-                CampaignCandidate,
+        rows = (self.db.query(CeleryTaskLog.status, func.count())
+            .join(CampaignCandidate,
                 CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
             .filter(CampaignCandidate.campaign_id == campaign_id)
@@ -785,22 +615,17 @@ class CampaignRepository:
 
     def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
         """
-        S03-T02 (widened from the E04-S01 candidate-only join): campaign-linked
+        (widened from the candidate-only join): campaign-linked
         DLQ rows via campaign_candidate_id OR resume_id. Tasks that died before
         their CampaignCandidate row existed carry only resume_id, and the old
         candidate-only join silently hid them from the campaign view.
         """
-        candidate_ids = select(CampaignCandidate.id).where(
-            CampaignCandidate.campaign_id == campaign_id
+        candidate_ids = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id
         )
-        resume_ids = select(CampaignCandidate.resume_id).where(
-            CampaignCandidate.campaign_id == campaign_id
+        resume_ids = select(CampaignCandidate.resume_id).where(CampaignCandidate.campaign_id == campaign_id
         )
-        return (
-            self.db.query(DeadLetterQueue)
-            .filter(
-                or_(
-                    DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
+        return (self.db.query(DeadLetterQueue)
+            .filter(or_(DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
                     DeadLetterQueue.resume_id.in_(resume_ids),
                 )
             )
@@ -810,26 +635,22 @@ class CampaignRepository:
 
     def get_task_type_breakdown(self, campaign_id: UUID) -> list[dict]:
         """
-        S03-T01: per-task_type status counts + avg duration + token usage for
+        per-task_type status counts + avg duration + token usage for
         this campaign's tasks. Grouped by the ACTUAL task_type strings in
         celery_task_log (the spec's RESUME_PARSE/EMBED_RESUME/... taxonomy
         doesn't exist — embedding/normalization run as stages inside the parse
         task, not as separate Celery tasks). avg_duration_ms is derived from
         completed_at - started_at since no duration column exists.
         """
-        rows = (
-            self.db.query(
-                CeleryTaskLog.task_type,
+        rows = (self.db.query(CeleryTaskLog.task_type,
                 CeleryTaskLog.status,
                 func.count(CeleryTaskLog.id),
-                func.avg(
-                    func.extract("epoch", CeleryTaskLog.completed_at)
+                func.avg(func.extract("epoch", CeleryTaskLog.completed_at)
                     - func.extract("epoch", CeleryTaskLog.started_at)
                 ),
                 func.coalesce(func.sum(CeleryTaskLog.token_count), 0),
             )
-            .join(
-                CampaignCandidate,
+            .join(CampaignCandidate,
                 CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id,
             )
             .filter(CampaignCandidate.campaign_id == campaign_id)
@@ -839,8 +660,7 @@ class CampaignRepository:
 
         by_type: dict[str, dict] = {}
         for task_type, task_status, count, avg_seconds, tokens in rows:
-            entry = by_type.setdefault(
-                task_type,
+            entry = by_type.setdefault(task_type,
                 {
                     "task_type": task_type,
                     "status_counts": {},
@@ -855,10 +675,9 @@ class CampaignRepository:
                 entry["avg_duration_ms"] = round(float(avg_seconds) * 1000, 1)
         return list(by_type.values())
 
-    def get_dlq_entries_by_ids(
-        self, campaign_id: UUID, dlq_ids: list[UUID]
+    def get_dlq_entries_by_ids(self, campaign_id: UUID, dlq_ids: list[UUID]
     ) -> list[DeadLetterQueue]:
-        """S03-T02: the selected entries, re-validated as belonging to this campaign."""
+        """the selected entries, re-validated as belonging to this campaign."""
         wanted = set(dlq_ids)
         return [
             e for e in self.get_dead_letter_queue_entries(campaign_id)
@@ -867,35 +686,32 @@ class CampaignRepository:
 
     def count_dlq_chain(self, entry: DeadLetterQueue) -> int:
         """
-        S03-T02 replay-limit guard: how many times has this same piece of work
+        replay-limit guard: how many times has this same piece of work
         already dead-lettered? Every failed replay produces a NEW dlq row for
         the same (task_type, entity), so the chain length IS the attempt count.
         """
         conditions = [DeadLetterQueue.task_type == entry.task_type]
         if entry.campaign_candidate_id is not None:
-            conditions.append(
-                DeadLetterQueue.campaign_candidate_id == entry.campaign_candidate_id
+            conditions.append(DeadLetterQueue.campaign_candidate_id == entry.campaign_candidate_id
             )
         elif entry.resume_id is not None:
             conditions.append(DeadLetterQueue.resume_id == entry.resume_id)
         else:
             return 1  # unlinkable entry — no chain to count
-        return (
-            self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar()
+        return (self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar()
             or 1
         )
 
-    # ── S04 — Stalled candidates ─────────────────────────────────────────
+    # ── Stalled candidates ─────────────────────────────────────────
 
-    def get_stalled_candidates(
-        self,
+    def get_stalled_candidates(self,
         campaign_id: UUID,
         screening_sla_hours: float,
         hm_review_sla_days: float,
         interview_sla_days: float,
     ) -> list[dict]:
         """
-        S04-T01: campaign_candidates sitting in the same stage past their
+        campaign_candidates sitting in the same stage past their
         per-stage SLA (updated_at is the last-touched marker per spec).
         Computed live — no stalled_candidates table exists; the "view" is
         this query. Returns dicts with stall context; last_action_by is the
@@ -907,13 +723,10 @@ class CampaignRepository:
             PipelineStage.HM_REVIEW: now - timedelta(days=hm_review_sla_days),
             PipelineStage.INTERVIEW: now - timedelta(days=interview_sla_days),
         }
-        rows = (
-            self.db.query(CampaignCandidate)
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+        rows = (self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 or_(*[
-                    and_(
-                        CampaignCandidate.pipeline_stage == stage,
+                    and_(CampaignCandidate.pipeline_stage == stage,
                         CampaignCandidate.updated_at < cutoff,
                     )
                     for stage, cutoff in cutoffs.items()
@@ -930,8 +743,7 @@ class CampaignRepository:
         # batch: which stalled SCREENING candidates have a dead task / DLQ row
         failed_ids = {
             cid for (cid,) in self.db.query(CeleryTaskLog.campaign_candidate_id)
-            .filter(
-                CeleryTaskLog.campaign_candidate_id.in_(ids),
+            .filter(CeleryTaskLog.campaign_candidate_id.in_(ids),
                 CeleryTaskLog.status == TaskStatus.DEAD,
             ).all()
         } | {
@@ -941,8 +753,7 @@ class CampaignRepository:
 
         # batch: latest audit actor per candidate entity
         last_actor: dict = {}
-        audit_rows = (
-            self.db.query(AuditLog.entity_id, AuditLog.actor_id)
+        audit_rows = (self.db.query(AuditLog.entity_id, AuditLog.actor_id)
             .filter(AuditLog.entity_id.in_(ids))
             .order_by(AuditLog.created_at.desc())
             .all()
@@ -950,8 +761,7 @@ class CampaignRepository:
         for entity_id, actor_id in audit_rows:
             last_actor.setdefault(entity_id, actor_id)
 
-        actor_names = self.get_hiring_manager_names(
-            [a for a in last_actor.values() if a]
+        actor_names = self.get_hiring_manager_names([a for a in last_actor.values() if a]
         )
 
         stall_reasons = {
@@ -978,17 +788,14 @@ class CampaignRepository:
 
     def get_campaign_candidate(self, campaign_id: UUID, campaign_candidate_id: UUID) -> CampaignCandidate | None:
         """Scoped fetch — validates the candidate actually belongs to this campaign."""
-        return (
-            self.db.query(CampaignCandidate)
-            .filter(
-                CampaignCandidate.id == campaign_candidate_id,
+        return (self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.id == campaign_candidate_id,
                 CampaignCandidate.campaign_id == campaign_id,
             )
             .first()
         )
 
-    def transition_candidate_stage(
-        self,
+    def transition_candidate_stage(self,
         cc: CampaignCandidate,
         to_stage,
         changed_by: str,
@@ -997,7 +804,7 @@ class CampaignRepository:
         set_fraud_flag: bool = False,
     ) -> None:
         """
-        S04-T02: the first real stage-transition writer in this codebase —
+        the first real stage-transition writer in this codebase —
         updates pipeline_stage AND records the campaign_candidate_stage_history
         row (previously only the initial UPLOADED insert ever wrote history).
         """
@@ -1005,8 +812,7 @@ class CampaignRepository:
         cc.pipeline_stage = to_stage
         if set_fraud_flag:
             cc.is_fraud_flagged = True
-        self.db.add(CampaignCandidateStageHistory(
-            campaign_candidate_id=cc.id,
+        self.db.add(CampaignCandidateStageHistory(campaign_candidate_id=cc.id,
             from_stage=from_stage,
             to_stage=to_stage,
             changed_by=changed_by,
@@ -1022,20 +828,18 @@ class CampaignRepository:
         self.db.flush()
 
     def get_unreplayed_dlq_ids_for_candidate(self, campaign_candidate_id: UUID) -> list[UUID]:
-        """S04-T02 Re-Process: this candidate's replayable (not-yet-replayed) DLQ entries."""
+        """Re-Process: this candidate's replayable (not-yet-replayed) DLQ entries."""
         return [
             row[0] for row in self.db.query(DeadLetterQueue.id)
-            .filter(
-                DeadLetterQueue.campaign_candidate_id == campaign_candidate_id,
+            .filter(DeadLetterQueue.campaign_candidate_id == campaign_candidate_id,
                 DeadLetterQueue.replayed_at.is_(None),
             ).all()
         ]
 
-    # ── S05 — Rejection analytics ────────────────────────────────────────
+    # ── Rejection analytics ────────────────────────────────────────
 
     def get_rejection_layer_breakdown(self, campaign_id: UUID) -> dict[str, int]:
-        rows = (
-            self.db.query(CandidateRejection.rejection_layer, func.count(CandidateRejection.id))
+        rows = (self.db.query(CandidateRejection.rejection_layer, func.count(CandidateRejection.id))
             .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .group_by(CandidateRejection.rejection_layer)
@@ -1044,8 +848,7 @@ class CampaignRepository:
         return {layer.value: count for layer, count in rows}
 
     def get_top_rejection_reasons(self, campaign_id: UUID, limit: int = 10) -> list[dict]:
-        rows = (
-            self.db.query(CandidateRejection.rejection_reason, func.count(CandidateRejection.id))
+        rows = (self.db.query(CandidateRejection.rejection_reason, func.count(CandidateRejection.id))
             .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
             .filter(CampaignCandidate.campaign_id == campaign_id)
             .group_by(CandidateRejection.rejection_reason)
@@ -1055,11 +858,9 @@ class CampaignRepository:
         )
         result = []
         for reason, count in rows:
-            sample = (
-                self.db.query(CandidateRejection.rejection_detail)
+            sample = (self.db.query(CandidateRejection.rejection_detail)
                 .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
-                .filter(
-                    CampaignCandidate.campaign_id == campaign_id,
+                .filter(CampaignCandidate.campaign_id == campaign_id,
                     CandidateRejection.rejection_reason == reason,
                     CandidateRejection.rejection_detail.isnot(None),
                 )
@@ -1074,7 +875,7 @@ class CampaignRepository:
 
     def get_missing_mandatory_skill_counts(self, campaign_id: UUID) -> list[tuple[str, int]]:
         """
-        S05-T01/T03: per-skill counts from rejection_detail->'missing_skills'
+        per-skill counts from rejection_detail->'missing_skills'
         (a JSONB array of canonical skill NAMES — the shape the deterministic
         scoring task actually writes). Raw SQL because jsonb_array_elements_text
         has no clean ORM equivalent.
@@ -1092,33 +893,6 @@ class CampaignRepository:
         """), {"campaign_id": str(campaign_id)}).all()
         return [(r.skill, r.cnt) for r in rows]
 
-    # ── S06 — Campaign summary export ────────────────────────────────────
-
-    def get_bulk_jobs_for_campaign(self, campaign_id: UUID) -> list[BulkUploadJob]:
-        return (
-            self.db.query(BulkUploadJob)
-            .filter(BulkUploadJob.campaign_id == campaign_id)
-            .order_by(BulkUploadJob.created_at.desc())
-            .all()
-        )
-
-    def get_candidate_outcome_rows(self, campaign_id: UUID) -> list:
-        """S06-T02: score/outcome columns only — anonymised, UUIDs never exported with PII."""
-        return (
-            self.db.query(
-                CampaignCandidate.composite_score,
-                CampaignCandidate.deterministic_score,
-                CampaignCandidate.semantic_score,
-                CampaignCandidate.ai_ats_score,
-                CampaignCandidate.ai_recommendation,
-                CampaignCandidate.hr_override,
-                CampaignCandidate.pipeline_stage,
-                CampaignCandidate.deterministic_passed,
-            )
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .all()
-        )
-
     def get_deterministic_rejection_rate(self, campaign_id: UUID) -> float:
         """
         T03: percentage of this campaign's total candidates rejected at the
@@ -1129,10 +903,8 @@ class CampaignRepository:
         if total == 0:
             return 0.0
 
-        rejected = (
-            self.db.query(func.count(CampaignCandidate.id))
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+        rejected = (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.rejection_layer == RejectionLayer.DETERMINISTIC,
             )
             .scalar()
@@ -1147,9 +919,7 @@ class CampaignRepository:
         transitions) — measured from each candidate's most recent
         transition into SCREENING to now. None if nobody is in SCREENING.
         """
-        latest_entry = (
-            select(
-                CampaignCandidateStageHistory.campaign_candidate_id,
+        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
                 func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
             )
             .where(CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING)
@@ -1157,14 +927,11 @@ class CampaignRepository:
             .subquery()
         )
 
-        rows = (
-            self.db.query(latest_entry.c.entered_at)
-            .join(
-                CampaignCandidate,
+        rows = (self.db.query(latest_entry.c.entered_at)
+            .join(CampaignCandidate,
                 CampaignCandidate.id == latest_entry.c.campaign_candidate_id,
             )
-            .filter(
-                CampaignCandidate.campaign_id == campaign_id,
+            .filter(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
             )
             .all()

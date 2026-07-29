@@ -10,8 +10,7 @@ class CampaignCandidateCreateRequest(BaseModel):
     candidate_id: UUID
     resume_id: UUID
 
-    model_config = ConfigDict(
-        from_attributes=True,
+    model_config = ConfigDict(from_attributes=True,
     )
 
 class CampaignCandidateResponse(BaseModel):
@@ -26,7 +25,7 @@ class CampaignCandidateResponse(BaseModel):
 
     pipeline_stage: PipelineStage
 
-    # Candidate Listing UI fields (M03-E05-adjacent listing extension).
+    # Candidate Listing UI fields (-adjacent listing extension).
     # All read-only, sourced from existing stored data - never recalculated.
     candidate_name: str | None = None
     current_designation: str | None = None
@@ -43,14 +42,13 @@ class CampaignCandidateResponse(BaseModel):
 
     created_at: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True,
+    model_config = ConfigDict(from_attributes=True,
     )
 
 
 class CandidateScorecardResponse(CampaignCandidateResponse):
     """
-    M07-E03 S03 T01: extends CampaignCandidateResponse (never duplicates
+    T01: extends CampaignCandidateResponse (never duplicates
     it) with the rejection banner - used only by the single-candidate
     scorecard detail endpoint, never the campaign candidate list, so list
     consumers are entirely unaffected.
@@ -76,7 +74,7 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
 
 
 class CandidateRejectionHistoryEntryResponse(BaseModel):
-    """M07-E03 S03 T02: one candidate_rejections row, read-only - no edit/delete APIs exist or are added."""
+    """T02: one candidate_rejections row, read-only - no edit/delete APIs exist or are added."""
     id: UUID
     rejection_layer: RejectionLayer
     rejection_reason: str
@@ -89,13 +87,12 @@ class CandidateRejectionHistoryEntryResponse(BaseModel):
     # True only for the single newest record in the list.
     current_status: bool
 
-    model_config = ConfigDict(
-        from_attributes=True,
+    model_config = ConfigDict(from_attributes=True,
     )
 
 
 class HrOverrideRequest(BaseModel):
-    """M07-E03 S04 T01: HR_ADMIN override of a deterministic rejection."""
+    """T01: HR_ADMIN override of a deterministic rejection."""
 
     override_reason: str = Field(..., min_length=20)
     confirmation: bool
@@ -109,7 +106,7 @@ class HrOverrideRequest(BaseModel):
 
 
 class OverrideReportRow(BaseModel):
-    """M07-E03 S04 T03: one HR override event - never includes candidate name/email/phone/resume."""
+    """T03: one HR override event - never includes candidate name/email/phone/resume."""
 
     campaign_id: UUID
     campaign_name: str
@@ -120,8 +117,7 @@ class OverrideReportRow(BaseModel):
     override_timestamp: datetime
     current_pipeline_stage: PipelineStage
 
-    model_config = ConfigDict(
-        from_attributes=True,
+    model_config = ConfigDict(from_attributes=True,
     )
 
 
@@ -157,7 +153,7 @@ class OverrideReportResponse(BaseModel):
 
 
 class RejectionBreakdownEntry(BaseModel):
-    """M07-E03 S05 T01: one of the 7 mandatory/experience/education failure-combination buckets."""
+    """T01: one of the 7 mandatory/experience/education failure-combination buckets."""
 
     category: str
     count: int
@@ -165,7 +161,7 @@ class RejectionBreakdownEntry(BaseModel):
 
 
 class MissingSkillOccurrence(BaseModel):
-    """M07-E03 S05 T01: one canonical skill's occurrence among MISSING mandatory-skill matches."""
+    """T01: one canonical skill's occurrence among MISSING mandatory-skill matches."""
 
     canonical_name: str
     occurrence_count: int
@@ -173,7 +169,7 @@ class MissingSkillOccurrence(BaseModel):
 
 
 class JdCalibrationRecommendation(BaseModel):
-    """M07-E03 S05 T02: one structured JD-calibration suggestion."""
+    """T02: one structured JD-calibration suggestion."""
 
     rule: str
     message: str
@@ -186,7 +182,7 @@ class CampaignRejectionAnalyticsResponse(BaseModel):
     total_candidates: int
     total_deterministic_rejections: int
     # The threshold actually used to gate `recommendations` below - read
-    # from PlatformConfig, never hardcoded (M07-E03 S05 T02).
+    # from PlatformConfig, never hardcoded.
     min_candidates_for_analytics: int
     breakdown: list[RejectionBreakdownEntry]
     top_missing_skills: list[MissingSkillOccurrence]
