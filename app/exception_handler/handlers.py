@@ -66,8 +66,9 @@ async def resume_exception_handler(
     """
     Handle resume-upload-specific exceptions: unsupported file format, file
     size exceeded, corrupt/password-protected file, encryption service
-    unavailable. One handler for the shared base class catches all four
-    subclasses via FastAPI's exception-MRO lookup.
+    unavailable, exact-duplicate-file (Epic 3 M05-E03 Phase C2). One handler
+    for the shared base class catches every subclass via FastAPI's
+    exception-MRO lookup.
     """
     response = APIResponse.fail(
         message=exc.message,
@@ -75,7 +76,12 @@ async def resume_exception_handler(
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content=response.model_dump(),
+        # mode="json" so UUID/datetime fields (e.g. DuplicateFileWarningResponse's
+        # duplicate_resume_id/uploaded_at) are recursively converted to
+        # JSON-native strings — the default mode="python" leaves them as
+        # actual UUID/datetime objects, which the stdlib json.dumps() this
+        # JSONResponse uses underneath cannot serialize.
+        content=response.model_dump(mode="json"),
     )
 
 

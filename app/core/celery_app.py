@@ -88,4 +88,10 @@ celery_app.conf.beat_schedule = {
         # campaign-wide scans never contend for the same rows.
         "schedule": crontab(minute=30, hour=3),
     },
+    "evaluate-resubmission-alerts": {
+        "task": "campaign.evaluate_resubmission_alerts",
+        # Epic 3 (M05-E03) Phase C4 — daily, off-peak, its own distinct hour
+        # from the other three scheduled jobs.
+        "schedule": crontab(minute=0, hour=4),
+    },
 }

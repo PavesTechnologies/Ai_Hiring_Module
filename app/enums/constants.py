@@ -95,6 +95,10 @@ class ActionType(enum.Enum):
     # before PipelineTransitionService can log it — see the migration added
     # alongside this Python member.
     PIPELINE_STAGE_TRANSITIONED = "PIPELINE_STAGE_TRANSITIONED"
+    # Epic 3 (M05-E03) Phase C4 — same DB-enum caveat as PIPELINE_STAGE_TRANSITIONED
+    # above; needs `ALTER TYPE audit_action_type_enum ADD VALUE
+    # 'CAMPAIGN_RESUBMISSION_DETECTED'` before ResubmissionAlertService can log it.
+    CAMPAIGN_RESUBMISSION_DETECTED = "CAMPAIGN_RESUBMISSION_DETECTED"
     # M07-E03 S03 T03
     REJECTED_CANDIDATES_EXPORTED = "REJECTED_CANDIDATES_EXPORTED"
     # M07-E03 S04
@@ -108,6 +112,11 @@ class ActionType(enum.Enum):
     # before this can actually be written to audit_log.
     UNKNOWN_SKILL_DELETED = "UNKNOWN_SKILL_DELETED"
     BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
+    # Prompt Management (AIRS)
+    PROMPT_CREATED = "PROMPT_CREATED"
+    PROMPT_UPDATED = "PROMPT_UPDATED"
+    PROMPT_DELETED = "PROMPT_DELETED"
+    PROMPT_STATUS_CHANGED = "PROMPT_STATUS_CHANGED"
     DLQ_TASK_REPLAYED = "DLQ_TASK_REPLAYED"
     # M04-E04 S04/S05/S06 — stalled-candidate actions + report exports
     STALLED_CANDIDATES_ALERT = "STALLED_CANDIDATES_ALERT"
@@ -135,11 +144,6 @@ class EntityType(enum.Enum):
     BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
     BULK_UPLOAD_JOB_FILE = "BULK_UPLOAD_JOB_FILE"
     CANDIDATE_SKILL = "CANDIDATE_SKILL"
-    DEAD_LETTER_QUEUE = "DEAD_LETTER_QUEUE"
-    # Referenced by resume_upload_service's breaker-opened audit since M05
-    # Phase 11 but never actually defined here — that call silently failed
-    # inside its own try/except. Added so the audit entry actually gets written.
-    CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
 
 
 # Resume storage prefix inside the S3 bucket

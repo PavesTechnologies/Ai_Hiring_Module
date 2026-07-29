@@ -24,12 +24,16 @@ class GetJDResponse(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: datetime | None
+    prompt_template_id: UUID
+    prompt_name: str | None
 
 class UpdateJDResponse(BaseModel):
     id: UUID
     title: str
     version_number: int
     updated_by: str
+    prompt_template_id: UUID
+    prompt_name: str | None
 
 class JDListItem(BaseModel):
     id: UUID
@@ -44,6 +48,8 @@ class JDListItem(BaseModel):
     passed_campaigns_count: int
     created_by: str
     created_at: datetime
+    prompt_template_id: UUID
+    prompt_name: str | None
 
 
 class PaginatedJDResponse(BaseModel):

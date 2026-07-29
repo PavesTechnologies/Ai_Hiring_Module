@@ -186,5 +186,44 @@ class CampaignRejectionAnalyticsResponse(BaseModel):
     min_candidates_for_analytics: int
     breakdown: list[RejectionBreakdownEntry]
     top_missing_skills: list[MissingSkillOccurrence]
-    # Empty until total_candidates >= min_candidates_for_analytics.
-    recommendations: list[JdCalibrationRecommendation]
+
+
+class ResubmissionInfoResponse(BaseModel):
+    """
+    Epic 3 (M05-E03) Phase C5 — attached to the existing "candidate already
+    exists in this campaign" 409's `data` field (CampaignException itself
+    is unchanged - same status code, same message, same behavior for every
+    existing caller).
+    """
+    campaign_candidate_id: UUID
+    current_pipeline_stage: PipelineStage
+    current_resume_id: UUID
+    can_update_resume: bool
+    requires_hr_confirmation: bool
+
+
+class UpdateResumeResubmissionResponse(BaseModel):
+    campaign_candidate: CampaignCandidateResponse
+    new_resume_id: UUID
+    task_id: UUID
+
+
+class CandidateCampaignHistoryEntryResponse(BaseModel):
+    """Epic 3 (M05-E03) Phase C6 — one campaign a candidate has participated in, most recent first."""
+
+    campaign_candidate_id: UUID
+    campaign_id: UUID
+    campaign_name: str
+    jd_title: str
+    submission_date: datetime
+    pipeline_stage: PipelineStage
+    composite_score: float | None
+    # Derived: "Selected" / "Rejected" / "In Progress" - never a raw enum value,
+    # kept distinct from pipeline_stage per the C6 spec's separate field naming.
+    outcome: str
+
+
+class CandidateCampaignHistoryResponse(BaseModel):
+    candidate_id: UUID
+    total_campaigns: int
+    history: list[CandidateCampaignHistoryEntryResponse]

@@ -1,29 +1,25 @@
 from google import genai
-from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 from app.core.config import settings
-from pydantic import ValidationError
 import json
 
-from app.core.config import settings
-from app.prompts.jd_extraction_prompt import SYSTEM_PROMPT
-from app.schemas.ai.jd_extraction_response import JDExtractionResponse, JDExtractionGenerationSchema
+from app.schemas.ai.jd_extraction_response import JDExtractionGenerationSchema
 
 
 class GeminiExtractionService:
 
     def __init__(self):
         self.client = genai.Client(api_key=settings.gemini_api_key)
-    
+
     def extract_raw(
         self,
         normalized_text: str,
-        prompt: str = SYSTEM_PROMPT,
+        prompt: str,
         response_schema: type = JDExtractionGenerationSchema,
     ) -> dict:
         """
         Calls Gemini and returns the parsed JSON payload, unvalidated.
-        Kept separate from extract() so a pipeline can track "call the AI"
-        and "validate its output" as two distinct stages.
+        `prompt` is always the caller's selected prompt_templates.template_text
+        (JD_PARSE/RESUME_PARSE) - there is no built-in default.
         """
         full_prompt = f"""
         {prompt}
@@ -47,16 +43,4 @@ class GeminiExtractionService:
         except json.JSONDecodeError as e:
             raise ValueError(
                 f"Gemini returned invalid JSON: {e}"
-            )
-
-    def extract(self, normalized_text: str) -> JDExtractionResponse:
-        data = self.extract_raw(normalized_text)
-
-        try:
-            return JDExtractionResponse.model_validate(
-                data
-            )
-        except ValidationError as e:
-            raise ValueError(
-                f"Gemini response schema validation falied: {e}"
             )

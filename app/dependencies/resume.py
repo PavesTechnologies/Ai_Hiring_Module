@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.dependencies.campaign import get_config_repository
 from app.dependencies.campaign_candidate import (
     get_audit_service,
+    get_campaign_candidate_repository,
     get_campaign_candidate_service,
     get_campaign_repository,
 )
@@ -16,6 +17,7 @@ from app.dependencies.jd import (
 )
 from app.dependencies.storage import get_storage_service
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -102,6 +104,9 @@ def get_resume_service(
     storage_service: StorageService = Depends(get_storage_service),
     circuit_breaker_repo: CircuitBreakerRepository = Depends(get_circuit_breaker_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    encryption_service: EncryptionService = Depends(get_encryption_service),
 ) -> ResumeUploadService:
     return ResumeUploadService(
         resume_repo=resume_repo,
@@ -110,6 +115,9 @@ def get_resume_service(
         storage_service=storage_service,
         circuit_breaker_repo=circuit_breaker_repo,
         audit_service=audit_service,
+        candidate_repo=candidate_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        encryption_service=encryption_service,
     )
 
 
