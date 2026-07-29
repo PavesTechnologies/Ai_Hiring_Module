@@ -20,6 +20,8 @@ from app.models.identity import UserRole as LocalUserRole
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
+from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CopyScoringConfigResponse, CampaignMinimalResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, CopyScoringConfigRequest, PlatformDefaultWeightsUpdateRequest, CampaignDuplicateRequest
@@ -80,6 +82,7 @@ class CampaignService:
         config_repo: ConfigRepository,
         preset_repo: CampaignWeightPresetRepository,
         db: Session,
+        prompt_template_repo: PromptTemplateRepository,
 
     ):
         self.campaign_repo = campaign_repo
@@ -88,6 +91,7 @@ class CampaignService:
         self.config_repo = config_repo
         self.preset_repo = preset_repo
         self.db = db
+        self.prompt_template_repo = prompt_template_repo
 
     def _get_warning_thresholds(self) -> tuple[float, int]:
         """
@@ -157,6 +161,11 @@ class CampaignService:
             f"automatically recalculated."
         )
 
+    def _prompt_name_map(self, campaigns: list[HiringCampaign]) -> dict[UUID, str]:
+        return self.prompt_template_repo.get_names_by_ids(
+            [c.prompt_template_id for c in campaigns]
+        )
+
     def _hiring_manager_name_map(self, campaigns: list[HiringCampaign]) -> dict[str, str]:
         ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
         return self.campaign_repo.get_hiring_manager_names(ids)
@@ -222,6 +231,12 @@ class CampaignService:
                     422
                 )
 
+            selected_prompt = validate_prompt_template_selection(
+                request.prompt_template_id,
+                expected_task_type="RESUME_PARSE",
+                repository=self.prompt_template_repo,
+                exception_factory=lambda msg: CampaignException(msg, 422),
+            )
 
             existing_campaign = self.campaign_repo.get_by_name(org_id, request.name)
             if existing_campaign:
@@ -247,6 +262,7 @@ class CampaignService:
                 deterministic_threshold=float(request.deterministic_threshold),
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
+                prompt_template_id=selected_prompt.id,
                 hiring_manager_id=request.hiring_manager_id,
                 recruiter_id=request.recruiter_id,
                 created_by=created_by,
@@ -267,6 +283,8 @@ class CampaignService:
                 details={
                     "title": f"Campaign '{campaign.name}' created",
                     "jd_id": str(campaign.jd_id),
+                    "previous_prompt_template_id": None,
+                    "new_prompt_template_id": str(campaign.prompt_template_id),
                 },
             )
 
@@ -292,6 +310,8 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
+                prompt_template_id=campaign.prompt_template_id,
+                prompt_name=selected_prompt.name,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(
@@ -343,6 +363,7 @@ class CampaignService:
             deterministic_threshold=Decimal(str(source.deterministic_threshold)),
             hiring_manager_id=request.hiring_manager_id or source.hiring_manager_id,
             recruiter_id=request.recruiter_id or source.recruiter_id,
+            prompt_template_id=source.prompt_template_id,
         )
 
         # create_campaign() already commits the new campaign + its own
@@ -397,6 +418,7 @@ class CampaignService:
 
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+        prompt = self.prompt_template_repo.get_by_id(campaign.prompt_template_id)
 
         return CampaignResponse(
             id=campaign.id,
@@ -408,6 +430,8 @@ class CampaignService:
             max_candidates=campaign.max_candidates,
             deadline=campaign.deadline,
             created_at=campaign.created_at,
+            prompt_template_id=campaign.prompt_template_id,
+            prompt_name=prompt.name if prompt else None,
             candidate_count=candidate_count,
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
             approaching_cap=self._is_approaching_cap(
@@ -557,6 +581,7 @@ class CampaignService:
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
+        prompt_names = self._prompt_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -568,6 +593,8 @@ class CampaignService:
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
+                prompt_template_id=c.prompt_template_id,
+                prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
                 approaching_cap=self._is_approaching_cap(
@@ -593,6 +620,7 @@ class CampaignService:
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
+        prompt_names = self._prompt_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -604,6 +632,8 @@ class CampaignService:
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
+                prompt_template_id=c.prompt_template_id,
+                prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
                 approaching_cap=self._is_approaching_cap(
@@ -626,6 +656,7 @@ class CampaignService:
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
+        prompt_names = self._prompt_name_map(campaigns)
         return [
             CampaignResponse(
                 id=c.id,
@@ -637,6 +668,8 @@ class CampaignService:
                 max_candidates=c.max_candidates,
                 deadline=c.deadline,
                 created_at=c.created_at,
+                prompt_template_id=c.prompt_template_id,
+                prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
                 approaching_cap=self._is_approaching_cap(
@@ -670,6 +703,7 @@ class CampaignService:
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
+        prompt_names = self._prompt_name_map(campaigns)
 
         return [
             CampaignResponse(
@@ -682,6 +716,8 @@ class CampaignService:
                 deadline=c.deadline,
                 max_candidates=c.max_candidates,
                 created_at=c.created_at,
+                prompt_template_id=c.prompt_template_id,
+                prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
                 approaching_cap=self._is_approaching_cap(
@@ -1740,6 +1776,21 @@ class CampaignService:
                 }
                 campaign.deadline = request.deadline
 
+            # ── Prompt Template reassignment ─────────────────────────────
+            if (request.prompt_template_id is not None
+                    and request.prompt_template_id != campaign.prompt_template_id):
+                new_prompt = validate_prompt_template_selection(
+                    request.prompt_template_id,
+                    expected_task_type="RESUME_PARSE",
+                    repository=self.prompt_template_repo,
+                    exception_factory=lambda msg: CampaignException(msg, 422),
+                )
+                changes["prompt_template_id"] = {
+                    "before": str(campaign.prompt_template_id),
+                    "after": str(new_prompt.id),
+                }
+                campaign.prompt_template_id = new_prompt.id
+
             # ── S03-T01/T03: reassign hiring manager ─────────────────────
             previous_hiring_manager_id = None
             hm_review_pending_count = 0
@@ -1879,6 +1930,7 @@ class CampaignService:
             jd = self.jd_repo.get_by_id(campaign.jd_id)
             candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
             cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
+            updated_prompt = self.prompt_template_repo.get_by_id(campaign.prompt_template_id)
             response = CampaignResponse(
                 id=campaign.id,
                 name=campaign.name,
@@ -1889,6 +1941,8 @@ class CampaignService:
                 max_candidates=campaign.max_candidates,
                 deadline=campaign.deadline,
                 created_at=campaign.created_at,
+                prompt_template_id=campaign.prompt_template_id,
+                prompt_name=updated_prompt.name if updated_prompt else None,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates, cap_warning_percentage),

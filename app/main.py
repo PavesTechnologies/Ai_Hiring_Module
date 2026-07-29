@@ -24,6 +24,7 @@ from app.api.routes.bulk_upload_routes import router as bulk_upload_router
 from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
+from app.api.routes.prompt_template_routes import router as prompt_template_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -144,6 +145,7 @@ app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Res
 app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monitoring"])
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
+app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)
