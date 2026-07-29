@@ -86,6 +86,7 @@ class JDProcessingPipeline:
         notice_period: int | None,
         education_criteria: dict | None,
         created_by: str,
+        prompt_template_id: UUID,
         existing_jd_id: UUID | None = None,
         version_number: int = 1,
         parent_jd_id: UUID | None = None,
@@ -104,6 +105,7 @@ class JDProcessingPipeline:
             file_path=file_path,
             original_filename=original_filename,
             raw_text=raw_text,
+            prompt_template_id=prompt_template_id,
             existing_jd_id=existing_jd_id,
             version_number=version_number,
             parent_jd_id=parent_jd_id,
@@ -297,7 +299,12 @@ class JDProcessingPipeline:
         context.cleaned_text = self.preprocessing_service.normalize(context.text)
 
     def _run_ai_extraction(self, context: JDProcessingContext) -> None:
-        context.raw_extraction = self.extraction_service.extract_raw(context.cleaned_text)
+        prompt_template = self.jd_service.prompt_template_repository.get_by_id(context.prompt_template_id)
+        if prompt_template is None:
+            raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
+        context.raw_extraction = self.extraction_service.extract_raw(
+            context.cleaned_text, prompt=prompt_template.template_text,
+        )
 
     def _run_json_validation(self, context: JDProcessingContext) -> None:
         context.extraction = JDExtractionResponse.model_validate(context.raw_extraction)
@@ -335,6 +342,7 @@ class JDProcessingPipeline:
                 original_filename=context.original_filename,
                 created_by=context.created_by,
                 content_hash=context.content_hash,
+                prompt_template_id=context.prompt_template_id,
                 extraction=context.extraction,
                 skill_repository=self.skill_repository,
                 skill_matches=context.skill_matches,

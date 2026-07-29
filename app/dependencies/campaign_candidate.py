@@ -2,7 +2,9 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.core.encryption_service import EncryptionService
+from app.core.storage_service import StorageService
 from app.db.session import get_db
+from app.dependencies.storage import get_storage_service
 
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
@@ -22,8 +24,10 @@ from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import (
     CampaignCandidateService,
 )
+from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.services.resume.file_validation_service import FileValidationService
 
 
 def get_campaign_repository(
@@ -89,6 +93,18 @@ def get_allowed_transition_repository(
     return AllowedTransitionRepository(db)
 
 
+def get_pipeline_transition_service(
+    allowed_transition_repo: AllowedTransitionRepository = Depends(get_allowed_transition_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> PipelineTransitionService:
+    return PipelineTransitionService(
+        allowed_transition_repo=allowed_transition_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        audit_service=audit_service,
+    )
+
+
 def get_stage_transition_service(
     allowed_transition_repo: AllowedTransitionRepository = Depends(
         get_allowed_transition_repository
@@ -104,6 +120,16 @@ def get_config_repository(
     db: Session = Depends(get_db),
 ) -> ConfigRepository:
     return ConfigRepository(db)
+
+
+# Epic 3 (M05-E03) Phase C5 — defined locally (not imported from
+# app.dependencies.resume) for the exact same reason get_encryption_service
+# above is: that module imports several factories from this one, so
+# importing back from it here would be circular.
+def get_file_validation_service(
+    config_repo: ConfigRepository = Depends(get_config_repository),
+) -> FileValidationService:
+    return FileValidationService(config_repo)
 
 
 def get_celery_task_log_repository(
@@ -158,6 +184,18 @@ def get_campaign_candidate_service(
     skill_repo: SkillRepository = Depends(
         get_skill_repository
     ),
+    allowed_transition_repo: AllowedTransitionRepository = Depends(
+        get_allowed_transition_repository
+    ),
+    pipeline_transition_service: PipelineTransitionService = Depends(
+        get_pipeline_transition_service
+    ),
+    file_validation_service: FileValidationService = Depends(
+        get_file_validation_service
+    ),
+    storage_service: StorageService = Depends(
+        get_storage_service
+    ),
 ) -> CampaignCandidateService:
 
     return CampaignCandidateService(
@@ -172,4 +210,8 @@ def get_campaign_candidate_service(
         config_repo=config_repo,
         celery_task_log_service=celery_task_log_service,
         skill_repo=skill_repo,
+        allowed_transition_repo=allowed_transition_repo,
+        pipeline_transition_service=pipeline_transition_service,
+        file_validation_service=file_validation_service,
+        storage_service=storage_service,
     )

@@ -78,6 +78,9 @@ class JobDescription(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
+    prompt_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=False, index=True
+    )
     is_verified: Mapped[JDVerificationStatus] = mapped_column(
         SAEnum(JDVerificationStatus, name="jd_verification_status_enum"),
         nullable=False,

@@ -469,6 +469,25 @@ class SkillRepository:
             .all()
         )
 
+    def count_pending_unknown_skills(self, search: str | None = None) -> int:
+        """Total pending/under-review UnknownSkill rows matching `search`, ignoring pagination."""
+        query = self.db.query(UnknownSkill).filter(
+            UnknownSkill.status.in_(
+                [UnknownSkillStatus.PENDING, UnknownSkillStatus.UNDER_REVIEW]
+            )
+        )
+
+        if search:
+            pattern = f"%{search.strip()}%"
+            query = query.filter(
+                or_(
+                    UnknownSkill.raw_text.ilike(pattern),
+                    UnknownSkill.normalized_key.ilike(pattern),
+                )
+            )
+
+        return query.count()
+
     def update_unknown_skill_status(
         self, unknown_skill: UnknownSkill, status: UnknownSkillStatus
     ) -> UnknownSkill:

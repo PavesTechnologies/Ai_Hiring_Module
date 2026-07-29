@@ -108,13 +108,13 @@ try:
         PlatformConfig(
             id=uuid.uuid4(),
             key="ZIP_MAX_SIZE_MB",
-            value="500",
+            value="200",
             description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="MAX_FILES_PER_ZIP",
-            value="200",
+            value="20",
             description=(
                 "Maximum number of resume files processed from a single bulk-upload "
                 "ZIP archive; extraction stops and the uploader is asked to split the "
@@ -274,6 +274,18 @@ try:
             key="EMBEDDING_BATCH_SIZE",
             value="32",
             description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
+       
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD",
+            value="3",
+            description="Number of distinct campaign_candidates rows within CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS above which a CAMPAIGN_RESUBMISSION_DETECTED alert is raised for a candidate",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS",
+            value="30",
+            description="Rolling window, in days, over which candidate campaign submissions are counted for the resubmission-alert threshold",
         ),
     ]
 

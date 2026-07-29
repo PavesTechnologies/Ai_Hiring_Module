@@ -46,6 +46,7 @@ import app.models.embeddings        # noqa: F401, E402
 import app.models.pipeline          # noqa: F401, E402
 import app.models.skills            # noqa: F401, E402
 import app.models.ai_pipeline       # noqa: F401, E402
+import app.models.prompt_template   # noqa: F401, E402
 import app.models.compliance        # noqa: F401, E402
 import app.models.async_tasks       # noqa: F401, E402
 import app.models.search            # noqa: F401, E402

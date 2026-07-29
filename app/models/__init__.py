@@ -10,6 +10,8 @@ from .compliance import AuditLog
 
 from .ai_pipeline import PromptVersion
 
+from .prompt_template import PromptTemplate, PromptTemplateStatus
+
 from app.models.config import *
 
 from .candidates import (

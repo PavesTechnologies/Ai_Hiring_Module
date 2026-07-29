@@ -16,6 +16,7 @@ from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
 from app.api.routes.campaign_candidate import router as campaign_candidate_router
+from app.api.routes.candidate_routes import router as candidate_router
 from app.api.routes.skill_routes import router as skill_router
 from app.api.routes import skill_ontology_routes
 from app.api.routes.resume_routes import router as resume_router
@@ -23,6 +24,7 @@ from app.api.routes.bulk_upload_routes import router as bulk_upload_router
 from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
+from app.api.routes.prompt_template_routes import router as prompt_template_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -135,6 +137,7 @@ def health():
 app.include_router(router=router, prefix=API_PREFIX, tags=["Job Descriptions"])
 app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Campaigns"])
 app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
+app.include_router(router=candidate_router, prefix=API_PREFIX, tags=["Candidates"])
 app.include_router(router=skill_router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=resume_router, prefix=API_PREFIX, tags=["Resume Intake"])
@@ -142,6 +145,7 @@ app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Res
 app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monitoring"])
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
+app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Security, status
+from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile, status
 from fastapi.responses import StreamingResponse
 from uuid import UUID
 from app.dependencies.campaign_candidate import (
@@ -21,6 +21,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
     HrOverrideRequest,
     OverrideReportResponse,
+    UpdateResumeResubmissionResponse,
 )
 
 from app.schemas.response import APIResponse
@@ -232,6 +233,50 @@ def apply_hr_override(
     return APIResponse.ok(
         data=scorecard,
         message="HR override applied successfully.",
+    )
+
+
+@router.post(
+    "/{campaign_candidate_id}/update-resume",
+    response_model=APIResponse[UpdateResumeResubmissionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Update Resume (Resubmission)",
+    description=(
+        "Epic 3 (M05-E03) Phase C5 - resolves an existing "
+        "campaign+candidate pairing by uploading a new resume version, "
+        "resetting evaluation state, and re-triggering the pipeline. "
+        "Whether this is allowed at all, and whether it requires HR_ADMIN, "
+        "depends on the candidate's current pipeline_stage (validated by "
+        "PipelineTransitionService against allowed_transitions, not by "
+        "role alone) - RECRUITER can trigger it before SHORTLISTED; "
+        "HR_ADMIN only afterward."
+    ),
+)
+def update_resume_for_resubmission(
+    campaign_candidate_id: UUID,
+    reason: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    file_bytes = file.file.read()
+    filename = file.filename or "resume"
+
+    result = service.update_resume_for_resubmission(
+        campaign_candidate_id,
+        file_bytes=file_bytes,
+        filename=filename,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+        reason=reason,
+        content_type=file.content_type,
+    )
+
+    return APIResponse.ok(
+        data=result,
+        message="Resume updated and queued for re-evaluation.",
     )
 
 

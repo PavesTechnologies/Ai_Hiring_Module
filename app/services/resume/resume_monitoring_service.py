@@ -20,10 +20,12 @@ from app.schemas.resume.monitoring import (
     ResumeDetailResponse,
     ResumeListItem,
     ResumeListResponse,
+    ResumeParsedJsonResponse,
     ResumeSummary,
     ResumeTimelineResponse,
     SkillSummary,
 )
+from app.schemas.resume.response import ResumeVersionHistoryResponse, ResumeVersionItem
 from app.services.resume.monitoring_shared import build_failure_info, build_stage_timeline_fields
 
 CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
@@ -262,6 +264,40 @@ class ResumeMonitoringService:
             )
 
         return ResumeListResponse(items=items, total=total, page=page, size=size)
+
+    def get_parsed_json_by_candidate(self, candidate_id: UUID) -> ResumeParsedJsonResponse:
+        resume = self.resume_repository.get_active_by_candidate(candidate_id)
+        if resume is None:
+            raise NotFoundError(f"No active resume found for candidate {candidate_id}.")
+
+        return ResumeParsedJsonResponse(
+            resume_id=resume.id,
+            candidate_id=resume.candidate_id,
+            parse_status=resume.parse_status.value,
+            parsed_json=resume.parsed_json,
+        )
+
+    def get_version_history(self, candidate_id: UUID) -> ResumeVersionHistoryResponse:
+        """Epic 3 (M05-E03) Phase C1 — read-only, mirrors get_parsed_json_by_candidate's style of resolving by candidate_id directly rather than a separate existence check."""
+        versions = self.resume_repository.get_all_versions_by_candidate(candidate_id)
+        if not versions:
+            raise NotFoundError(f"No resumes found for candidate {candidate_id}.")
+
+        return ResumeVersionHistoryResponse(
+            candidate_id=candidate_id,
+            versions=[
+                ResumeVersionItem(
+                    id=resume.id,
+                    version_number=resume.version_number,
+                    is_active_version=resume.is_active_version,
+                    file_format=resume.file_format.value,
+                    parse_status=resume.parse_status.value,
+                    source="bulk" if resume.bulk_upload_job_id else "individual",
+                    created_at=resume.created_at,
+                )
+                for resume in versions
+            ],
+        )
 
     def _get_resume_or_404(self, resume_id: UUID):
         resume = self.resume_repository.get_by_id(resume_id)

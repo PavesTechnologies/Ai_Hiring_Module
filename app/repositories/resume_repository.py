@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
@@ -47,6 +48,57 @@ class ResumeRepository:
             .order_by(Resume.version_number.desc())
         )
         return self.db.execute(stmt).scalars().first()
+
+    def get_by_file_hash_global(self, file_hash: str) -> Resume | None:
+        """
+        Epic 3 (M05-E03) Phase C2 — exact-duplicate check. Deliberately
+        unscoped by candidate: a byte-identical file can be re-uploaded
+        under a different claimed name/email, and the whole point of this
+        check is to catch that regardless of what identity was typed into
+        this request's form fields.
+        """
+        stmt = select(Resume).where(Resume.file_hash == file_hash)
+        return self.db.execute(stmt).scalars().first()
+
+    def get_max_version_number(self, candidate_id: UUID) -> int:
+        """
+        Epic 3 (M05-E03) Phase C1. Only ever called on the resubmission path
+        (an active resume for this candidate was already found), so this
+        always sees at least one row in practice; the `or 0` fallback is
+        defensive, not a real code path.
+        """
+        stmt = select(func.max(Resume.version_number)).where(Resume.candidate_id == candidate_id)
+        return self.db.execute(stmt).scalar() or 0
+
+    def deactivate_active_version(self, candidate_id: UUID) -> None:
+        """
+        Epic 3 (M05-E03) Phase C1. A single atomic UPDATE, not a
+        read-modify-write — two concurrent resubmissions for the same
+        candidate must not both read "no active version" and both insert
+        as the same next version number. This closes that race for the
+        deactivation step itself; it does not fully eliminate every
+        concurrent-version-number race on its own (e.g. two callers can
+        still both call get_max_version_number before either has inserted
+        its new row) — resumes has no DB-level unique constraint on
+        (candidate_id, version_number) to catch that at the database
+        layer. Tightening that further is a future enhancement, not part
+        of this phase's scope.
+        """
+        self.db.execute(
+            update(Resume)
+            .where(Resume.candidate_id == candidate_id, Resume.is_active_version.is_(True))
+            .values(is_active_version=False)
+        )
+        self.db.flush()
+
+    def get_all_versions_by_candidate(self, candidate_id: UUID) -> list[Resume]:
+        """Epic 3 (M05-E03) Phase C1 — full version history, most recent first. Monitoring-only, no writes."""
+        stmt = (
+            select(Resume)
+            .where(Resume.candidate_id == candidate_id)
+            .order_by(Resume.version_number.desc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
 
     def record_parse_attempt(
         self,

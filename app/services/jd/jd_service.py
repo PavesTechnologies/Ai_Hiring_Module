@@ -12,7 +12,9 @@ from fastapi import HTTPException, UploadFile
 
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat, JDVerificationStatus
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
+from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 from app.services.skills.skill_normalization_service import SkillMatchResult, verification_status_for_tier
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchRequest
@@ -76,6 +78,7 @@ class JDReprocessRequired:
     original_filename: str | None
     old_file_path: str | None
     updated_by: str
+    prompt_template_id: UUID
 
 
 class JDService:
@@ -102,11 +105,13 @@ class JDService:
         hash_service: HashService,
         audit_service: AuditService,
         storage_service: StorageService,
+        prompt_template_repository: PromptTemplateRepository,
     ):
         self.repository = repository
         self.hash_service = hash_service
         self.audit_service = audit_service
         self.storage_service = storage_service
+        self.prompt_template_repository = prompt_template_repository
 
     def persist_processed_jd(
         self,
@@ -120,6 +125,7 @@ class JDService:
         file_path: str | None,
         created_by: str,
         content_hash: str,
+        prompt_template_id: UUID,
         original_filename: str | None = None,
         max_experience_years: float | None = None,
         notice_period: int | None = None,
@@ -185,7 +191,10 @@ class JDService:
                         f"{existing_jd_id}: it has an active hiring campaign assigned."
                     )
                 existing_jd = self.repository.get_by_id(jd_id=existing_jd_id)
+                previous_prompt_template_id = existing_jd.prompt_template_id
                 self.repository.deactivate_version(existing_jd)
+            else:
+                previous_prompt_template_id = None
 
             # A JD only ever reaches persistence after every prior stage
             # (extraction, JSON validation, skill normalization, embedding)
@@ -217,6 +226,7 @@ class JDService:
                 parent_jd_id=parent_jd_id,
                 lineage_root_id=lineage_root_id,
                 created_by=created_by,
+                prompt_template_id=prompt_template_id,
                 # extracted_json: the full AI-parsed JD JSON, as extracted
                 # (pre-normalization) — required_skills: just the two skill
                 # lists, kept separately for quick access without parsing
@@ -297,6 +307,8 @@ class JDService:
                     "title": job_description.title,
                     "version_number": job_description.version_number,
                     "source_format": job_description.source_format.value,
+                    "previous_prompt_template_id": str(previous_prompt_template_id) if previous_prompt_template_id else None,
+                    "new_prompt_template_id": str(job_description.prompt_template_id),
                     **({"previous_jd_id": str(existing_jd_id)} if is_reprocess else {}),
                 },
             )
@@ -394,6 +406,7 @@ class JDService:
             parent_jd_id= parent_jd_id,
             lineage_root_id= lineage_root_id,
             created_by= create_by,
+            prompt_template_id= request.prompt_template_id,
             extracted_json= fallback_extracted_json,
             required_skills= fallback_required_skills,
             is_verified= fallback_is_verified or JDVerificationStatus.NOT_VERIFIED,
@@ -409,6 +422,8 @@ class JDService:
                 status_code=404,
                 detail=f"Job Description with ID {jd_id} not found."
             )
+
+        prompt = self.prompt_template_repository.get_by_id(job_description.prompt_template_id)
 
         return GetJDResponse(
             created_at=job_description.created_at,
@@ -430,10 +445,41 @@ class JDService:
             education_criteria=job_description.education_criteria,
             extracted_json=job_description.extracted_json,
             is_verified=job_description.is_verified.value,
+            prompt_template_id=job_description.prompt_template_id,
+            prompt_name=prompt.name if prompt else None,
         )
 
-    def get_all_jds(self, is_active_version: bool) -> list[JobDescription]:
-        return self.repository.get_all_jds(is_active_version=is_active_version)
+    def get_all_jds(self, is_active_version: bool) -> list[GetJDResponse]:
+        records = self.repository.get_all_jds(is_active_version=is_active_version)
+        prompt_names = self.prompt_template_repository.get_names_by_ids(
+            [jd.prompt_template_id for jd in records]
+        )
+        return [
+            GetJDResponse(
+                created_at=jd.created_at,
+                created_by=jd.created_by,
+                id=jd.id,
+                job_id=jd.job_id,
+                is_active_version=jd.is_active_version,
+                jurisdiction=jd.jurisdiction,
+                min_experience_years=jd.min_experience_years,
+                max_experience_years=jd.max_experience_years,
+                notice_period=jd.notice_period,
+                raw_text=jd.raw_text,
+                required_skills=jd.required_skills,
+                source_format=jd.source_format.value,
+                original_filename=jd.original_filename,
+                title=jd.title,
+                updated_at=jd.updated_at,
+                version_number=jd.version_number,
+                education_criteria=jd.education_criteria,
+                extracted_json=jd.extracted_json,
+                is_verified=jd.is_verified.value,
+                prompt_template_id=jd.prompt_template_id,
+                prompt_name=prompt_names.get(jd.prompt_template_id),
+            )
+            for jd in records
+        ]
 
     def download_jd_file(self, jd_id: UUID) -> tuple[bytes, str, str]:
         """
@@ -512,6 +558,13 @@ class JDService:
                 f"Cannot update Job Description with ID {jd_id}: it has an active hiring campaign assigned."
             )
 
+        selected_prompt = validate_prompt_template_selection(
+            request.prompt_template_id,
+            expected_task_type="JD_PARSE",
+            repository=self.prompt_template_repository,
+        )
+        previous_prompt_template_id = existing_jd.prompt_template_id
+
         if existing_jd.lineage_root_id:
             lineage_root_id = existing_jd.lineage_root_id
         else:
@@ -564,6 +617,7 @@ class JDService:
                 original_filename=original_filename if file_replaced else existing_jd.original_filename,
                 old_file_path=existing_jd.file_path,
                 updated_by=updated_by,
+                prompt_template_id=request.prompt_template_id,
             )
 
         # Metadata-only path — unchanged synchronous behavior, document and
@@ -597,6 +651,8 @@ class JDService:
                 "title": new_jd.title,
                 "version_number": new_jd.version_number,
                 "source_format": new_jd.source_format.value,
+                "previous_prompt_template_id": str(previous_prompt_template_id),
+                "new_prompt_template_id": str(new_jd.prompt_template_id),
             }
         )
 
@@ -607,6 +663,8 @@ class JDService:
             title= new_jd.title,
             version_number= new_jd.version_number,
             updated_by= updated_by,
+            prompt_template_id= new_jd.prompt_template_id,
+            prompt_name= selected_prompt.name,
         )
 
     def deactivate_jd(self, jd_id: UUID, updated_by:str) -> UpdateJDResponse:
@@ -644,11 +702,15 @@ class JDService:
 
         self.repository.commit()
 
+        prompt = self.prompt_template_repository.get_by_id(existing_jd.prompt_template_id)
+
         return UpdateJDResponse(
             id= existing_jd.id,
             title= existing_jd.title,
             version_number= existing_jd.version_number,
             updated_by= updated_by,
+            prompt_template_id= existing_jd.prompt_template_id,
+            prompt_name= prompt.name if prompt else None,
         )
 
     def search_job_descriptions(
@@ -660,8 +722,13 @@ class JDService:
         campaign_counts = self.repository.get_campaign_status_counts(
             jd_ids=[jd.id for jd in records]
         )
+        prompt_names = self.prompt_template_repository.get_names_by_ids(
+            [jd.prompt_template_id for jd in records]
+        )
         items = [
-            JDMapper.to_list_item(jd, campaign_counts.get(jd.id))
+            JDMapper.to_list_item(
+                jd, campaign_counts.get(jd.id), prompt_names.get(jd.prompt_template_id)
+            )
             for jd in records
         ]
 

@@ -51,6 +51,8 @@ class ProcessingStage(enum.Enum):
     STORAGE = "STORAGE"
     TEXT_EXTRACTION = "TEXT_EXTRACTION"
     TEXT_CLEANING = "TEXT_CLEANING"
+    PII_DETECTION = "PII_DETECTION"
+    PII_REDACTION = "PII_REDACTION"
     AI_EXTRACTION = "AI_EXTRACTION"
     JSON_VALIDATION = "JSON_VALIDATION"
     SKILL_NORMALIZATION = "SKILL_NORMALIZATION"
@@ -159,6 +161,13 @@ class BulkUploadJob(Base):
     # Bulk ZIP Upload (M05-E02) S01-T01 — durably records the mandatory
     # bulk-consent checkbox on the job record itself.
     consent_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Captured once per ZIP submission (one HTTP request = one consent
+    # event) and applied to every candidate created from any file inside
+    # it — mirrors how consent_confirmed itself already applies job-wide
+    # rather than per file.
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    jurisdiction: Mapped[str] = mapped_column(String(10), nullable=False, server_default="GLOBAL")
     total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     queued_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     processed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
