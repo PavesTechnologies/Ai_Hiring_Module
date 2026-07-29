@@ -165,6 +165,7 @@ def get_resume_monitoring_service(
     stage_repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
     stage_failure_log_repository: StageFailureLogRepository = Depends(get_stage_failure_log_repository),
     dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+    storage_service: StorageService = Depends(get_storage_service),
 ) -> ResumeMonitoringService:
     return ResumeMonitoringService(
         resume_repository=resume_repository,
@@ -174,4 +175,5 @@ def get_resume_monitoring_service(
         stage_repository=stage_repository,
         stage_failure_log_repository=stage_failure_log_repository,
         dead_letter_queue_repository=dead_letter_queue_repository,
+        storage_service=storage_service,
     )

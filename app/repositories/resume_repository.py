@@ -134,10 +134,16 @@ class ResumeRepository:
         parsed_json: dict,
         parse_status: ParseStatus,
         parser_version: str,
+        page_count: int | None = None,
     ) -> Resume:
         resume.parsed_json = parsed_json
         resume.parse_status = parse_status
         resume.parser_version = parser_version
+        # None means "this attempt didn't compute a page count" (e.g. bulk
+        # upload sets it directly at Resume-creation time, before this pipeline
+        # ever runs) — never overwrite an already-known value with null.
+        if page_count is not None:
+            resume.page_count = page_count
         self.db.flush()
         self.db.refresh(resume)
         return resume
