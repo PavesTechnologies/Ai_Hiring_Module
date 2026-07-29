@@ -55,6 +55,46 @@ _TRANSITIONS = [
         "requires_reason": True,
         "notes": "HR_ADMIN override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04).",
     },
+    # Epic 3 (M05-E03) Phase C5 — "update resume" resubmission re-trigger.
+    # Deliberately not seeded: SELECTED/REJECTED/FRAUD_REVIEW -> UPLOADED —
+    # resubmitting for a candidate already selected, rejected, or under
+    # fraud review is a different, not-yet-defined business process, not a
+    # straight "update resume."
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
+        "requires_reason": False,
+        "notes": "Resume update before SHORTLISTED — straight re-trigger, no extra confirmation gate (M05-E03 S03).",
+    },
+    {
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "Resume update once SHORTLISTED — requires HR_ADMIN confirmation (M05-E03 S03).",
+    },
+    {
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "Resume update once on HOLD — requires HR_ADMIN confirmation (M05-E03 S03).",
+    },
+    {
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "Resume update once in HM_REVIEW — requires HR_ADMIN confirmation (M05-E03 S03).",
+    },
+    {
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "Resume update once in INTERVIEW — requires HR_ADMIN confirmation (M05-E03 S03).",
+    },
 ]
 
 try:

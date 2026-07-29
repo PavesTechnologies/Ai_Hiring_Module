@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -16,6 +16,9 @@ class ResumeUploadRequest(BaseModel):
     candidate_phone: Optional[str] = Field(default=None, max_length=50)
     jurisdiction: str = Field(default=Jurisdiction.GLOBAL.value)
     consent_confirmed: bool
+    # Epic 3 (M05-E03) Phase C2 — how to resolve an exact-duplicate file
+    # match; None means "not yet resolved" (a warning is returned).
+    resolution: Optional[Literal["use_existing", "upload_anyway"]] = None
 
     @field_validator("candidate_full_name")
     @classmethod
