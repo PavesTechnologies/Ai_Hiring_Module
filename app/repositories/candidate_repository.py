@@ -69,6 +69,11 @@ class CandidateRepository:
         self.db.flush()
         return candidate
 
+    def delete(self, candidate: Candidate) -> None:
+        """Candidate erasure — hard-deletes the candidate row itself; caller must have already removed every child row referencing it."""
+        self.db.delete(candidate)
+        self.db.flush()
+
     def commit(self) -> None:
         self.db.commit()
 

@@ -10,6 +10,7 @@ from app.dependencies.campaign_candidate import (
     get_campaign_candidate_repository,
     get_campaign_candidate_service,
     get_campaign_repository,
+    get_candidate_rejection_repository,
 )
 from app.dependencies.jd import (
     get_celery_task_log_repository,
@@ -18,6 +19,7 @@ from app.dependencies.jd import (
 from app.dependencies.storage import get_storage_service
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -25,11 +27,13 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from app.services.compliance.candidate_erasure_service import CandidateErasureService
 from app.services.compliance.consent_service import ConsentService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
@@ -174,4 +178,36 @@ def get_resume_monitoring_service(
         stage_repository=stage_repository,
         stage_failure_log_repository=stage_failure_log_repository,
         dead_letter_queue_repository=dead_letter_queue_repository,
+    )
+
+
+def get_email_notification_repository(
+    db: Session = Depends(get_db),
+) -> EmailNotificationRepository:
+    return EmailNotificationRepository(db)
+
+
+def get_candidate_erasure_service(
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    resume_repo: ResumeRepository = Depends(get_resume_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    candidate_rejection_repo: CandidateRejectionRepository = Depends(get_candidate_rejection_repository),
+    consent_repo: ConsentRepository = Depends(get_consent_repository),
+    email_notification_repo: EmailNotificationRepository = Depends(get_email_notification_repository),
+    celery_task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+    storage_service: StorageService = Depends(get_storage_service),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> CandidateErasureService:
+    return CandidateErasureService(
+        candidate_repo=candidate_repo,
+        resume_repo=resume_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        candidate_rejection_repo=candidate_rejection_repo,
+        consent_repo=consent_repo,
+        email_notification_repo=email_notification_repo,
+        celery_task_log_repo=celery_task_log_repo,
+        dead_letter_queue_repo=dead_letter_queue_repo,
+        storage_service=storage_service,
+        audit_service=audit_service,
     )

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.pipeline import CampaignCandidate, CandidateRejection, RejectionLayer
@@ -56,6 +56,13 @@ class CandidateRejectionRepository:
         if date_to is not None:
             stmt = stmt.where(CandidateRejection.rejected_at <= date_to)
         return self.db.execute(stmt).all()
+
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """Candidate erasure — removes candidate_rejections rows for one campaign_candidate."""
+        self.db.execute(
+            delete(CandidateRejection).where(CandidateRejection.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
 
     def commit(self) -> None:
         self.db.commit()
