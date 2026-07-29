@@ -24,6 +24,7 @@ from app.schemas.skills.curation import (
     UnknownSkillDeleteResponse,
     UnknownSkillItem,
     UnknownSkillJDItem,
+    UnknownSkillListResponse,
 )
 from app.services.skills.skill_curation_service import SkillCurationService
 
@@ -35,7 +36,7 @@ router = APIRouter(
 
 @router.get(
     "/unknown",
-    response_model=APIResponse[list[UnknownSkillItem]],
+    response_model=APIResponse[UnknownSkillListResponse],
 )
 def list_pending_unknown_skills(
     service: SkillCurationService = Depends(get_skill_curation_service),
@@ -45,22 +46,27 @@ def list_pending_unknown_skills(
     search: str | None = Query(default=None),
 ):
     """HR review queue — pending/under-review UnknownSkill entries, highest-frequency first."""
-    unknown_skills = service.list_pending_unknown_skills(
+    unknown_skills, total = service.list_pending_unknown_skills(
         page=page, page_size=page_size, search=search,
     )
     return APIResponse.ok(
-        data=[
-            UnknownSkillItem(
-                id=skill.id,
-                raw_text=skill.raw_text,
-                normalized_key=skill.normalized_key,
-                frequency=skill.frequency,
-                first_seen=skill.first_seen,
-                last_seen=skill.last_seen,
-                status=skill.status.value,
-            )
-            for skill in unknown_skills
-        ],
+        data=UnknownSkillListResponse(
+            items=[
+                UnknownSkillItem(
+                    id=skill.id,
+                    raw_text=skill.raw_text,
+                    normalized_key=skill.normalized_key,
+                    frequency=skill.frequency,
+                    first_seen=skill.first_seen,
+                    last_seen=skill.last_seen,
+                    status=skill.status.value,
+                )
+                for skill in unknown_skills
+            ],
+            page=page,
+            page_size=page_size,
+            total=total,
+        ),
         message="Pending unknown skills retrieved successfully.",
     )
 

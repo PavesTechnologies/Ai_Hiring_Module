@@ -29,6 +29,8 @@ from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
+from app.services.pii.pii_detection_service import PIIDetectionService
+from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
@@ -188,6 +190,8 @@ def process_resume_document(self, resume_id: str) -> None:
             resume_repository=resume_repo,
             skill_repository=skill_repo,
             stage_tracker=stage_tracker,
+            pii_detection_service=PIIDetectionService(),
+            pii_redaction_service=PIIRedactionService(),
         )
 
         attempt_number = self.request.retries + 1

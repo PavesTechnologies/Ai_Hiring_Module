@@ -51,6 +51,9 @@ from app.services.document_processing.text_extraction_service import TextExtract
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
+from app.services.pii.pii_detection_service import PIIDetectionService
+from app.services.pii.pii_redaction_service import PIIRedactionService
+from app.services.pii.pii_types import PIIType
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_processing_context import ResumeProcessingContext
@@ -257,15 +260,42 @@ def _cleanup_orphaned_uploads(storage_service: StorageService, paths: list[str])
             logger.warning("Failed to clean up orphaned upload '%s' after extraction failure.", path)
 
 
+def _resolve_bulk_candidate_identity(
+    context: ResumeProcessingContext,
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Resolves (full_name, email, phone) for bulk-upload Candidate creation,
+    once PII_DETECTION/PII_REDACTION and AI_EXTRACTION have all populated
+    `context`. Email/phone are read deterministically from PII_DETECTION's
+    findings (no AI call for contact info) — first match in document order
+    wins if a resume lists more than one. full_name comes from the single,
+    shared AI_EXTRACTION call: PII_REDACTION strips contact info before that
+    call runs, but deliberately leaves the candidate's name visible, so no
+    separate identity-only AI call exists.
+    """
+    email_finding = next(
+        (finding for finding in context.pii_findings if finding.pii_type == PIIType.EMAIL), None,
+    )
+    phone_finding = next(
+        (finding for finding in context.pii_findings if finding.pii_type == PIIType.PHONE), None,
+    )
+    full_name = context.validated_extraction.full_name
+    email = email_finding.matched_text if email_finding else None
+    phone = phone_finding.matched_text if phone_finding else None
+    return full_name, email, phone
+
+
 @celery_app.task(name="bulk_upload.parse_file", bind=True)
 def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> None:
     """
     BULK_RESUME_PARSE: the "parse-first" per-file leg of a bulk upload.
     Unlike the individual-upload pipeline (which parses a Resume that
     already has a Candidate attached), no candidate identity exists yet
-    here — text/AI extraction runs first to learn the candidate's
-    name/email/phone from the file itself, and only then are
-    Candidate/Resume/CampaignCandidate created.
+    here — text extraction, deterministic PII detection/redaction, and AI
+    extraction all run first to learn the candidate's name (from AI
+    extraction, over the redacted text) and email/phone (deterministically,
+    from PII detection — no AI call for contact info) from the file itself,
+    and only then are Candidate/Resume/CampaignCandidate created.
 
     Transient-prone steps (download, text extraction/cleaning, AI
     extraction) are retried with backoff via the same RetryDriver/DLQ
@@ -329,6 +359,8 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             resume_repository=resume_repo,
             skill_repository=skill_repo,
             stage_tracker=stage_tracker,
+            pii_detection_service=PIIDetectionService(),
+            pii_redaction_service=PIIRedactionService(),
         )
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
@@ -412,6 +444,16 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
         stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.PII_DETECTION,
+            lambda: pipeline._run_pii_detection(context),
+            attempt_number=attempt_number,
+        )
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.PII_REDACTION,
+            lambda: pipeline._run_pii_redaction(context),
+            attempt_number=attempt_number,
+        )
+        stage_tracker.run_stage(
             task_id, DocumentType.RESUME, ProcessingStage.AI_EXTRACTION,
             lambda: pipeline._run_ai_extraction(context),
             attempt_number=attempt_number,
@@ -422,19 +464,19 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
 
-        identity = context.validated_extraction
+        full_name, email, phone = _resolve_bulk_candidate_identity(context)
 
-        if not identity.full_name or not identity.email:
+        if not full_name or not email:
             raise ValueError(
                 "Could not identify a candidate name and email from this resume."
             )
 
         candidate = candidate_service.get_or_create(
-            full_name=identity.full_name,
-            email=identity.email,
+            full_name=full_name,
+            email=email,
             jurisdiction=job.jurisdiction,
             consent_source=BULK_UPLOAD_CONSENT_SOURCE,
-            phone=identity.phone,
+            phone=phone,
             source_campaign_id=job.campaign_id,
             ip_address=job.ip_address,
             user_agent=job.user_agent,
