@@ -42,6 +42,17 @@ def build_canonical_embedding_text(extraction: ResumeExtractionResponse) -> str:
         if education_parts:
             parts.append("Education: " + " ".join(education_parts))
 
+    for project in extraction.projects:
+        project_parts = []
+        if project.name:
+            project_parts.append(project.name)
+        if project.description:
+            project_parts.append(project.description)
+        if project.tech:
+            project_parts.append("Tech: " + ", ".join(project.tech))
+        if project_parts:
+            parts.append("Project: " + " - ".join(project_parts))
+
     if extraction.certifications:
         parts.append("Certifications: " + ", ".join(extraction.certifications))
 

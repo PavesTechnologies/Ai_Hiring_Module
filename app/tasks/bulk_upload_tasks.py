@@ -549,6 +549,8 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             file_path=job_file.storage_path,
             file_format=validation_result.file_format,
             file_hash=hashlib.md5(file_bytes).hexdigest(),
+            original_filename=job_file.original_filename,
+            file_size_bytes=len(file_bytes),
             version_number=version_number,
             is_active_version=True,
             page_count=page_count,
