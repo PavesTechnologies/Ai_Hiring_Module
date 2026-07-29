@@ -90,8 +90,8 @@ class CampaignService:
         preset_repo: CampaignWeightPresetRepository,
         db: Session,
         circuit_breaker_repo: CircuitBreakerRepository | None = None,
-        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,        prompt_template_repo: PromptTemplateRepository,
-
+        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
+        prompt_template_repo: PromptTemplateRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
@@ -99,6 +99,12 @@ class CampaignService:
         self.config_repo = config_repo
         self.preset_repo = preset_repo
         self.db = db
+        # processing-queue / DLQ-replay / prompt-template deps — each defaulted
+        # from the same session so pre-existing constructor call sites keep
+        # working unchanged.
+        self.circuit_breaker_repo = circuit_breaker_repo or CircuitBreakerRepository(db)
+        self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(db)
+        self.prompt_template_repo = prompt_template_repo or PromptTemplateRepository(db)
 
     def _get_warning_thresholds(self) -> tuple[float, int]:
         """
@@ -309,68 +315,6 @@ class CampaignService:
         except Exception:
             self.campaign_repo.rollback()
             raise
-
-    def duplicate_campaign(
-        self,
-        source_campaign_id: UUID,
-        request: CampaignDuplicateRequest,
-        created_by: str,
-    ) -> CampaignResponse:
-        """
-        S06-T01/T02/T03: creates a fully independent new campaign, copying the
-        source's scoring weights/thresholds verbatim. Reuses create_campaign()
-        for everything else (JD validation, weight-sum check, name-uniqueness,
-        the INSERT itself, and the CAMPAIGN_CREATED audit entry) instead of a
-        second copy of that validation — this is allowed to run against a
-        source campaign in ANY status (spec: "for campaigns in any status"),
-        since it only ever reads the source, never writes to it. Adds one
-        CAMPAIGN_DUPLICATED audit entry on top, carrying the lineage back to
-        the source campaign.
-        """
-        source = self.campaign_repo.get_by_id(source_campaign_id)
-        if not source:
-            raise CampaignException(f"Campaign '{source_campaign_id}' not found", 404)
-
-        create_request = CampaignCreateRequest(
-            name=request.name,
-            jd_id=request.jd_id,
-            max_candidates=request.max_candidates,
-            deadline=request.deadline,
-            weight_deterministic=Decimal(str(source.weight_deterministic)),
-            weight_semantic=Decimal(str(source.weight_semantic)),
-            weight_ai=Decimal(str(source.weight_ai)),
-            semantic_threshold=Decimal(str(source.semantic_threshold)),
-            ai_threshold=Decimal(str(source.ai_threshold)),
-            deterministic_threshold=Decimal(str(source.deterministic_threshold)),
-            hiring_manager_id=request.hiring_manager_id or source.hiring_manager_id,
-            recruiter_id=request.recruiter_id or source.recruiter_id,
-        )
-
-        # create_campaign() already commits the new campaign + its own
-        # CAMPAIGN_CREATED audit entry before returning.
-        new_campaign = self.create_campaign(
-            create_request, org_id=source.org_id, created_by=created_by,
-        )
-
-        self.audit_service.log(
-            actor_id=created_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_DUPLICATED.value,
-            entity_type=EntityType.CAMPAIGN.value,
-            entity_id=new_campaign.id,
-            campaign_id=new_campaign.id,
-            details={
-                "title": f"Campaign '{new_campaign.name}' duplicated from '{source.name}'",
-                "source_campaign_id": str(source.id),
-                "source_campaign_name": source.name,
-            },
-        )
-        self.audit_service.repository.save()
-
-        new_campaign.duplicated_from_campaign_id = source.id
-        new_campaign.duplicated_from_campaign_name = source.name
-
-        return new_campaign
 
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
 
