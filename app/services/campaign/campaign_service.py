@@ -1935,7 +1935,22 @@ class CampaignService:
                 }
                 campaign.deadline = request.deadline
 
-            # ── S03-T01/T03: reassign hiring manager ─────────────────────
+            # ── Prompt Template reassignment ─────────────────────────────
+            if (request.prompt_template_id is not None
+                    and request.prompt_template_id != campaign.prompt_template_id):
+                new_prompt = validate_prompt_template_selection(
+                    request.prompt_template_id,
+                    expected_task_type="RESUME_PARSE",
+                    repository=self.prompt_template_repo,
+                    exception_factory=lambda msg: CampaignException(msg, 422),
+                )
+                changes["prompt_template_id"] = {
+                    "before": str(campaign.prompt_template_id),
+                    "after": str(new_prompt.id),
+                }
+                campaign.prompt_template_id = new_prompt.id
+
+            # ── reassign hiring manager ─────────────────────
             previous_hiring_manager_id = None
             hm_review_pending_count = 0
             if (request.hiring_manager_id is not None
