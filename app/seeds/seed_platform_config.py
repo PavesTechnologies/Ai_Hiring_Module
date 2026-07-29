@@ -269,6 +269,12 @@ try:
             value="3",
             description="FRAUD_REVIEW candidate count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBEDDING_BATCH_SIZE",
+            value="32",
+            description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
+        ),
     ]
 
     for config in configs:

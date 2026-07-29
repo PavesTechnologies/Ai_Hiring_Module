@@ -49,7 +49,6 @@ from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
-from app.services.jd.hash_service import HashService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
@@ -57,6 +56,7 @@ from app.services.resume.resume_processing_context import ResumeProcessingContex
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
+from app.tasks.embedding_tasks import _enqueue_resume_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -303,16 +303,13 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         task_log_service = CeleryTaskLogService(task_log_repo)
         embedding_service = EmbeddingService()
         skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
-        hash_service = HashService()
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=preprocessing_service,
             extraction_service=extraction_service,
-            hash_service=hash_service,
             storage_service=storage_service,
             skill_normalization_service=skill_normalization_service,
-            embedding_service=embedding_service,
             resume_service=resume_service,
             resume_repository=resume_repo,
             skill_repository=skill_repo,
@@ -447,12 +444,12 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         resume = resume_repo.create(resume)
         resume_repo.commit()
 
-        # SKILL_NORMALIZATION -> EMBEDDING_GENERATION -> PERSISTENCE run
-        # through the same ResumeProcessingPipeline.run() individual upload
-        # calls. context already has raw_text/cleaned_text/raw_extraction/
+        # SKILL_NORMALIZATION -> PERSISTENCE run through the same
+        # ResumeProcessingPipeline.run() individual upload calls. context
+        # already has raw_text/cleaned_text/raw_extraction/
         # validated_extraction populated from the stages above, so run()'s
         # own skip-check (skip_stage) passes over those four and genuinely
-        # executes only these last three. PERSISTENCE (via
+        # executes only these last two. PERSISTENCE (via
         # ResumeService.persist_processed_resume) now records the
         # resume_parse_attempts row itself, using the real attempt_number —
         # bulk no longer records its own separate one here, since doing both
@@ -503,6 +500,15 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         task_log_service.mark_success(
             task_log, summary=f"Parsed '{job_file.original_filename}' -> candidate {candidate.id}.",
         )
+
+        # M08-E01: bulk-uploaded resumes share this same pipeline, so they
+        # need the same post-success embedding enqueue individual upload
+        # gets in process_resume_document — a failure here must never
+        # affect this file's already-recorded PROCESSED outcome.
+        try:
+            _enqueue_resume_embedding(db, resume.id, task_log_service)
+        except Exception:
+            logger.exception("Failed to enqueue resume embedding after resume %s parsed.", resume.id)
 
     except StageExecutionError as stage_exc:
         should_retry = False

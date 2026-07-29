@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
 from app.models.pipeline import PipelineStage, TransitionSource
@@ -88,6 +89,12 @@ class _Harness:
         self.email_template_repo.get_active_by_trigger_event.return_value = None
         self.email_notification_repo = MagicMock()
         self.send_candidate_email_task_mock = MagicMock()
+        # M08-E02: calculate_deterministic_score_task imports this locally
+        # (from app.tasks.semantic_scoring_tasks, to avoid a circular import -
+        # that module itself imports _cancel_downstream_ai_evaluation from
+        # this one) - patched at its source module, never a real Celery
+        # dispatch/broker call in these unit tests.
+        self.enqueue_semantic_scoring_mock = MagicMock()
 
     def __enter__(self):
         scoring_service_patch = patch(f"{TASKS_MODULE}.CandidateScoringService", return_value=self.scoring_service_instance)
@@ -109,6 +116,10 @@ class _Harness:
             patch(f"{TASKS_MODULE}.EmailTemplateRepository", return_value=self.email_template_repo),
             patch(f"{TASKS_MODULE}.EmailNotificationRepository", return_value=self.email_notification_repo),
             patch(f"{TASKS_MODULE}.send_candidate_email_task", self.send_candidate_email_task_mock),
+            patch(
+                "app.tasks.semantic_scoring_tasks._enqueue_semantic_scoring",
+                self.enqueue_semantic_scoring_mock,
+            ),
         ]
         mocked_scoring_service_class = None
         for p in self._patches:
@@ -620,6 +631,102 @@ def test_no_rejection_when_nothing_missing():
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
         h.candidate_rejection_repo.create.assert_not_called()
+
+
+def test_auto_enqueues_semantic_scoring_after_successful_pass():
+    """
+    M08-E02: a candidate who passes deterministic screening is
+    auto-enqueued for semantic scoring via the shared
+    _enqueue_semantic_scoring helper (the same one
+    CampaignCandidateService._queue_post_override_evaluation uses) - called
+    with this exact campaign_candidate, task_log_service, and resume_repo.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.enqueue_semantic_scoring_mock.assert_called_once()
+        call_args = h.enqueue_semantic_scoring_mock.call_args.args
+        assert call_args[0] is cc
+        assert call_args[2] is h.resume_repo
+
+
+def test_does_not_enqueue_semantic_scoring_when_deterministic_rejected():
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "MISSING", canonical_name="AWS")], coverage_pct=0.0, passed=False)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.enqueue_semantic_scoring_mock.assert_not_called()
+
+
+def test_semantic_scoring_enqueued_only_after_commit():
+    """
+    The enqueue call must happen strictly after campaign_candidate_repo's
+    commit - never before, so a candidate is only ever handed off to
+    semantic scoring once the deterministic outcome is durably persisted.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+
+        commit_order = []
+        h.campaign_candidate_repo.commit.side_effect = lambda: commit_order.append("commit")
+        h.enqueue_semantic_scoring_mock.side_effect = lambda *a, **k: commit_order.append("enqueue")
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        assert commit_order == ["commit", "enqueue"]
+
+
+def test_semantic_enqueue_failure_never_crashes_or_undoes_the_deterministic_pass():
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+
+        breakdown = _breakdown([_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
+        h.enqueue_semantic_scoring_mock.side_effect = Exception("broker unreachable")
+
+        # Must not raise even though the semantic enqueue blew up - the
+        # deterministic transaction already committed.
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.campaign_candidate_repo.commit.assert_called_once()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.SUCCESS
 
 
 def test_marks_failure_on_unexpected_exception():

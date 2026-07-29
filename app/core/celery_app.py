@@ -32,10 +32,12 @@ if platform.system() == "Windows":
 celery_app.conf.imports = (
     "app.tasks.campaign_tasks",
     "app.tasks.jd_processing_tasks",
+    "app.tasks.embedding_tasks",
     "app.tasks.resume_processing_tasks",
     "app.tasks.bulk_upload_tasks",
     "app.tasks.skill_ontology_tasks",
     "app.tasks.deterministic_scoring_tasks",
+    "app.tasks.semantic_scoring_tasks",
 )
 
 

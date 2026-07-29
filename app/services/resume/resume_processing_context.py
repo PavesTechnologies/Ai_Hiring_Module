@@ -37,7 +37,3 @@ class ResumeProcessingContext:
     raw_extraction: dict | None = None
     validated_extraction: ResumeExtractionResponse | None = None
     skill_match_results: list[SkillMatchResult] | None = None
-    embedding_text: str | None = None
-    embedding: list[float] | None = None
-    embedding_model_version_id: UUID | None = None
-    input_text_hash: str | None = None

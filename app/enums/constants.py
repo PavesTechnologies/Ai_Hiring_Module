@@ -102,6 +102,9 @@ class ActionType(enum.Enum):
     # before this can actually be written to audit_log.
     UNKNOWN_SKILL_DELETED = "UNKNOWN_SKILL_DELETED"
     BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
+    # M08-E02: Semantic Similarity Scoring - added to the native Postgres
+    # enum in the same migration (alembic/versions/e2c8a4f6b9d1_semantic_scoring_support.py).
+    SEMANTIC_SCORE_COMPUTED = "SEMANTIC_SCORE_COMPUTED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
