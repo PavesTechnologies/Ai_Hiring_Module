@@ -306,51 +306,6 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
-    def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
-
-        campaign = self.campaign_repo.get_by_id(campaign_id)
-        if not campaign:
-            raise CampaignException(f"Campaign with ID '{campaign_id}' not found",
-                404,
-                None
-            )
-
-        jd = self.jd_repo.get_by_id(campaign.jd_id)
-        if not jd:
-            raise CampaignException("Associated job description not found",
-                404,
-                None
-            )
-
-        hiring_manager_name = None
-        if campaign.hiring_manager_id:
-            hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-            if hiring_manager:
-                hiring_manager_name = hiring_manager.full_name
-
-        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
-        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
-
-        return CampaignResponse(id=campaign.id,
-            name=campaign.name,
-            status=campaign.status.value,
-            jd_title=jd.title,
-            jd_version=jd.version_number,
-            hiring_manager=hiring_manager_name,
-            max_candidates=campaign.max_candidates,
-            deadline=campaign.deadline,
-            created_at=campaign.created_at,
-            candidate_count=candidate_count,
-            shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-            approaching_cap=self._is_approaching_cap(candidate_count,
-                campaign.max_candidates,
-                cap_warning_percentage,
-            ),
-            deadline_soon=self._is_deadline_soon(campaign.deadline,
-                deadline_warning_days,
-            )
-        )
-
     def get_scoring_configuration(self,
         campaign_id: UUID,
     ) -> CampaignScoringConfigurationResponse:
@@ -418,6 +373,27 @@ class CampaignService:
             ),
         )
     
+    def get_platform_scoring_defaults(self) -> CampaignScoringDefaultsResponse:
+        """
+        Org-wide default weights/thresholds from platform_config — used by
+        the new-campaign form to prefill and by Reset to Defaults previews.
+        No campaign context required.
+        """
+        configs = self.config_repo.get_configs_by_keys([
+                "CAMPAIGN_WEIGHT_DETERMINISTIC",
+                "CAMPAIGN_WEIGHT_SEMANTIC",
+                "CAMPAIGN_WEIGHT_AI",
+                "SEMANTIC_PASS_THRESHOLD",
+                "AI_PASS_THRESHOLD",
+            ]
+        )
+        return CampaignScoringDefaultsResponse(weight_deterministic=float(configs.get("CAMPAIGN_WEIGHT_DETERMINISTIC", "30.00")),
+            weight_semantic=float(configs.get("CAMPAIGN_WEIGHT_SEMANTIC", "40.00")),
+            weight_ai=float(configs.get("CAMPAIGN_WEIGHT_AI", "30.00")),
+            semantic_threshold=float(configs.get("SEMANTIC_PASS_THRESHOLD", "0.6500")),
+            ai_threshold=float(configs.get("AI_PASS_THRESHOLD", "50.00")),
+        )
+
     def get_scoring_history(self,
         campaign_id: UUID,
     ) -> CampaignWeightHistoryResponse:
@@ -1524,25 +1500,44 @@ class CampaignService:
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
+        audit_logs = self.campaign_repo.get_audit_entries(campaign_id)
+        stage_history = self.campaign_repo.get_stage_history(campaign_id)
+        bulk_jobs = self.campaign_repo.get_bulk_upload_events(campaign_id)
+
+        # one batched name lookup for every distinct actor across all three
+        # sources — _resolve_actor per event was an N+1 (one query per row)
+        actor_ids = {str(a) for a in (
+                [log.actor_id for log in audit_logs]
+                + [h.changed_by for h in stage_history]
+                + [job.uploaded_by for job in bulk_jobs]
+            ) if a
+        }
+        actor_names = self.campaign_repo.get_user_names(list(actor_ids))
+
+        def resolve(actor_id) -> str:
+            if not actor_id:
+                return "System"
+            return actor_names.get(str(actor_id), "System")
+
         entries: list[TimelineEntry] = []
 
-        for log in self.campaign_repo.get_audit_entries(campaign_id):
+        for log in audit_logs:
             detail = log.detail or {}
             entries.append(TimelineEntry(timestamp=log.created_at,
                 event_type=log.action_type.value,
-                actor_name=self._resolve_actor(log.actor_id),
+                actor_name=resolve(log.actor_id),
                 description=detail.get("title") or log.action_type.value.replace("_", " ").title(),
             ))
 
-        for h in self.campaign_repo.get_stage_history(campaign_id):
+        for h in stage_history:
             from_stage = h.from_stage.value if h.from_stage else "START"
             entries.append(TimelineEntry(timestamp=h.changed_at,
                 event_type=f"CANDIDATE_{h.to_stage.value}",
-                actor_name=self._resolve_actor(h.changed_by),
+                actor_name=resolve(h.changed_by),
                 description=f"Candidate moved {from_stage} → {h.to_stage.value}",
             ))
 
-        for job in self.campaign_repo.get_bulk_upload_events(campaign_id):
+        for job in bulk_jobs:
             if job.status.value == "COMPLETED":
                 job_event = "BULK_UPLOAD_COMPLETED"
                 summary = f"Bulk upload '{job.original_filename}' completed — {job.processed_count}/{job.total_files} processed"
@@ -1555,7 +1550,7 @@ class CampaignService:
 
             entries.append(TimelineEntry(timestamp=job.completed_at or job.created_at,
                 event_type=job_event,
-                actor_name=self._resolve_actor(job.uploaded_by),
+                actor_name=resolve(job.uploaded_by),
                 description=summary,
             ))
 

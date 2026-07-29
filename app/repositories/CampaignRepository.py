@@ -385,6 +385,17 @@ class CampaignRepository:
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 
+    def get_user_names(self, user_ids: list[str]) -> dict[str, str]:
+        """Batch id → full_name lookup so callers rendering many rows
+        (e.g. the timeline) don't issue one query per actor."""
+        if not user_ids:
+            return {}
+        rows = (self.db.query(User.id, User.full_name)
+            .filter(User.id.in_(user_ids))
+            .all()
+        )
+        return {str(user_id): full_name for user_id, full_name in rows}
+
     def get_stage_counts(self, campaign_id) -> dict[str, int]:
         rows = (self.db.query(CampaignCandidate.pipeline_stage, func.count())
             .filter(CampaignCandidate.campaign_id == campaign_id)

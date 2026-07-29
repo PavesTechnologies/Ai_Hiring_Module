@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.campaign import get_campaign_service
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, HiringCampaignResponse, CampaignMinimalResponse
-from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignScoringUpdateRequest, CampaignUpdateRequest, PlatformDefaultWeightsUpdateRequest
+from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_processing_status_response import (ProcessingStatusSummaryResponse,
@@ -247,6 +247,21 @@ def get_weight_presets(service: CampaignService = Depends(get_campaign_service),
 
 # ── Reset Weights to Platform Defaults ────────────────────────────────
 
+@router.get("/platform-defaults/scoring",
+    response_model=APIResponse[CampaignScoringDefaultsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get platform default scoring weights",
+    description=("Returns the org-wide scoring defaults used to prefill new campaigns "
+        "and by the Reset to Defaults option."
+    ),
+)
+def get_platform_default_weights(service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    defaults = service.get_platform_scoring_defaults()
+    return APIResponse.ok(data=defaults, message="Platform default scoring weights retrieved successfully")
+
+
 @router.put("/platform-defaults/scoring",
     response_model=APIResponse[CampaignScoringDefaultsResponse],
     status_code=status.HTTP_200_OK,
@@ -263,20 +278,6 @@ def update_platform_default_weights(request: PlatformDefaultWeightsUpdateRequest
     return APIResponse.ok(data=defaults, message="Platform default scoring weights updated successfully")
 
 
-@router.get("/{campaign_id}",
-    response_model=APIResponse[CampaignResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_campaign(campaign_id: UUID,
-    service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    campaign = service.get_campaign_by_id(campaign_id)
-
-    return APIResponse.ok(data=campaign,
-        message="Campaign retrieved successfully"
-    )
-
 @router.get("/{campaign_id}/scoring-config",
     response_model=APIResponse[CampaignScoringConfigurationResponse],
     status_code=status.HTTP_200_OK,
@@ -285,6 +286,7 @@ def get_campaign(campaign_id: UUID,
 )
 def get_scoring_configuration(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     scoring_config = service.get_scoring_configuration(campaign_id)
 
@@ -305,25 +307,6 @@ def get_scoring_history(campaign_id: UUID,
     return APIResponse.ok(data=history,
         message="Scoring history retrieved successfully",
     )
-
-@router.put("/{campaign_id}/scoring-config",
-    response_model=CampaignScoringConfigurationResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Update Campaign Scoring Configuration",
-    description="Update scoring weights and thresholds for a campaign.",
-)
-def update_scoring_configuration(campaign_id: UUID,
-    request: CampaignScoringUpdateRequest,
-    service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-
-    configuration = service.update_scoring_configuration(campaign_id=campaign_id,
-        request=request,
-        updated_by=user.user_id,
-    )
-
-    return configuration
 
 @router.post("/{campaign_id}/scoring-config/reset",
     response_model=APIResponse[CampaignScoringConfigurationResponse],
