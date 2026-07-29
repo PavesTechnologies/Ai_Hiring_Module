@@ -269,6 +269,19 @@ try:
             value="3",
             description="FRAUD_REVIEW candidate count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
         ),
+        # Epic 3 (M05-E03) Phase C4: candidate resubmission-alert thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD",
+            value="3",
+            description="Number of distinct campaign_candidates rows within CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS above which a CAMPAIGN_RESUBMISSION_DETECTED alert is raised for a candidate",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS",
+            value="30",
+            description="Rolling window, in days, over which candidate campaign submissions are counted for the resubmission-alert threshold",
+        ),
     ]
 
     for config in configs:

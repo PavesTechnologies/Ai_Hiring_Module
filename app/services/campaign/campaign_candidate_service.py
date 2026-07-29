@@ -7,12 +7,18 @@ from datetime import datetime, timedelta, timezone
 from fastapi.responses import StreamingResponse
 
 from app.core.encryption_service import DecryptionError, EncryptionService
+from app.core.storage_service import StorageService
 from app.dependencies import campaign
 from app.enums.constants import ActionType, EntityType
+from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
+from app.exceptions.pipeline_transition_exceptions import (
+    InvalidPipelineTransitionException,
+    PipelineTransitionReasonRequiredException,
+)
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
-from app.models.candidates import Candidate, Resume
+from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
     AIEvaluationStatus,
     CampaignCandidate,
@@ -21,6 +27,7 @@ from app.models.pipeline import (
     RejectionLayer,
     TransitionSource,
 )
+from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import (
     CampaignCandidateRepository,
@@ -34,6 +41,8 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
     CampaignRejectionAnalyticsResponse,
+    CandidateCampaignHistoryEntryResponse,
+    CandidateCampaignHistoryResponse,
     CandidateRejectionHistoryEntryResponse,
     CandidateScorecardResponse,
     CampaignCandidateResponse,
@@ -43,10 +52,15 @@ from app.schemas.campaign.campaign_candidate_schema import (
     OverrideReportRow,
     OverrideWeeklyTrendPoint,
     RejectionBreakdownEntry,
+    ResubmissionInfoResponse,
+    UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.services.resume.file_validation_service import FileValidationService
+from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
@@ -56,6 +70,16 @@ CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
 # M07-E03 S03 T01: this story's exact, explicit scope - a SEMANTIC/AI-layer
 # rejection (a different, not-yet-built epic) never sets has_rejection.
 _SCORECARD_BANNER_REJECTION_LAYER = RejectionLayer.DETERMINISTIC
+
+# Epic 3 (M05-E03) Phase C5 - same bucket/extension mapping
+# ResumeUploadService.upload() uses; duplicated here (not imported, since
+# both are module-private to their own file) rather than introducing
+# cross-service coupling for four lines.
+_RESUME_STORAGE_BUCKET = "airs_resumes"
+_RESUBMISSION_FORMAT_TO_EXTENSION = {
+    FileFormat.PDF: "pdf",
+    FileFormat.DOCX: "docx",
+}
 
 # M07-E03 S04 T02: task_type strings this service queues after an override.
 # Neither has a real Celery task implementation anywhere in this codebase
@@ -139,10 +163,24 @@ class CampaignCandidateService:
         config_repo: ConfigRepository | None = None,
         celery_task_log_service: CeleryTaskLogService | None = None,
         skill_repo: SkillRepository | None = None,
+        allowed_transition_repo: AllowedTransitionRepository | None = None,
+        pipeline_transition_service: PipelineTransitionService | None = None,
+        file_validation_service: FileValidationService | None = None,
+        storage_service: StorageService | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        # Epic 3 (M05-E03) Phase C5 — optional, additive, same convention as
+        # the other optional deps above: every pre-existing call site
+        # (including bulk_upload_tasks.py's own direct construction) never
+        # passes these, so their behavior is completely unchanged; only the
+        # new resubmission-info enrichment and update_resume_for_resubmission
+        # need them.
+        self.allowed_transition_repo = allowed_transition_repo
+        self.pipeline_transition_service = pipeline_transition_service
+        self.file_validation_service = file_validation_service
+        self.storage_service = storage_service
         self.encryption_service = encryption_service
         # M07-E03 S03: optional, additive - every pre-existing call site
         # (create/list/delete) never passes these, so their behavior is
@@ -196,6 +234,7 @@ class CampaignCandidateService:
                 raise CampaignException(
                     "Candidate already exists in this campaign.",
                     409,
+                    data=self._build_resubmission_info(existing_candidate),
                 )
 
 
@@ -328,6 +367,171 @@ class CampaignCandidateService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+    def _build_resubmission_info(
+        self,
+        campaign_candidate: CampaignCandidate,
+    ) -> ResubmissionInfoResponse | None:
+        """
+        Epic 3 (M05-E03) Phase C5 — resolves whether an "update resume"
+        resubmission is currently possible for this campaign_candidate, by
+        checking the real allowed_transitions data rather than duplicating
+        the seeded graph as a hardcoded assumption here. Returns None (the
+        exception's data stays None, exactly like before this phase) when
+        allowed_transition_repo isn't wired — e.g. bulk_upload_tasks.py's
+        own direct CampaignCandidateService(...) construction, which never
+        passes it and doesn't need this enrichment.
+        """
+        if self.allowed_transition_repo is None:
+            return None
+
+        transition = self.allowed_transition_repo.get(
+            campaign_candidate.pipeline_stage, PipelineStage.UPLOADED,
+        )
+        can_update_resume = transition is not None
+        requires_hr_confirmation = can_update_resume and set(transition.allowed_roles) == {"HR_ADMIN"}
+
+        return ResubmissionInfoResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            current_pipeline_stage=campaign_candidate.pipeline_stage,
+            current_resume_id=campaign_candidate.resume_id,
+            can_update_resume=can_update_resume,
+            requires_hr_confirmation=requires_hr_confirmation,
+        )
+
+    def update_resume_for_resubmission(
+        self,
+        campaign_candidate_id: UUID,
+        file_bytes: bytes,
+        filename: str,
+        actor_id: str,
+        actor_role: str | None = None,
+        reason: str | None = None,
+        content_type: str | None = None,
+    ) -> UpdateResumeResubmissionResponse:
+        """
+        Epic 3 (M05-E03) Phase C5 — the "update resume" resolution action:
+        moves pipeline_stage back to UPLOADED (validated + audited by
+        PipelineTransitionService, C0), creates the next resume version
+        under the same candidate (C1's versioning), resets every
+        evaluation-derived field, and re-enqueues RESUME_PARSE. Requires
+        allowed_transition_repo/pipeline_transition_service/
+        file_validation_service/storage_service/resume_repo all be wired -
+        true for the real DI-constructed service (see
+        get_campaign_candidate_service), not for bulk_upload_tasks.py's own
+        narrower construction, which never calls this method.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        try:
+            self.pipeline_transition_service.transition_stage(
+                campaign_candidate,
+                to_stage=PipelineStage.UPLOADED,
+                changed_by=actor_id,
+                actor_role=actor_role,
+                reason=reason,
+                source=TransitionSource.MANUAL,
+            )
+        except InvalidPipelineTransitionException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
+        except PipelineTransitionReasonRequiredException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 400) from exc
+
+        try:
+            validation_result = self.file_validation_service.validate(file_bytes, filename)
+
+            extension = _RESUBMISSION_FORMAT_TO_EXTENSION[validation_result.file_format]
+            object_path = f"org_None/resume/{uuid4()}.{extension}"
+            self.storage_service.upload_file(
+                bucket_name=_RESUME_STORAGE_BUCKET,
+                file_path=object_path,
+                file_content=file_bytes,
+                content_type=content_type,
+            )
+
+            file_hash = hashlib.md5(file_bytes).hexdigest()
+
+            existing_active = self.resume_repo.get_active_by_candidate(campaign_candidate.candidate_id)
+            if existing_active is None:
+                version_number = 1
+            else:
+                version_number = self.resume_repo.get_max_version_number(campaign_candidate.candidate_id) + 1
+                self.resume_repo.deactivate_active_version(campaign_candidate.candidate_id)
+
+            new_resume = Resume(
+                candidate_id=campaign_candidate.candidate_id,
+                file_path=object_path,
+                file_format=validation_result.file_format,
+                file_hash=file_hash,
+                version_number=version_number,
+                is_active_version=True,
+                parse_status=ParseStatus.PENDING,
+                uploaded_by=actor_id,
+            )
+            new_resume = self.resume_repo.create(new_resume)
+
+            self.campaign_candidate_repo.reset_for_resubmission(campaign_candidate, new_resume.id)
+            self.campaign_candidate_repo.commit()
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise
+
+        task_id = uuid4()
+        self.resume_repo.set_task_id(new_resume, str(task_id))
+        self.resume_repo.commit()
+        process_resume_document.apply_async(
+            kwargs={"resume_id": str(new_resume.id)},
+            task_id=str(task_id),
+        )
+
+        return UpdateResumeResubmissionResponse(
+            campaign_candidate=CampaignCandidateResponse.model_validate(campaign_candidate),
+            new_resume_id=new_resume.id,
+            task_id=task_id,
+        )
+
+    def get_candidate_campaign_history(self, candidate_id: UUID) -> CandidateCampaignHistoryResponse:
+        """
+        Epic 3 (M05-E03) Phase C6 — HR_ADMIN-only cross-campaign history.
+        Read-only; every score/stage field already lives on the per-campaign
+        campaign_candidates row, so there is no cross-campaign contamination
+        risk to guard against here (verified separately via test, not code).
+        """
+        rows = self.campaign_candidate_repo.get_all_by_candidate_across_campaigns(candidate_id)
+        if not rows:
+            raise NotFoundError(f"No campaign history found for candidate {candidate_id}.")
+
+        history = [
+            CandidateCampaignHistoryEntryResponse(
+                campaign_candidate_id=campaign_candidate.id,
+                campaign_id=campaign_candidate.campaign_id,
+                campaign_name=campaign_name,
+                jd_title=jd_title,
+                submission_date=campaign_candidate.created_at,
+                pipeline_stage=campaign_candidate.pipeline_stage,
+                composite_score=campaign_candidate.composite_score,
+                outcome=self._derive_outcome(campaign_candidate.pipeline_stage),
+            )
+            for campaign_candidate, campaign_name, jd_title in rows
+        ]
+
+        return CandidateCampaignHistoryResponse(
+            candidate_id=candidate_id,
+            total_campaigns=len(history),
+            history=history,
+        )
+
+    @staticmethod
+    def _derive_outcome(pipeline_stage: PipelineStage) -> str:
+        if pipeline_stage == PipelineStage.SELECTED:
+            return "Selected"
+        if pipeline_stage == PipelineStage.REJECTED:
+            return "Rejected"
+        return "In Progress"
 
     @staticmethod
     def _build_idempotency_key(

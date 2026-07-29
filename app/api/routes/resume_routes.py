@@ -25,6 +25,7 @@ from app.schemas.resume.request import ResumeUploadRequest
 from app.schemas.resume.response import (
     ResumeProcessingStatusResponse,
     ResumeUploadAcceptedResponse,
+    ResumeVersionHistoryResponse,
 )
 from app.schemas.response import APIResponse
 from app.services.resume.resume_intake_service import ResumeIntakeService
@@ -50,6 +51,7 @@ def upload_resume(
     candidate_phone: str | None = Form(default=None, max_length=50),
     jurisdiction: str = Form(default=Jurisdiction.GLOBAL.value),
     consent_confirmed: bool = Form(...),
+    resolution: Literal["use_existing", "upload_anyway"] | None = Form(default=None),
     file: UploadFile = File(...),
     service: ResumeIntakeService = Depends(get_resume_intake_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
@@ -60,6 +62,12 @@ def upload_resume(
     background task — the response's parse_status still reads PENDING
     since parsing runs asynchronously after this call returns; poll
     task_id to observe progress (polling endpoint itself is Phase 9).
+
+    Epic 3 (M05-E03) Phase C2 — if the file is byte-identical to one
+    already in the system and `resolution` isn't supplied, this returns
+    HTTP 409 with a DuplicateFileWarningResponse instead (raised as
+    DuplicateResumeFileException and handled by the existing global
+    ResumeException handler — no special-casing needed here).
     """
     try:
         validated = ResumeUploadRequest(
@@ -69,6 +77,7 @@ def upload_resume(
             candidate_phone=candidate_phone,
             jurisdiction=jurisdiction,
             consent_confirmed=consent_confirmed,
+            resolution=resolution,
         )
     except ValidationError as exc:
         raise BadRequestError(str(exc)) from exc
@@ -76,7 +85,7 @@ def upload_resume(
     file_bytes = file.file.read()
     filename = file.filename or "resume"
 
-    resume, campaign_candidate, campaign, task_id = service.upload_resume(
+    resume, campaign_candidate, campaign, task_id, requires_processing = service.upload_resume(
         campaign_id=validated.campaign_id,
         file_bytes=file_bytes,
         filename=filename,
@@ -89,9 +98,15 @@ def upload_resume(
         candidate_phone=validated.candidate_phone,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+        resolution=validated.resolution,
     )
 
     masked_name = validated.candidate_full_name.split(" ")[0]
+    message = (
+        "Resume uploaded successfully and queued for processing."
+        if requires_processing
+        else "Existing resume linked to the campaign — no reprocessing needed."
+    )
 
     return APIResponse.ok(
         data=ResumeUploadAcceptedResponse(
@@ -104,7 +119,7 @@ def upload_resume(
             pipeline_stage=campaign_candidate.pipeline_stage.value,
             parse_status=resume.parse_status.value,
         ),
-        message="Resume uploaded successfully and queued for processing.",
+        message=message,
     )
 
 
@@ -175,6 +190,23 @@ def get_resume_parsed_json_by_candidate(
     return APIResponse.ok(
         data=service.get_parsed_json_by_candidate(candidate_id),
         message="Parsed resume data retrieved successfully.",
+    )
+
+
+@router.get(
+    "/candidate/{candidate_id}/versions",
+    response_model=APIResponse[ResumeVersionHistoryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_version_history(
+    candidate_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """Epic 3 (M05-E03) Phase C1 — read-only. Full resume version history for a candidate, most recent first, with the active version marked."""
+    return APIResponse.ok(
+        data=service.get_version_history(candidate_id),
+        message="Resume version history retrieved successfully.",
     )
 
 
