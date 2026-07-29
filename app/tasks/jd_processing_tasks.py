@@ -11,6 +11,7 @@ from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 
@@ -41,6 +42,7 @@ def process_jd_document(
     min_experience_years: float | None,
     education_criteria: dict | None,
     created_by: str,
+    prompt_template_id: str,
     max_experience_years: float | None = None,
     notice_period: int | None = None,
     existing_jd_id: str | None = None,
@@ -107,6 +109,7 @@ def process_jd_document(
             hash_service=HashService(),
             audit_service=audit_service,
             storage_service=StorageService(),
+            prompt_template_repository=PromptTemplateRepository(db),
         )
 
         # One EmbeddingService instance shared by the pipeline's own JD-level
@@ -154,6 +157,7 @@ def process_jd_document(
             notice_period=notice_period,
             education_criteria=education_criteria,
             created_by=created_by,
+            prompt_template_id=UUID(prompt_template_id),
             existing_jd_id=UUID(existing_jd_id) if existing_jd_id else None,
             version_number=version_number,
             parent_jd_id=UUID(parent_jd_id) if parent_jd_id else None,

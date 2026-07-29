@@ -22,6 +22,10 @@ from app.services.skills.skill_normalization_service import (
     scoring_weight_for_tier,
     verification_status_for_tier,
 )
+from app.services.skills.unknown_skill_reevaluation_queue_service import (
+    ReEvaluationQueueError,
+    UnknownSkillReEvaluationQueueService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,22 +48,26 @@ class SkillCurationService:
         embedding_queue_service: EmbeddingQueueService,
         encryption_service: EncryptionService,
         resume_repository: ResumeRepository,
+        reevaluation_queue_service: UnknownSkillReEvaluationQueueService,
     ):
         self.skill_repository = skill_repository
         self.audit_service = audit_service
         self.embedding_queue_service = embedding_queue_service
         self.encryption_service = encryption_service
         self.resume_repository = resume_repository
+        self.reevaluation_queue_service = reevaluation_queue_service
 
     def list_pending_unknown_skills(
         self,
         page: int = 1,
         page_size: int = 10,
         search: str | None = None,
-    ) -> list[UnknownSkill]:
-        return self.skill_repository.get_pending_unknown_skills(
+    ) -> tuple[list[UnknownSkill], int]:
+        items = self.skill_repository.get_pending_unknown_skills(
             page=page, page_size=page_size, search=search,
         )
+        total = self.skill_repository.count_pending_unknown_skills(search=search)
+        return items, total
 
     def list_jd_skills(self, jd_id: UUID):
         """Resolved (canonical) skills matched for a JD."""
@@ -202,6 +210,7 @@ class SkillCurationService:
         itself - along with its JDUnknownSkill/CandidateSkill links - is
         then hard-deleted rather than left around with a terminal status.
         """
+        affected_resume_ids: set[UUID] = set()
         result = self._create_canonical_skill_from_unknown_core(
             unknown_skill_id,
             actor_id,
@@ -212,9 +221,11 @@ class SkillCurationService:
             confidence=confidence,
             source=source,
             is_active=is_active,
+            affected_resume_ids=affected_resume_ids,
         )
         self.skill_repository.commit()
         self._enqueue_skill_embedding(result["skill"].id)
+        self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
         return result
 
     def bulk_approve_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
@@ -230,8 +241,11 @@ class SkillCurationService:
         """
         results = []
         for unknown_skill_id in unknown_skill_ids:
+            affected_resume_ids: set[UUID] = set()
             try:
-                result = self._create_canonical_skill_from_unknown_core(unknown_skill_id, actor_id)
+                result = self._create_canonical_skill_from_unknown_core(
+                    unknown_skill_id, actor_id, affected_resume_ids=affected_resume_ids,
+                )
                 self.skill_repository.commit()
             except (NotFoundError, BadRequestError) as exc:
                 self.skill_repository.rollback()
@@ -243,6 +257,7 @@ class SkillCurationService:
                 continue
 
             self._enqueue_skill_embedding(result["skill"].id)
+            self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
             results.append({
                 "unknown_skill_id": unknown_skill_id,
                 "success": True,
@@ -265,6 +280,7 @@ class SkillCurationService:
         confidence: str = "unverified",
         source: str = "manual entry",
         is_active: bool = True,
+        affected_resume_ids: set[UUID] | None = None,
     ) -> dict:
         """
         Uncommitted core shared by the single create-canonical endpoint and
@@ -309,7 +325,9 @@ class SkillCurationService:
             is_active=is_active,
         )
 
-        migration = self._finalize_unknown_skill_resolution(unknown_skill, new_skill.id)
+        migration = self._finalize_unknown_skill_resolution(
+            unknown_skill, new_skill.id, affected_resume_ids,
+        )
 
         self.audit_service.log(
             actor_id=actor_id,
@@ -371,7 +389,9 @@ class SkillCurationService:
         for link in jd_links:
             self.skill_repository.delete_jd_unknown_skill(link)
 
+        affected_resume_ids: set[UUID] = set()
         for candidate_skill in self.skill_repository.get_candidate_skills_by_unknown_skill_id(unknown_skill.id):
+            affected_resume_ids.add(candidate_skill.resume_id)
             if not self.skill_repository.get_candidate_skill_by_canonical(candidate_skill.resume_id, target_skill.id):
                 self.resume_repository.create_candidate_skill(
                     candidate_id=candidate_skill.candidate_id,
@@ -403,6 +423,7 @@ class SkillCurationService:
             },
         )
         self.skill_repository.commit()
+        self._trigger_reevaluation(unknown_skill.id, affected_resume_ids)
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
         """
@@ -544,7 +565,10 @@ class SkillCurationService:
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
 
     def _finalize_unknown_skill_resolution(
-        self, unknown_skill: UnknownSkill, canonical_skill_id: UUID | None
+        self,
+        unknown_skill: UnknownSkill,
+        canonical_skill_id: UUID | None,
+        affected_resume_ids: set[UUID] | None = None,
     ) -> dict:
         """
         Common tail shared by every "resolve this UnknownSkill for good"
@@ -554,6 +578,14 @@ class SkillCurationService:
         match first; either way, hard-deletes the UnknownSkill row (and
         whatever JDUnknownSkill/CandidateSkill links remain) and recomputes
         is_verified for every JD that was touched.
+
+        affected_resume_ids, when given, is mutated in place with every
+        resume_id whose candidate_skills changed here - deliberately not
+        threaded through the return dict, since that dict is spread
+        verbatim into audit_service.log(details=...) by every caller and a
+        raw set of UUIDs isn't JSON-safe. Callers that need the async
+        candidate re-evaluation trigger pass their own set and read it back
+        directly after this returns.
         """
         jd_skills_migrated = 0
         candidate_skills_migrated = 0
@@ -567,6 +599,8 @@ class SkillCurationService:
                 self.skill_repository.delete_jd_unknown_skill(link)
 
             for candidate_skill in self.skill_repository.get_candidate_skills_by_unknown_skill_id(unknown_skill.id):
+                if affected_resume_ids is not None:
+                    affected_resume_ids.add(candidate_skill.resume_id)
                 if not self.skill_repository.get_candidate_skill_by_canonical(
                     candidate_skill.resume_id, canonical_skill_id
                 ):
@@ -599,6 +633,25 @@ class SkillCurationService:
             "candidate_skills_migrated": candidate_skills_migrated,
             **delete_counts,
         }
+
+    def _trigger_reevaluation(self, unknown_skill_id: UUID, affected_resume_ids: set[UUID]) -> None:
+        """
+        Fire-and-forget, same reasoning as _enqueue_skill_embedding: the
+        unknown-skill resolution has already committed by the time this
+        runs, so a broker outage here must never undo or fail that
+        already-successful mutation - only logged. Every business
+        validation (pipeline stage, campaign status, candidate erasure) is
+        applied inside reevaluate_candidates_for_unknown_skill_task itself,
+        not here - this only decides whether there's anything to queue.
+        """
+        if not affected_resume_ids:
+            return
+        try:
+            self.reevaluation_queue_service.queue_reevaluation(unknown_skill_id, affected_resume_ids)
+        except ReEvaluationQueueError:
+            logger.exception(
+                "Failed to enqueue candidate re-evaluation for unknown_skill_id=%s", unknown_skill_id,
+            )
 
     def _enqueue_skill_embedding(self, skill_id: UUID) -> None:
         # Fire-and-forget: the caller's mutation has already committed, so a

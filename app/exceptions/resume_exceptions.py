@@ -44,3 +44,14 @@ class EncryptionUnavailableException(ResumeException):
 
     def __init__(self, message: str, data: Any | None = None):
         super().__init__(message, status_code=503, data=data)
+
+
+class DuplicateResumeFileException(ResumeException):
+    """
+    Epic 3 (M05-E03) Phase C2 — raised when an uploaded file's hash matches
+    a resume already in the system and no resolution ("use_existing" /
+    "upload_anyway") was supplied. `data` carries a DuplicateFileWarningResponse.
+    """
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)

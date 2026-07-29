@@ -4,14 +4,16 @@ from uuid import UUID
 from app.models.async_tasks import ProcessingStage
 from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.repositories.resume_repository import ResumeRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
-from app.prompts.resume_extraction_prompt import RESUME_SYSTEM_PROMPT
 from app.schemas.ai.resume_extraction_response import ResumeExtractionGenerationSchema, ResumeExtractionResponse
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
+from app.services.pii.pii_detection_service import PIIDetectionService
+from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume import resume_embedding_text_builder
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
@@ -63,6 +65,9 @@ class ResumeProcessingPipeline:
         resume_repository: ResumeRepository,
         skill_repository: SkillRepository,
         stage_tracker: StageExecutionService,
+        pii_detection_service: PIIDetectionService,
+        pii_redaction_service: PIIRedactionService,
+        prompt_template_repository: PromptTemplateRepository,
     ):
         self.preprocessing_service = preprocessing_service
         self.extraction_service = extraction_service
@@ -74,6 +79,9 @@ class ResumeProcessingPipeline:
         self.resume_repository = resume_repository
         self.skill_repository = skill_repository
         self.stage_tracker = stage_tracker
+        self.pii_detection_service = pii_detection_service
+        self.pii_redaction_service = pii_redaction_service
+        self.prompt_template_repository = prompt_template_repository
 
     def run(
         self,
@@ -83,6 +91,7 @@ class ResumeProcessingPipeline:
         candidate_id: UUID,
         file_path: str,
         source_format: ResumeSourceFormat,
+        prompt_template_id: UUID,
         attempt_number: int = 1,
         initial_context: ResumeProcessingContext | None = None,
     ) -> UUID:
@@ -114,11 +123,14 @@ class ResumeProcessingPipeline:
         )
         context.resume_id = resume_id
         context.candidate_id = candidate_id
+        context.prompt_template_id = prompt_template_id
         context.attempt_number = attempt_number
 
         for stage, output_attr, fn in (
             (ProcessingStage.TEXT_EXTRACTION, "raw_text", lambda: self._run_text_extraction(context)),
             (ProcessingStage.TEXT_CLEANING, "cleaned_text", lambda: self._run_text_cleaning(context)),
+            (ProcessingStage.PII_DETECTION, "pii_findings", lambda: self._run_pii_detection(context)),
+            (ProcessingStage.PII_REDACTION, "redacted_text", lambda: self._run_pii_redaction(context)),
             (ProcessingStage.AI_EXTRACTION, "raw_extraction", lambda: self._run_ai_extraction(context)),
             (ProcessingStage.JSON_VALIDATION, "validated_extraction", lambda: self._run_json_validation(context)),
             (ProcessingStage.SKILL_NORMALIZATION, "skill_match_results", lambda: self._run_skill_normalization(context)),
@@ -152,10 +164,19 @@ class ResumeProcessingPipeline:
     def _run_text_cleaning(self, context: ResumeProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.raw_text)
 
+    def _run_pii_detection(self, context: ResumeProcessingContext) -> None:
+        context.pii_findings = self.pii_detection_service.detect(context.cleaned_text)
+
+    def _run_pii_redaction(self, context: ResumeProcessingContext) -> None:
+        context.redacted_text = self.pii_redaction_service.redact(context.cleaned_text, context.pii_findings)
+
     def _run_ai_extraction(self, context: ResumeProcessingContext) -> None:
+        prompt_template = self.prompt_template_repository.get_by_id(context.prompt_template_id)
+        if prompt_template is None:
+            raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
         context.raw_extraction = self.extraction_service.extract_raw(
-            context.cleaned_text,
-            prompt=RESUME_SYSTEM_PROMPT,
+            context.redacted_text,
+            prompt=prompt_template.template_text,
             response_schema=ResumeExtractionGenerationSchema,
         )
 

@@ -4,6 +4,7 @@ from uuid import UUID
 from app.models.async_tasks import DocumentType
 from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.schemas.ai.resume_extraction_response import ResumeExtractionResponse
+from app.services.pii.pii_types import PIIFinding
 from app.services.skills.skill_normalization_service import SkillMatchResult
 
 
@@ -28,12 +29,15 @@ class ResumeProcessingContext:
     # up front the way an individual-upload context always has them.
     resume_id: UUID | None = None
     candidate_id: UUID | None = None
+    prompt_template_id: UUID | None = None
     document_type: DocumentType = DocumentType.RESUME
     attempt_number: int = 1
 
     # Populated progressively, one stage at a time.
     raw_text: str | None = None
     cleaned_text: str | None = None
+    pii_findings: list[PIIFinding] | None = None
+    redacted_text: str | None = None
     raw_extraction: dict | None = None
     validated_extraction: ResumeExtractionResponse | None = None
     skill_match_results: list[SkillMatchResult] | None = None
