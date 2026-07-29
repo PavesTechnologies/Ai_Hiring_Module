@@ -481,11 +481,13 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
+        campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+
         task_id = uuid4()
         self.resume_repo.set_task_id(new_resume, str(task_id))
         self.resume_repo.commit()
         process_resume_document.apply_async(
-            kwargs={"resume_id": str(new_resume.id)},
+            kwargs={"resume_id": str(new_resume.id), "prompt_template_id": str(campaign.prompt_template_id)},
             task_id=str(task_id),
         )
 

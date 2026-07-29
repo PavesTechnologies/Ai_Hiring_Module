@@ -6,6 +6,7 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_service import CampaignService
 from app.services.campaign.campaign_scheduler_service import CampaignSchedulerService
@@ -40,6 +41,11 @@ def get_jd_repository(
 ) -> JDRepository:
     return JDRepository(db)
 
+def get_prompt_template_repository(
+    db: Session = Depends(get_db),
+) -> PromptTemplateRepository:
+    return PromptTemplateRepository(db)
+
 def get_config_repository(
     db: Session = Depends(get_db),
 ) -> ConfigRepository:
@@ -64,6 +70,7 @@ def get_campaign_service(
     config_repo: ConfigRepository = Depends(get_config_repository),
     preset_repo: CampaignWeightPresetRepository = Depends(get_campaign_weight_preset_repository),
     db: Session = Depends(get_db),
+    prompt_template_repo: PromptTemplateRepository = Depends(get_prompt_template_repository),
 ) -> CampaignService:
     return CampaignService(
         campaign_repo=campaign_repo,
@@ -72,6 +79,7 @@ def get_campaign_service(
         config_repo=config_repo,
         preset_repo=preset_repo,
         db=db,
+        prompt_template_repo=prompt_template_repo,
     )
 
 def get_resume_repository_for_upload_history(

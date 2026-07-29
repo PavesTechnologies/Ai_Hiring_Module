@@ -128,6 +128,11 @@ class ActionType(enum.Enum):
     # (alembic/versions/<new>_candidate_data_erased_audit_action.py) before
     # CandidateErasureService can log it.
     CANDIDATE_DATA_ERASED = "CANDIDATE_DATA_ERASED"
+    # Prompt Management (AIRS)
+    PROMPT_CREATED = "PROMPT_CREATED"
+    PROMPT_UPDATED = "PROMPT_UPDATED"
+    PROMPT_DELETED = "PROMPT_DELETED"
+    PROMPT_STATUS_CHANGED = "PROMPT_STATUS_CHANGED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
@@ -147,6 +152,7 @@ class EntityType(enum.Enum):
     BULK_UPLOAD_JOB = "BULK_UPLOAD_JOB"
     BULK_UPLOAD_JOB_FILE = "BULK_UPLOAD_JOB_FILE"
     CANDIDATE_SKILL = "CANDIDATE_SKILL"
+    PROMPT_TEMPLATE = "PROMPT_TEMPLATE"
 
 
 # Resume storage prefix inside the S3 bucket

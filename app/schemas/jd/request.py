@@ -1,4 +1,5 @@
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -43,6 +44,8 @@ class CreateJDRequest(BaseModel):
 
     education_criteria: EducationCriteria = Field(...)
 
+    prompt_template_id: UUID = Field(..., description="Must reference an ACTIVE JD_PARSE prompt template.")
+
     _validate_experience_range = model_validator(mode="after")(_validate_experience_range)
 
 
@@ -54,6 +57,8 @@ class UpdateJDRequest(BaseModel):
     max_experience_years: float = Field(...)
     notice_period: int = Field(...)
     education_criteria: EducationCriteria = Field(...)
+
+    prompt_template_id: UUID = Field(..., description="Must reference an ACTIVE JD_PARSE prompt template.")
 
     _validate_experience_range = model_validator(mode="after")(_validate_experience_range)
 

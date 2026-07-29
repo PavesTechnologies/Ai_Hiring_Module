@@ -18,6 +18,7 @@ from app.dependencies.jd import (
     get_jd_processing_status_service,
     get_jd_repository,
     get_jd_service,
+    get_prompt_template_repository,
     get_stage_tracker,
 )
 from app.enums.constants import UserRole
@@ -26,6 +27,8 @@ from app.middleware.rbac import TokenUser, require_roles
 from app.models.async_tasks import DocumentType, ProcessingStage
 from app.models.jd.job_descriptions import JDVerificationStatus
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
+from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDRequest, JDSearchRequest
 from app.schemas.jd.response import (
@@ -86,6 +89,7 @@ def _queue_reprocess(
             "notice_period": result.notice_period,
             "education_criteria": result.education_criteria,
             "created_by": result.updated_by,
+            "prompt_template_id": str(result.prompt_template_id),
             "existing_jd_id": str(result.existing_jd_id),
             "version_number": result.version_number,
             "parent_jd_id": str(result.parent_jd_id),
@@ -131,14 +135,22 @@ def create_job_description(
     hash_service: HashService = Depends(get_hash_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
     task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
+    prompt_template_repository: PromptTemplateRepository = Depends(get_prompt_template_repository),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
     Validation runs synchronously (raw_text is already in hand, so the
-    duplicate pre-check is cheap and gives an immediate 409). The rest of
-    the pipeline — Text Cleaning through Persistence — runs in the
+    duplicate pre-check is cheap and gives an immediate 409, and the
+    prompt_template_id selection is cheap to validate up front too). The
+    rest of the pipeline — Text Cleaning through Persistence — runs in the
     background; the JobDescription row itself is only created there.
     """
+    validate_prompt_template_selection(
+        request.prompt_template_id,
+        expected_task_type="JD_PARSE",
+        repository=prompt_template_repository,
+    )
+
     content_hash = hash_service.generate_hash(request.raw_text)
     _raise_if_duplicate(jd_repository, content_hash)
 
@@ -164,6 +176,7 @@ def create_job_description(
             "notice_period": request.notice_period,
             "education_criteria": request.education_criteria.model_dump(),
             "created_by": user.user_id,
+            "prompt_template_id": str(request.prompt_template_id),
         },
         task_id=str(task_id),
     )
@@ -188,10 +201,12 @@ def create_job_description_from_file(
     notice_period: int = Form(...),
     education_degree: Optional[str] = Form(default=None),
     education_field: Optional[str] = Form(default=None),
+    prompt_template_id: UUID = Form(..., description="Must reference an ACTIVE JD_PARSE prompt template."),
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
     task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
+    prompt_template_repository: PromptTemplateRepository = Depends(get_prompt_template_repository),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
@@ -200,6 +215,12 @@ def create_job_description_from_file(
     the response returns); Text Extraction through Persistence — including
     the file-path duplicate check — run in the background.
     """
+    validate_prompt_template_selection(
+        prompt_template_id,
+        expected_task_type="JD_PARSE",
+        repository=prompt_template_repository,
+    )
+
     task_id = uuid4()
     stage_tracker.run_stage(
         str(task_id), DocumentType.JD, ProcessingStage.VALIDATION,
@@ -232,6 +253,7 @@ def create_job_description_from_file(
             "notice_period": notice_period,
             "education_criteria": education_criteria,
             "created_by": user.user_id,
+            "prompt_template_id": str(prompt_template_id),
         },
         task_id=str(task_id),
     )
@@ -427,6 +449,7 @@ def update_job_description_from_file(
     notice_period: int = Form(...),
     education_degree: Optional[str] = Form(default=None),
     education_field: Optional[str] = Form(default=None),
+    prompt_template_id: UUID = Form(..., description="Must reference an ACTIVE JD_PARSE prompt template."),
     file: UploadFile = File(...),
     service: JDService = Depends(get_jd_service),
     stage_tracker: StageExecutionService = Depends(get_stage_tracker),
@@ -451,6 +474,7 @@ def update_job_description_from_file(
         max_experience_years=max_experience_years,
         notice_period=notice_period,
         education_criteria=EducationCriteria(degree=education_degree, field=education_field),
+        prompt_template_id=prompt_template_id,
     )
 
     result = service.update_jd(
