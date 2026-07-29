@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.repositories.jd_repository import JDRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.services.jd.jd_service import JDService
 from app.services.jd.hash_service import HashService
 
@@ -27,6 +28,12 @@ def get_hash_service() -> HashService:
     return HashService()
 
 
+def get_prompt_template_repository(
+    db: Session = Depends(get_db),
+) -> PromptTemplateRepository:
+    return PromptTemplateRepository(db)
+
+
 def get_audit_repository(
     db: Session = Depends(get_db),
 )-> AuditRepository:
@@ -44,6 +51,7 @@ def get_jd_service(
     hash_service: HashService = Depends(get_hash_service),
     audit_service: AuditService = Depends(get_audit_service),
     storage_service: StorageService = Depends(get_storage_service),
+    prompt_template_repository: PromptTemplateRepository = Depends(get_prompt_template_repository),
 ) -> JDService:
 
     return JDService(
@@ -51,6 +59,7 @@ def get_jd_service(
         hash_service=hash_service,
         audit_service=audit_service,
         storage_service=storage_service,
+        prompt_template_repository=prompt_template_repository,
     )
 
 
