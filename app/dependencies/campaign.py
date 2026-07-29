@@ -13,6 +13,18 @@ from app.repositories.campaign_weight_preset_repository import (
     CampaignWeightPresetRepository,
 )
 
+# Epic 4 (M05-E04) Phase D7 — imported directly (not via
+# app.dependencies.resume/app.dependencies.bulk_upload) since both of
+# those modules already import get_config_repository from this one;
+# importing back from either here would be circular. ResumeRepository
+# and BulkUploadJobRepository take only a Session, so a local factory is
+# trivial, mirroring the same pattern already used elsewhere for exactly
+# this reason (e.g. app/dependencies/campaign_candidate.py's
+# get_encryption_service).
+from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
+from app.repositories.resume_repository import ResumeRepository
+from app.services.upload_history.upload_history_service import UploadHistoryService
+
 def get_campaign_repository(
     db: Session = Depends(get_db),
 ) -> CampaignRepository:
@@ -61,6 +73,30 @@ def get_campaign_service(
         preset_repo=preset_repo,
         db=db,
     )
+
+def get_resume_repository_for_upload_history(
+    db: Session = Depends(get_db),
+) -> ResumeRepository:
+    return ResumeRepository(db)
+
+
+def get_bulk_upload_job_repository_for_upload_history(
+    db: Session = Depends(get_db),
+) -> BulkUploadJobRepository:
+    return BulkUploadJobRepository(db)
+
+
+def get_upload_history_service(
+    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
+    resume_repo: ResumeRepository = Depends(get_resume_repository_for_upload_history),
+    bulk_upload_job_repo: BulkUploadJobRepository = Depends(get_bulk_upload_job_repository_for_upload_history),
+) -> UploadHistoryService:
+    return UploadHistoryService(
+        campaign_repo=campaign_repo,
+        resume_repo=resume_repo,
+        bulk_upload_job_repo=bulk_upload_job_repo,
+    )
+
 
 def get_campaign_scheduler_service(
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),

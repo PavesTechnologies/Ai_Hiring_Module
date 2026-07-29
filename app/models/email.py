@@ -17,6 +17,14 @@ class EmailTriggerEvent(enum.Enum):
     # interview scheduled) are a different epic and intentionally not
     # invented here.
     CANDIDATE_REJECTED = "CANDIDATE_REJECTED"
+    # Epic 4 (M05-E04) Phase D0 - vocabulary only. Not yet sendable by any
+    # code path (D11 - Persistent Failure Notification - doesn't exist
+    # yet). D11 must also resolve a real schema mismatch before it can use
+    # this: EmailNotification.candidate_id is a required, non-null FK to
+    # candidates.id, but this trigger's recipients (the uploader + all
+    # active HR_ADMIN) are internal staff, not a candidate - deliberately
+    # left unresolved here, per explicit decision, until D11.
+    UPLOAD_PERMANENTLY_FAILED = "UPLOAD_PERMANENTLY_FAILED"
 
 
 class EmailNotificationStatus(enum.Enum):

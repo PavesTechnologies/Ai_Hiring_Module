@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.storage_service import StorageService
@@ -10,13 +10,14 @@ from app.exceptions.bulk_upload_exceptions import (
     BulkUploadJobNotFoundException,
 )
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.async_tasks import BulkUploadFileStatus, BulkUploadJob, BulkUploadJobFile, BulkUploadStatus
+from app.models.async_tasks import BulkUploadFileStatus, BulkUploadJob, BulkUploadJobFile, BulkUploadStatus, CeleryTaskLog
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.schemas.bulk_upload.response import BulkUploadFileLogEntry, BulkUploadFileLogResult
 from app.services.audit_service import AuditService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.tasks.bulk_upload_tasks import extract_bulk_upload_zip, parse_bulk_upload_file
@@ -30,6 +31,23 @@ _TERMINAL_JOB_STATUSES = (
     BulkUploadStatus.FAILED,
     BulkUploadStatus.CANCELLED,
 )
+
+_TERMINAL_FILE_STATUSES = (
+    BulkUploadFileStatus.PROCESSED,
+    BulkUploadFileStatus.FAILED,
+    BulkUploadFileStatus.CANCELLED,
+)
+
+# Epic 4 (M05-E04) Phase D5 — the exact wording C3 (Epic 3) writes to
+# celery_task_log.output_summary for an auto-skipped exact-duplicate file
+# (bulk_upload_tasks.py). Both a duplicate and a genuine success share
+# BulkUploadFileStatus.PROCESSED — this marker is the only signal that
+# tells them apart. Encapsulated here, in one place, precisely because
+# it's a fragile coupling to another phase's literal string.
+_DUPLICATE_FILE_OUTPUT_SUMMARY_MARKER = "Duplicate file detected"
+
+_DEFAULT_FAILURE_REASON = "Processing failed for an unspecified reason."
+_SKIPPED_FILE_REASON = "Job was cancelled before this file could be processed."
 
 
 class BulkUploadService:
@@ -296,6 +314,149 @@ class BulkUploadService:
 
         job_file = self.bulk_upload_job_file_repo.get_by_id(file_id)
         return job_file, new_task_id
+
+    def get_job_progress(self, job_id: UUID) -> tuple[BulkUploadJob, float, int, datetime | None]:
+        """
+        Epic 4 (M05-E04) Phase D4 — lightweight polling data: percent
+        complete, remaining count, and a linear ETA. Deliberately separate
+        from get_job_detail, which also fetches the full per-file list —
+        unsuited to a frequent 10s poll. Returns
+        (job, percent_complete, remaining_count, estimated_completion_at).
+        """
+        job = self.bulk_upload_job_repo.get_by_id(job_id)
+        if job is None:
+            raise BulkUploadJobNotFoundException("Bulk upload job not found.")
+
+        resolved_count = job.processed_count + job.failed_count + job.duplicate_count
+        remaining_count = max(job.total_files - resolved_count, 0)
+
+        if job.total_files > 0:
+            percent_complete = min(round(resolved_count / job.total_files * 100, 1), 100.0)
+        else:
+            percent_complete = 0.0
+
+        estimated_completion_at = None
+        if job.status == BulkUploadStatus.PROCESSING and resolved_count > 0:
+            # Prefer the earliest real task started_at over created_at
+            # (job-row-insertion time, before any worker has actually
+            # picked anything up) — falls back to created_at when no
+            # task has recorded a started_at yet.
+            processing_started_at = (
+                self.celery_task_log_repo.get_earliest_started_at_by_bulk_upload_job_id(job_id)
+                or job.created_at
+            )
+            now = datetime.now(timezone.utc)
+            elapsed_seconds = (now - processing_started_at).total_seconds()
+            if elapsed_seconds > 0:
+                rate_per_second = resolved_count / elapsed_seconds
+                if rate_per_second > 0:
+                    eta_seconds = remaining_count / rate_per_second
+                    estimated_completion_at = now + timedelta(seconds=eta_seconds)
+
+        return job, percent_complete, remaining_count, estimated_completion_at
+
+    def get_file_log(
+        self, job_id: UUID, *, limit: int = 50, offset: int = 0,
+    ) -> tuple[list[BulkUploadFileLogEntry], int]:
+        """
+        Epic 4 (M05-E04) Phase D5 — live, most-recently-resolved-first log
+        of every file that has reached a terminal outcome. Sourced from
+        bulk_upload_job_files (covers every file, including CANCELLED ones
+        that never get a celery_task_log row), enriched by a batched
+        celery_task_log lookup for output_summary/error_message/
+        completed_at — not the reverse, since a purely celery_task_log-
+        sourced query would silently omit every SKIPPED (cancelled) file.
+        Returns (page_entries, total_terminal_count).
+        """
+        job = self.bulk_upload_job_repo.get_by_id(job_id)
+        if job is None:
+            raise BulkUploadJobNotFoundException("Bulk upload job not found.")
+
+        files = self.bulk_upload_job_file_repo.get_by_job_id(job_id)
+        terminal_files = [f for f in files if f.status in _TERMINAL_FILE_STATUSES]
+
+        task_ids = [f.task_id for f in terminal_files if f.task_id]
+        task_logs_by_id = {
+            log.task_id: log for log in self.celery_task_log_repo.get_by_task_ids(task_ids)
+        }
+
+        entries = [
+            self._to_file_log_entry(f, task_logs_by_id.get(f.task_id), job)
+            for f in terminal_files
+        ]
+        entries.sort(key=lambda entry: entry.timestamp, reverse=True)
+
+        total = len(entries)
+        return entries[offset:offset + limit], total
+
+    def _to_file_log_entry(
+        self,
+        job_file: BulkUploadJobFile,
+        task_log: CeleryTaskLog | None,
+        job: BulkUploadJob,
+    ) -> BulkUploadFileLogEntry:
+        if job_file.status == BulkUploadFileStatus.CANCELLED:
+            result = BulkUploadFileLogResult.SKIPPED
+            reason = _SKIPPED_FILE_REASON
+        elif job_file.status == BulkUploadFileStatus.FAILED:
+            result = BulkUploadFileLogResult.FAILED
+            reason = self._resolve_failure_reason(task_log)
+        elif self._is_duplicate_file_outcome(task_log):
+            result = BulkUploadFileLogResult.DUPLICATE
+            reason = None
+        else:
+            result = BulkUploadFileLogResult.SUCCESS
+            reason = None
+
+        return BulkUploadFileLogEntry(
+            filename=job_file.original_filename,
+            result=result,
+            reason=reason,
+            timestamp=self._resolve_file_log_timestamp(job_file, task_log, job),
+        )
+
+    @staticmethod
+    def _is_duplicate_file_outcome(task_log: CeleryTaskLog | None) -> bool:
+        """
+        Encapsulates the only signal that distinguishes a genuine success
+        from an auto-skipped exact-duplicate - both share
+        BulkUploadFileStatus.PROCESSED (see the module-level marker
+        constant's own comment for why).
+        """
+        return (
+            task_log is not None
+            and task_log.output_summary is not None
+            and _DUPLICATE_FILE_OUTPUT_SUMMARY_MARKER in task_log.output_summary
+        )
+
+    @staticmethod
+    def _resolve_failure_reason(task_log: CeleryTaskLog | None) -> str:
+        """A FAILED entry must always carry a meaningful reason, even when no task log or error_message exists."""
+        if task_log is not None and task_log.error_message:
+            return task_log.error_message
+        return _DEFAULT_FAILURE_REASON
+
+    @staticmethod
+    def _resolve_file_log_timestamp(
+        job_file: BulkUploadJobFile,
+        task_log: CeleryTaskLog | None,
+        job: BulkUploadJob,
+    ) -> datetime:
+        """
+        Prefers the task log's own completed_at (per-file, genuinely
+        distinct) over job_file.created_at (extraction-time, identical for
+        every file in the job - never useful for "most recent first"
+        ordering). CANCELLED files have no per-file resolution timestamp
+        at all (no updated_at column on bulk_upload_job_files) - the job's
+        own completed_at (set when the job itself was cancelled) is the
+        most accurate available signal, falling back to job.created_at if
+        even that is somehow absent.
+        """
+        if task_log is not None and task_log.completed_at is not None:
+            return task_log.completed_at
+        if job_file.status == BulkUploadFileStatus.CANCELLED:
+            return job.completed_at or job.created_at
+        return job_file.created_at
 
     def get_job_detail(self, job_id: UUID) -> tuple[BulkUploadJob, list, dict[str, int]]:
         """
