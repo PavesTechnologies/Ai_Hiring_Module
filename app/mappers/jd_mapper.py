@@ -9,6 +9,7 @@ class JDMapper:
     def to_list_item(
         jd: JobDescription,
         campaign_counts: dict[str, int] | None = None,
+        prompt_name: str | None = None,
     ) -> JDListItem:
         campaign_counts = campaign_counts or {"active": 0, "passed": 0}
         return JDListItem(
@@ -24,4 +25,6 @@ class JDMapper:
             passed_campaigns_count=campaign_counts["passed"],
             created_by=jd.created_by,
             created_at=jd.created_at,
+            prompt_template_id=jd.prompt_template_id,
+            prompt_name=prompt_name,
         )

@@ -42,6 +42,9 @@ class HiringCampaign(Base):
     )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    prompt_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=False, index=True
+    )
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
     recruiter_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)

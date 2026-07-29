@@ -29,6 +29,8 @@ class CampaignCreateRequest(BaseModel):
     hiring_manager_id: str
     recruiter_id: str
 
+    prompt_template_id: UUID = Field(..., description="Must reference an ACTIVE RESUME_PARSE prompt template.")
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str):
@@ -38,7 +40,7 @@ class CampaignCreateRequest(BaseModel):
             raise ValueError("Campaign name cannot be empty.")
 
         return value
-    
+
 class CampaignScoringUpdateRequest(BaseModel):
 
     weight_deterministic: Decimal = Field(...,
@@ -110,6 +112,10 @@ class CampaignUpdateRequest(BaseModel):
     clear_max_candidates: bool = False
 
     hiring_manager_id: Optional[str] = None
+
+    prompt_template_id: Optional[UUID] = Field(
+        default=None, description="Must reference an ACTIVE RESUME_PARSE prompt template."
+    )
 
     weight_deterministic: Optional[Decimal] = None
     weight_semantic: Optional[Decimal] = None
