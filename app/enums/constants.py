@@ -112,6 +112,8 @@ class ActionType(enum.Enum):
     # before this can actually be written to audit_log.
     UNKNOWN_SKILL_DELETED = "UNKNOWN_SKILL_DELETED"
     BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
+    
+    SEMANTIC_SCORE_COMPUTED = "SEMANTIC_SCORE_COMPUTED"
     # Epic 4 (M05-E04) Phase D0 — the DB-side audit_action_type_enum does NOT
     # yet contain these 4 values (this migration adds them in the same
     # phase). Writing an AuditLog row with any of these will fail with

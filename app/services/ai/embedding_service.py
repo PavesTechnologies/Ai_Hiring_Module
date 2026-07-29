@@ -26,6 +26,22 @@ class EmbeddingService:
         vector = self._get_model().encode(text, normalize_embeddings=True)
         return vector.tolist()
 
+    def generate_embeddings(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]:
+        """
+        M08-E01 T06: batch counterpart to generate_embedding - encodes
+        multiple texts in one SentenceTransformer.encode() call (chunked
+        internally by sentence-transformers per batch_size), rather than
+        one generate_embedding() call per text. Same singleton model /
+        normalize_embeddings=True convention as generate_embedding - never
+        a second embedding provider.
+        """
+        if not texts:
+            return []
+        vectors = self._get_model().encode(
+            texts, batch_size=batch_size or 32, normalize_embeddings=True,
+        )
+        return [vector.tolist() for vector in vectors]
+
     @staticmethod
     def build_canonical_embedding_text(extraction: JDExtractionResponse, title: str) -> str:
         """

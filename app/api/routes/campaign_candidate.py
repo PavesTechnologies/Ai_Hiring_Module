@@ -14,8 +14,11 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
     CampaignRejectionAnalyticsResponse,
+    CandidateDeterministicResponse,
     CandidateRejectionHistoryEntryResponse,
     CandidateScorecardResponse,
+    CandidateSemanticResponse,
+    CandidateSummaryResponse,
     HrOverrideRequest,
     OverrideReportResponse,
     UpdateResumeResubmissionResponse,
@@ -301,6 +304,87 @@ def export_deterministic_rejection_summary(
         actor_id=user.user_id,
         actor_role=user.roles[0] if user.roles else None,
     )
+
+
+@router.get(
+    "/{campaign_candidate_id}/summary",
+    response_model=APIResponse[CandidateSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Summary (Summary tab)",
+    description=(
+        "Summary-tab-only view: header, candidate info, overall scores, AI summary "
+        "(if available). Excludes deterministic breakdown, resume, semantic, AI evaluation, "
+        "and final status data - see the other tab endpoints for those."
+    ),
+)
+def get_candidate_summary(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+):
+    summary = service.get_candidate_summary(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=summary,
+        message="Candidate summary retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/deterministic",
+    response_model=APIResponse[CandidateDeterministicResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Deterministic Score Breakdown (Deterministic tab)",
+    description=(
+        "Deterministic-tab-only view: deterministic_score + deterministic_score_breakdown. "
+        "Excludes summary, resume, semantic, AI evaluation, and final status data."
+    ),
+)
+def get_candidate_deterministic(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+):
+    deterministic = service.get_candidate_deterministic(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=deterministic,
+        message="Candidate deterministic score retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/semantic",
+    response_model=APIResponse[CandidateSemanticResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Semantic Score Breakdown (Semantic tab)",
+    description=(
+        "Semantic-tab-only view: semantic_score + semantic_score_breakdown. "
+        "Excludes summary, resume, deterministic, AI evaluation, and final status data."
+    ),
+)
+def get_candidate_semantic(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+):
+    semantic = service.get_candidate_semantic(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=semantic,
+        message="Candidate semantic score retrieved successfully.",
+    )
+
+
+# Future tabs (not implemented yet, per this story's explicit scope):
+# GET /{campaign_candidate_id}/resume, GET /{campaign_candidate_id}/ai-evaluation,
+# GET /{campaign_candidate_id}/final-status.
+# Each would follow the exact same pattern as summary/deterministic/semantic
+# above: its own small response schema + its own get_candidate_<tab>()
+# service method, reusing existing mapper helpers rather than recomputing.
 
 
 @router.get(
