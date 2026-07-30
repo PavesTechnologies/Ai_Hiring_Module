@@ -27,6 +27,26 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
+    # Epic 4 (M05-E04) Phase D0: sent to the uploader + all active HR_ADMIN
+    # when a task reaches DEAD (retries exhausted) - D11 wires the actual
+    # send. {filename}/{campaign_name}/{error_reason} placeholders only,
+    # matching this file's existing no-internal-detail-leakage convention.
+    {
+        "trigger_event": EmailTriggerEvent.UPLOAD_PERMANENTLY_FAILED,
+        "name": "Upload Permanently Failed",
+        "subject": "Upload failed: {filename}",
+        "body_template": (
+            "Hello,\n\n"
+            "A resume upload could not be processed after multiple attempts and requires manual attention.\n\n"
+            "File: {filename}\n"
+            "Campaign: {campaign_name}\n"
+            "Reason: {error_reason}\n\n"
+            "Please review this upload in the Failed Uploads section of the campaign.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
 ]
 
 try:

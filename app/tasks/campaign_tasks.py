@@ -3,6 +3,7 @@ from app.db.session import SessionLocal
 
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 
@@ -10,6 +11,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.campaign_scheduler_service import (
     CampaignSchedulerService,
 )
+from app.services.campaign.resubmission_alert_service import ResubmissionAlertService
 from app.services.celery_task_log_service import CeleryTaskLogService
 
 @celery_app.task(name="campaign.auto_close_expired_campaigns")
@@ -115,6 +117,64 @@ def evaluate_campaign_health_alerts():
                 "No campaign health alerts triggered."
                 if alerts_raised == 0
                 else f"Raised {alerts_raised} campaign health alert(s)."
+            ),
+        )
+
+        return alerts_raised
+
+    except Exception as ex:
+
+        if task_log:
+            task_log_service.mark_failure(
+                task_log,
+                str(ex),
+            )
+
+        raise
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="campaign.evaluate_resubmission_alerts")
+def evaluate_resubmission_alerts():
+    """
+    Epic 3 (M05-E03) Phase C4 — daily background task flagging candidates
+    submitted to CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD or more campaigns
+    within CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS, raising a
+    CAMPAIGN_RESUBMISSION_DETECTED audit entry per flagged candidate.
+    """
+    db = SessionLocal()
+
+    task_log = None
+    try:
+        campaign_candidate_repo = CampaignCandidateRepository(db)
+        audit_repo = AuditRepository(db)
+        task_log_repo = CeleryTaskLogRepository(db)
+        config_repo = ConfigRepository(db)
+
+        audit_service = AuditService(audit_repo)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+
+        task_log = task_log_service.create_log(
+            task_id=evaluate_resubmission_alerts.request.id,
+            task_type="CAMPAIGN_RESUBMISSION_ALERT_CHECK",
+        )
+
+        resubmission_alert_service = ResubmissionAlertService(
+            campaign_candidate_repo=campaign_candidate_repo,
+            audit_service=audit_service,
+            config_repo=config_repo,
+        )
+
+        alerts_raised = resubmission_alert_service.evaluate_resubmission_alerts()
+
+        task_log_service.mark_success(
+            task_log,
+            summary=(
+                "No resubmission alerts triggered."
+                if alerts_raised == 0
+                else f"Raised {alerts_raised} resubmission alert(s)."
             ),
         )
 

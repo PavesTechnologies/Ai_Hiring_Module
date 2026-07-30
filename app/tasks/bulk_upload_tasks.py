@@ -9,7 +9,7 @@ from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
 from app.core.storage_service import StorageService
 from app.db.session import SessionLocal
-from app.enums.constants import ActionType, EntityType, Jurisdiction
+from app.enums.constants import ActionType, EntityType
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaigns import CampaignStatus
@@ -35,6 +35,7 @@ from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
@@ -50,6 +51,9 @@ from app.services.document_processing.stage_execution_service import StageExecut
 from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
+from app.services.pii.pii_detection_service import PIIDetectionService
+from app.services.pii.pii_redaction_service import PIIRedactionService
+from app.services.pii.pii_types import PIIType
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_processing_context import ResumeProcessingContext
@@ -106,6 +110,18 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         job = job_repo.get_by_id(UUID(bulk_upload_job_id))
         if job is None:
             raise ValueError(f"bulk_upload_jobs row {bulk_upload_job_id} not found.")
+
+        if not job.consent_confirmed:
+            # Defense-in-depth: the upload route's Pydantic validator
+            # already guarantees this is True at submission time, but this
+            # re-check ensures nothing ever unpacks/processes a job whose
+            # persisted consent flag isn't actually True (e.g. a future
+            # code path that bypasses the schema-level validation).
+            error_summary = "Bulk upload rejected — consent not confirmed."
+            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=error_summary)
+            job_repo.commit()
+            task_log_service.mark_failure(task_log, error_summary)
+            return
 
         job_repo.update_status(job.id, BulkUploadStatus.EXTRACTING)
         job_repo.commit()
@@ -245,15 +261,42 @@ def _cleanup_orphaned_uploads(storage_service: StorageService, paths: list[str])
             logger.warning("Failed to clean up orphaned upload '%s' after extraction failure.", path)
 
 
+def _resolve_bulk_candidate_identity(
+    context: ResumeProcessingContext,
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Resolves (full_name, email, phone) for bulk-upload Candidate creation,
+    once PII_DETECTION/PII_REDACTION and AI_EXTRACTION have all populated
+    `context`. Email/phone are read deterministically from PII_DETECTION's
+    findings (no AI call for contact info) — first match in document order
+    wins if a resume lists more than one. full_name comes from the single,
+    shared AI_EXTRACTION call: PII_REDACTION strips contact info before that
+    call runs, but deliberately leaves the candidate's name visible, so no
+    separate identity-only AI call exists.
+    """
+    email_finding = next(
+        (finding for finding in context.pii_findings if finding.pii_type == PIIType.EMAIL), None,
+    )
+    phone_finding = next(
+        (finding for finding in context.pii_findings if finding.pii_type == PIIType.PHONE), None,
+    )
+    full_name = context.validated_extraction.full_name
+    email = email_finding.matched_text if email_finding else None
+    phone = phone_finding.matched_text if phone_finding else None
+    return full_name, email, phone
+
+
 @celery_app.task(name="bulk_upload.parse_file", bind=True)
 def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> None:
     """
     BULK_RESUME_PARSE: the "parse-first" per-file leg of a bulk upload.
     Unlike the individual-upload pipeline (which parses a Resume that
     already has a Candidate attached), no candidate identity exists yet
-    here — text/AI extraction runs first to learn the candidate's
-    name/email/phone from the file itself, and only then are
-    Candidate/Resume/CampaignCandidate created.
+    here — text extraction, deterministic PII detection/redaction, and AI
+    extraction all run first to learn the candidate's name (from AI
+    extraction, over the redacted text) and email/phone (deterministically,
+    from PII detection — no AI call for contact info) from the file itself,
+    and only then are Candidate/Resume/CampaignCandidate created.
 
     Transient-prone steps (download, text extraction/cleaning, AI
     extraction) are retried with backoff via the same RetryDriver/DLQ
@@ -283,6 +326,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         encryption_key_repo = EncryptionKeyRepository(db)
         consent_repo = ConsentRepository(db)
         campaign_repo = CampaignRepository(db)
+        prompt_template_repo = PromptTemplateRepository(db)
         campaign_candidate_repo = CampaignCandidateRepository(db)
         audit_repo = AuditRepository(db)
         task_log_repo = CeleryTaskLogRepository(db)
@@ -293,9 +337,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
 
         encryption_service = EncryptionService(encryption_key_repo)
         consent_service = ConsentService(consent_repo, config_repo)
-        candidate_service = CandidateService(candidate_repo, encryption_service, consent_service)
-        file_validation_service = FileValidationService(config_repo)
         audit_service = AuditService(audit_repo)
+        candidate_service = CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
+        file_validation_service = FileValidationService(config_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
         extraction_service = GeminiExtractionService()
         preprocessing_service = PreprocessingService()
@@ -314,6 +358,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             resume_repository=resume_repo,
             skill_repository=skill_repo,
             stage_tracker=stage_tracker,
+            pii_detection_service=PIIDetectionService(),
+            pii_redaction_service=PIIRedactionService(),
+            prompt_template_repository=prompt_template_repo,
         )
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
@@ -349,6 +396,10 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         if job is None:
             raise ValueError(f"bulk_upload_jobs row {job_file.bulk_upload_job_id} not found.")
 
+        campaign = campaign_repo.get_by_id(job.campaign_id)
+        if campaign is None:
+            raise ValueError(f"hiring_campaigns row {job.campaign_id} not found.")
+
         retry_driver = RetryDriver(
             checkpoint_repo,
             stage_failure_log_repo,
@@ -380,10 +431,47 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
 
         source_format = _BULK_FILE_FORMAT_TO_SOURCE_FORMAT[validation_result.file_format]
 
+        # Epic 3 (M05-E03) Phase C3 — exact-duplicate-file check, before any
+        # stage-tracked work (in particular, before the real Gemini
+        # AI_EXTRACTION call) runs. Unlike C2's individual-upload flow,
+        # there's no interactive user mid-batch to ask "use existing or
+        # upload anyway" — a duplicate is always auto-skipped. Identity
+        # comes entirely from the matched file's own candidate; this file's
+        # AI extraction never runs at all.
+        file_hash = hashlib.md5(file_bytes).hexdigest()
+        matched_resume = resume_repo.get_by_file_hash_global(file_hash)
+        if matched_resume is not None:
+            matched_candidate = candidate_repo.get_by_id(matched_resume.candidate_id)
+
+            already_linked = campaign_candidate_repo.get_by_campaign_and_candidate(
+                job.campaign_id, matched_candidate.id,
+            )
+            if already_linked is None:
+                campaign_candidate_service.create_campaign_candidate(
+                    CampaignCandidateCreateRequest(
+                        campaign_id=job.campaign_id,
+                        candidate_id=matched_candidate.id,
+                        resume_id=matched_resume.id,
+                    ),
+                    actor_id=job.uploaded_by,
+                )
+
+            file_repo.update_status(job_file.id, BulkUploadFileStatus.PROCESSED)
+            job_repo.increment_duplicate_count(job.id)
+            job_repo.commit()
+            _maybe_finalize_job(job_repo, job.id)
+
+            task_log_service.mark_success(
+                task_log,
+                summary="Duplicate file detected. Existing candidate linked. AI processing skipped.",
+            )
+            return
+
         context = ResumeProcessingContext(
             task_id=task_id,
             file_path=job_file.storage_path,
             source_format=source_format,
+            prompt_template_id=campaign.prompt_template_id,
         )
 
         stage_tracker.run_stage(
@@ -397,6 +485,16 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
         stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.PII_DETECTION,
+            lambda: pipeline._run_pii_detection(context),
+            attempt_number=attempt_number,
+        )
+        stage_tracker.run_stage(
+            task_id, DocumentType.RESUME, ProcessingStage.PII_REDACTION,
+            lambda: pipeline._run_pii_redaction(context),
+            attempt_number=attempt_number,
+        )
+        stage_tracker.run_stage(
             task_id, DocumentType.RESUME, ProcessingStage.AI_EXTRACTION,
             lambda: pipeline._run_ai_extraction(context),
             attempt_number=attempt_number,
@@ -407,20 +505,23 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             attempt_number=attempt_number,
         )
 
-        extracted = context.validated_extraction
+        full_name, email, phone = _resolve_bulk_candidate_identity(context)
 
-        if not identity.full_name or not identity.email:
+        if not full_name or not email:
             raise ValueError(
                 "Could not identify a candidate name and email from this resume."
             )
 
         candidate = candidate_service.get_or_create(
-            full_name=identity.full_name,
-            email=identity.email,
-            jurisdiction=Jurisdiction.GLOBAL.value,
+            full_name=full_name,
+            email=email,
+            jurisdiction=job.jurisdiction,
             consent_source=BULK_UPLOAD_CONSENT_SOURCE,
-            phone=identity.phone,
+            phone=phone,
             source_campaign_id=job.campaign_id,
+            ip_address=job.ip_address,
+            user_agent=job.user_agent,
+            actor_id=job.uploaded_by,
         )
 
         page_count = (
@@ -429,12 +530,25 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             else None
         )
 
+        # Epic 3 (M05-E03) Phase C1 — same versioning logic as individual
+        # upload's ResumeUploadService.upload(): an existing active resume
+        # for this candidate means this is a resubmission, not this
+        # candidate's first file.
+        existing_active = resume_repo.get_active_by_candidate(candidate.id)
+        if existing_active is None:
+            version_number = 1
+        else:
+            version_number = resume_repo.get_max_version_number(candidate.id) + 1
+            resume_repo.deactivate_active_version(candidate.id)
+
         resume = Resume(
             candidate_id=candidate.id,
             file_path=job_file.storage_path,
             file_format=validation_result.file_format,
             file_hash=hashlib.md5(file_bytes).hexdigest(),
-            version_number=1,
+            original_filename=job_file.original_filename,
+            file_size_bytes=len(file_bytes),
+            version_number=version_number,
             is_active_version=True,
             page_count=page_count,
             ocr_used=False,
@@ -460,6 +574,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             candidate_id=candidate.id,
             file_path=job_file.storage_path,
             source_format=source_format,
+            prompt_template_id=campaign.prompt_template_id,
             attempt_number=attempt_number,
             initial_context=context,
         )
@@ -598,12 +713,19 @@ def _maybe_finalize_job(job_repo: BulkUploadJobRepository, job_id: UUID) -> None
     if resolved < job.total_files:
         return
 
-    if job.failed_count == 0 and job.duplicate_count == 0:
+    # Epic 3 (M05-E03) Phase C3 follow-up ("Option B") — a duplicate skip is
+    # a successful, intentional outcome, not a failure: only failed_count
+    # blocks COMPLETED. A job with zero real failures but at least one file
+    # successfully processed or correctly recognized as a duplicate is
+    # PARTIAL_FAILURE only in the sense that not everything was freshly
+    # parsed; a job with neither (nothing processed, nothing duplicate,
+    # only failures) is genuinely FAILED.
+    if job.failed_count == 0:
         status = BulkUploadStatus.COMPLETED
-    elif job.processed_count == 0:
-        status = BulkUploadStatus.FAILED
-    else:
+    elif job.processed_count > 0 or job.duplicate_count > 0:
         status = BulkUploadStatus.PARTIAL_FAILURE
+    else:
+        status = BulkUploadStatus.FAILED
 
     job_repo.update_status(job_id, status, completed_at=datetime.now(timezone.utc))
     job_repo.commit()

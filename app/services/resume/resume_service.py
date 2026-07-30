@@ -51,6 +51,7 @@ class ResumeService:
         skill_repository: SkillRepository,
         skill_matches: list[SkillMatchResult],
         attempt_number: int | None = None,
+        page_count: int | None = None,
     ) -> UUID:
         """
         Writes Resume.parsed_json/parse_status + candidate_skills + audit
@@ -78,6 +79,7 @@ class ResumeService:
                 parsed_json=extraction.model_dump(mode="json"),
                 parse_status=ParseStatus.PARSED,
                 parser_version=self.PARSER_VERSION,
+                page_count=page_count,
             )
             logger.warning(
                 "=== persist_processed_resume: parsed_json/parse_status updated === resume_id=%s", resume.id,

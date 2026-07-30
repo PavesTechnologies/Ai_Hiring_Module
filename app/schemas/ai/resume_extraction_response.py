@@ -48,6 +48,22 @@ class WorkExperience(BaseModel):
         return _clean_optional_string(value)
 
 
+class ProjectEntry(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    tech: list[str] = Field(default_factory=list)
+
+    @field_validator("name", "description")
+    @classmethod
+    def clean_optional_string(cls, value: str | None) -> str | None:
+        return _clean_optional_string(value)
+
+    @field_validator("tech")
+    @classmethod
+    def clean_tech_list(cls, values: list[str]) -> list[str]:
+        return _clean_string_list(values)
+
+
 class EducationEntry(BaseModel):
     degree: str | None = None
     institution: str | None = None
@@ -61,13 +77,20 @@ class EducationEntry(BaseModel):
 
 
 class ResumeExtractionResponse(BaseModel):
-    # Deliberately PII-free: full_name/email/phone must never appear here or
-    # in resumes.parsed_json. The bulk-ZIP upload flow (which has no upload
-    # form to source candidate identity from) resolves identity via a
-    # separate ResumeIdentityExtraction call instead of this schema.
+    # Email/phone must never appear here or in resumes.parsed_json --
+    # PIIDetectionService/PIIRedactionService (app/services/pii/) own those
+    # deterministically, redacting them out of the text before this
+    # extraction call ever runs. full_name is the one identity field this
+    # schema does carry: the pipeline redacts contact info but deliberately
+    # leaves the candidate's name visible to the model, and the bulk-ZIP
+    # upload flow (which has no upload form to source identity from) reads
+    # it from here for Candidate creation -- no separate identity-only AI
+    # call exists anymore.
+    full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
+    projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
     summary: str | None = None
@@ -78,7 +101,7 @@ class ResumeExtractionResponse(BaseModel):
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
 
-    @field_validator("summary")
+    @field_validator("full_name", "summary")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
@@ -101,9 +124,11 @@ class ResumeExtractionGenerationSchema(BaseModel):
     defaults to {} when the key is absent, so dropping it here only affects
     generation, not parsing. Mirrors JDExtractionGenerationSchema.
     """
+    full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
+    projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
     summary: str | None = None

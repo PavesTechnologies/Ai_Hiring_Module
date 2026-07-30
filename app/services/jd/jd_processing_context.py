@@ -31,6 +31,7 @@ class JDProcessingContext:
     file_path: str | None
     original_filename: str | None
     raw_text: str | None
+    prompt_template_id: UUID | None = None
     document_type: DocumentType = DocumentType.JD
 
     # Update/reprocess runs only — absent (existing_jd_id is None) means this

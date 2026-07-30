@@ -108,13 +108,13 @@ try:
         PlatformConfig(
             id=uuid.uuid4(),
             key="ZIP_MAX_SIZE_MB",
-            value="500",
+            value="200",
             description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="MAX_FILES_PER_ZIP",
-            value="200",
+            value="20",
             description=(
                 "Maximum number of resume files processed from a single bulk-upload "
                 "ZIP archive; extraction stops and the uploader is asked to split the "
@@ -274,6 +274,49 @@ try:
             key="EMBEDDING_BATCH_SIZE",
             value="32",
             description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
+       
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD",
+            value="3",
+            description="Number of distinct campaign_candidates rows within CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS above which a CAMPAIGN_RESUBMISSION_DETECTED alert is raised for a candidate",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS",
+            value="30",
+            description="Rolling window, in days, over which candidate campaign submissions are counted for the resubmission-alert threshold",
+        ),
+        # Epic 4 (M05-E04) Phase D0: platform-wide upload-queue alert thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="QUEUE_BACKLOG_ALERT_THRESHOLD",
+            value="100",
+            description="Total QUEUED RESUME_DOCUMENT_PROCESSING tasks platform-wide above which a PLATFORM_ALERT_SENT alert is raised (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="PARSE_DURATION_ALERT_THRESHOLD_MS",
+            value="120000",
+            description="Average RESUME_DOCUMENT_PROCESSING task duration (ms) in the last hour above which a degraded-performance alert is raised (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DAILY_DEAD_TASK_ALERT_THRESHOLD",
+            value="10",
+            description="DEAD task count in the last 24 hours, platform-wide, above which an alert is raised (D13) - distinct from the campaign-scoped DEAD_TASK_ALERT_THRESHOLD",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="ALERT_COOLDOWN_HOURS",
+            value="12",
+            description="Minimum hours between repeat platform-upload alerts for the same condition (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_AI_RETRY_COUNT",
+            value="3",
+            description="Descriptive value for upload-failure notification copy (D11) - matches the real hardcoded retry_policy.py DEFAULT_POLICY.max_attempts; does not itself control retry behavior",
         ),
         PlatformConfig(
             id=uuid.uuid4(),

@@ -14,10 +14,12 @@ class CampaignResponse(BaseModel):
     max_candidates: int
     hiring_manager: str | None
     max_candidates: int | None
-    candidate_count: int 
-    shortlisted_count: int 
+    candidate_count: int
+    shortlisted_count: int
     deadline: datetime | None
     created_at: datetime
+    prompt_template_id: UUID
+    prompt_name: str | None = None
     approaching_cap: bool = False
     deadline_soon: bool = False
     overdue_review: bool = False

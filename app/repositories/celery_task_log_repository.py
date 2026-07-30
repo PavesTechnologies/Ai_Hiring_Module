@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
@@ -91,6 +92,37 @@ class CeleryTaskLogRepository:
             .all()
         )
 
+    def get_earliest_started_at_by_bulk_upload_job_id(self, bulk_upload_job_id: UUID) -> datetime | None:
+        """
+        Epic 4 (M05-E04) Phase D4 — the earliest real started_at across
+        every task tied to this bulk job (BULK_EXTRACT and/or per-file
+        parse tasks), used as a more accurate "processing began" signal
+        for ETA math than bulk_upload_jobs.created_at (job-row-insertion
+        time, before any worker has actually picked anything up).
+        """
+        stmt = select(func.min(CeleryTaskLog.started_at)).where(
+            CeleryTaskLog.bulk_upload_job_id == bulk_upload_job_id,
+            CeleryTaskLog.started_at.is_not(None),
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> list[CeleryTaskLog]:
+        """
+        Epic 4 (M05-E04) Phase D2 — every task log of every type for one
+        campaign_candidate, oldest first, backing the scorecard's
+        Processing Timeline. Broader than
+        get_by_campaign_candidate_and_task_type (no task_type filter) —
+        both RESUME_DOCUMENT_PROCESSING and DETERMINISTIC_SCORE already
+        set campaign_candidate_id, so this surfaces the real multi-stage
+        history without needing a task_type allowlist.
+        """
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(CeleryTaskLog.campaign_candidate_id == campaign_candidate_id)
+            .order_by(CeleryTaskLog.queued_at.asc())
+            .all()
+        )
+
     def get_by_task_ids(self, task_ids: list[str]) -> list[CeleryTaskLog]:
         """
         Batched counterpart to get_by_task_id — one query for a whole
@@ -156,6 +188,16 @@ class CeleryTaskLogRepository:
             CeleryTaskLog.completed_at >= since,
         )
         return self.db.execute(stmt).scalar_one()
+
+    def delete_by_resume_id(self, resume_id: UUID) -> None:
+        """Candidate erasure — removes celery_task_log rows tied to one resume version."""
+        self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """Candidate erasure — removes celery_task_log rows tied to one campaign_candidate."""
+        self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.campaign_candidate_id == campaign_candidate_id))
+        self.db.flush()
 
     def commit(self):
         self.db.commit()

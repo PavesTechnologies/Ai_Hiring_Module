@@ -1,11 +1,15 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
+from app.models.jd.job_descriptions import JobDescription
 from app.models.pipeline import (
+    AIEvaluationStatus,
     CampaignCandidate,
     CampaignCandidateStageHistory,
     PipelineStage,
@@ -88,6 +92,23 @@ class CampaignCandidateRepository:
         self.db.refresh(history)
         return history
 
+    def update_pipeline_stage(
+        self,
+        campaign_candidate: CampaignCandidate,
+        to_stage: PipelineStage,
+    ) -> CampaignCandidate:
+        """
+        Epic 3 (M05-E03) Phase C0 — mutates the already-loaded row directly
+        and flushes, matching this repo's existing single-field-update style
+        (create_stage_history, etc.) rather than a raw atomic UPDATE: unlike
+        the bulk job counters, a stage transition isn't a concurrent-increment
+        scenario, so there's no lost-update race to guard against here.
+        """
+        campaign_candidate.pipeline_stage = to_stage
+        self.db.flush()
+        self.db.refresh(campaign_candidate)
+        return campaign_candidate
+
     def get_by_id(
         self,
         campaign_candidate_id: UUID,
@@ -101,6 +122,32 @@ class CampaignCandidateRepository:
             .first()
         )
     
+    def get_by_candidate_id(
+        self,
+        candidate_id: UUID,
+    ) -> list[CampaignCandidate]:
+        """
+        Candidate erasure — every campaign_candidates row for this candidate
+        across every campaign they were ever submitted to (a candidate can
+        appear in more than one campaign).
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.candidate_id == candidate_id)
+            .all()
+        )
+
+    def delete_stage_history(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """Candidate erasure — removes campaign_candidate_stage_history rows for one campaign_candidate."""
+        self.db.execute(
+            delete(CampaignCandidateStageHistory)
+            .where(CampaignCandidateStageHistory.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
     def get_by_resume_id(
         self,
         resume_id: UUID,
@@ -133,6 +180,127 @@ class CampaignCandidateRepository:
             )
             .first()
         )
+
+    def get_campaign_context_for_candidate(
+        self,
+        candidate_id: UUID,
+    ) -> list[tuple[str, PipelineStage]]:
+        """
+        Epic 3 (M05-E03) Phase C2 — minimal (campaign_name, pipeline_stage)
+        pairs for a candidate, most recent first, backing the duplicate-file
+        warning's campaign_names + current_pipeline_stage fields only. Not
+        C6's full cross-campaign tracking view (score/outcome/etc.) — that's
+        this same join with more columns, left for C6 to build when it
+        actually needs them, so this stays a narrow, single-purpose query.
+        """
+        stmt = (
+            select(HiringCampaign.name, CampaignCandidate.pipeline_stage)
+            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+            .where(CampaignCandidate.candidate_id == candidate_id)
+            .order_by(CampaignCandidate.created_at.desc())
+        )
+        return list(self.db.execute(stmt).all())
+
+    def get_all_by_candidate_across_campaigns(
+        self,
+        candidate_id: UUID,
+    ) -> list[tuple[CampaignCandidate, str, str | None]]:
+        """
+        Epic 3 (M05-E03) Phase C6 — the full cross-campaign history join
+        get_campaign_context_for_candidate's docstring earmarks for this
+        phase: (campaign_candidate, campaign_name, jd_title) rows, most
+        recent first. Secondary sort by id keeps ordering deterministic
+        when two rows share the same created_at timestamp.
+        """
+        stmt = (
+            select(CampaignCandidate, HiringCampaign.name, JobDescription.title)
+            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+            .join(JobDescription, JobDescription.id == HiringCampaign.jd_id)
+            .where(CampaignCandidate.candidate_id == candidate_id)
+            .order_by(CampaignCandidate.created_at.desc(), CampaignCandidate.id.desc())
+        )
+        return list(self.db.execute(stmt).all())
+
+    def get_high_frequency_resubmissions(
+        self,
+        window_days: int,
+        threshold: int,
+    ) -> list[tuple[UUID, int]]:
+        """
+        Epic 3 (M05-E03) Phase C4 — (candidate_id, submission_count) for
+        every candidate with at least `threshold` campaign_candidates rows
+        created within the last `window_days`. Not scoped to ACTIVE
+        campaigns — this is about the candidate's own submission behavior
+        over time, not current campaign state.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=window_days)
+        stmt = (
+            select(CampaignCandidate.candidate_id, func.count())
+            .where(CampaignCandidate.created_at >= since)
+            .group_by(CampaignCandidate.candidate_id)
+            .having(func.count() >= threshold)
+        )
+        return list(self.db.execute(stmt).all())
+
+    def get_most_recent_campaign_for_candidate(self, candidate_id: UUID) -> HiringCampaign | None:
+        """
+        Epic 3 (M05-E03) Phase C4 — resolves the candidate's most recent
+        campaign submission, for attributing the resubmission-alert audit
+        event's actor_id to that campaign's created_by (mirroring
+        CampaignSchedulerService._raise_health_alert's exact convention,
+        since AuditLog.actor_id is a required, non-null FK and no synthetic
+        SYSTEM actor exists in this codebase).
+        """
+        stmt = (
+            select(HiringCampaign)
+            .join(CampaignCandidate, CampaignCandidate.campaign_id == HiringCampaign.id)
+            .where(CampaignCandidate.candidate_id == candidate_id)
+            .order_by(CampaignCandidate.created_at.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalars().first()
+
+    def reset_for_resubmission(
+        self,
+        campaign_candidate: CampaignCandidate,
+        new_resume_id: UUID,
+    ) -> CampaignCandidate:
+        """
+        Epic 3 (M05-E03) Phase C5 — points the campaign_candidate at the
+        newly-uploaded resume and clears every evaluation-derived field
+        (scoring, AI, fraud, rejection, HR override) so the candidate is
+        scored from scratch. Identity/relationship fields (campaign_id,
+        candidate_id, idempotency_key), created_at, and recruiter_notes are
+        left untouched. Does not touch pipeline_stage — the caller is
+        expected to have already moved that via PipelineTransitionService.
+        """
+        campaign_candidate.resume_id = new_resume_id
+        campaign_candidate.screened_at = None
+        campaign_candidate.deterministic_score = None
+        campaign_candidate.deterministic_passed = None
+        campaign_candidate.score_breakdown = None
+        campaign_candidate.semantic_score = None
+        campaign_candidate.ai_ats_score = None
+        campaign_candidate.ai_confidence = None
+        campaign_candidate.effective_ai_score = None
+        campaign_candidate.ai_recommendation = None
+        campaign_candidate.ai_strengths = None
+        campaign_candidate.ai_weaknesses = None
+        campaign_candidate.ai_evaluation_status = AIEvaluationStatus.PENDING
+        campaign_candidate.ai_retry_count = 0
+        campaign_candidate.composite_score = None
+        campaign_candidate.fraud_flags = None
+        campaign_candidate.is_fraud_flagged = False
+        campaign_candidate.rejection_reason = None
+        campaign_candidate.rejection_layer = None
+        campaign_candidate.hr_override = False
+        campaign_candidate.hr_override_by = None
+        campaign_candidate.hr_override_reason = None
+        campaign_candidate.hr_override_at = None
+
+        self.db.flush()
+        self.db.refresh(campaign_candidate)
+        return campaign_candidate
 
     def get_candidate_count(
         self,

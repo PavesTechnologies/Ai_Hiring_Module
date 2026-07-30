@@ -131,3 +131,17 @@ class ResumeListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+
+class ResumeParsedJsonResponse(BaseModel):
+    resume_id: UUID
+    candidate_id: UUID
+    parse_status: str
+    parsed_json: dict | None
+    original_filename: str | None
+    file_format: str
+    file_size_bytes: int | None
+    page_count: int | None
+    created_at: datetime
+    updated_at: datetime | None
+    download_url: str | None

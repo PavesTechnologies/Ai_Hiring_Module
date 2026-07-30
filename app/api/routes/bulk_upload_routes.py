@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Security, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from app.dependencies.bulk_upload import get_bulk_upload_monitoring_service, get_bulk_upload_service
-from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
+from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.async_tasks import BulkUploadFileStatus
@@ -21,11 +21,13 @@ from app.schemas.bulk_upload.request import BulkUploadRequest
 from app.schemas.bulk_upload.response import (
     BulkUploadAcceptedResponse,
     BulkUploadCancelResponse,
+    BulkUploadFileLogResponse,
     BulkUploadFileReplayResponse,
     BulkUploadHistoryListResponse,
     BulkUploadJobDetailResponse,
     BulkUploadJobFileItem,
     BulkUploadJobSummary,
+    BulkUploadProgressResponse,
 )
 from app.schemas.response import APIResponse
 from app.services.bulk_upload.bulk_upload_monitoring_service import BulkUploadMonitoringService
@@ -43,7 +45,9 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 def upload_bulk_zip(
+    request: Request,
     campaign_id: UUID = Form(...),
+    jurisdiction: str = Form(default=Jurisdiction.GLOBAL.value),
     consent_confirmed: bool = Form(...),
     file: UploadFile = File(...),
     service: BulkUploadService = Depends(get_bulk_upload_service),
@@ -53,10 +57,13 @@ def upload_bulk_zip(
     Validates and stores the ZIP archive, creates the bulk_upload_jobs
     record at status=PENDING, and enqueues the BULK_EXTRACT task, which
     unpacks the archive asynchronously. Per-file parsing is a later phase.
+    Every file inside the ZIP is treated as the same jurisdiction and
+    inherits this one submission's consent context (IP/user-agent).
     """
     try:
         validated = BulkUploadRequest(
             campaign_id=campaign_id,
+            jurisdiction=jurisdiction,
             consent_confirmed=consent_confirmed,
         )
     except ValidationError as exc:
@@ -71,6 +78,9 @@ def upload_bulk_zip(
         filename=filename,
         uploaded_by=user.user_id,
         consent_confirmed=validated.consent_confirmed,
+        jurisdiction=validated.jurisdiction,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
 
     return APIResponse.ok(
@@ -155,6 +165,66 @@ def export_bulk_upload_history(
 
 
 @router.get(
+    "/{bulk_upload_job_id}/progress",
+    response_model=APIResponse[BulkUploadProgressResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_progress(
+    bulk_upload_job_id: UUID,
+    service: BulkUploadService = Depends(get_bulk_upload_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Epic 4 (M05-E04) Phase D4 - lightweight, dedicated polling endpoint:
+    percent complete, per-outcome counts, and a linear ETA. Deliberately
+    separate from GET /{bulk_upload_job_id}, which also returns the full
+    per-file list - unsuited to a frequent 10s poll.
+    """
+    job, percent_complete, remaining_count, estimated_completion_at = service.get_job_progress(bulk_upload_job_id)
+
+    return APIResponse.ok(
+        data=BulkUploadProgressResponse(
+            bulk_upload_job_id=job.id,
+            status=job.status.value,
+            total_files=job.total_files,
+            processed_count=job.processed_count,
+            failed_count=job.failed_count,
+            duplicate_count=job.duplicate_count,
+            remaining_count=remaining_count,
+            percent_complete=percent_complete,
+            estimated_completion_at=estimated_completion_at,
+        ),
+        message="Bulk upload progress retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{bulk_upload_job_id}/file-log",
+    response_model=APIResponse[BulkUploadFileLogResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_bulk_upload_file_log(
+    bulk_upload_job_id: UUID,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
+    service: BulkUploadService = Depends(get_bulk_upload_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Epic 4 (M05-E04) Phase D5 - live, most-recently-resolved-first log of
+    every file that has reached a terminal outcome (SUCCESS/FAILED/
+    DUPLICATE/SKIPPED), most recent first. Persists after job completion -
+    a plain read of already-durable rows.
+    """
+    entries, total = service.get_file_log(bulk_upload_job_id, limit=limit, offset=offset)
+
+    return APIResponse.ok(
+        data=BulkUploadFileLogResponse(entries=entries, total=total, limit=limit, offset=offset),
+        message="Bulk upload file log retrieved successfully.",
+    )
+
+
+@router.get(
     "/{bulk_upload_job_id}",
     response_model=APIResponse[BulkUploadJobDetailResponse],
     status_code=status.HTTP_200_OK,
@@ -188,6 +258,7 @@ def get_bulk_upload_detail(
                     id=f.id,
                     original_filename=f.original_filename,
                     status=f.status.value,
+                    task_id=f.task_id,
                     retry_count=retry_counts.get(f.task_id),
                 )
                 for f in files

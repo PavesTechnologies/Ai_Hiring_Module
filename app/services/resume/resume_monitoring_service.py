@@ -1,8 +1,11 @@
+import logging
 from collections import Counter
 from datetime import datetime
 from uuid import UUID
 
 from app.core.encryption_service import EncryptionService
+from app.core.storage_service import StorageService
+from app.exceptions.storage_exception import StorageException
 from app.exception_handler.exceptions import NotFoundError
 from app.models.candidates import ParseStatus
 from app.repositories.candidate_repository import CandidateRepository
@@ -20,13 +23,19 @@ from app.schemas.resume.monitoring import (
     ResumeDetailResponse,
     ResumeListItem,
     ResumeListResponse,
+    ResumeParsedJsonResponse,
     ResumeSummary,
     ResumeTimelineResponse,
     SkillSummary,
 )
+from app.schemas.resume.response import ResumeVersionHistoryResponse, ResumeVersionItem
 from app.services.resume.monitoring_shared import build_failure_info, build_stage_timeline_fields
 
+logger = logging.getLogger(__name__)
+
 CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
+RESUME_STORAGE_BUCKET = "airs_resumes"
+DOWNLOAD_URL_EXPIRES_IN_SECONDS = 900
 
 
 class ResumeMonitoringService:
@@ -47,6 +56,7 @@ class ResumeMonitoringService:
         stage_repository: DocumentProcessingRepository,
         stage_failure_log_repository: StageFailureLogRepository,
         dead_letter_queue_repository: DeadLetterQueueRepository,
+        storage_service: StorageService,
     ):
         self.resume_repository = resume_repository
         self.candidate_repository = candidate_repository
@@ -55,6 +65,7 @@ class ResumeMonitoringService:
         self.stage_repository = stage_repository
         self.stage_failure_log_repository = stage_failure_log_repository
         self.dead_letter_queue_repository = dead_letter_queue_repository
+        self.storage_service = storage_service
 
     def get_timeline(self, resume_id: UUID, attempt_number: int | None = None) -> ResumeTimelineResponse:
         """
@@ -262,6 +273,60 @@ class ResumeMonitoringService:
             )
 
         return ResumeListResponse(items=items, total=total, page=page, size=size)
+
+    def get_parsed_json_by_candidate(self, candidate_id: UUID) -> ResumeParsedJsonResponse:
+        resume = self.resume_repository.get_active_by_candidate(candidate_id)
+        if resume is None:
+            raise NotFoundError(f"No active resume found for candidate {candidate_id}.")
+
+        download_url = None
+        try:
+            download_url = self.storage_service.generate_signed_url(
+                bucket_name=RESUME_STORAGE_BUCKET,
+                file_path=resume.file_path,
+                expires_in=DOWNLOAD_URL_EXPIRES_IN_SECONDS,
+            )
+        except StorageException:
+            logger.exception(
+                "Failed to generate download URL for resume_id=%s file_path=%s",
+                resume.id, resume.file_path,
+            )
+
+        return ResumeParsedJsonResponse(
+            resume_id=resume.id,
+            candidate_id=resume.candidate_id,
+            parse_status=resume.parse_status.value,
+            parsed_json=resume.parsed_json,
+            original_filename=resume.original_filename,
+            file_format=resume.file_format.value,
+            file_size_bytes=resume.file_size_bytes,
+            page_count=resume.page_count,
+            created_at=resume.created_at,
+            updated_at=resume.updated_at,
+            download_url=download_url,
+        )
+
+    def get_version_history(self, candidate_id: UUID) -> ResumeVersionHistoryResponse:
+        """Epic 3 (M05-E03) Phase C1 — read-only, mirrors get_parsed_json_by_candidate's style of resolving by candidate_id directly rather than a separate existence check."""
+        versions = self.resume_repository.get_all_versions_by_candidate(candidate_id)
+        if not versions:
+            raise NotFoundError(f"No resumes found for candidate {candidate_id}.")
+
+        return ResumeVersionHistoryResponse(
+            candidate_id=candidate_id,
+            versions=[
+                ResumeVersionItem(
+                    id=resume.id,
+                    version_number=resume.version_number,
+                    is_active_version=resume.is_active_version,
+                    file_format=resume.file_format.value,
+                    parse_status=resume.parse_status.value,
+                    source="bulk" if resume.bulk_upload_job_id else "individual",
+                    created_at=resume.created_at,
+                )
+                for resume in versions
+            ],
+        )
 
     def _get_resume_or_404(self, resume_id: UUID):
         resume = self.resume_repository.get_by_id(resume_id)

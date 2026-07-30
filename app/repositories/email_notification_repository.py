@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.models.email import EmailNotification
@@ -27,6 +28,11 @@ class EmailNotificationRepository:
         self.db.flush()
         self.db.refresh(notification)
         return notification
+
+    def delete_by_candidate(self, candidate_id: UUID) -> None:
+        """Candidate erasure — removes email_notifications rows (candidate_id is a required FK)."""
+        self.db.execute(delete(EmailNotification).where(EmailNotification.candidate_id == candidate_id))
+        self.db.flush()
 
     def commit(self) -> None:
         self.db.commit()

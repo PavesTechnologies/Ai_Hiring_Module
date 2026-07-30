@@ -52,10 +52,15 @@ class ResumeIntakeService:
         candidate_phone: str | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> tuple[Resume, CampaignCandidateResponse, HiringCampaign, UUID]:
+        resolution: str | None = None,
+    ) -> tuple[Resume, CampaignCandidateResponse, HiringCampaign, UUID | None, bool]:
         campaign = self._precheck_campaign_eligibility(campaign_id)
 
-        resume = self.resume_service.upload(
+        # Epic 3 (M05-E03) Phase C2 — may raise DuplicateResumeFileException
+        # (no route-level handling needed; the global ResumeException
+        # handler already covers it) when no resolution was given for a
+        # detected duplicate.
+        result = self.resume_service.upload(
             file_bytes=file_bytes,
             filename=filename,
             candidate_full_name=candidate_full_name,
@@ -63,13 +68,19 @@ class ResumeIntakeService:
             jurisdiction=jurisdiction,
             consent_source=UPLOAD_CONSENT_SOURCE,
             uploaded_by=uploaded_by,
+            actor_role=actor_role,
             content_type=content_type,
             candidate_phone=candidate_phone,
             source_campaign_id=campaign_id,
             ip_address=ip_address,
             user_agent=user_agent,
+            resolution=resolution,
         )
+        resume = result.resume
 
+        # resume.candidate_id is already correct in every case: the
+        # freshly resolved/created candidate (no duplicate), or the
+        # matched file's own candidate (either duplicate resolution).
         campaign_candidate = self.campaign_candidate_service.create_campaign_candidate(
             CampaignCandidateCreateRequest(
                 campaign_id=campaign_id,
@@ -79,6 +90,14 @@ class ResumeIntakeService:
             actor_id=uploaded_by,
             actor_role=actor_role,
         )
+
+        if not result.requires_processing:
+            # "use_existing" — nothing was actually (re)uploaded or
+            # (re)processed, so no RESUME_UPLOADED audit event and no new
+            # Celery task; surface whatever task_id this resume already
+            # carries (may be None for older resumes).
+            existing_task_id = UUID(resume.task_id) if resume.task_id else None
+            return resume, campaign_candidate, campaign, existing_task_id, False
 
         try:
             self.audit_service.log(
@@ -101,11 +120,11 @@ class ResumeIntakeService:
         task_id = uuid4()
         self.resume_service.record_task_id(resume, str(task_id))
         process_resume_document.apply_async(
-            kwargs={"resume_id": str(resume.id)},
+            kwargs={"resume_id": str(resume.id), "prompt_template_id": str(campaign.prompt_template_id)},
             task_id=str(task_id),
         )
 
-        return resume, campaign_candidate, campaign, task_id
+        return resume, campaign_candidate, campaign, task_id, True
 
     def _precheck_campaign_eligibility(self, campaign_id: UUID) -> HiringCampaign:
         """
