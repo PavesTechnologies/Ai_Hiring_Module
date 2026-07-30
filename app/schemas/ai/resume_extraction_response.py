@@ -88,6 +88,11 @@ class ResumeExtractionResponse(BaseModel):
     # call exists anymore.
     full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
+    # Non-technical/behavioral skills (e.g. "Communication", "Leadership"),
+    # kept separate from `skills` so they never reach
+    # SkillNormalizationService's skill-ontology matching/scoring pipeline -
+    # display-only, empty list if the resume has none.
+    soft_skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
@@ -96,7 +101,7 @@ class ResumeExtractionResponse(BaseModel):
     summary: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("skills", "certifications")
+    @field_validator("skills", "soft_skills", "certifications")
     @classmethod
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
@@ -126,6 +131,7 @@ class ResumeExtractionGenerationSchema(BaseModel):
     """
     full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
