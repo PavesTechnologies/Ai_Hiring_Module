@@ -199,6 +199,16 @@ class CeleryTaskLogRepository:
         self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.campaign_candidate_id == campaign_candidate_id))
         self.db.flush()
 
+    def delete_by_task_id(self, task_id: str) -> None:
+        """
+        Dead-letter cleanup (orphaned-failure path) — removes one
+        celery_task_log row directly. Only safe when no dead_letter_queue
+        row references this task_id (that FK would otherwise block the
+        delete) - DeadLetterCleanupService checks that before calling this.
+        """
+        self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.task_id == task_id))
+        self.db.flush()
+
     def commit(self):
         self.db.commit()
 

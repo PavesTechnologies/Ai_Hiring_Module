@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from sqlalchemy.exc import OperationalError
 
 from app.models.async_tasks import FailureClassification
 
@@ -9,9 +10,13 @@ _TRANSIENT_SES_ERROR_CODES = {"Throttling", "ThrottlingException", "ServiceUnava
 
 
 def classify(exc: Exception) -> FailureClassification:
-    if isinstance(exc, (ConnectionError, TimeoutError)):
-        # This list is intentionally narrow today; the Gemini SDK exception
-        # hierarchy will be expanded once the SDK is actually installed.
+    if isinstance(exc, (ConnectionError, TimeoutError, OperationalError)):
+        # OperationalError covers psycopg2/SQLAlchemy connection failures
+        # (pool exhaustion, dropped connections, DB unreachable) - these are
+        # transient by nature and should back off and retry rather than
+        # dead-letter immediately. This list is intentionally narrow
+        # otherwise; the Gemini SDK exception hierarchy will be expanded
+        # once the SDK is actually installed.
         return FailureClassification.TRANSIENT
 
     if isinstance(exc, ClientError):

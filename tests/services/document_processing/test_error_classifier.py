@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from sqlalchemy.exc import OperationalError
 
 from app.models.async_tasks import FailureClassification
 from app.services.document_processing.error_classifier import classify
@@ -38,3 +39,7 @@ def test_existing_connection_error_classification_unchanged():
 
 def test_existing_value_error_classification_unchanged():
     assert classify(ValueError()) == FailureClassification.PERMANENT
+
+
+def test_operational_error_is_transient():
+    assert classify(OperationalError("statement", {}, Exception("connection failed"))) == FailureClassification.TRANSIENT
