@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.campaign import get_campaign_service, get_upload_history_service
 from app.enums.constants import MAX_PAGE_SIZE
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, HiringCampaignResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, HiringCampaignResponse, CampaignMinimalResponse, CampaignPageResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
@@ -114,16 +114,22 @@ def get_all_campaigns(search: str | None = Query(None),
     )
 
 @router.get("/hr_admin",
-    response_model=APIResponse[list[CampaignResponse]],
+    response_model=APIResponse[CampaignPageResponse],
     status_code=status.HTTP_200_OK,
-    summary="Get all campaigns (HR_ADMIN)",
-    description="Retrieve every campaign in the organisation, with JD and hiring manager details.",
+    summary="Get campaigns created by the requesting HR_ADMIN",
+    description="Retrieve campaigns created by the requesting HR_ADMIN, paginated 6 per page.",
 )
 def get_campaigns_by_manager(show_closed: bool = Query(False),
+    search: str | None = Query(None),
+    status: CampaignStatus | None = Query(None),
+    page: int = Query(default=1, ge=1),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    campaigns = service.get_all_campaigns_for_hrAdmin(show_closed=show_closed)
+    campaigns = service.get_all_campaigns_for_hrAdmin(
+        created_by=user.user_id, show_closed=show_closed, search=search, status=status,
+        page=page, page_size=6,
+    )
 
     return APIResponse.ok(data=campaigns,
         message="Campaigns retrieved successfully"
