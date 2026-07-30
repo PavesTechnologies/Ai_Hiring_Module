@@ -64,6 +64,8 @@ class Resume(Base):
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_format: Mapped[FileFormat] = mapped_column(SAEnum(FileFormat, name="file_format_enum"), nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active_version: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     parsed_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

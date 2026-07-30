@@ -3,6 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 
+from app.models.candidates import ParseStatus
 from app.models.pipeline import PipelineStage, RejectionLayer
 
 class CampaignCandidateCreateRequest(BaseModel):
@@ -24,6 +25,10 @@ class CampaignCandidateResponse(BaseModel):
     resume_id: UUID
 
     pipeline_stage: PipelineStage
+    # Epic 4 (M05-E04) Phase D1 - read straight off the linked Resume row,
+    # never recalculated; null only in the defensive resume=None case
+    # (Resume is LEFT JOINed in get_all_by_campaign).
+    parse_status: ParseStatus | None = None
 
     # Candidate Listing UI fields (-adjacent listing extension).
     # All read-only, sourced from existing stored data - never recalculated.
@@ -44,6 +49,21 @@ class CampaignCandidateResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True,
     )
+
+
+class ProcessingTimelineEntry(BaseModel):
+    """Epic 4 (M05-E04) Phase D2 - one celery_task_log row on the scorecard's Processing Timeline."""
+
+    task_type: str
+    status: str
+    queued_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    # Computed at read time - CeleryTaskLog has no stored duration column.
+    # None whenever started_at or completed_at is missing (not yet started,
+    # or still in progress).
+    duration_display: str | None = None
+    error_message: str | None = None
 
 
 class CandidateScorecardResponse(CampaignCandidateResponse):
@@ -71,6 +91,14 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
     # the original rejection_reason/rejected_at above are preserved
     # unchanged either way, never overwritten by the override.
     status: str | None = None
+
+    # Epic 4 (M05-E04) Phase D2 - every celery_task_log row for this
+    # candidate, oldest first. Retry eligibility is deliberately not
+    # surfaced here - deferred in full to D10, which owns the actual
+    # retry/replay action and must decide it correctly (a DEAD status can
+    # mean either genuine retry-exhaustion or a deliberate, correct
+    # cancellation - see CeleryTaskLogService.mark_dead).
+    processing_timeline: list[ProcessingTimelineEntry] = []
 
 
 class CandidateRejectionHistoryEntryResponse(BaseModel):

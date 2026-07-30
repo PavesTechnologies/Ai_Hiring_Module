@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
-from app.models.pipeline import CampaignCandidate
+from app.models.pipeline import CampaignCandidate, PipelineStage
 from app.models.skills import CandidateSkill
 
 _SORT_COLUMNS = {
@@ -98,6 +98,26 @@ class ResumeRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
+    def delete(self, resume: Resume) -> None:
+        """Candidate erasure — hard-deletes a single resume version's row (caller has already removed its file from storage and its child rows)."""
+        self.db.delete(resume)
+        self.db.flush()
+
+    def delete_parse_attempts(self, resume_id: UUID) -> None:
+        """Candidate erasure — removes resume_parse_attempts for one resume version."""
+        self.db.execute(delete(ResumeParseAttempt).where(ResumeParseAttempt.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_embeddings_by_candidate(self, candidate_id: UUID) -> None:
+        """Candidate erasure — resume_embeddings has no FK constraint at all, so this is the only way to avoid orphaning it."""
+        self.db.execute(delete(ResumeEmbedding).where(ResumeEmbedding.candidate_id == candidate_id))
+        self.db.flush()
+
+    def delete_candidate_skills_by_candidate(self, candidate_id: UUID) -> None:
+        """Candidate erasure — read counterpart is get_candidate_skills; this removes every candidate_skills row for the candidate."""
+        self.db.execute(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))
+        self.db.flush()
+
     def record_parse_attempt(
         self,
         resume_id: UUID,
@@ -134,10 +154,16 @@ class ResumeRepository:
         parsed_json: dict,
         parse_status: ParseStatus,
         parser_version: str,
+        page_count: int | None = None,
     ) -> Resume:
         resume.parsed_json = parsed_json
         resume.parse_status = parse_status
         resume.parser_version = parser_version
+        # None means "this attempt didn't compute a page count" (e.g. bulk
+        # upload sets it directly at Resume-creation time, before this pipeline
+        # ever runs) — never overwrite an already-known value with null.
+        if page_count is not None:
+            resume.page_count = page_count
         self.db.flush()
         self.db.refresh(resume)
         return resume
@@ -251,6 +277,7 @@ class ResumeRepository:
         email_hash: str | None = None,
         uploaded_from: datetime | None = None,
         uploaded_to: datetime | None = None,
+        uploaded_by: str | None = None,
         page: int = 1,
         size: int = 20,
         sort_by: str = "created_at",
@@ -258,7 +285,7 @@ class ResumeRepository:
     ) -> list[Resume]:
         """Monitoring-only, no writes. Backs GET /resumes' list/search/filter."""
         conditions = self._build_search_conditions(
-            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to,
+            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to, uploaded_by,
         )
         sort_column = _SORT_COLUMNS.get(sort_by, Resume.created_at)
         order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
@@ -281,13 +308,59 @@ class ResumeRepository:
         email_hash: str | None = None,
         uploaded_from: datetime | None = None,
         uploaded_to: datetime | None = None,
+        uploaded_by: str | None = None,
     ) -> int:
         """Same filters as search(), for the list endpoint's total count."""
         conditions = self._build_search_conditions(
-            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to,
+            campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to, uploaded_by,
         )
         stmt = select(func.count()).select_from(Resume).where(*conditions)
         return self.db.execute(stmt).scalar_one()
+
+    def get_campaign_history_entries(
+        self,
+        campaign_id: UUID,
+    ) -> list[tuple[Resume, PipelineStage | None]]:
+        """
+        Epic 4 (M05-E04) Phase D7 — every individual (non-bulk) resume
+        actually linked to this campaign, most recent first, paired with
+        its campaign_candidates.pipeline_stage in the SAME query — avoids
+        an N+1 per-row lookup. Deliberately a dedicated method rather than
+        widening search()/count_search()'s shared return shape (those two
+        are also used by the general, not-campaign-scoped /resumes list,
+        where "the" pipeline_stage wouldn't even be well-defined).
+
+        Deliberately unfiltered beyond campaign scope — UploadHistoryService
+        applies uploaded_by/date/outcome filters in Python over this full
+        set, so the uploader-dropdown it derives always lists every real
+        uploader for the campaign, never shrinking as other filters are
+        applied. Bounded by per-campaign upload volume, same tradeoff D5
+        already accepted for its own per-job file log.
+
+        A real (inner) join, not a LEFT JOIN: a resume only "belongs to"
+        this campaign at all via a matching campaign_candidates row (e.g.
+        the orphan-Resume race documented elsewhere in this codebase,
+        where create_campaign_candidate failed after the Resume row was
+        already committed, leaves a resume belonging to NO campaign) — it
+        should not appear in this campaign's history if that link never
+        existed. The join is scoped to this exact campaign_id (not resume_id
+        alone), so it only fans out a row if this resume were somehow
+        linked twice to the SAME campaign — not expected in practice (a
+        resume's candidate_id is fixed, and every code path that creates
+        campaign_candidates rows keys off that same candidate_id), the same
+        assumption get_by_resume_id's own docstring already relies on.
+        """
+        stmt = (
+            select(Resume, CampaignCandidate.pipeline_stage)
+            .join(
+                CampaignCandidate,
+                (CampaignCandidate.resume_id == Resume.id)
+                & (CampaignCandidate.campaign_id == campaign_id),
+            )
+            .where(Resume.bulk_upload_job_id.is_(None))
+            .order_by(Resume.created_at.desc())
+        )
+        return list(self.db.execute(stmt).all())
 
     @staticmethod
     def _build_search_conditions(
@@ -297,6 +370,7 @@ class ResumeRepository:
         email_hash: str | None,
         uploaded_from: datetime | None,
         uploaded_to: datetime | None,
+        uploaded_by: str | None = None,
     ) -> list:
         # Resume carries no campaign_id column itself — reached only via
         # campaign_candidates. A subquery (not a join) avoids duplicating a

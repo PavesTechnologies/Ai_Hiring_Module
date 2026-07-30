@@ -305,6 +305,37 @@ try:
             value="10",
             description="Minimum processed candidates before rejection-analytics recommendations are shown (M04-E04-S05-T02)",
         ),
+        # Epic 4 (M05-E04) Phase D0: platform-wide upload-queue alert thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="QUEUE_BACKLOG_ALERT_THRESHOLD",
+            value="100",
+            description="Total QUEUED RESUME_DOCUMENT_PROCESSING tasks platform-wide above which a PLATFORM_ALERT_SENT alert is raised (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="PARSE_DURATION_ALERT_THRESHOLD_MS",
+            value="120000",
+            description="Average RESUME_DOCUMENT_PROCESSING task duration (ms) in the last hour above which a degraded-performance alert is raised (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DAILY_DEAD_TASK_ALERT_THRESHOLD",
+            value="10",
+            description="DEAD task count in the last 24 hours, platform-wide, above which an alert is raised (D13) - distinct from the campaign-scoped DEAD_TASK_ALERT_THRESHOLD",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="ALERT_COOLDOWN_HOURS",
+            value="12",
+            description="Minimum hours between repeat platform-upload alerts for the same condition (D13)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_AI_RETRY_COUNT",
+            value="3",
+            description="Descriptive value for upload-failure notification copy (D11) - matches the real hardcoded retry_policy.py DEFAULT_POLICY.max_attempts; does not itself control retry behavior",
+        ),
     ]
 
     for config in configs:

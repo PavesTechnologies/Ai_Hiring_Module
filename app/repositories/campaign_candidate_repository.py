@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -122,6 +122,32 @@ class CampaignCandidateRepository:
             .first()
         )
     
+    def get_by_candidate_id(
+        self,
+        candidate_id: UUID,
+    ) -> list[CampaignCandidate]:
+        """
+        Candidate erasure — every campaign_candidates row for this candidate
+        across every campaign they were ever submitted to (a candidate can
+        appear in more than one campaign).
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.candidate_id == candidate_id)
+            .all()
+        )
+
+    def delete_stage_history(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """Candidate erasure — removes campaign_candidate_stage_history rows for one campaign_candidate."""
+        self.db.execute(
+            delete(CampaignCandidateStageHistory)
+            .where(CampaignCandidateStageHistory.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
     def get_by_resume_id(
         self,
         resume_id: UUID,

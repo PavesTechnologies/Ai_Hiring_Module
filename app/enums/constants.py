@@ -114,13 +114,29 @@ class ActionType(enum.Enum):
     BULK_UPLOAD_FILE_REPLAYED = "BULK_UPLOAD_FILE_REPLAYED"
 
     DLQ_TASK_REPLAYED = "DLQ_TASK_REPLAYED"
-    # M04-E04 S04/S05/S06 — stalled-candidate actions + report exports
+    # stalled-candidate actions + report exports
     STALLED_CANDIDATES_ALERT = "STALLED_CANDIDATES_ALERT"
     CANDIDATE_STALL_ESCALATED = "CANDIDATE_STALL_ESCALATED"
     CANDIDATE_STAGE_OVERRIDDEN = "CANDIDATE_STAGE_OVERRIDDEN"
     CANDIDATE_FLAGGED_FOR_REVIEW = "CANDIDATE_FLAGGED_FOR_REVIEW"
     REJECTION_REPORT_EXPORTED = "REJECTION_REPORT_EXPORTED"
     CAMPAIGN_SUMMARY_EXPORTED = "CAMPAIGN_SUMMARY_EXPORTED"
+    # Epic 4 (M05-E04) Phase D0 — the DB-side audit_action_type_enum does NOT
+    # yet contain these 4 values (this migration adds them in the same
+    # phase). Writing an AuditLog row with any of these will fail with
+    # "invalid input value for enum" until the paired migration
+    # (alembic/versions/a9d4f2c7e6b3_audit_enum_upload_tracking_values.py) is
+    # applied against the database.
+    UPLOAD_HISTORY_EXPORTED = "UPLOAD_HISTORY_EXPORTED"
+    RESUME_UPLOAD_RETRIED = "RESUME_UPLOAD_RETRIED"
+    INDIVIDUAL_UPLOAD_DLQ_REPLAYED = "INDIVIDUAL_UPLOAD_DLQ_REPLAYED"
+    PLATFORM_ALERT_SENT = "PLATFORM_ALERT_SENT"
+    # GDPR-style candidate hard delete — the DB-side audit_action_type_enum
+    # does NOT yet contain this value (same caveat as the other entries
+    # above); needs the paired migration
+    # (alembic/versions/90b05f9f2aa1_candidate_data_erased_audit_action.py)
+    # before CandidateErasureService can log it.
+    CANDIDATE_DATA_ERASED = "CANDIDATE_DATA_ERASED"
     # Prompt Management (AIRS)
     PROMPT_CREATED = "PROMPT_CREATED"
     PROMPT_UPDATED = "PROMPT_UPDATED"

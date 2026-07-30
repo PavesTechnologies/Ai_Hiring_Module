@@ -54,6 +54,7 @@ class ResumeService:
         embedding_model_version_id: UUID,
         input_text_hash: str,
         attempt_number: int | None = None,
+        page_count: int | None = None,
     ) -> UUID:
         """
         Writes Resume.parsed_json/parse_status + candidate_skills +
@@ -76,6 +77,7 @@ class ResumeService:
                 parsed_json=extraction.model_dump(mode="json"),
                 parse_status=ParseStatus.PARSED,
                 parser_version=self.PARSER_VERSION,
+                page_count=page_count,
             )
             logger.warning(
                 "=== persist_processed_resume: parsed_json/parse_status updated === resume_id=%s", resume.id,
