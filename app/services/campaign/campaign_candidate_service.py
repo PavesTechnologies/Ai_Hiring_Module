@@ -38,21 +38,38 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
+    AdditionalCandidateSkillItem,
+    AiSummaryDetail,
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
     CampaignRejectionAnalyticsResponse,
+    CandidateDeterministicResponse,
     CandidateCampaignHistoryEntryResponse,
     CandidateCampaignHistoryResponse,
     CandidateRejectionHistoryEntryResponse,
     CandidateScorecardResponse,
+    CandidateSummaryResponse,
     CampaignCandidateResponse,
+    DeterministicScoreBreakdownResponse,
+    DeterministicScoreSummary,
+    EducationValidationDetail,
+    ExperienceValidationDetail,
+    HierarchyMatchItem,
     JdCalibrationRecommendation,
+    MandatorySkillBreakdownItem,
+    MissingMandatorySkillItem,
     MissingSkillOccurrence,
     OverrideReportResponse,
     OverrideReportRow,
     ProcessingTimelineEntry,
     OverrideWeeklyTrendPoint,
+    PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
+    ScoreCalculationDetail,
+    ScoreConfigurationDetail,
+    CandidateSemanticResponse,
+    SemanticScoreBreakdownResponse,
+    SemanticScoreSummary,
     ResubmissionInfoResponse,
     UpdateResumeResubmissionResponse,
 )
@@ -60,6 +77,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
@@ -147,6 +165,34 @@ _SKILL_MISMATCH_RATE_THRESHOLD_KEY = "SKILL_MISMATCH_RATE_THRESHOLD"
 _DEFAULT_SKILL_MISMATCH_RATE_THRESHOLD = 60.0
 _EXPERIENCE_ONLY_RATE_THRESHOLD_KEY = "EXPERIENCE_ONLY_RATE_THRESHOLD"
 _DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD = 40.0
+
+# Deterministic Score API response contract: display-only config keys for
+# DeterministicScoreBreakdownResponse.configuration - reuses the exact same
+# platform_config keys deterministic_scoring_tasks.py/candidate_scoring_service.py
+# already read for scoring, never a second/duplicated key. Read-only lookups
+# for display; never written here, never used to recompute anything.
+_DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
+_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
+_DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY = "HIERARCHY_SEMANTIC_ONLY_THRESHOLD"
+_HIERARCHY_GRANDCHILD_MULTIPLIER_KEY = "HIERARCHY_GRANDCHILD_MULTIPLIER"
+# Not seeded/present in PlatformConfig today (CHILD=0.7/SIBLING=0.4/
+# SEMANTIC=0.2 are hardcoded literals in CandidateScoringService) - reading
+# these keys anyway is forward-compatible and always resolves to None
+# under the current system, never a DB/seed change made here.
+_HIERARCHY_CHILD_MULTIPLIER_KEY = "HIERARCHY_CHILD_MULTIPLIER"
+_HIERARCHY_SIBLING_MULTIPLIER_KEY = "HIERARCHY_SIBLING_MULTIPLIER"
+_SEMANTIC_MULTIPLIER_KEY = "SEMANTIC_MULTIPLIER"
+
+# Match-type values that count as a hierarchy fallback (not EXACT, not MISSING).
+_HIERARCHY_RELATIONSHIP_MATCH_TYPES = {"CHILD", "GRANDCHILD", "SIBLING", "SEMANTIC"}
+
+_SKILL_MATCH_TIER_LABELS = {
+    "CHILD": "a related child skill",
+    "GRANDCHILD": "a related grandchild skill",
+    "SIBLING": "a related sibling skill",
+    "SEMANTIC": "a semantically similar skill",
+}
 
 
 class CampaignCandidateService:
@@ -686,6 +732,157 @@ class CampaignCandidateService:
         )
         base = self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
         banner = self._build_rejection_banner(campaign_candidate)
+        deterministic_score_breakdown = self._build_deterministic_score_breakdown(
+            campaign_candidate, rejection_reason=banner.get("rejection_reason"),
+        )
+
+        return CandidateScorecardResponse(
+            **base.model_dump(), **banner,
+            deterministic_score_breakdown=deterministic_score_breakdown,
+        )
+
+    # ------------------------------------------------------------------
+    # Candidate Scorecard tab endpoints: Summary / Deterministic.
+    # Each reuses the exact same shared helpers get_campaign_candidate_scorecard
+    # itself uses (_to_campaign_candidate_response / _build_rejection_banner /
+    # _build_deterministic_score_breakdown) - no second/independent
+    # computation, no business-logic duplication. The full aggregate
+    # endpoint above is untouched and stays fully backward compatible.
+    # ------------------------------------------------------------------
+
+    def get_candidate_summary(self, campaign_candidate_id: UUID) -> CandidateSummaryResponse:
+        """
+        Summary-tab-only view: header, candidate info, overall scores, AI
+        summary (if available). Never includes score_breakdown/
+        deterministic_score_breakdown (Deterministic tab) or the rejection/
+        override banner (future Final Status tab) - those live in their own
+        dedicated responses.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        candidate = (
+            self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
+            if self.candidate_repo is not None else None
+        )
+        resume = (
+            self.resume_repo.get_by_id(campaign_candidate.resume_id)
+            if self.resume_repo is not None else None
+        )
+        # Reused as-is - the exact same mapper get_campaign_candidate_scorecard
+        # calls for its own base fields.
+        base = self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
+
+        return CandidateSummaryResponse(
+            campaign_candidate_id=base.campaign_candidate_id,
+            campaign_id=base.campaign_id,
+            candidate_id=base.candidate_id,
+            pipeline_stage=base.pipeline_stage,
+            created_at=base.created_at,
+            candidate_name=base.candidate_name,
+            current_designation=base.current_designation,
+            experience=base.experience,
+            location=base.location,
+            deterministic_score=base.deterministic_score,
+            ai_ats_score=base.ai_ats_score,
+            semantic_score=base.semantic_score,
+            composite_score=base.composite_score,
+            ai_summary=self._build_ai_summary(campaign_candidate),
+        )
+
+    @staticmethod
+    def _build_ai_summary(campaign_candidate: CampaignCandidate) -> AiSummaryDetail | None:
+        recommendation = getattr(campaign_candidate, "ai_recommendation", None)
+        strengths = getattr(campaign_candidate, "ai_strengths", None)
+        weaknesses = getattr(campaign_candidate, "ai_weaknesses", None)
+        if recommendation is None and not strengths and not weaknesses:
+            return None
+        return AiSummaryDetail(
+            recommendation=recommendation.value if recommendation is not None else None,
+            strengths=strengths,
+            weaknesses=weaknesses,
+        )
+
+    def get_candidate_deterministic(self, campaign_candidate_id: UUID) -> CandidateDeterministicResponse:
+        """
+        Deterministic-tab-only view: deterministic_score +
+        deterministic_score_breakdown, reusing
+        _build_deterministic_score_breakdown exactly as-is (the same
+        object the full scorecard's deterministic_score_breakdown field
+        carries). Never includes summary/resume/semantic/AI-evaluation/
+        final-status data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        banner = self._build_rejection_banner(campaign_candidate)
+        deterministic_score_breakdown = self._build_deterministic_score_breakdown(
+            campaign_candidate, rejection_reason=banner.get("rejection_reason"),
+        )
+
+        return CandidateDeterministicResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            deterministic_score=(
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            deterministic_score_breakdown=deterministic_score_breakdown,
+        )
+
+    def get_candidate_semantic(self, campaign_candidate_id: UUID) -> CandidateSemanticResponse:
+        """
+        Semantic-tab-only view: semantic_score + semantic_score_breakdown,
+        mirroring get_candidate_deterministic exactly - a pure read/transform
+        of campaign_candidates.semantic_score/semantic_score_breakdown
+        (written by SemanticScoringService/calculate_semantic_score_task,
+        M08-E02). Never recalculates anything, never touches resume/JD
+        embeddings or pgvector - those live entirely in the Celery task.
+        Never includes summary/resume/deterministic/AI-evaluation/
+        final-status data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        return CandidateSemanticResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            semantic_score=(
+                float(campaign_candidate.semantic_score)
+                if campaign_candidate.semantic_score is not None else None
+            ),
+            semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+        )
+
+    @staticmethod
+    def _build_semantic_score_breakdown(
+        campaign_candidate: CampaignCandidate,
+    ) -> SemanticScoreBreakdownResponse | None:
+        breakdown = campaign_candidate.semantic_score_breakdown
+        if not breakdown:
+            return None
+
+        passed = breakdown.get("semantic_passed")
+        return SemanticScoreBreakdownResponse(
+            summary=SemanticScoreSummary(
+                overall_score=breakdown.get("semantic_score"),
+                status="PASSED" if passed else "FAILED",
+                threshold=breakdown.get("semantic_threshold"),
+                matching_skills_count=len(breakdown.get("matching_skills") or []),
+                missing_skills_count=len(breakdown.get("missing_skills") or []),
+                matched_keywords_count=len(breakdown.get("matched_keywords") or []),
+                screened_at=breakdown.get("computed_at"),
+                failure_reason=breakdown.get("semantic_explanation") if not passed else None,
+            ),
+            overall_similarity=breakdown.get("overall_similarity"),
+            semantic_passed=passed,
+            semantic_threshold=breakdown.get("semantic_threshold"),
+            matching_skills=breakdown.get("matching_skills") or [],
+            missing_skills=breakdown.get("missing_skills") or [],
+            matched_keywords=breakdown.get("matched_keywords") or [],
+            semantic_explanation=breakdown.get("semantic_explanation"),
+        )
         timeline = self._build_processing_timeline(campaign_candidate_id)
 
         return CandidateScorecardResponse(**base.model_dump(), **banner, processing_timeline=timeline)
@@ -761,6 +958,252 @@ class CampaignCandidateService:
             "is_overridden": is_overridden,
             "status": "Overridden — Previously Rejected" if is_overridden else None,
         }
+
+    # ------------------------------------------------------------------
+    # Deterministic Score API response contract: UI-friendly restructuring
+    # of the already-computed/stored score_breakdown. Pure read/transform -
+    # no scoring logic, no recalculation, no repository/service/Celery
+    # changes. Every value is either read directly from score_breakdown (or
+    # CampaignCandidate/PlatformConfig) or is a simple display-formatting
+    # transform (status strings, degree-level display names) of an
+    # already-computed value.
+    # ------------------------------------------------------------------
+
+    def _build_deterministic_score_breakdown(
+        self, campaign_candidate: CampaignCandidate, rejection_reason: str | None = None,
+    ) -> DeterministicScoreBreakdownResponse | None:
+        breakdown = campaign_candidate.score_breakdown
+        if not breakdown:
+            return None
+
+        mandatory_skills_raw = breakdown.get("mandatory_skills") or []
+        preferred_skills_raw = breakdown.get("preferred_skills") or []
+        experience = breakdown.get("experience_validation")
+        education = breakdown.get("education_validation")
+
+        mandatory_skills = [
+            MandatorySkillBreakdownItem(
+                jd_skill=entry.get("canonical_name"),
+                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                mandatory=entry.get("mandatory"),
+                match_type=entry.get("match_type"),
+                configured_weight=entry.get("configured_weight"),
+                normalization_discount=entry.get("candidate_scoring_weight"),
+                hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
+                contribution=entry.get("skill_contribution"),
+                confidence=entry.get("confidence"),
+                passed=entry.get("match_type") != "MISSING",
+                matched=entry.get("match_type") != "MISSING",
+                match_reason=self._skill_match_reason(
+                    entry.get("match_type"), entry.get("matched_candidate_skill_canonical_name"),
+                ),
+                contribution_percentage=self._contribution_percentage(
+                    entry.get("skill_contribution"), entry.get("configured_weight"),
+                ),
+            )
+            for entry in mandatory_skills_raw
+        ]
+
+        preferred_skills = [
+            PreferredSkillBreakdownItem(
+                jd_skill=entry.get("canonical_name"),
+                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                match_type=entry.get("match_type"),
+                configured_weight=entry.get("configured_weight"),
+                bonus=entry.get("skill_contribution"),
+                confidence=entry.get("confidence"),
+                matched=entry.get("match_type") != "MISSING",
+                match_reason=self._skill_match_reason(
+                    entry.get("match_type"), entry.get("matched_candidate_skill_canonical_name"),
+                ),
+                contribution_percentage=self._contribution_percentage(
+                    entry.get("skill_contribution"), entry.get("configured_weight"),
+                ),
+            )
+            for entry in preferred_skills_raw
+        ]
+
+        missing_mandatory_skills = [
+            MissingMandatorySkillItem(
+                skill=entry.get("canonical_name"),
+                configured_weight=entry.get("configured_weight"),
+                reason="No matching skill found in candidate's profile (including hierarchy fallback).",
+            )
+            for entry in mandatory_skills_raw
+            if entry.get("match_type") == "MISSING"
+        ]
+
+        # Populated from both mandatory and preferred mappings, per this
+        # contract - preferred skills never actually carry a hierarchy
+        # match_type today (EXACT-only), so this is a no-op extension in
+        # practice, not a new query or new matching behavior.
+        hierarchy_matches = [
+            HierarchyMatchItem(
+                jd_skill=entry.get("canonical_name"),
+                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                relationship=entry.get("match_type"),
+                multiplier=entry.get("hierarchy_score_multiplier"),
+                match_type=entry.get("match_type"),
+                hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
+            )
+            for entry in (mandatory_skills_raw + preferred_skills_raw)
+            if entry.get("match_type") in _HIERARCHY_RELATIONSHIP_MATCH_TYPES
+        ]
+
+        mandatory_matched = sum(
+            1 for entry in mandatory_skills_raw if entry.get("match_type") != "MISSING"
+        )
+        preferred_matched = sum(
+            1 for entry in preferred_skills_raw if entry.get("match_type") != "MISSING"
+        )
+
+        config_values = (
+            self.config_repo.get_configs_by_keys([
+                _DETERMINISTIC_WEIGHT_SKILLS_KEY,
+                _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
+                _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+                _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY,
+                _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
+                _HIERARCHY_CHILD_MULTIPLIER_KEY,
+                _HIERARCHY_SIBLING_MULTIPLIER_KEY,
+                _SEMANTIC_MULTIPLIER_KEY,
+            ])
+            if self.config_repo is not None else {}
+        )
+
+        experience_min_years = experience.get("min_years") if experience else None
+        experience_effective_min_years = experience.get("effective_min_years") if experience else None
+        experience_tolerance = (
+            round(experience_min_years - experience_effective_min_years, 2)
+            if experience_min_years is not None and experience_effective_min_years is not None
+            else None
+        )
+
+        from app.services.campaign.candidate_scoring_service import _degree_level_display
+
+        skills_score = breakdown.get("skill_deterministic_score")
+        if skills_score is None:
+            skills_score = breakdown.get("deterministic_score")
+
+        # Reuses candidate_rejections.rejection_reason exactly as already
+        # resolved by _build_rejection_banner (passed in by the caller) -
+        # never a second, independent lookup. Split on " | ", the same
+        # delimiter CandidateScoringService.build_rejection_reason already
+        # concatenates multiple failure clauses with.
+        failure_reasons = rejection_reason.split(" | ") if rejection_reason else []
+
+        return DeterministicScoreBreakdownResponse(
+            summary=DeterministicScoreSummary(
+                overall_score=breakdown.get("deterministic_score"),
+                status="PASSED" if breakdown.get("deterministic_passed") else "FAILED",
+                threshold=breakdown.get("deterministic_threshold"),
+                mandatory_coverage_pct=breakdown.get("mandatory_coverage_pct"),
+                mandatory_skills_matched=mandatory_matched,
+                mandatory_skills_total=len(mandatory_skills_raw),
+                preferred_skills_matched=preferred_matched,
+                preferred_skills_total=len(preferred_skills_raw),
+                additional_skills_count=None,
+                experience_status=self._validation_status(experience),
+                education_status=self._validation_status(education),
+                screened_at=getattr(campaign_candidate, "screened_at", None),
+                failure_reason=rejection_reason,
+                failure_reasons=failure_reasons,
+                screening_completed_at=getattr(campaign_candidate, "screened_at", None),
+            ),
+            missing_mandatory_skills=missing_mandatory_skills,
+            mandatory_skills=mandatory_skills,
+            preferred_skills=preferred_skills,
+            additional_candidate_skills=[],
+            hierarchy_matches=hierarchy_matches,
+            experience_validation=ExperienceValidationDetail(
+                required_years=experience_min_years,
+                candidate_years=experience.get("candidate_years") if experience else None,
+                tolerance=experience_tolerance,
+                passed=experience.get("passed") if experience else None,
+                status=self._detailed_validation_status(experience),
+            ),
+            education_validation=EducationValidationDetail(
+                required_degree=(
+                    _degree_level_display(education.get("required_level")) if education else None
+                ),
+                candidate_degree=(
+                    _degree_level_display(education.get("candidate_level")) if education else None
+                ),
+                equivalent_experience_applied=(
+                    education.get("equivalent_experience_applied") if education else None
+                ),
+                passed=education.get("passed") if education else None,
+            ),
+            score_calculation=ScoreCalculationDetail(
+                skills_score=skills_score,
+                experience_score=experience.get("score") if experience else None,
+                education_score=education.get("score") if education else None,
+                final_score=breakdown.get("deterministic_score"),
+            ),
+            configuration=ScoreConfigurationDetail(
+                skills_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_SKILLS_KEY),
+                experience_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY),
+                education_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EDUCATION_KEY),
+                deterministic_threshold=breakdown.get("deterministic_threshold"),
+                semantic_threshold=self._config_float(config_values, _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY),
+                hierarchy_grandchild_multiplier=self._config_float(
+                    config_values, _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
+                ),
+                hierarchy_child_multiplier=self._config_float(config_values, _HIERARCHY_CHILD_MULTIPLIER_KEY),
+                hierarchy_sibling_multiplier=self._config_float(config_values, _HIERARCHY_SIBLING_MULTIPLIER_KEY),
+                semantic_multiplier=self._config_float(config_values, _SEMANTIC_MULTIPLIER_KEY),
+            ),
+        )
+
+    @staticmethod
+    def _validation_status(result: dict | None) -> str | None:
+        if result is None:
+            return None
+        if result.get("skipped"):
+            return "NOT_REQUIRED"
+        if result.get("data_missing"):
+            return "DATA_MISSING"
+        return "PASSED" if result.get("passed") else "FAILED"
+
+    @staticmethod
+    def _detailed_validation_status(result: dict | None) -> str | None:
+        """
+        Same underlying applicable/skipped/data_missing/passed flags as
+        _validation_status, but PASSED/FAILED/DATA_MISSING/SKIPPED vocabulary
+        for ExperienceValidationDetail.status specifically - a separate
+        method (not a shared one) because _validation_status's
+        "NOT_REQUIRED" value is already an existing, shipped field
+        (summary.experience_status) that must not change.
+        """
+        if result is None:
+            return None
+        if result.get("skipped"):
+            return "SKIPPED"
+        if result.get("data_missing"):
+            return "DATA_MISSING"
+        return "PASSED" if result.get("passed") else "FAILED"
+
+    @staticmethod
+    def _skill_match_reason(match_type: str | None, candidate_skill: str | None) -> str | None:
+        if match_type is None:
+            return None
+        if match_type == "MISSING":
+            return "No matching skill found in candidate's profile (including hierarchy fallback)."
+        if match_type == "EXACT":
+            return f"Exact match with candidate skill '{candidate_skill}'." if candidate_skill else "Exact match."
+        label = _SKILL_MATCH_TIER_LABELS.get(match_type, "a related skill")
+        return f"Matched via {label} '{candidate_skill}'." if candidate_skill else f"Matched via {label}."
+
+    @staticmethod
+    def _contribution_percentage(contribution: float | None, configured_weight: float | None) -> float | None:
+        if contribution is None or not configured_weight:
+            return None
+        return round((contribution / configured_weight) * 100, 2)
+
+    @staticmethod
+    def _config_float(config_values: dict, key: str) -> float | None:
+        raw = config_values.get(key)
+        return float(raw) if raw is not None else None
 
     # ------------------------------------------------------------------
     # M07-E03 S03 T02: Rejection History (read-only)
@@ -1013,26 +1456,28 @@ class CampaignCandidateService:
         try:
             self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
 
-            if (
-                self.resume_repo is not None
-                and self.resume_repo.get_embedding(campaign_candidate.resume_id) is not None
-            ):
-                self._queue_task_log_if_not_duplicate(campaign_candidate, SEMANTIC_SCORE_TASK_TYPE)
+            # M08-E02: reuses the exact same enqueue/idempotency helper
+            # calculate_deterministic_score_task's own auto-trigger uses
+            # (app.tasks.semantic_scoring_tasks._enqueue_semantic_scoring) -
+            # never a second/independent implementation of "how do I queue
+            # semantic scoring for this candidate."
+            if self.resume_repo is not None:
+                _enqueue_semantic_scoring(campaign_candidate, self.celery_task_log_service, self.resume_repo)
         except Exception:
             logger.exception(
                 "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",
                 campaign_candidate.id,
             )
 
-    def _queue_task_log_if_not_duplicate(self, campaign_candidate: CampaignCandidate, task_type: str) -> None:
+    def _queue_task_log_if_not_duplicate(self, campaign_candidate: CampaignCandidate, task_type: str):
         task_log_repo = self.celery_task_log_service.repository
         already_queued = any(
             log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
             for log in task_log_repo.get_by_campaign_candidate_and_task_type(campaign_candidate.id, task_type)
         )
         if already_queued:
-            return
-        self.celery_task_log_service.create_log(
+            return None
+        return self.celery_task_log_service.create_log(
             task_id=str(uuid4()),
             task_type=task_type,
             campaign_candidate_id=campaign_candidate.id,

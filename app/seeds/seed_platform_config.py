@@ -269,7 +269,12 @@ try:
             value="3",
             description="FRAUD_REVIEW candidate count for a campaign above which a CAMPAIGN_HEALTH_ALERT is raised",
         ),
-        # Epic 3 (M05-E03) Phase C4: candidate resubmission-alert thresholds
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBEDDING_BATCH_SIZE",
+            value="32",
+            description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
+       
         PlatformConfig(
             id=uuid.uuid4(),
             key="CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD",
