@@ -251,6 +251,9 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
                 DocumentType.RESUME,
                 stage_exc,
                 attempt_number,
+                # Epic 4 (M05-E04) Phase D10 - lets a dead-lettered resume
+                # failure be traced back to its resume for replay.
+                resume_id=resume.id if resume is not None else None,
             )
         if not should_retry:
             db.rollback()

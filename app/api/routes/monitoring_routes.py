@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.monitoring import get_ops_monitoring_service
 from app.enums.constants import UserRole
 from app.middleware.rbac import TokenUser, require_roles
-from app.schemas.monitoring import ProcessingMetricsResponse, QueueStatusResponse
+from app.schemas.monitoring import (
+    ProcessingMetricsResponse,
+    QueueStatusResponse,
+    UploadQueueDashboardResponse,
+)
 from app.schemas.response import APIResponse
 from app.services.ops_monitoring_service import OpsMonitoringService
 
@@ -55,4 +59,25 @@ def get_processing_metrics(
     return APIResponse.ok(
         data=service.get_processing_metrics(window=window),
         message="Processing metrics retrieved successfully.",
+    )
+
+
+@router.get(
+    "/upload-queue-dashboard",
+    response_model=APIResponse[UploadQueueDashboardResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_upload_queue_dashboard(
+    service: OpsMonitoringService = Depends(get_ops_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Epic 4 (M05-E04) Phase D12 — read-only, platform-wide upload queue
+    dashboard: pending/queued/running/dead resume-intake counts, circuit
+    breaker health for the two upload-critical external services, and a
+    per-campaign queue-depth breakdown (capped, deterministically sorted).
+    """
+    return APIResponse.ok(
+        data=service.get_upload_queue_dashboard(),
+        message="Upload queue dashboard retrieved successfully.",
     )

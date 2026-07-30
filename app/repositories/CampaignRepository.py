@@ -644,6 +644,46 @@ class CampaignRepository:
             .all()
         )
 
+    def get_pending_resume_counts_by_campaign(self) -> list[tuple[UUID, str, int]]:
+        """
+        Epic 4 (M05-E04) Phase D12 - platform-wide, grouped by campaign,
+        for the upload-queue dashboard's per-campaign breakdown. Joined
+        to HiringCampaign for the display name up front, avoiding a
+        second name-resolution query for the (small, capped) set of
+        campaigns that end up in the final breakdown. Not filtered to
+        ACTIVE-only campaigns - a PAUSED campaign can still have real
+        lingering PENDING resumes worth surfacing here.
+        """
+        rows = (
+            self.db.query(HiringCampaign.id, HiringCampaign.name, func.count())
+            .join(CampaignCandidate, CampaignCandidate.campaign_id == HiringCampaign.id)
+            .join(Resume, Resume.id == CampaignCandidate.resume_id)
+            .filter(Resume.parse_status == ParseStatus.PENDING)
+            .group_by(HiringCampaign.id, HiringCampaign.name)
+            .all()
+        )
+        return [(campaign_id, name, count) for campaign_id, name, count in rows]
+
+    def get_queued_resume_task_counts_by_campaign(self, task_type: str) -> list[tuple[UUID, str, int]]:
+        """
+        Epic 4 (M05-E04) Phase D12 - platform-wide, grouped by campaign.
+        task_type is passed in (not hardcoded here) so this stays in
+        sync with whichever literal the caller's own platform-wide
+        metric uses, rather than duplicating that string in two places.
+        """
+        rows = (
+            self.db.query(HiringCampaign.id, HiringCampaign.name, func.count())
+            .join(CampaignCandidate, CampaignCandidate.campaign_id == HiringCampaign.id)
+            .join(CeleryTaskLog, CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id)
+            .filter(
+                CeleryTaskLog.task_type == task_type,
+                CeleryTaskLog.status == TaskStatus.QUEUED,
+            )
+            .group_by(HiringCampaign.id, HiringCampaign.name)
+            .all()
+        )
+        return [(campaign_id, name, count) for campaign_id, name, count in rows]
+
     def get_task_type_breakdown(self, campaign_id: UUID) -> list[dict]:
         """
         per-task_type status counts + avg duration + token usage for

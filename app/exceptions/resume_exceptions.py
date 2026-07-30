@@ -55,3 +55,21 @@ class DuplicateResumeFileException(ResumeException):
 
     def __init__(self, message: str, data: Any | None = None):
         super().__init__(message, status_code=409, data=data)
+
+
+class ResumeNotRetryableException(ResumeException):
+    """Epic 4 (M05-E04) Phase D10 - raised when retry_parse is called on a resume not currently parse_status=FAILED."""
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)
+
+
+class DeadLetterEntryNotReplayableException(ResumeException):
+    """
+    Epic 4 (M05-E04) Phase D10 - raised when replay_from_dlq is called on
+    a DLQ entry that's already been replayed, or isn't resume-scoped
+    (resume_id is None - e.g. a JD document's dead-lettered failure).
+    """
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)

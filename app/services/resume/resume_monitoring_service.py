@@ -3,7 +3,7 @@ from collections import Counter
 from datetime import datetime
 from uuid import UUID
 
-from app.core.encryption_service import EncryptionService
+from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
 from app.exceptions.storage_exception import StorageException
 from app.exception_handler.exceptions import NotFoundError
@@ -35,6 +35,7 @@ from app.services.resume.work_experience_duration import annotate_work_experienc
 logger = logging.getLogger(__name__)
 
 CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
+UNDECRYPTABLE_PLACEHOLDER = "[undecryptable]"
 RESUME_STORAGE_BUCKET = "airs_resumes"
 DOWNLOAD_URL_EXPIRES_IN_SECONDS = 900
 
@@ -250,16 +251,18 @@ class ResumeMonitoringService:
         for resume in resumes:
             candidate = candidates_by_id.get(resume.candidate_id)
             full_name = (
-                self.encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
+                self._safe_decrypt(candidate.full_name_encrypted, candidate.encryption_key_id, candidate.id)
                 if candidate else "Unknown"
             )
             email = (
-                self.encryption_service.decrypt(candidate.email_encrypted, candidate.encryption_key_id)
+                self._safe_decrypt(candidate.email_encrypted, candidate.encryption_key_id, candidate.id)
                 if candidate else "Unknown"
             )
             items.append(
                 ResumeListItem(
                     id=resume.id,
+                    resume_id=resume.id,
+                    task_id=resume.task_id,
                     candidate_id=resume.candidate_id,
                     candidate_full_name=full_name,
                     candidate_email=email,
@@ -328,6 +331,21 @@ class ResumeMonitoringService:
                 for resume in versions
             ],
         )
+
+    def _safe_decrypt(self, ciphertext: bytes, encryption_key_id, candidate_id: UUID) -> str:
+        """
+        List view only — one candidate's PII becoming undecryptable (e.g. it
+        was encrypted under a key value that no longer matches what's
+        configured) must not 500 the whole paginated page of otherwise-fine
+        rows. get_resume_detail intentionally still raises for a single-row
+        lookup, where silently substituting a placeholder would be worse
+        than a clear error.
+        """
+        try:
+            return self.encryption_service.decrypt(ciphertext, encryption_key_id)
+        except DecryptionError:
+            logger.error("Candidate %s PII is undecryptable with the configured encryption key.", candidate_id)
+            return UNDECRYPTABLE_PLACEHOLDER
 
     def _get_resume_or_404(self, resume_id: UUID):
         resume = self.resume_repository.get_by_id(resume_id)
