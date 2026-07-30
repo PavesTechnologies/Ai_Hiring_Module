@@ -347,3 +347,17 @@ class JDRepository:
         self.db.flush()
         self.db.refresh(jd_embedding)
         return jd_embedding
+
+    def get_embedding_by_jd_id(self, jd_id: UUID) -> JDEmbedding | None:
+        """
+        M08-E02: read counterpart to create_jd_embedding - the JD embedding
+        Semantic Matching loads for a campaign's job_description, reusing
+        exactly what M08-E01/the JD processing pipeline already generated
+        and stored. Never regenerates - returns None if the JD has no
+        embedding yet (still processing, or created before embeddings existed).
+        """
+        return (
+            self.db.query(JDEmbedding)
+            .filter(JDEmbedding.jd_id == jd_id)
+            .first()
+        )

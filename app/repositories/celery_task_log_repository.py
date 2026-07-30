@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,29 @@ class CeleryTaskLogRepository:
 
         return log
 
+    def create_if_new_idempotency_key(self, log: CeleryTaskLog) -> tuple[CeleryTaskLog, bool]:
+        """
+        Same insert as create(), for callers whose idempotency_key can race
+        under concurrent workers (e.g. EMBED_RESUME's enqueue helper) -
+        uq_celery_task_log_idempotency_key (partial, WHERE idempotency_key
+        IS NOT NULL) backs this at the DB level. A SAVEPOINT scopes a
+        losing insert's IntegrityError to just this attempt (mirrors
+        CandidateRepository.create's pattern for the same class of race),
+        then falls back to the row the winner already committed instead of
+        raising. Returns (log, was_created) - the caller must skip its own
+        post-insert side effect (e.g. apply_async) when was_created is
+        False, since that already happened for the winner's row.
+        """
+        try:
+            with self.db.begin_nested():
+                self.db.add(log)
+                self.db.flush()
+            self.db.refresh(log)
+            return log, True
+        except IntegrityError:
+            existing = self.get_by_idempotency_key(log.idempotency_key)
+            return existing, False
+
     def update(self, log: CeleryTaskLog):
 
         self.db.flush()
@@ -36,7 +61,13 @@ class CeleryTaskLogRepository:
         )
 
     def get_by_idempotency_key(self, idempotency_key: str) -> CeleryTaskLog | None:
-        """No DB-level uniqueness on idempotency_key (unlike CampaignCandidate's) - callers must check this before enqueueing to avoid a duplicate."""
+        """
+        uq_celery_task_log_idempotency_key (partial, WHERE idempotency_key
+        IS NOT NULL) backs uniqueness at the DB level for callers that
+        insert via create_if_new_idempotency_key(). Callers still using
+        plain create() get no such guarantee and must rely on this
+        pre-check alone to avoid a duplicate.
+        """
         return (
             self.db.query(CeleryTaskLog)
             .filter(CeleryTaskLog.idempotency_key == idempotency_key)
@@ -166,6 +197,16 @@ class CeleryTaskLogRepository:
     def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
         """Candidate erasure — removes celery_task_log rows tied to one campaign_candidate."""
         self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.campaign_candidate_id == campaign_candidate_id))
+        self.db.flush()
+
+    def delete_by_task_id(self, task_id: str) -> None:
+        """
+        Dead-letter cleanup (orphaned-failure path) — removes one
+        celery_task_log row directly. Only safe when no dead_letter_queue
+        row references this task_id (that FK would otherwise block the
+        delete) - DeadLetterCleanupService checks that before calling this.
+        """
+        self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.task_id == task_id))
         self.db.flush()
 
     def commit(self):

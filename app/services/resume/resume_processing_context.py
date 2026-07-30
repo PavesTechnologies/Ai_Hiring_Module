@@ -35,13 +35,10 @@ class ResumeProcessingContext:
 
     # Populated progressively, one stage at a time.
     raw_text: str | None = None
+    page_count: int | None = None
     cleaned_text: str | None = None
     pii_findings: list[PIIFinding] | None = None
     redacted_text: str | None = None
     raw_extraction: dict | None = None
     validated_extraction: ResumeExtractionResponse | None = None
     skill_match_results: list[SkillMatchResult] | None = None
-    embedding_text: str | None = None
-    embedding: list[float] | None = None
-    embedding_model_version_id: UUID | None = None
-    input_text_hash: str | None = None

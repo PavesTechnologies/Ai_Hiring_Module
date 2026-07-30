@@ -32,10 +32,12 @@ if platform.system() == "Windows":
 celery_app.conf.imports = (
     "app.tasks.campaign_tasks",
     "app.tasks.jd_processing_tasks",
+    "app.tasks.embedding_tasks",
     "app.tasks.resume_processing_tasks",
     "app.tasks.bulk_upload_tasks",
     "app.tasks.skill_ontology_tasks",
     "app.tasks.deterministic_scoring_tasks",
+    "app.tasks.semantic_scoring_tasks",
 )
 
 
@@ -81,6 +83,12 @@ celery_app.conf.beat_schedule = {
         # this one is a plain fixed off-peak hour, distinct from the other
         # two daily/hourly jobs.
         "schedule": crontab(minute=0, hour=3),
+    },
+    "detect-stalled-candidates": {
+        "task": "campaign.detect_stalled_candidates",
+        # M04-E04-S04: daily, offset from the health-alert sweep so the two
+        # campaign-wide scans never contend for the same rows.
+        "schedule": crontab(minute=30, hour=3),
     },
     "evaluate-resubmission-alerts": {
         "task": "campaign.evaluate_resubmission_alerts",

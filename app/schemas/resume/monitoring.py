@@ -114,6 +114,8 @@ class ResumeDetailResponse(BaseModel):
 
 class ResumeListItem(BaseModel):
     id: UUID
+    resume_id: UUID
+    task_id: str | None
     candidate_id: UUID
     candidate_full_name: str
     candidate_email: str
@@ -138,3 +140,10 @@ class ResumeParsedJsonResponse(BaseModel):
     candidate_id: UUID
     parse_status: str
     parsed_json: dict | None
+    original_filename: str | None
+    file_format: str
+    file_size_bytes: int | None
+    page_count: int | None
+    created_at: datetime
+    updated_at: datetime | None
+    download_url: str | None

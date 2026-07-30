@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -11,7 +11,6 @@ from app.models.pipeline import PipelineStage, RejectionLayer
 from app.schemas.campaign.campaign_candidate_schema import CandidateScorecardResponse
 from app.services.campaign.campaign_candidate_service import (
     AI_EVALUATE_TASK_TYPE,
-    SEMANTIC_SCORE_TASK_TYPE,
     CampaignCandidateService,
 )
 
@@ -228,14 +227,31 @@ def test_apply_hr_override_queues_ai_evaluate_only_when_no_embedding():
 
 
 def test_apply_hr_override_queues_ai_evaluate_and_semantic_score_when_embedding_exists():
-    service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=True)
+    """
+    M08-E02: semantic scoring is now enqueued via the shared
+    _enqueue_semantic_scoring helper (also used by
+    calculate_deterministic_score_task's own auto-trigger) - patched here
+    (never a real broker call in a unit test, same convention as
+    test_deterministic_scoring_tasks.py's send_candidate_email_task_mock)
+    and must be called with this exact campaign_candidate, the service's
+    celery_task_log_service, and its resume_repo.
+    """
+    with patch(
+        "app.services.campaign.campaign_candidate_service._enqueue_semantic_scoring",
+    ) as enqueue_semantic_scoring_mock:
+        service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=True)
 
-    service.apply_hr_override(candidate.id, "This rejection was a mistake, overriding.", "hr-1", "HR_ADMIN")
+        service.apply_hr_override(candidate.id, "This rejection was a mistake, overriding.", "hr-1", "HR_ADMIN")
 
-    created_task_types = [call.kwargs["task_type"] for call in celery_task_log_service.create_log.call_args_list]
-    assert created_task_types == [AI_EVALUATE_TASK_TYPE, SEMANTIC_SCORE_TASK_TYPE]
-    for call in celery_task_log_service.create_log.call_args_list:
-        assert call.kwargs["campaign_candidate_id"] == candidate.id
+        created_task_types = [call.kwargs["task_type"] for call in celery_task_log_service.create_log.call_args_list]
+        assert created_task_types == [AI_EVALUATE_TASK_TYPE]
+        for call in celery_task_log_service.create_log.call_args_list:
+            assert call.kwargs["campaign_candidate_id"] == candidate.id
+
+        enqueue_semantic_scoring_mock.assert_called_once()
+        call_args = enqueue_semantic_scoring_mock.call_args.args
+        assert call_args[0] is candidate
+        assert call_args[1] is celery_task_log_service
 
 
 def test_apply_hr_override_does_not_enqueue_duplicate_ai_evaluate():

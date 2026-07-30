@@ -76,24 +76,46 @@ class StageExecutionService:
         context=None,
         checkpoint_repo=None,
     ) -> T:
-        execution = self.start_stage(task_id, document_type, stage, attempt_number)
+        # start_stage/complete_stage each commit on the stage-tracking
+        # connection - a DB failure there (e.g. connection-slot exhaustion)
+        # is just as retryable as one inside fn(), so it's wrapped into the
+        # same StageExecutionError the caller's RetryDriver already knows
+        # how to classify and back off on. Without this, a commit failure
+        # here would propagate as a raw exception, bypass RetryDriver
+        # entirely, and permanently fail the task with zero retry.
+        try:
+            execution = self.start_stage(task_id, document_type, stage, attempt_number)
+        except Exception as exc:
+            raise StageExecutionError(stage, exc) from exc
+
         started = time.monotonic()
         try:
             result = fn()
         except Exception as exc:
             duration_ms = int((time.monotonic() - started) * 1000)
-            self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms)
-            if context is not None and checkpoint_repo is not None:
-                checkpoint_repo.upsert(
-                    task_id,
-                    document_type,
-                    failed_at_stage=stage,
-                    context_data=context_serializer.to_dict(context),
-                )
-                checkpoint_repo.commit()
+            try:
+                self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms)
+                if context is not None and checkpoint_repo is not None:
+                    checkpoint_repo.upsert(
+                        task_id,
+                        document_type,
+                        failed_at_stage=stage,
+                        context_data=context_serializer.to_dict(context),
+                    )
+                    checkpoint_repo.commit()
+            except Exception:
+                # Best-effort bookkeeping: the original exc is what needs to
+                # reach RetryDriver for classification/backoff - a secondary
+                # failure while recording it (e.g. the same connection loss)
+                # must not mask it or block the retry.
+                pass
             raise StageExecutionError(stage, exc) from exc
+
         duration_ms = int((time.monotonic() - started) * 1000)
-        self.complete_stage(execution, StageExecutionStatus.SUCCESS, duration_ms=duration_ms)
+        try:
+            self.complete_stage(execution, StageExecutionStatus.SUCCESS, duration_ms=duration_ms)
+        except Exception as exc:
+            raise StageExecutionError(stage, exc) from exc
         return result
 
     def next_attempt_number(self, task_id: str, stage: ProcessingStage) -> int:

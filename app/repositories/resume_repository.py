@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
@@ -154,10 +156,16 @@ class ResumeRepository:
         parsed_json: dict,
         parse_status: ParseStatus,
         parser_version: str,
+        page_count: int | None = None,
     ) -> Resume:
         resume.parsed_json = parsed_json
         resume.parse_status = parse_status
         resume.parser_version = parser_version
+        # None means "this attempt didn't compute a page count" (e.g. bulk
+        # upload sets it directly at Resume-creation time, before this pipeline
+        # ever runs) — never overwrite an already-known value with null.
+        if page_count is not None:
+            resume.page_count = page_count
         self.db.flush()
         self.db.refresh(resume)
         return resume
@@ -198,18 +206,45 @@ class ResumeRepository:
         embedding: list[float],
         embedding_model_version_id: UUID,
         input_text_hash: str,
-    ) -> ResumeEmbedding:
+        is_anonymized: bool = True,
+        is_talent_pool_eligible: bool = True,
+    ) -> tuple[ResumeEmbedding, bool]:
+        """
+        Returns (resume_embedding, was_created). uq_resume_embeddings_resume_model_version
+        (resume_id, embedding_model_version_id) backs this at the DB level —
+        two concurrent EMBED_RESUME runs for the same resume (broker
+        redelivery of a crashed RUNNING task, a manual re-trigger, etc.) can
+        both pass the application-level dedup check before either commits.
+        A SAVEPOINT scopes the loser's IntegrityError to just this insert
+        attempt (mirrors CandidateRepository.create's pattern for the same
+        class of race), then falls back to the row the winner already
+        committed instead of raising.
+        """
         resume_embedding = ResumeEmbedding(
             resume_id=resume_id,
             candidate_id=candidate_id,
             embedding=embedding,
             embedding_model_version_id=embedding_model_version_id,
             input_text_hash=input_text_hash,
+            is_anonymized=is_anonymized,
+            is_talent_pool_eligible=is_talent_pool_eligible,
         )
-        self.db.add(resume_embedding)
-        self.db.flush()
-        self.db.refresh(resume_embedding)
-        return resume_embedding
+        try:
+            with self.db.begin_nested():
+                self.db.add(resume_embedding)
+                self.db.flush()
+            self.db.refresh(resume_embedding)
+            return resume_embedding, True
+        except IntegrityError:
+            existing = (
+                self.db.query(ResumeEmbedding)
+                .filter(
+                    ResumeEmbedding.resume_id == resume_id,
+                    ResumeEmbedding.embedding_model_version_id == embedding_model_version_id,
+                )
+                .first()
+            )
+            return existing, False
 
     def create_candidate_skill(
         self,
@@ -256,6 +291,36 @@ class ResumeRepository:
     def get_embedding(self, resume_id: UUID) -> ResumeEmbedding | None:
         """Read counterpart to create_resume_embedding — monitoring-only, no writes."""
         stmt = select(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id)
+        return self.db.execute(stmt).scalars().first()
+
+    def get_cosine_similarity(self, resume_embedding_id: UUID, target_vector: list[float]) -> float | None:
+        """
+        M08-E02: cosine similarity between one resume_embeddings row and any
+        other embedding vector (a JD's, in Semantic Matching's case),
+        computed by pgvector itself (Vector.cosine_distance, the same
+        comparator SkillRepository's semantic-match queries already use) -
+        never a manual Python dot-product/norm calculation. Returns
+        1 - cosine_distance, or None if resume_embedding_id doesn't exist.
+        """
+        distance = ResumeEmbedding.embedding.cosine_distance(target_vector)
+        stmt = select(distance).where(ResumeEmbedding.id == resume_embedding_id)
+        result = self.db.execute(stmt).scalar_one_or_none()
+        return None if result is None else 1.0 - result
+
+    def get_embedding_by_hash(
+        self, input_text_hash: str, embedding_model_version_id: UUID,
+    ) -> ResumeEmbedding | None:
+        """
+        M08-E01 T05: dedup lookup for EMBED_RESUME - any existing
+        resume_embeddings row (for ANY resume) whose input_text_hash and
+        embedding_model_version_id both match. When found, the caller
+        copies its embedding vector onto a new row for the current
+        resume_id instead of calling the embedding service again.
+        """
+        stmt = select(ResumeEmbedding).where(
+            ResumeEmbedding.input_text_hash == input_text_hash,
+            ResumeEmbedding.embedding_model_version_id == embedding_model_version_id,
+        )
         return self.db.execute(stmt).scalars().first()
 
     def get_by_file_path(self, file_path: str) -> Resume | None:

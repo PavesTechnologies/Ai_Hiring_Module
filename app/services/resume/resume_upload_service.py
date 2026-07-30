@@ -155,6 +155,8 @@ class ResumeUploadService:
                 validation_result=validation_result,
                 file_hash=file_hash,
                 uploaded_by=uploaded_by,
+                original_filename=filename,
+                file_size_bytes=len(file_bytes),
             )
             return UploadResumeResult(
                 resume=resume,
@@ -203,6 +205,8 @@ class ResumeUploadService:
             validation_result=validation_result,
             file_hash=file_hash,
             uploaded_by=uploaded_by,
+            original_filename=filename,
+            file_size_bytes=len(file_bytes),
         )
         return UploadResumeResult(resume=resume, requires_processing=True, duplicate_found=False)
 
@@ -213,6 +217,8 @@ class ResumeUploadService:
         validation_result,
         file_hash: str,
         uploaded_by: str,
+        original_filename: str,
+        file_size_bytes: int,
     ) -> Resume:
         """
         Epic 3 (M05-E03) Phase C1 logic, factored out so both the no-duplicate
@@ -232,6 +238,8 @@ class ResumeUploadService:
             file_path=object_path,
             file_format=validation_result.file_format,
             file_hash=file_hash,
+            original_filename=original_filename,
+            file_size_bytes=file_size_bytes,
             version_number=version_number,
             is_active_version=True,
             parse_status=ParseStatus.PENDING,
@@ -264,9 +272,7 @@ class ResumeUploadService:
             uploaded_at=matched_resume.created_at,
             current_pipeline_stage=campaign_context[0][1].value if campaign_context else None,
             campaign_names=[name for name, _ in campaign_context],
-            # Never fabricated — Resume has no stored original-filename
-            # column for individual uploads, so this is always null here.
-            original_filename=None,
+            original_filename=matched_resume.original_filename,
             available_resolutions=list(_AVAILABLE_RESOLUTIONS),
         )
 

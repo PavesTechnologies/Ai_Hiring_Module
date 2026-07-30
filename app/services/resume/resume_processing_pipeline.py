@@ -7,13 +7,13 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.resume_extraction_response import ResumeExtractionGenerationSchema, ResumeExtractionResponse
-from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.jd.hash_service import HashService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
+from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.resume import resume_embedding_text_builder
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
@@ -28,9 +28,18 @@ class ResumeProcessingPipeline:
     """
     Orchestrates the Resume document-processing pipeline: Text Extraction ->
     Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
-    -> Embedding Generation -> Persistence. Mirrors JDProcessingPipeline's
-    stage loop and StageExecutionService usage, with one deliberate
-    deviation: stages are run WITHOUT `context=`/`checkpoint_repo=` args.
+    -> Persistence. Mirrors JDProcessingPipeline's stage loop and
+    StageExecutionService usage, with one deliberate deviation: stages are
+    run WITHOUT `context=`/`checkpoint_repo=` args.
+
+    M08-E01: embedding generation is no longer a stage of this pipeline -
+    it's now EMBED_RESUME, a separate, decoupled Celery task
+    (app/tasks/embedding_tasks.py) enqueued after this pipeline succeeds,
+    mirroring exactly how DETERMINISTIC_SCORE is already enqueued after
+    resume processing completes. This avoids a resume ever getting two
+    embedding rows (one from this pipeline, one from EMBED_RESUME) and
+    gives embedding generation its own dedup/anonymisation-verification/
+    task-log pipeline independent of parsing.
 
     StageExecutionService.run_stage's failure branch calls
     app.services.jd.context_serializer.to_dict(context) unconditionally
@@ -57,10 +66,8 @@ class ResumeProcessingPipeline:
         *,
         preprocessing_service: PreprocessingService,
         extraction_service: GeminiExtractionService,
-        hash_service: HashService,
         storage_service: StorageService,
         skill_normalization_service: SkillNormalizationService,
-        embedding_service: EmbeddingService,
         resume_service: ResumeService,
         resume_repository: ResumeRepository,
         skill_repository: SkillRepository,
@@ -71,10 +78,8 @@ class ResumeProcessingPipeline:
     ):
         self.preprocessing_service = preprocessing_service
         self.extraction_service = extraction_service
-        self.hash_service = hash_service
         self.storage_service = storage_service
         self.skill_normalization_service = skill_normalization_service
-        self.embedding_service = embedding_service
         self.resume_service = resume_service
         self.resume_repository = resume_repository
         self.skill_repository = skill_repository
@@ -134,7 +139,6 @@ class ResumeProcessingPipeline:
             (ProcessingStage.AI_EXTRACTION, "raw_extraction", lambda: self._run_ai_extraction(context)),
             (ProcessingStage.JSON_VALIDATION, "validated_extraction", lambda: self._run_json_validation(context)),
             (ProcessingStage.SKILL_NORMALIZATION, "skill_match_results", lambda: self._run_skill_normalization(context)),
-            (ProcessingStage.EMBEDDING_GENERATION, "embedding", lambda: self._run_embedding_generation(context)),
             (ProcessingStage.PERSISTENCE, None, lambda: self._run_persistence(context)),
         ):
             logger.warning("=== STAGE STARTING: %s === resume_id=%s", stage.value, context.resume_id)
@@ -160,6 +164,8 @@ class ResumeProcessingPipeline:
             file_path=context.file_path,
         )
         context.raw_text = ResumeTextExtractionService.extract(file_content, context.source_format)
+        if context.source_format == ResumeSourceFormat.PDF:
+            context.page_count = TextExtractionService.get_pdf_page_count(file_content)
 
     def _run_text_cleaning(self, context: ResumeProcessingContext) -> None:
         context.cleaned_text = self.preprocessing_service.normalize(context.raw_text)
@@ -188,17 +194,7 @@ class ResumeProcessingPipeline:
             required_skills=context.validated_extraction.skills, preferred_skills=[],
         )
 
-    def _run_embedding_generation(self, context: ResumeProcessingContext) -> None:
-        context.embedding_text = resume_embedding_text_builder.build_canonical_embedding_text(
-            context.validated_extraction,
-        )
-        context.embedding = self.embedding_service.generate_embedding(context.embedding_text)
-        context.input_text_hash = self.hash_service.generate_hash(context.embedding_text)
-
     def _run_persistence(self, context: ResumeProcessingContext) -> None:
-        embedding_model_version = self.resume_repository.get_active_embedding_model_version()
-        context.embedding_model_version_id = embedding_model_version.id
-
         resume = self.resume_repository.get_by_id(context.resume_id)
         if resume is None:
             raise ValueError(f"Resume with ID {context.resume_id} not found.")
@@ -208,8 +204,6 @@ class ResumeProcessingPipeline:
             extraction=context.validated_extraction,
             skill_repository=self.skill_repository,
             skill_matches=context.skill_match_results,
-            embedding=context.embedding,
-            embedding_model_version_id=context.embedding_model_version_id,
-            input_text_hash=context.input_text_hash,
             attempt_number=context.attempt_number,
+            page_count=context.page_count,
         )

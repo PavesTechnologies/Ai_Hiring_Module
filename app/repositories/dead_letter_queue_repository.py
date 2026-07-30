@@ -74,5 +74,13 @@ class DeadLetterQueueRepository:
         self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.campaign_candidate_id == campaign_candidate_id))
         self.db.flush()
 
+    def delete_by_task_id(self, original_task_id: str) -> None:
+        """Dead-letter cleanup — removes the dead-letter entry for one task_id."""
+        self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id))
+        self.db.flush()
+
     def commit(self) -> None:
         self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()
