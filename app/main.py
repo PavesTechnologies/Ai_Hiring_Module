@@ -22,6 +22,7 @@ from app.api.routes import skill_ontology_routes
 from app.api.routes.resume_routes import router as resume_router
 from app.api.routes.bulk_upload_routes import router as bulk_upload_router
 from app.api.routes.monitoring_routes import router as monitoring_router
+from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
@@ -143,6 +144,7 @@ app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=
 app.include_router(router=resume_router, prefix=API_PREFIX, tags=["Resume Intake"])
 app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Resume Upload"])
 app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monitoring"])
+app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
