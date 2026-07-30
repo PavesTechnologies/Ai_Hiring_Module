@@ -15,6 +15,9 @@ class CampaignReopenReadinessResponse(BaseModel):
 
     is_ready: bool
     issues: list[JDReadinessIssue]
+    # advisory only — surfaced in the dialog but deliberately does NOT affect
+    # is_ready, so a campaign sitting at its candidate cap can still reopen.
+    warnings: list[JDReadinessIssue] = []
 
     campaign_id: UUID
     campaign_name: str
@@ -39,3 +42,4 @@ class CampaignReopenResultResponse(BaseModel):
     original_closure_reason: str | None
     closed_at: datetime | None
     duration_closed_days: float | None
+    warning: str | None = None

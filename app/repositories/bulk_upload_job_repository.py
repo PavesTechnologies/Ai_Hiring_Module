@@ -106,6 +106,19 @@ class BulkUploadJobRepository:
         )
         return self.db.execute(stmt).scalar_one()
 
+    def count_by_status(self, status: BulkUploadStatus, campaign_id: UUID | None = None) -> int:
+        """
+        Epic 4 (M05-E04) Phase D12 - platform-wide when campaign_id is
+        omitted (the default), matching the same optional-scoping
+        convention already used by CeleryTaskLogRepository.
+        count_by_task_type_and_statuses and ResumeRepository.count_search.
+        """
+        conditions = [BulkUploadJob.status == status]
+        if campaign_id is not None:
+            conditions.append(BulkUploadJob.campaign_id == campaign_id)
+        stmt = select(func.count()).select_from(BulkUploadJob).where(*conditions)
+        return self.db.execute(stmt).scalar_one()
+
     def get_all_by_campaign(self, campaign_id: UUID) -> list[BulkUploadJob]:
         """Unpaginated — for history export, not for the paginated list endpoint."""
         stmt = (

@@ -114,6 +114,8 @@ class ResumeDetailResponse(BaseModel):
 
 class ResumeListItem(BaseModel):
     id: UUID
+    resume_id: UUID
+    task_id: str | None
     candidate_id: UUID
     candidate_full_name: str
     candidate_email: str

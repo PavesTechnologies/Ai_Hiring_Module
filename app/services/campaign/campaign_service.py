@@ -2264,6 +2264,7 @@ class CampaignService:
 
         return CampaignReopenReadinessResponse(is_ready=not issues,
             issues=issues,
+            warnings=self._reopen_cap_warnings(campaign),
             campaign_id=campaign.id,
             campaign_name=campaign.name,
             jd_id=campaign.jd_id,
@@ -2276,6 +2277,29 @@ class CampaignService:
             weight_ai=campaign.weight_ai,
         )
 
+    def _reopen_cap_warnings(self, campaign) -> list[JDReadinessIssue]:
+        """
+        A campaign sitting at/over its candidate cap is worth flagging on
+        reopen, but must NOT block it: closed campaigns are read-only, so
+        raising the cap first is impossible and a blocking check would strand
+        the campaign closed forever. The cap still stops new candidates being
+        added on its own; reopening is for progressing the existing ones.
+        """
+        if campaign.max_candidates is None:
+            return []
+
+        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+        if candidate_count < campaign.max_candidates:
+            return []
+
+        return [JDReadinessIssue(code="CANDIDATE_CAP_REACHED",
+            message=(f"This campaign already has {candidate_count} candidate(s), at or above "
+                f"its cap of {campaign.max_candidates}. It will reopen, but no new "
+                f"candidates can be added until the cap is raised or cleared "
+                f"(editable again once the campaign is ACTIVE)."
+            ),
+        )]
+
     def reopen_campaign(self,
         campaign_id: UUID,
         updated_by: str,
@@ -2283,10 +2307,9 @@ class CampaignService:
         """
         reopens a closed campaign back to ACTIVE, re-validating
         readiness first. An already-passed deadline is cleared automatically
-        (spec: it must be re-set, not silently kept expired). A cap already
-        at/over max_candidates blocks reopen rather than silently allowing an
-        over-cap campaign — HR_ADMIN raises/clears it via the existing edit
-        endpoint first, reusing that validation instead of duplicating it.
+        (spec: it must be re-set, not silently kept expired). Being at/over the
+        candidate cap is reported as a warning, not a blocker — see
+        _reopen_cap_warnings().
         """
         try:
             readiness = self.get_reopen_readiness(campaign_id)
@@ -2298,14 +2321,7 @@ class CampaignService:
 
             campaign = self.campaign_repo.get_by_id(campaign_id)
 
-            if campaign.max_candidates is not None:
-                candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
-                if candidate_count >= campaign.max_candidates:
-                    raise CampaignException(f"This campaign already has {candidate_count} candidate(s), at or "
-                        f"above its cap of {campaign.max_candidates}. Raise or clear the "
-                        f"candidate cap (PATCH the campaign) before reopening.",
-                        422,
-                    )
+            cap_warnings = self._reopen_cap_warnings(campaign)
 
             deadline_cleared = False
             if campaign.deadline is not None and campaign.deadline <= datetime.now(timezone.utc):
@@ -2339,6 +2355,9 @@ class CampaignService:
                     "closed_at": closed_at.isoformat() if closed_at else None,
                     "duration_closed_days": duration_closed_days,
                     "deadline_cleared": deadline_cleared,
+                    # recorded so an over-cap reopen is traceable even though
+                    # it no longer blocks
+                    "reopened_at_candidate_cap": bool(cap_warnings),
                 },
             )
 
@@ -2352,6 +2371,7 @@ class CampaignService:
                 original_closure_reason=original_closure_reason,
                 closed_at=closed_at,
                 duration_closed_days=duration_closed_days,
+                warning=" ".join(w.message for w in cap_warnings) or None,
             )
 
         except Exception:
