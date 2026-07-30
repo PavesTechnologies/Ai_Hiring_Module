@@ -75,6 +75,9 @@ class BulkUploadJobSummary(BaseModel):
     duplicate_count: int
     created_at: datetime
     completed_at: datetime | None
+    # M04-E04-S02-T01: shown when expanding a FAILED/PARTIAL_FAILURE job in
+    # the campaign detail page's Bulk Uploads section.
+    error_summary: str | None = None
 
 
 class BulkUploadHistoryListResponse(BaseModel):
