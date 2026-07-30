@@ -1,5 +1,6 @@
 from uuid import UUID
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.embeddings import EmbeddingModelVersion
@@ -361,3 +362,59 @@ class JDRepository:
             .filter(JDEmbedding.jd_id == jd_id)
             .first()
         )
+
+    def get_embedding_by_content_hash(
+        self, content_hash: str, embedding_model_version_id: UUID,
+    ) -> JDEmbedding | None:
+        """
+        M08-E01 S02: dedup lookup for JD embedding generation - any existing
+        jd_embeddings row (for ANY jd_id) whose input_text_hash and
+        embedding_model_version_id both match. When found, the caller
+        copies its embedding vector onto a new row for the current jd_id
+        instead of calling the embedding service again. Mirrors
+        ResumeRepository.get_embedding_by_hash's exact pattern.
+        """
+        stmt = select(JDEmbedding).where(
+            JDEmbedding.input_text_hash == content_hash,
+            JDEmbedding.embedding_model_version_id == embedding_model_version_id,
+        )
+        return self.db.execute(stmt).scalars().first()
+
+    def create_jd_embedding_idempotent(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        content_hash: str,
+    ) -> tuple[JDEmbedding, bool]:
+        """
+        Dedup-safe counterpart to create_jd_embedding, for the new (not yet
+        Celery-wired) generation path - jd_embeddings.jd_id is unique, so
+        calling this twice for the same jd_id (a retry, a duplicate
+        trigger, concurrent callers) would otherwise raise IntegrityError.
+        A SAVEPOINT scopes the loser's IntegrityError to just this insert
+        attempt (mirrors ResumeRepository.create_resume_embedding's pattern
+        for the same class of race), then falls back to the row that
+        already exists for this jd_id instead of raising.
+
+        create_jd_embedding itself is left completely untouched - the
+        existing JD processing pipeline's single, already-working call
+        site keeps its exact current behavior, no backward-compatibility
+        risk. Returns (jd_embedding, was_created).
+        """
+        jd_embedding = JDEmbedding(
+            jd_id=jd_id,
+            embedding=embedding,
+            embedding_model_version_id=embedding_model_version_id,
+            input_text_hash=content_hash,
+            embedding_status=EmbeddingStatus.READY,
+        )
+        try:
+            with self.db.begin_nested():
+                self.db.add(jd_embedding)
+                self.db.flush()
+            self.db.refresh(jd_embedding)
+            return jd_embedding, True
+        except IntegrityError:
+            existing = self.get_embedding_by_jd_id(jd_id)
+            return existing, False

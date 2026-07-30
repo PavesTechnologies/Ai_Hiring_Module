@@ -275,6 +275,12 @@ try:
             value="32",
             description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="JD_EMBEDDING_MAX_CHARS",
+            value="2000",
+            description="Max characters of a JD's raw_text included in the JD embedding input (M08-E01 S02 JD embedding generation) - only the raw_text portion is truncated, never the title or skill lists",
+        ),
     ]
 
     for config in configs:
