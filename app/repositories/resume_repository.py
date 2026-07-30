@@ -168,6 +168,13 @@ class ResumeRepository:
         self.db.refresh(resume)
         return resume
 
+    def mark_parse_pending(self, resume: Resume) -> Resume:
+        """Epic 4 (M05-E04) Phase D10 - flips a FAILED resume back to PENDING before re-dispatching it (retry/DLQ replay)."""
+        resume.parse_status = ParseStatus.PENDING
+        self.db.flush()
+        self.db.refresh(resume)
+        return resume
+
     def set_task_id(self, resume: Resume, task_id: str) -> Resume:
         resume.task_id = task_id
         self.db.flush()

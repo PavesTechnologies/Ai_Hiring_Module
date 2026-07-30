@@ -95,6 +95,12 @@ def get_file_validation_service(
     return FileValidationService(config_repo)
 
 
+def get_dead_letter_queue_repository(
+    db: Session = Depends(get_db),
+) -> DeadLetterQueueRepository:
+    return DeadLetterQueueRepository(db)
+
+
 def get_circuit_breaker_repository(
     db: Session = Depends(get_db),
 ) -> CircuitBreakerRepository:
@@ -111,6 +117,8 @@ def get_resume_service(
     candidate_repo: CandidateRepository = Depends(get_candidate_repository),
     campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
     encryption_service: EncryptionService = Depends(get_encryption_service),
+    dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
 ) -> ResumeUploadService:
     return ResumeUploadService(
         resume_repo=resume_repo,
@@ -122,6 +130,8 @@ def get_resume_service(
         candidate_repo=candidate_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         encryption_service=encryption_service,
+        dead_letter_queue_repo=dead_letter_queue_repo,
+        campaign_repo=campaign_repo,
     )
 
 
@@ -153,12 +163,6 @@ def get_stage_failure_log_repository(
     db: Session = Depends(get_db),
 ) -> StageFailureLogRepository:
     return StageFailureLogRepository(db)
-
-
-def get_dead_letter_queue_repository(
-    db: Session = Depends(get_db),
-) -> DeadLetterQueueRepository:
-    return DeadLetterQueueRepository(db)
 
 
 def get_resume_monitoring_service(

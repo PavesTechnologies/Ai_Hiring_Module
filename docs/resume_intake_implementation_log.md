@@ -1,9 +1,10 @@
 # Resume Intake Epic (M05) — Implementation Log
 
-**Module:** M05 – Resume Intake | Individual Resume Upload (Epic 1) + Bulk ZIP Upload (Epic 2) + Duplicate Detection & Validation (Epic 3)
-**Scope:** Epic 1 (M05-E01) Phases 0–11, Epic 2 (M05-E02) Phases B0–B9, and Epic 3 (M05-E03) Phases C0–C6 of their respective implementation roadmaps. Epic 3's Phase C7 is explicitly **not implemented** — deferred, see its own section below.
-**Status:** All 12 Epic 1 phases, all 10 Epic 2 phases, and 7 of Epic 3's 8 phases (C0–C6) implemented. Epic 1/Epic 2 live-tested as described below. Epic 3 live-tested against the real database throughout — every phase's data (test candidates, resumes, campaign_candidates rows, stage history, audit log entries, and any real storage objects created) was created via direct repository/service calls or real Celery task invocation, verified, then explicitly cleaned up afterward. Epic 3's Phase C7 (Fraud-Pattern Duplicate Flags) is deliberately deferred — see its section for why.
-**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan, including the Epic 2 schema-changes addendum and Epic 3's plan with C7 marked deferred)
+**Module:** M05 – Resume Intake | Individual Resume Upload (Epic 1) + Bulk ZIP Upload (Epic 2) + Duplicate Detection & Validation (Epic 3) + Upload Progress & Tracking (Epic 4)
+**Scope:** Epic 1 (M05-E01) Phases 0–11, Epic 2 (M05-E02) Phases B0–B9, Epic 3 (M05-E03) Phases C0–C6, and Epic 4 (M05-E04) Phases D0–D2, D4, D5–D7, D10, D12 of their respective implementation roadmaps. Epic 3's Phase C7 and Epic 4's Phases D3, D8, D9, D11, D13, D14 are explicitly **not implemented** — see their own sections/Known Gaps below.
+**Status:** All 12 Epic 1 phases, all 10 Epic 2 phases, 7 of Epic 3's 8 phases (C0–C6), and 9 of Epic 4's 15 phases (D0–D2, D4, D5–D7, D10, D12) implemented. Epic 1/Epic 2 live-tested as described below. Epic 3 and Epic 4 both live-tested against the real database throughout — every phase's data (test candidates, resumes, campaign_candidates rows, stage history, audit log entries, celery_task_log/dead_letter_queue rows, test campaigns, and any real storage objects created) was created via direct repository/service calls or real Celery task invocation, verified, then explicitly cleaned up afterward. Epic 3's Phase C7 (Fraud-Pattern Duplicate Flags) is deliberately deferred — see its section for why. Epic 4's remaining phases were skipped by explicit user direction, out of sequence, and are documented as not-yet-implemented rather than silently omitted.
+**Companion document:** `docs/resume_intake_implementation_plan.md` (the original pre-implementation plan, including the Epic 2 schema-changes addendum and Epic 3's plan with C7 marked deferred). Epic 4 has no separate pre-implementation plan document — each D-phase went through the same analyse → architecture review → change plan → approval → implementation → verification workflow inline, phase by phase.
+**UI-facing companion:** `docs/resume_intake_api_reference.md` — a complete, UI-development-oriented catalogue of every API endpoint delivered across Epics 1–4, with purpose, request/response shapes, and polling guidance.
 
 ## How to read this document
 
@@ -576,3 +577,171 @@ C7 was analyzed (architecture review, deviation-from-plan discovery, several ope
 - **C4's email-alerting half** — still undeliverable; no email/alerting module exists anywhere in this codebase (open since Epic 1, restated here for continuity).
 - **Epic 1's own already-flagged gaps** (email/alerting module, OCR for image resumes, `CIRCUIT_BREAKER` DB enum values, M16 compliance stories, connection-pool sizing) and **Epic 2's** (full HTTP+Redis end-to-end smoke test, Alembic multi-head reconciliation, circuit-breaker coverage for bulk failures, stale/stuck-job detection) — unchanged, still open, listed in full in their respective sections above.
 - **M16 (Consent Management) gap-closing work** — separately discussed and deferred until after Epic 3 wraps; not started.
+
+---
+
+# Epic 4 (M05-E04): Upload Progress & Tracking — Phases D0–D2, D4, D5–D7, D10, D12
+
+**Companion plan:** no separate pre-implementation plan document exists for Epic 4 — every phase below went through the same phase-gated workflow used throughout Epics 1–3 (analyse, no code → architecture review, no code → 17-point change plan → explicit user approval → implementation → live verification against the real database → cleanup), applied inline per phase rather than against a pre-written roadmap document. The user directs phase order explicitly; several phases below were deliberately requested out of numeric sequence (D7 before D10, D10 before D12, D8/D9/D11 skipped entirely so far) — this is the user's deliberate choice, not an oversight.
+
+**REST polling only, by explicit constraint.** No WebSockets, Server-Sent Events, or any other push/real-time mechanism was considered or built anywhere in this epic — every "live" view (bulk progress, file log, upload-queue dashboard) is a plain `GET` a UI is expected to poll on its own interval.
+
+## Constraints and conventions in effect throughout
+
+- **Additive, optional constructor-DI.** Every new service dependency was added as `param: Type | None = None` with a default of `None`, never a required positional/keyword change — used repeatedly (`ResumeUploadService`, `BulkUploadService`, `OpsMonitoringService`) so every pre-existing caller keeps working unmodified.
+- **Non-transactional enum migrations**, exactly as in Epics 1–3: every new `ActionType`/`EmailTriggerEvent` value shipped with its own `ALTER TYPE ... ADD VALUE IF NOT EXISTS ...` migration (`transactional_ddl = False`), applied directly against the live database (the Alembic chain has been multi-headed and broken since Epic 2 — see that epic's Cross-Cutting Issue #5 — so migration files are written for source-tree correctness but applied by hand, not via `alembic upgrade`).
+- **Live-testing methodology unchanged from Epic 3**: every phase's test data (candidates, resumes, campaign_candidates, celery_task_log/dead_letter_queue rows, bulk_upload_jobs, and — new in D12 — whole test `hiring_campaigns` rows) was created via direct repository/service calls against the real database, verified, then explicitly deleted in a `finally` block. Nothing was accepted as "working" on a mock alone.
+- **`app.models.pipeline.PipelineStage`**, not the stale duplicate in `app.enums.constants` — same trap Epic 3 flagged, still correctly avoided throughout.
+
+---
+
+## Phase D0 — Config, Audit & Email Vocabulary Foundations
+
+**Before:** Seed every `ActionType`/`EmailTriggerEvent`/`platform_config` value the rest of the epic would need, before any service code was written — no HTTP surface.
+
+**After:**
+- **Modified:** `app/enums/constants.py` (`ActionType.UPLOAD_HISTORY_EXPORTED`, `RESUME_UPLOAD_RETRIED`, `INDIVIDUAL_UPLOAD_DLQ_REPLAYED`, `PLATFORM_ALERT_SENT`), `app/models/email.py` (`EmailTriggerEvent.UPLOAD_PERMANENTLY_FAILED`), `app/seeds/seed_platform_config.py` (5 new keys: `QUEUE_BACKLOG_ALERT_THRESHOLD=100`, `PARSE_DURATION_ALERT_THRESHOLD_MS=120000`, `DAILY_DEAD_TASK_ALERT_THRESHOLD=10`, `ALERT_COOLDOWN_HOURS=12`, `MAX_AI_RETRY_COUNT=3` — the first two thresholds and the cooldown were raised from their originally-proposed defaults at the user's explicit request), `app/seeds/seed_email_templates.py` (`UPLOAD_PERMANENTLY_FAILED` template)
+- **Created:** two Alembic migrations for the new `ActionType` values and the new `EmailTriggerEvent` value, both `transactional_ddl = False`, applied directly to the live database.
+- **Known, deliberately unresolved mismatch flagged, not fixed:** `EmailNotification.candidate_id` is a required, non-null column, but D0's new `UPLOAD_PERMANENTLY_FAILED` trigger event is meant to fire in scenarios that may not always have a resolvable candidate at the time of firing. Left exactly as found, explicitly deferred to D11 (Persistent Failure Notification) — the phase that will actually need to send this email and therefore must resolve the mismatch to do so.
+- **Verification:** enum values confirmed importable; seed scripts run against the real database; new config keys and the new email template confirmed present via direct query, per the user's explicit request to extend verification this far.
+
+---
+
+## Phase D1 — Individual Upload Live Status (Candidate List Polling)
+
+**Before:** Surface an individual resume's live `parse_status` on the existing campaign-candidate list endpoint, purely additive, no new HTTP surface.
+
+**After:**
+- **Modified:** `app/schemas/campaign/campaign_candidate_schema.py` (`CampaignCandidateResponse.parse_status: ParseStatus | None = None`), `app/services/campaign/campaign_candidate_service.py` (`_to_campaign_candidate_response` reads it straight off the linked `Resume` row, never recalculated; `None` only in the defensive `resume=None` LEFT JOIN case)
+- **No new endpoint** — extends the existing `GET /campaign-candidates/campaign/{campaign_id}` response with one new field.
+- **Verification finding (not a bug, a structural fact surfaced by the user's own requested test):** the user asked to confirm `parse_status IS NULL` behaves safely while a `Resume` still exists. Investigation showed `resumes.parse_status` carries a live `NOT NULL` database constraint, and the defensive `resume=None` branch is unreachable in practice (the FK is `ON DELETE NO ACTION`) — so this exact scenario cannot occur in the current schema. Reported honestly as a structural impossibility rather than worked around or faked. Also confirmed live: `pipeline_stage` remains completely unaffected as `parse_status` transitions `PENDING → PARSING → PARSED → FAILED` on the same row.
+
+---
+
+## Phase D2 — Processing Timeline on the Candidate Scorecard
+
+**Before:** Expose per-attempt processing history (queued/started/completed timestamps, duration, error) on the existing single-candidate scorecard endpoint — read-only, no new workflow logic.
+
+**After:**
+- **Modified:** `app/repositories/celery_task_log_repository.py` (`get_by_campaign_candidate_id`), `app/schemas/campaign/campaign_candidate_schema.py` (`ProcessingTimelineEntry` — `task_type`, `status`, `queued_at`, `started_at`, `completed_at`, `duration_display`, `error_message`; `CandidateScorecardResponse.processing_timeline: list[ProcessingTimelineEntry] = []`), `app/services/campaign/campaign_candidate_service.py` (`_build_processing_timeline`, `_format_duration`)
+- **No new endpoint** — extends the existing `GET /campaign-candidates/{campaign_candidate_id}` scorecard response.
+- **Scope reduction per user approval:** the original design included a `can_retry` field on each timeline entry; removed at the user's explicit request, deferring all retry-eligibility logic to D10 — a `DEAD` task status can mean either genuine retry-exhaustion or a deliberate, correct cancellation, and D10 is the phase that actually owns the retry/replay action and must get that distinction right, not this read-only timeline.
+- **Verification:** confirmed live — a candidate with multiple `celery_task_log` rows (an initial attempt plus a retry) returns both, oldest first, with correct human-readable durations; a still-`RUNNING` row correctly shows `duration_display=null`.
+
+---
+
+## Phase D4 — Bulk Upload Live Progress Bar + ETA
+
+**Before:** A dedicated, lightweight polling endpoint for a bulk job's percent-complete and ETA — deliberately separate from the existing full job-detail endpoint, which also returns the unpaginated per-file list and is unsuited to a frequent (e.g. 10s) poll.
+
+**After:**
+- **Modified:** `app/repositories/celery_task_log_repository.py` (`get_earliest_started_at_by_bulk_upload_job_id`), `app/schemas/bulk_upload/response.py` (`BulkUploadProgressResponse`), `app/services/bulk_upload/bulk_upload_service.py` (`get_job_progress` — tuple-return, matching this file's own established convention rather than `campaign_candidate_service.py`'s direct-schema-return style), `app/api/routes/bulk_upload_routes.py` (`GET /bulk-uploads/{bulk_upload_job_id}/progress`)
+- **User-approved refinements:** `percent_complete` clamped to a maximum of `100.0` (a guard against counter inconsistencies, never itself the source of truth — the raw counters remain authoritative); ETA computed from a true processing-start timestamp (`get_earliest_started_at_by_bulk_upload_job_id`) when one exists, falling back to `job.created_at` otherwise.
+- **Verification:** confirmed live across a real multi-file job — `percent_complete` tracked the real processed/total ratio, clamped correctly when tested against an artificially over-incremented counter; `estimated_completion_at` was `null` before any file resolved and populated once the first one did, using a real linear extrapolation.
+
+---
+
+## Ad-hoc: `task_id` on Bulk Upload Detail Response
+
+Not a numbered phase — a direct, small user request ("add the taskid in the response of each resume or task") made mid-epic.
+
+- **Modified:** `app/schemas/bulk_upload/response.py` (`BulkUploadJobFileItem.task_id: str | None = None`), `app/api/routes/bulk_upload_routes.py` (`get_bulk_upload_detail` now passes `f.task_id` through per file)
+- **Verification:** confirmed live — each file in `GET /bulk-uploads/{id}`'s `files[]` array now carries its own `task_id`, `null` only for a file not yet dispatched to a per-file task.
+
+---
+
+## Phase D5 — Bulk Upload Live Per-File Processing Log
+
+**Before:** A live, most-recently-resolved-first log of every file in a bulk job that has reached a terminal outcome (success, failure, duplicate, or skip) — a separate endpoint from the existing paginated file list, persisting after job completion as a plain read of already-durable rows.
+
+**After:**
+- **Created:** `BulkUploadFileLogResult` (str enum: `SUCCESS`/`FAILED`/`DUPLICATE`/`SKIPPED`), `BulkUploadFileLogEntry`, `BulkUploadFileLogResponse` in `app/schemas/bulk_upload/response.py`
+- **Modified:** `app/services/bulk_upload/bulk_upload_service.py` — module constants `_TERMINAL_FILE_STATUSES`, `_DUPLICATE_FILE_OUTPUT_SUMMARY_MARKER`, `_DEFAULT_FAILURE_REASON`, `_SKIPPED_FILE_REASON`; new methods `get_file_log`, `_to_file_log_entry`, `_is_duplicate_file_outcome`, `_resolve_failure_reason`, `_resolve_file_log_timestamp`. `app/api/routes/bulk_upload_routes.py` (`GET /bulk-uploads/{bulk_upload_job_id}/file-log`)
+- **User-approved refinements, all incorporated before implementation:** duplicate detection encapsulated in its own helper rather than inline string matching; timestamp derivation factored into `_resolve_file_log_timestamp`; an enum used for `result` instead of raw strings; `limit`/`offset` returned alongside `total` for pagination; failed/skipped entries always carry a non-empty `reason`, even when `error_message` is missing, via `_DEFAULT_FAILURE_REASON`/`_SKIPPED_FILE_REASON` fallbacks.
+- **Verification:** confirmed live across all four outcome types on a real bulk job, most-recent-first ordering, and `limit`/`offset` pagination correctness across two pages.
+
+---
+
+## Phase D6 — Verification-Only: Server-Side Resilience to Client Disconnect
+
+**Before:** Confirm — without writing any new code — that a bulk/individual upload's background processing survives the browser/client disconnecting mid-flight, since the pipeline runs entirely inside Celery, decoupled from the HTTP request/response cycle.
+
+**After:**
+- **No code changes.** Per the user's explicit correction to the original verification approach, this was confirmed using the *actual* asynchronous flow — a real upload request, a real `apply_async` dispatch to a real Redis broker, a real independent Celery worker process picking it up, and a fresh, independent poll of the processing-status endpoint afterward — rather than calling the Celery task function directly, which would not have demonstrated resilience to a real client disconnect.
+- **Environmental issue hit and resolved during this test (not a code defect):** a transient DNS resolution failure against the managed Aiven Postgres hostname, confirmed transient via `nslookup` (general DNS resolution was fine; this one hostname briefly wasn't), resolved by waiting and retrying.
+- **Verification:** confirmed live — a resume upload was submitted, the HTTP client's connection was closed immediately after receiving the 201, and the real Celery worker (running as a separate, independent process) completed the full pipeline anyway, with the final `parse_status`/`celery_task_log` state confirmed by a completely separate poll a few seconds later.
+
+---
+
+## Phase D7 — Unified Upload History View
+
+**Before:** One chronological, filterable view combining individual resume uploads and bulk ZIP uploads for a campaign, since today they live in two entirely separate tables/endpoints with no shared timeline.
+
+**After:**
+- **Modified:** `app/repositories/resume_repository.py` — added `uploaded_by` as a filter parameter to `search`/`count_search`/`_build_search_conditions`; added `get_campaign_history_entries(campaign_id)`, a real `INNER JOIN` (deliberately not a `LEFT JOIN`) from `Resume` through `CampaignCandidate`, scoped to one campaign, returning `list[tuple[Resume, PipelineStage | None]]` in a single query — avoiding an N+1 per-resume lookup for `pipeline_stage`, per the user's explicit pre-implementation recommendation to evaluate this before falling back to a simpler-but-slower design.
+- **Created:** `app/schemas/upload_history/response.py` (`UploaderOption`, `UnifiedUploadHistoryEntry` — discriminated by `upload_type: "individual" | "bulk"`, with individual-only fields (`resume_id`, `parse_status`, `pipeline_stage`) and bulk-only fields (`bulk_upload_job_id`, `total_files`, counts, `status`) always `null` on the other row type; `UnifiedUploadHistoryResponse`), `app/services/upload_history/upload_history_service.py` (`UploadHistoryService.get_history` — fetches the full unfiltered result set first, derives the `uploaded_by` dropdown options from that full set *before* any filter is applied, then filters/sorts/paginates in Python, mirroring D5's per-file log architecture)
+- **Modified:** `app/dependencies/campaign.py` (local `ResumeRepository`/`BulkUploadJobRepository` factories — defined directly in this file rather than imported from `app.dependencies.resume`/`app.dependencies.bulk_upload`, since both of those modules already import `get_config_repository` from `campaign.py`, and importing back from either would be circular; `get_upload_history_service`), `app/api/routes/campaign_routes.py` (`GET /campaigns/{campaign_id}/upload-history`)
+- **Known, approved gaps, stated plainly rather than hidden:** an individual-upload row's `filename` is always `null` — `Resume` carries no stored original-filename column anywhere in this codebase, an honest pre-existing data gap, not something this phase could invent data for. The `"DUPLICATE"` outcome value can only ever appear on a bulk row, since individual uploads handle duplicates via a synchronous 409 (Epic 3 Phase C2), not as a stored terminal outcome.
+- **Verification:** confirmed live via a rewritten test (the first attempt incorrectly assumed the shared test campaign started with zero uploads — it didn't, 2 real pre-existing rows already existed there; the corrected test tracked its own rows by explicit ID instead of assuming a clean slate) — individual and bulk rows correctly interleaved chronologically, `uploaded_by` filter and date-range filter both confirmed, `available_uploaders` confirmed derived from the full set regardless of the currently-applied filter.
+
+---
+
+## Phase D10 — Retry Individual Upload + Dead Letter Queue Replay
+
+**Before:** Give HR_ADMIN a way to re-drive a `FAILED` individual resume's processing, and to replay a dead-lettered (retries-exhausted) individual-upload failure — mirroring the bulk-upload file-replay pattern (`BulkUploadService.replay_failed_file`) that already existed for bulk files, but had no individual-upload equivalent.
+
+**After:**
+- **Real, load-bearing infrastructure gap found and fixed, in scope before the epic-proper feature could be built:** `RetryDriver.handle_failure`'s `dead_letter_queue_repo.create(...)` call never passed `resume_id`, and `ResumeProcessingPipeline` never writes checkpoints for resumes (a deliberate, documented deviation) — meaning `dead_letter_queue.input_payload` is always `None` for resume tasks. Together, these meant a resume's DLQ row had **no reliable way** to be traced back to its resume at all. Fixed via an additive, optional `resume_id: UUID | None = None` parameter threaded through `RetryDriver.handle_failure` (`app/services/document_processing/retry_driver.py`) and its one call site in `app/tasks/resume_processing_tasks.py` (`resume_id=resume.id if resume is not None else None`). The user explicitly praised this as one of the more architecturally valuable pieces of the whole epic, since it strengthens the underlying processing infrastructure rather than just adding a feature on top of it.
+- **Created:** `app/exceptions/resume_exceptions.py`'s `ResumeNotRetryableException`, `DeadLetterEntryNotReplayableException` (both `ResumeException` subclasses, HTTP 409, no new handler registration needed), `app/schemas/resume/response.py`'s `ResumeRetryResponse`
+- **Modified:** `app/repositories/dead_letter_queue_repository.py` (`get_by_id`), `app/repositories/resume_repository.py` (`mark_parse_pending`), `app/services/resume/resume_upload_service.py` (new optional constructor params `dead_letter_queue_repo`, `campaign_repo`; new methods `retry_parse`, `replay_from_dlq`, `_resolve_owning_campaign` — most-recent-campaign tie-break, mirroring Epic 3 Phase C4's precedent), `app/dependencies/resume.py` (wired the two new deps into `get_resume_service`), `app/api/routes/resume_routes.py` (`POST /resumes/{resume_id}/retry`, `POST /resumes/dead-letter-queue/{dlq_id}/replay`, both HR_ADMIN-only)
+- **Own-code bug caught before shipping:** the initial design would have silently passed `prompt_template_id=None` into `process_resume_document.apply_async(...)` whenever a resume had no linked campaign, which would have crashed inside the Celery task with an opaque `UUID(None)` error rather than a clean HTTP response. Caught by re-checking the approved change plan's own edge-case list (which explicitly called for a 409 here), fixed by raising `ResumeNotRetryableException`/`DeadLetterEntryNotReplayableException` immediately once `_resolve_owning_campaign` returns `None`, before ever constructing the retry dispatch.
+- **`NameError` at import time, caught before it reached a running server:** `get_resume_service` referenced `get_dead_letter_queue_repository` as a `Depends(...)` default before that function was defined later in the same file — Python evaluates default parameter values at function-*definition* time, so this raised `NameError` on module import. Fixed by moving `get_dead_letter_queue_repository`'s definition earlier in `app/dependencies/resume.py`.
+- **Verification:** confirmed live across 9 real scenarios (A–I) — the `RetryDriver` fix itself (a DLQ row correctly gets `resume_id` populated), `retry_parse`'s success path and 3 edge cases (resume not `FAILED`, resume with no linked campaign, resume not found), `replay_from_dlq`'s success path and 3 edge cases (already replayed, not a resume-scoped DLQ entry, DLQ entry not found) — all passed; all test rows (2 DLQ entries, 2 task logs, 3 campaign_candidates, 4 candidates+resumes) cleaned up afterward.
+
+---
+
+## Cross-cutting: Merge Conflict Resolution (Epic 4 / Prompt Management)
+
+Not a phase — a direct user request, unrelated to phase sequencing, to resolve a real `git merge` conflict without breaking either side's work. `app/enums/constants.py`'s `ActionType` had one conflicting block where this epic's own new values (D0/D10) and a separate, parallel Prompt Management initiative's new values had both been added at the same point in the file. Resolved by keeping both sides' additions (no value from either branch was dropped), staged via `git add`, deliberately not committed (commits are the user's own action per this session's standing convention).
+
+---
+
+## Phase D12 — Platform-Wide Upload Queue Dashboard
+
+**Before:** A single, HR_ADMIN-only, platform-wide (not per-campaign) snapshot of upload-queue health — pending/queued/running/dead resume-intake counts, the two upload-critical circuit breakers' health, and a capped, deterministically-ordered per-campaign breakdown — reusing as much of the existing `OpsMonitoringService`/monitoring infrastructure as possible rather than building a parallel aggregation path.
+
+**After:**
+- **Modified:** `app/repositories/bulk_upload_job_repository.py` (`count_by_status(status, campaign_id=None)` — platform-wide when `campaign_id` is omitted, matching the same optional-scoping convention already established by `CeleryTaskLogRepository.count_by_task_type_and_statuses` and `ResumeRepository.count_search`), `app/repositories/CampaignRepository.py` (`get_pending_resume_counts_by_campaign()` and `get_queued_resume_task_counts_by_campaign(task_type)` — both `GROUP BY campaign_id` queries joined directly to `HiringCampaign` for the display name, generalizing the existing per-campaign `get_task_status_counts`/`get_dead_letter_queue_entries` join style from "one campaign" to "every campaign, grouped"), `app/schemas/monitoring.py` (`CircuitBreakerStatusItem`, `CampaignQueueBreakdownItem`, `UploadQueueDashboardResponse`), `app/services/ops_monitoring_service.py` (4 new optional constructor params — `resume_repository`, `bulk_upload_job_repository`, `campaign_repository`, `circuit_breaker_repository`; `_CAMPAIGN_BREAKDOWN_LIMIT = 20` named constant; `_UPLOAD_QUEUE_CIRCUIT_BREAKERS = ["SUPABASE_STORAGE", "ENCRYPTION_SERVICE"]`; `get_upload_queue_dashboard()`, `_build_campaign_breakdown()`), `app/dependencies/monitoring.py` (wired the 4 new repository dependencies), `app/api/routes/monitoring_routes.py` (`GET /monitoring/upload-queue-dashboard`, HR_ADMIN-only, matching this file's existing RBAC convention — both of its pre-existing endpoints are HR_ADMIN-only, stricter than many `campaign_routes.py` endpoints)
+- **Design decision, approved in advance:** rather than add a speculative `CircuitBreakerRepository.get_all()` (no such method existed, and nothing else in the codebase needed "every circuit breaker"), the dashboard makes two direct `get_by_service_name(...)` calls for exactly the two services upload processing actually depends on.
+- **Four explicit user refinements, all incorporated before implementation:** (1) the DEAD-task count scoped to exactly the two resume-intake task types (`RESUME_DOCUMENT_PROCESSING`, `BULK_RESUME_PARSE`), not every task type platform-wide; (2) the per-campaign breakdown's cap replaced with the named `_CAMPAIGN_BREAKDOWN_LIMIT` constant instead of a bare literal `20`; (3) a `generated_at` timestamp added to the response so a UI consumer knows when the snapshot was taken; (4) a deterministic secondary sort key (`campaign_name ASC`) applied when two campaigns tie on `queue_depth`, so ordering never depends on incidental database row order.
+- **Verification:** confirmed live against the real database with 3 fresh test campaigns and one platform-wide DEAD task/PROCESSING bulk job — exact platform-wide deltas (`pending_resumes_count +6`, `resumes_queued +1`, `dead_tasks_count +1`, `processing_bulk_jobs_count +1`); per-campaign breakdown values exactly correct for all 3 test campaigns; ordering confirmed correct including the tie-break (two campaigns tied at `queue_depth=2` sorted by name, both correctly ranked below a third campaign at `queue_depth=3`); the circuit-breaker "row present" code path was verified by creating a probe row inside the same DB session via `get_or_create` (flush only, never committed) and immediately rolling back — confirmed afterward that zero rows were actually persisted for either service, so the live circuit-breaker state used by real storage/encryption calls was never touched or put at risk. All test data (bulk job, task logs, campaign_candidates, candidates+resumes, 3 test campaigns) cleaned up and confirmed removed afterward.
+
+---
+
+## Summary Table — Epic 4, Phases Implemented So Far
+
+| Phase | Focus | New HTTP surface | Bugs/gaps found outside own scope |
+|---|---|---|---|
+| D0 | Config, audit & email vocabulary foundations | No | `EmailNotification.candidate_id` non-null mismatch (flagged, deferred to D11) |
+| D1 | Individual upload live status | No (extends existing candidate list) | Confirmed `parse_status IS NULL` is structurally impossible today (DB constraint + unreachable defensive branch) |
+| D2 | Processing timeline on scorecard | No (extends existing scorecard) | — |
+| D4 | Bulk upload live progress + ETA | `GET /bulk-uploads/{id}/progress` | — |
+| *(ad-hoc)* | `task_id` on bulk detail response | No (extends existing detail) | — |
+| D5 | Bulk upload live per-file log | `GET /bulk-uploads/{id}/file-log` | — |
+| D6 | Verification-only: disconnect resilience | No | — |
+| D7 | Unified upload history view | `GET /campaigns/{id}/upload-history` | — |
+| D10 | Retry + DLQ replay (individual upload) | `POST /resumes/{id}/retry`, `POST /resumes/dead-letter-queue/{id}/replay` | `RetryDriver`/DLQ `resume_id` gap (found and fixed — see phase detail); own pre-ship 409 design bug caught via change-plan review; `NameError` at import time in `dependencies/resume.py` |
+| D12 | Platform-wide upload queue dashboard | `GET /monitoring/upload-queue-dashboard` | — |
+
+---
+
+## Known Gaps / Follow-Up Work — Epic 4
+
+- **Phase D3** — deferred before this session began (no AI-evaluation task exists yet to build against); not implemented, not yet re-scoped.
+- **Phase D8 (Upload History Export)** — not yet requested/implemented.
+- **Phase D9 (Failed Uploads Aggregation View)** — not yet requested/implemented.
+- **Phase D11 (Persistent Failure Notification)** — not yet requested/implemented; blocked on resolving the `EmailNotification.candidate_id` non-null mismatch flagged in D0 (the phase that will actually send this email must resolve it, not D0 itself).
+- **Phase D13 (Platform Bottleneck Alerting)** — not yet requested/implemented; D0 already seeded the thresholds (`QUEUE_BACKLOG_ALERT_THRESHOLD`, `PARSE_DURATION_ALERT_THRESHOLD_MS`, `DAILY_DEAD_TASK_ALERT_THRESHOLD`, `ALERT_COOLDOWN_HOURS`) this phase will consume.
+- **Phase D14 (Platform Upload Metrics Export)** — not yet requested/implemented.
+- **No synthetic `SYSTEM` audit actor** — still open, restated for continuity from Epic 3; nothing in Epic 4 introduced a new instance of this workaround, but nothing resolved it either.
+- **Epics 1–3's own already-flagged gaps** — unchanged, still open, listed in full in their respective sections above.

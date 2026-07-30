@@ -18,6 +18,14 @@ class ResumeUploadAcceptedResponse(BaseModel):
     parse_status: str
 
 
+class ResumeRetryResponse(BaseModel):
+    """Epic 4 (M05-E04) Phase D10 - response for both retry_parse and replay_from_dlq."""
+
+    resume_id: UUID
+    task_id: UUID
+    parse_status: str
+
+
 class DuplicateFileWarningResponse(BaseModel):
     duplicate_resume_id: UUID
     candidate_id: UUID
