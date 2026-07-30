@@ -98,6 +98,8 @@ class ResumeExtractionResponse(BaseModel):
     projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
+    department: str | None = None
+    location: str | None = None
     summary: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -106,7 +108,7 @@ class ResumeExtractionResponse(BaseModel):
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
 
-    @field_validator("full_name", "summary")
+    @field_validator("full_name", "department", "location", "summary")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
@@ -137,4 +139,6 @@ class ResumeExtractionGenerationSchema(BaseModel):
     projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
+    department: str | None = None
+    location: str | None = None
     summary: str | None = None
