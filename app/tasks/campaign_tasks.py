@@ -8,8 +8,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 
 from app.services.audit_service import AuditService
-from app.services.campaign.campaign_scheduler_service import (
-    CampaignSchedulerService,
+from app.services.campaign.campaign_scheduler_service import (CampaignSchedulerService,
 )
 from app.services.campaign.resubmission_alert_service import ResubmissionAlertService
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -35,13 +34,11 @@ def auto_close_expired_campaigns():
         task_log_service = CeleryTaskLogService(task_log_repo)
 
         # Create task log
-        task_log = task_log_service.create_log(
-            task_id=auto_close_expired_campaigns.request.id,
+        task_log = task_log_service.create_log(task_id=auto_close_expired_campaigns.request.id,
             task_type="CAMPAIGN_AUTO_CLOSE",
         )
 
-        scheduler_service = CampaignSchedulerService(
-            campaign_repo=campaign_repo,
+        scheduler_service = CampaignSchedulerService(campaign_repo=campaign_repo,
             audit_service=audit_service,
             config_repo=config_repo,
         )
@@ -49,10 +46,8 @@ def auto_close_expired_campaigns():
         closed = scheduler_service.auto_close_expired_campaigns()
 
         # Mark success
-        task_log_service.mark_success(
-            task_log,
-            summary=(
-                "No expired campaigns found."
+        task_log_service.mark_success(task_log,
+            summary=("No expired campaigns found."
                 if closed == 0
                 else f"Closed {closed} expired campaigns."
             ),
@@ -64,12 +59,64 @@ def auto_close_expired_campaigns():
     except Exception as ex:
 
         if task_log:
-            task_log_service.mark_failure(
-                task_log,
+            task_log_service.mark_failure(task_log,
                 str(ex),
             )
 
         print(f"Celery Task Failed : {ex}")
+        raise
+
+    finally:
+        db.close()
+
+
+@celery_app.task(name="campaign.detect_stalled_candidates")
+def detect_stalled_candidates():
+    """
+    : daily sweep flagging candidates stuck past their per-stage
+    SLA, raising a STALLED_CANDIDATES_ALERT audit entry per campaign whose
+    stall count increased since the previous alert. Email delivery is TODO.
+    """
+
+    db = SessionLocal()
+
+    task_log = None
+    try:
+        campaign_repo = CampaignRepository(db)
+        audit_repo = AuditRepository(db)
+        task_log_repo = CeleryTaskLogRepository(db)
+        config_repo = ConfigRepository(db)
+
+        audit_service = AuditService(audit_repo)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+
+        task_log = task_log_service.create_log(task_id=detect_stalled_candidates.request.id,
+            task_type="CAMPAIGN_STALL_CHECK",
+        )
+
+        scheduler_service = CampaignSchedulerService(campaign_repo=campaign_repo,
+            audit_service=audit_service,
+            config_repo=config_repo,
+        )
+
+        alerts_raised = scheduler_service.detect_stalled_candidate_alerts()
+
+        task_log_service.mark_success(task_log,
+            summary=("No new stalled-candidate alerts."
+                if alerts_raised == 0
+                else f"Raised {alerts_raised} stalled-candidate alert(s)."
+            ),
+        )
+
+        return alerts_raised
+
+    except Exception as ex:
+
+        if task_log:
+            task_log_service.mark_failure(task_log,
+                str(ex),
+            )
+
         raise
 
     finally:
@@ -98,23 +145,19 @@ def evaluate_campaign_health_alerts():
         audit_service = AuditService(audit_repo)
         task_log_service = CeleryTaskLogService(task_log_repo)
 
-        task_log = task_log_service.create_log(
-            task_id=evaluate_campaign_health_alerts.request.id,
+        task_log = task_log_service.create_log(task_id=evaluate_campaign_health_alerts.request.id,
             task_type="CAMPAIGN_HEALTH_ALERT_CHECK",
         )
 
-        scheduler_service = CampaignSchedulerService(
-            campaign_repo=campaign_repo,
+        scheduler_service = CampaignSchedulerService(campaign_repo=campaign_repo,
             audit_service=audit_service,
             config_repo=config_repo,
         )
 
         alerts_raised = scheduler_service.evaluate_campaign_health_alerts()
 
-        task_log_service.mark_success(
-            task_log,
-            summary=(
-                "No campaign health alerts triggered."
+        task_log_service.mark_success(task_log,
+            summary=("No campaign health alerts triggered."
                 if alerts_raised == 0
                 else f"Raised {alerts_raised} campaign health alert(s)."
             ),
@@ -125,8 +168,7 @@ def evaluate_campaign_health_alerts():
     except Exception as ex:
 
         if task_log:
-            task_log_service.mark_failure(
-                task_log,
+            task_log_service.mark_failure(task_log,
                 str(ex),
             )
 

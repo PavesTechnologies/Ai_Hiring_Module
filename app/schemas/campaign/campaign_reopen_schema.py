@@ -11,7 +11,7 @@ class JDReadinessIssue(BaseModel):
 
 
 class CampaignReopenReadinessResponse(BaseModel):
-    """S04-T01: readiness validation + current config, for the reopen confirmation dialog."""
+    """readiness validation + current config, for the reopen confirmation dialog."""
 
     is_ready: bool
     issues: list[JDReadinessIssue]
@@ -29,7 +29,7 @@ class CampaignReopenReadinessResponse(BaseModel):
 
 
 class CampaignReopenResultResponse(BaseModel):
-    """S04-T02/T03: result of a successful reopen."""
+    """result of a successful reopen."""
 
     campaign_id: UUID
     campaign_name: str

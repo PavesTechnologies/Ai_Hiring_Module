@@ -11,8 +11,7 @@ from app.services.audit_service import AuditService
 
 class CampaignSchedulerService:
 
-    def __init__(
-        self,
+    def __init__(self,
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
         config_repo: ConfigRepository,
@@ -25,7 +24,7 @@ class CampaignSchedulerService:
         """
         Auto close campaigns whose deadline has expired.
 
-        E03-S05-T02: processed in batches (each batch committed separately)
+        E03-processed in batches (each batch committed separately)
         rather than one giant transaction locking every expired row at once
         — the ACTIVE-status filter in get_expired_campaigns() naturally
         excludes campaigns already closed by a prior batch, so no offset
@@ -49,8 +48,7 @@ class CampaignSchedulerService:
 
                     # Audit log — attributed to the HR_ADMIN who created the campaign,
                     # since the closure is triggered by the scheduler on their behalf.
-                    self.audit_service.log(
-                        actor_id=campaign.created_by,
+                    self.audit_service.log(actor_id=campaign.created_by,
                         actor_role="HR_ADMIN",
                         action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
                         entity_type=EntityType.CAMPAIGN.value,
@@ -86,7 +84,7 @@ class CampaignSchedulerService:
 
     def evaluate_campaign_health_alerts(self) -> int:
         """
-        E04-S01-T03: daily health check across every ACTIVE campaign,
+        E04-daily health check across every ACTIVE campaign,
         evaluating 4 independent conditions against platform_config
         thresholds. Each triggered condition gets its own
         CAMPAIGN_HEALTH_ALERT audit entry — a campaign can trigger more
@@ -118,8 +116,7 @@ class CampaignSchedulerService:
                 task_counts = self.campaign_repo.get_task_status_counts(campaign.id)
                 dead_count = task_counts.get(TaskStatus.DEAD.value, 0)
                 if dead_count > dead_task_threshold:
-                    self._raise_health_alert(
-                        campaign,
+                    self._raise_health_alert(campaign,
                         condition="DEAD_TASK_COUNT_EXCEEDED",
                         metric_detail={"dead_task_count": dead_count, "threshold": dead_task_threshold},
                     )
@@ -127,8 +124,7 @@ class CampaignSchedulerService:
 
                 rejection_rate = self.campaign_repo.get_deterministic_rejection_rate(campaign.id)
                 if rejection_rate > rejection_rate_threshold:
-                    self._raise_health_alert(
-                        campaign,
+                    self._raise_health_alert(campaign,
                         condition="DETERMINISTIC_REJECTION_RATE_EXCEEDED",
                         metric_detail={
                             "rejection_rate_pct": round(rejection_rate, 2),
@@ -139,8 +135,7 @@ class CampaignSchedulerService:
 
                 avg_screening_hours = self.campaign_repo.get_average_screening_hours(campaign.id)
                 if avg_screening_hours is not None and avg_screening_hours > screening_sla_hours:
-                    self._raise_health_alert(
-                        campaign,
+                    self._raise_health_alert(campaign,
                         condition="SCREENING_SLA_EXCEEDED",
                         metric_detail={
                             "average_screening_hours": round(avg_screening_hours, 2),
@@ -152,8 +147,7 @@ class CampaignSchedulerService:
                 stage_counts = self.campaign_repo.get_stage_counts(campaign.id)
                 fraud_count = stage_counts.get(PipelineStage.FRAUD_REVIEW.value, 0)
                 if fraud_count > fraud_threshold:
-                    self._raise_health_alert(
-                        campaign,
+                    self._raise_health_alert(campaign,
                         condition="FRAUD_REVIEW_COUNT_EXCEEDED",
                         metric_detail={"fraud_review_count": fraud_count, "threshold": fraud_threshold},
                     )
@@ -166,12 +160,89 @@ class CampaignSchedulerService:
             self.campaign_repo.rollback()
             raise
 
+    def detect_stalled_candidate_alerts(self) -> int:
+        """
+        T01/T03: daily stall sweep across ACTIVE campaigns. Each
+        campaign with stalled candidates gets ONE STALLED_CANDIDATES_ALERT
+        audit entry per run — but only when the stall count has INCREASED
+        since the previous alert (T03's no-repeat rule): re-alerting the same
+        unchanged stalls every day is noise, a shrinking count means things
+        are being resolved, and a growing count is a new breach worth surfacing.
+
+        The stalled list itself is computed live by the /stalled-candidates
+        endpoint — this task only maintains the alert trail (and, later,
+        emails). Returns the number of alerts raised.
+        """
+        configs = self.config_repo.get_configs_by_keys([
+            "SCREENING_SLA_HOURS", "HM_REVIEW_SLA_DAYS", "INTERVIEW_SLA_DAYS",
+        ])
+        screening_sla_hours = float(configs.get("SCREENING_SLA_HOURS", "48"))
+        hm_review_sla_days = float(configs.get("HM_REVIEW_SLA_DAYS", "5"))
+        interview_sla_days = float(configs.get("INTERVIEW_SLA_DAYS", "7"))
+
+        alerts_raised = 0
+        try:
+            active_campaigns = [
+                c for c in self.campaign_repo.get_all_campaigns(show_closed=False)
+                if c.status == CampaignStatus.ACTIVE
+            ]
+
+            for campaign in active_campaigns:
+                stalled = self.campaign_repo.get_stalled_candidates(campaign.id,
+                    screening_sla_hours=screening_sla_hours,
+                    hm_review_sla_days=hm_review_sla_days,
+                    interview_sla_days=interview_sla_days,
+                )
+                if not stalled:
+                    continue
+
+                # T03 dedup: only re-alert when the count increased
+                previous = self.audit_service.get_latest_entry(campaign.id, ActionType.STALLED_CANDIDATES_ALERT.value,
+                )
+                previous_count = 0
+                if previous is not None:
+                    previous_count = int((previous.detail or {}).get("total_stalled", 0))
+                if len(stalled) <= previous_count:
+                    continue
+
+                by_stage: dict[str, int] = {}
+                by_reason: dict[str, int] = {}
+                for row in stalled:
+                    by_stage[row["pipeline_stage"]] = by_stage.get(row["pipeline_stage"], 0) + 1
+                    by_reason[row["stall_reason"]] = by_reason.get(row["stall_reason"], 0) + 1
+
+                self.audit_service.log(actor_id=campaign.created_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.STALLED_CANDIDATES_ALERT.value,
+                    entity_type=EntityType.CAMPAIGN.value,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"{len(stalled)} stalled candidate(s) in '{campaign.name}'",
+                        "total_stalled": len(stalled),
+                        "previous_total": previous_count,
+                        "by_stage": by_stage,
+                        "by_reason": by_reason,
+                    },
+                )
+                # Email notification
+                # TODO: SCREENING stalls -> HR_ADMIN (count + likely cause + link)
+                # TODO: HM_REVIEW stalls -> HR_ADMIN + assigned HIRING_MANAGER
+                # TODO: INTERVIEW stalls -> HR_ADMIN + HIRING_MANAGER
+                alerts_raised += 1
+
+            self.campaign_repo.commit()
+            return alerts_raised
+
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
     def _raise_health_alert(self, campaign, condition: str, metric_detail: dict) -> None:
         # Email notification
         # TODO:
         # Notify HR Admin
-        self.audit_service.log(
-            actor_id=campaign.created_by,
+        self.audit_service.log(actor_id=campaign.created_by,
             actor_role="HR_ADMIN",
             action_type=ActionType.CAMPAIGN_HEALTH_ALERT.value,
             entity_type=EntityType.CAMPAIGN.value,
