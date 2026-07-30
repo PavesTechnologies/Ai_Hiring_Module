@@ -106,6 +106,7 @@ def get_all_campaigns(search: str | None = Query(None),
         show_closed=show_closed,
     )
 
+
     campaigns = service.search_campaigns(filters, requesting_user=user)
 
     return APIResponse.ok(data=campaigns,
