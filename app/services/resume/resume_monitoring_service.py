@@ -30,6 +30,7 @@ from app.schemas.resume.monitoring import (
 )
 from app.schemas.resume.response import ResumeVersionHistoryResponse, ResumeVersionItem
 from app.services.resume.monitoring_shared import build_failure_info, build_stage_timeline_fields
+from app.services.resume.work_experience_duration import annotate_work_experience_durations
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ class ResumeMonitoringService:
             resume_id=resume.id,
             candidate_id=resume.candidate_id,
             parse_status=resume.parse_status.value,
-            parsed_json=resume.parsed_json,
+            parsed_json=annotate_work_experience_durations(resume.parsed_json),
             original_filename=resume.original_filename,
             file_format=resume.file_format.value,
             file_size_bytes=resume.file_size_bytes,
