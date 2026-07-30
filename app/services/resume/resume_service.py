@@ -50,18 +50,20 @@ class ResumeService:
         extraction: ResumeExtractionResponse,
         skill_repository: SkillRepository,
         skill_matches: list[SkillMatchResult],
-        embedding: list[float],
-        embedding_model_version_id: UUID,
-        input_text_hash: str,
         attempt_number: int | None = None,
         page_count: int | None = None,
     ) -> UUID:
         """
-        Writes Resume.parsed_json/parse_status + candidate_skills +
-        resume_embeddings + audit log in one transaction. Returns the
-        resume_id (the row already exists — this pipeline never creates
-        one, per the scope boundary that Candidate/Resume creation happens
-        elsewhere).
+        Writes Resume.parsed_json/parse_status + candidate_skills + audit
+        log in one transaction. Returns the resume_id (the row already
+        exists — this pipeline never creates one, per the scope boundary
+        that Candidate/Resume creation happens elsewhere).
+
+        M08-E01: no longer writes resume_embeddings here - embedding
+        generation moved to its own decoupled EMBED_RESUME Celery task
+        (app/tasks/embedding_tasks.py), enqueued after this method's caller
+        (ResumeProcessingPipeline) succeeds, so a resume never gets two
+        embedding rows.
 
         attempt_number is optional: when a caller supplies it, a
         resume_parse_attempts row is recorded here too. Bulk upload already
@@ -145,17 +147,6 @@ class ResumeService:
                     newly_created_unknown_skills.append(unknown_skill)
             logger.warning(
                 "=== persist_processed_resume: unmatched candidate_skills persisted === resume_id=%s", resume.id,
-            )
-
-            self.repository.create_resume_embedding(
-                resume_id=resume.id,
-                candidate_id=resume.candidate_id,
-                embedding=embedding,
-                embedding_model_version_id=embedding_model_version_id,
-                input_text_hash=input_text_hash,
-            )
-            logger.warning(
-                "=== persist_processed_resume: resume_embedding persisted === resume_id=%s", resume.id,
             )
 
             if attempt_number is not None:

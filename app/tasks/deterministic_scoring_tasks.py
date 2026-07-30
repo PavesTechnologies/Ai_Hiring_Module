@@ -381,6 +381,26 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         if not breakdown["deterministic_passed"] and stage_transition_succeeded:
             _queue_rejection_email(db, campaign_candidate)
 
+        # M08-E02: only after the transaction above has committed - a
+        # candidate that just passed deterministic screening is
+        # auto-enqueued for semantic scoring, reusing the exact same
+        # enqueue helper/idempotency logic
+        # CampaignCandidateService._queue_post_override_evaluation already
+        # uses (never a second/parallel implementation). Local import avoids
+        # a circular import - semantic_scoring_tasks.py itself imports
+        # _cancel_downstream_ai_evaluation from this module. A failure here
+        # must never crash or mask the already-successful deterministic
+        # outcome, same reasoning as _queue_rejection_email above.
+        if breakdown["deterministic_passed"]:
+            try:
+                from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
+                _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo)
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue semantic scoring after deterministic pass for campaign_candidate_id=%s",
+                    campaign_candidate.id,
+                )
+
     except Exception as ex:
         db.rollback()
         if task_log:

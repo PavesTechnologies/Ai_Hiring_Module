@@ -36,6 +36,7 @@ from app.services.resume.resume_processing_pipeline import ResumeProcessingPipel
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
+from app.tasks.embedding_tasks import _enqueue_resume_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -110,11 +111,14 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
     """
     Background Resume document-processing pipeline: Text Extraction ->
     Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
-    -> Embedding Generation -> Persistence. Mirrors process_jd_document's
-    structure, minus the file-upload/storage-download setup JD does inline
-    in the route — the Resume and its file_path already exist by the time
-    this task runs (Candidate/Resume creation is out of scope for this
-    pipeline).
+    -> Persistence. Mirrors process_jd_document's structure, minus the
+    file-upload/storage-download setup JD does inline in the route — the
+    Resume and its file_path already exist by the time this task runs
+    (Candidate/Resume creation is out of scope for this pipeline).
+
+    M08-E01: embedding generation is no longer a pipeline stage here — once
+    the pipeline succeeds, EMBED_RESUME is enqueued the same way
+    DETERMINISTIC_SCORE already is (see _enqueue_resume_embedding).
 
     Stage tracking runs on its own session (`stage_db`), separate from the
     business-write session (`db`), same reasoning as process_jd_document.
@@ -183,10 +187,8 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=PreprocessingService(),
             extraction_service=GeminiExtractionService(),
-            hash_service=HashService(),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(skill_repo, embedding_service),
-            embedding_service=embedding_service,
             resume_service=resume_service,
             resume_repository=resume_repo,
             skill_repository=skill_repo,
@@ -228,6 +230,16 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         except Exception:
             logger.exception(
                 "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,
+            )
+
+        # M08-E01: same independent, best-effort enqueue pattern as
+        # deterministic scoring above - a failure here must never affect
+        # the already-committed resume processing result.
+        try:
+            _enqueue_resume_embedding(db, processed_resume_id, task_log_service)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue resume embedding after resume %s parsed.", processed_resume_id,
             )
 
     except StageExecutionError as stage_exc:

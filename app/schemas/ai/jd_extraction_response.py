@@ -50,6 +50,11 @@ class Education(BaseModel):
 class JDExtractionResponse(BaseModel):
     required_skills: list[str] = Field(default_factory=list)
     preferred_skills: list[str] = Field(default_factory=list)
+    # Non-technical/behavioral skills (e.g. "Communication", "Leadership"),
+    # kept separate from required_skills/preferred_skills so they never
+    # reach SkillNormalizationService's skill-ontology matching/scoring
+    # pipeline - display-only, empty list if the JD has none.
+    soft_skills: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     experience: Experience | None = None
@@ -59,7 +64,7 @@ class JDExtractionResponse(BaseModel):
     location: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("required_skills", "preferred_skills", "responsibilities", "certifications")
+    @field_validator("required_skills", "preferred_skills", "soft_skills", "responsibilities", "certifications")
     @classmethod
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
@@ -94,6 +99,7 @@ class JDExtractionGenerationSchema(BaseModel):
     """
     required_skills: list[str] = Field(default_factory=list)
     preferred_skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     experience: Experience | None = None
