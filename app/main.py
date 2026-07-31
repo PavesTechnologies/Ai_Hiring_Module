@@ -12,6 +12,8 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
@@ -25,6 +27,7 @@ from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
+from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -129,6 +132,25 @@ app.openapi = custom_openapi  # type: ignore[method-assign]
 app.include_router(test_routes.router)
 
 
+@app.on_event("startup")
+def sync_embedding_model_version() -> None:
+    """
+    Mirrors settings.embedding_model (.env) into the active
+    embedding_model_versions row on every boot, so EMBEDDING_MODEL is the
+    only place anyone needs to change the model — the DB row it drives can
+    never be missing or drift out of sync with it.
+    """
+    db = SessionLocal()
+    try:
+        version = EmbeddingModelVersionRepository(db).sync_active_from_settings(settings.embedding_model)
+        logger.info(
+            "Embedding model version synced | model_name=%s model_version=%s id=%s",
+            version.model_name, version.model_version, version.id,
+        )
+    finally:
+        db.close()
+
+
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok", "service": "AIRS"}
@@ -146,6 +168,7 @@ app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monit
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
+app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

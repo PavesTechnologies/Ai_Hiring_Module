@@ -48,7 +48,7 @@ def generate_skill_embedding(task_id: str, skill_id: str) -> None:
             skill.canonical_name,
         )
 
-        embedding = EmbeddingService().generate_embedding(skill.canonical_name)
+        embedding = EmbeddingService(db).generate_embedding(skill.canonical_name)
 
         if len(embedding) != EMBEDDING_DIM:
             raise ValueError(

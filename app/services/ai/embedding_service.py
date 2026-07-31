@@ -1,25 +1,32 @@
 from typing import ClassVar, Optional
 
 from sentence_transformers import SentenceTransformer
+from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 
 
 class EmbeddingService:
     """
-    Generates local sentence embeddings (all-MiniLM-L6-v2) — never a paid
-    embedding API. The model is loaded once per worker process, not per call.
+    Generates local sentence embeddings — never a paid embedding API. Which
+    model to load is never hardcoded: it's read from the single active row
+    in embedding_model_versions, so every caller (resume, JD, skill
+    ontology, unknown-skill suggestions) is guaranteed to embed with the
+    same model. The model itself is loaded once per worker process, not per
+    call — re-loaded only if the active model version changes.
     """
 
     _model: ClassVar[Optional[SentenceTransformer]] = None
+    _model_name: ClassVar[Optional[str]] = None
 
-    def __init__(self, model_name: str | None = None):
-        self.model_name = model_name or settings.embedding_model
+    def __init__(self, db: Session):
+        self.model_name = EmbeddingModelVersionRepository(db).get_active().model_name
 
     def _get_model(self) -> SentenceTransformer:
-        if EmbeddingService._model is None:
+        if EmbeddingService._model is None or EmbeddingService._model_name != self.model_name:
             EmbeddingService._model = SentenceTransformer(self.model_name)
+            EmbeddingService._model_name = self.model_name
         return EmbeddingService._model
 
     def generate_embedding(self, text: str) -> list[float]:

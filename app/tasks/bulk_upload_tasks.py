@@ -345,7 +345,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
-        embedding_service = EmbeddingService()
+        embedding_service = EmbeddingService(db)
         skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
