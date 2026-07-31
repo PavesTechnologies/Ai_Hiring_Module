@@ -8,13 +8,13 @@ DB-side ALTER TYPE migration never written" drift as the audit-enum fixes
 elsewhere in this history, e.g. f3a6c9d1b7e2/e6f3b9a1c5d7). Every resume
 upload hits this the moment stage tracking reaches PII_DETECTION.
 
-Revision ID: a1c6d9f3e7b2
+Revision ID: f5b8d2c4a917
 Revises: d3f7b9c2a1e5
 Create Date: 2026-07-29
 """
 from alembic import op
 
-revision = "a1c6d9f3e7b2"
+revision = "f5b8d2c4a917"
 down_revision = "d3f7b9c2a1e5"
 branch_labels = None
 depends_on = None

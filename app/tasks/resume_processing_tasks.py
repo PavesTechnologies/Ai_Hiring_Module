@@ -170,7 +170,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             audit_service=audit_service,
         )
 
-        embedding_service = EmbeddingService()
+        embedding_service = EmbeddingService(db)
 
         checkpoint_repo = CheckpointRepository(stage_db)
         stage_failure_log_repo = StageFailureLogRepository(stage_db)

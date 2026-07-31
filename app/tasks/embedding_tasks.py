@@ -256,7 +256,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
             # multi-resume backfill/batch task would call, so batch
             # support lives in one place, not duplicated per call site.
             batch_size = _read_embedding_batch_size(config_repo)
-            embedding_vectors = EmbeddingService().generate_embeddings([input_text], batch_size=batch_size)
+            embedding_vectors = EmbeddingService(db).generate_embeddings([input_text], batch_size=batch_size)
 
             # Task 7. uq_resume_embeddings_resume_model_version is the final
             # backstop against a concurrent duplicate: was_created is False

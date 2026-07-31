@@ -116,7 +116,7 @@ def process_jd_document(
         # embedding stage and by skill-level semantic matching — the
         # underlying sentence-transformer model is a class-level singleton
         # either way, but there's no reason to instantiate the wrapper twice.
-        embedding_service = EmbeddingService()
+        embedding_service = EmbeddingService(db)
 
         checkpoint_repo = CheckpointRepository(stage_db)
         stage_failure_log_repo = StageFailureLogRepository(stage_db)
