@@ -137,6 +137,12 @@ class ActionType(enum.Enum):
     # (alembic/versions/90b05f9f2aa1_candidate_data_erased_audit_action.py)
     # before CandidateErasureService can log it.
     CANDIDATE_DATA_ERASED = "CANDIDATE_DATA_ERASED"
+    # Single-resume cleanup (stuck/orphaned resumes, e.g. a task that was
+    # enqueued but never picked up) — the DB-side audit_action_type_enum
+    # does NOT yet contain this value; needs the paired migration
+    # (alembic/versions/<new>_resume_deleted_audit_action.py) before
+    # ResumeCleanupService can log it.
+    RESUME_DELETED = "RESUME_DELETED"
     # Prompt Management (AIRS)
     PROMPT_CREATED = "PROMPT_CREATED"
     PROMPT_UPDATED = "PROMPT_UPDATED"

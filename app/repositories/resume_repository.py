@@ -120,6 +120,21 @@ class ResumeRepository:
         self.db.execute(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))
         self.db.flush()
 
+    def delete_embedding_by_resume(self, resume_id: UUID) -> None:
+        """
+        Single-resume cleanup — narrower than delete_embeddings_by_candidate,
+        which would also remove embeddings for this candidate's OTHER resume
+        versions. resume_embeddings has no FK constraint at all, so this is
+        the only way to avoid orphaning it.
+        """
+        self.db.execute(delete(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_candidate_skills_by_resume(self, resume_id: UUID) -> None:
+        """Single-resume cleanup — narrower than delete_candidate_skills_by_candidate, scoped to just this resume version's skills."""
+        self.db.execute(delete(CandidateSkill).where(CandidateSkill.resume_id == resume_id))
+        self.db.flush()
+
     def record_parse_attempt(
         self,
         resume_id: UUID,

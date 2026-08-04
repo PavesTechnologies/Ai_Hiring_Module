@@ -461,6 +461,11 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             job_repo.commit()
             _maybe_finalize_job(job_repo, job.id)
 
+            # So the file-detail monitoring endpoint can resolve the existing
+            # candidate this duplicate matched to (get_by_file_path finds
+            # nothing — this job_file's own storage_path was never given a
+            # Resume row, since matched_resume's is reused instead).
+            task_log.resume_id = matched_resume.id
             task_log_service.mark_success(
                 task_log,
                 summary="Duplicate file detected. Existing candidate linked. AI processing skipped.",

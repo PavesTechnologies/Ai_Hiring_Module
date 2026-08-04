@@ -108,11 +108,18 @@ class BulkUploadMonitoringService:
         self._get_job_or_404(bulk_upload_job_id)
         job_file = self._get_file_or_404(bulk_upload_job_id, file_id)
 
-        resume = self.resume_repository.get_by_file_path(job_file.storage_path)
-        candidate = self.candidate_repository.get_by_id(resume.candidate_id) if resume else None
-
         task_log = self.task_log_repository.get_by_task_id(job_file.task_id) if job_file.task_id else None
         executions = self.stage_repository.get_by_task_id(job_file.task_id) if job_file.task_id else []
+
+        resume = self.resume_repository.get_by_file_path(job_file.storage_path)
+        if resume is None and task_log is not None and task_log.resume_id is not None:
+            # Duplicate-file case: no Resume row was ever created with this
+            # job_file's own storage_path — parse_bulk_upload_file's
+            # exact-duplicate branch reuses the already-existing matched
+            # resume instead and records it on the task log (resume_id) so
+            # this endpoint can still surface the existing candidate's data.
+            resume = self.resume_repository.get_by_id(task_log.resume_id)
+        candidate = self.candidate_repository.get_by_id(resume.candidate_id) if resume else None
 
         resume_summary = None
         candidate_summary = None
