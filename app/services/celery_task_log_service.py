@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from app.models.async_tasks import (
@@ -23,6 +24,7 @@ class CeleryTaskLogService:
         idempotency_key: str | None = None,
         resume_id=None,
         campaign_candidate_id=None,
+        jd_id=None,
     ) -> CeleryTaskLog:
         """
         Called synchronously from the route before the Celery task is even
@@ -31,8 +33,8 @@ class CeleryTaskLogService:
         is accepted — not just once a worker picks it up. Status starts at
         QUEUED; the task itself flips it to RUNNING when it actually starts.
 
-        idempotency_key/resume_id/campaign_candidate_id are optional and
-        default to None, so every existing call site is unaffected.
+        idempotency_key/resume_id/campaign_candidate_id/jd_id are optional
+        and default to None, so every existing call site is unaffected.
         """
         log = CeleryTaskLog(
             task_id=task_id,
@@ -42,6 +44,7 @@ class CeleryTaskLogService:
             idempotency_key=idempotency_key,
             resume_id=resume_id,
             campaign_candidate_id=campaign_candidate_id,
+            jd_id=jd_id,
             status=TaskStatus.QUEUED,
         )
 
@@ -99,6 +102,27 @@ class CeleryTaskLogService:
 
         log.status = TaskStatus.RETRY
         log.retry_count += 1
+
+        log = self.repository.update(log)
+        self.repository.commit()          # <-- IMPORTANT
+
+        return log
+
+    def mark_dispatch_failed(
+        self,
+        log: CeleryTaskLog,
+        error_message: str,
+    ) -> CeleryTaskLog:
+        """
+        Resume-upload resilience: apply_async() itself raised (broker
+        unreachable) - status stays QUEUED (this is not a terminal
+        failure, unlike mark_failure/mark_dead - a recovery job is
+        expected to redispatch it later), only dispatch_failed and the
+        error detail change.
+        """
+        log.dispatch_failed = True
+        log.error_message = error_message
+        log.output_summary = json.dumps({"enqueue_failed": True, "reason": error_message})
 
         log = self.repository.update(log)
         self.repository.commit()          # <-- IMPORTANT

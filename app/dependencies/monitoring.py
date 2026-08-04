@@ -12,10 +12,14 @@ from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRe
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.config_repository import ConfigRepository
+from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.repositories.jd_repository import JDRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
+from app.services.embedding_dashboard_service import EmbeddingDashboardService
 from app.services.ops_monitoring_service import OpsMonitoringService
 
 
@@ -38,4 +42,18 @@ def get_ops_monitoring_service(
         bulk_upload_job_repository=bulk_upload_job_repository,
         campaign_repository=campaign_repository,
         circuit_breaker_repository=circuit_breaker_repository,
+    )
+
+
+def get_embedding_dashboard_service(
+    resume_repository: ResumeRepository = Depends(get_resume_repository),
+    jd_repository: JDRepository = Depends(get_jd_repository),
+    config_repository: ConfigRepository = Depends(get_config_repository),
+    celery_task_log_repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+) -> EmbeddingDashboardService:
+    return EmbeddingDashboardService(
+        resume_repository=resume_repository,
+        jd_repository=jd_repository,
+        config_repository=config_repository,
+        celery_task_log_repository=celery_task_log_repository,
     )

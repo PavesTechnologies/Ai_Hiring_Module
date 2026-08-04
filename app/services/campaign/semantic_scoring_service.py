@@ -1,18 +1,18 @@
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 
 logger = logging.getLogger(__name__)
 
-# Already seeded (app/seeds/seed_platform_config.py) - reused as-is, never a
-# second/duplicated threshold key.
-SEMANTIC_PASS_THRESHOLD_KEY = "SEMANTIC_PASS_THRESHOLD"
-_DEFAULT_SEMANTIC_PASS_THRESHOLD = 0.65
+# Story 540: literal marker recorded on celery_task_log.output_summary
+# (via the breakdown dict, which the caller writes verbatim into that
+# column) whenever a raw similarity < 0.0 is clamped up to 0.0000.
+SCORE_CLAMPED_TO_ZERO_REASON = "SCORE_CLAMPED_TO_ZERO"
 
 
 class MissingResumeEmbeddingError(Exception):
@@ -45,12 +45,10 @@ class SemanticScoringService:
         self,
         resume_repository: ResumeRepository,
         jd_repository: JDRepository,
-        config_repository: ConfigRepository,
         campaign_candidate_repository: CampaignCandidateRepository,
     ):
         self.resume_repository = resume_repository
         self.jd_repository = jd_repository
-        self.config_repository = config_repository
         self.campaign_candidate_repository = campaign_candidate_repository
 
     def calculate_and_store_semantic_score_breakdown(
@@ -58,6 +56,7 @@ class SemanticScoringService:
         campaign_candidate_id: UUID,
         jd_id: UUID,
         resume_id: UUID,
+        semantic_threshold: float,
     ) -> dict:
         campaign_candidate = self.campaign_candidate_repository.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
@@ -75,25 +74,49 @@ class SemanticScoringService:
                 f"Job description '{jd_id}' has no embedding yet - semantic scoring cannot run."
             )
 
-        # Task 3: pgvector's own cosine_distance comparator (see
-        # ResumeRepository.get_cosine_similarity) - never a manual Python
-        # dot-product/norm calculation.
-        similarity = self.resume_repository.get_cosine_similarity(resume_embedding.id, jd_embedding.embedding)
+        # Story 538: the entire formula - 1 - (re.embedding <=> je.embedding)
+        # - runs as one statement in Postgres via
+        # ResumeRepository.compute_semantic_similarity; embedding_model_version_id
+        # equality is enforced as part of that same query, and neither raw
+        # vector is ever fetched into application memory here.
+        computation_started_at = time.perf_counter()
+        similarity = self.resume_repository.compute_semantic_similarity(resume_id, jd_id)
+        computation_duration_ms = round((time.perf_counter() - computation_started_at) * 1000)
         if similarity is None:
             raise MissingResumeEmbeddingError(
-                f"Resume embedding '{resume_embedding.id}' could not be compared - "
-                "it may have been deleted concurrently."
+                f"Resume '{resume_id}' embedding could not be compared against JD '{jd_id}' embedding - "
+                "either row may have been deleted concurrently, or their embedding_model_version_id "
+                "no longer match."
             )
 
-        threshold = self._read_threshold()
+        # Story 540: any score >= 0.0 is valid as-is, including very low
+        # ones - only a genuinely negative value (real negative cosine
+        # similarity, or floating-point rounding right at the boundary) is
+        # clamped, and only ever up to 0.0000, never down.
+        score_clamped_to_zero = False
+        if similarity < 0.0:
+            logger.warning(
+                "%s | campaign_candidate_id=%s raw_similarity=%s",
+                SCORE_CLAMPED_TO_ZERO_REASON, campaign_candidate_id, similarity,
+            )
+            similarity = 0.0
+            score_clamped_to_zero = True
+
+        # Story 541: per-campaign threshold (hiring_campaigns.semantic_threshold),
+        # never a global platform_config value - mirrors how
+        # calculate_deterministic_score_task already reads
+        # campaign.deterministic_threshold for the same purpose.
+        threshold = float(semantic_threshold)
+        # Story 540: threshold comparison uses the stored (clamped) score.
         passed = similarity >= threshold
 
         matching_skills, missing_skills = self._skills_from_deterministic_breakdown(campaign_candidate)
         matched_keywords = self._matched_keywords(jd_id, resume_id)
 
+        computed_at = datetime.now(timezone.utc)
         breakdown = {
-            "semantic_score": round(similarity, 6),
-            "overall_similarity": round(similarity, 6),
+            "semantic_score": round(similarity, 4),
+            "overall_similarity": round(similarity, 4),
             "semantic_passed": passed,
             "semantic_threshold": threshold,
             "matching_skills": matching_skills,
@@ -102,20 +125,30 @@ class SemanticScoringService:
             "semantic_explanation": self._build_explanation(similarity, threshold, passed),
             "resume_embedding_model_version_id": str(resume_embedding.embedding_model_version_id),
             "jd_embedding_model_version_id": str(jd_embedding.embedding_model_version_id),
-            "computed_at": datetime.now(timezone.utc).isoformat(),
+            "computed_at": computed_at.isoformat(),
+            "computation_duration_ms": computation_duration_ms,
+            "score_clamped_to_zero": score_clamped_to_zero,
+            "score_clamp_reason": SCORE_CLAMPED_TO_ZERO_REASON if score_clamped_to_zero else None,
+            # Task 539: jd_embedding_id recorded on the semantic breakdown
+            # for traceability - which exact jd_embeddings row this score
+            # was computed against.
+            "semantic_check": {
+                "jd_embedding_id": str(jd_embedding.id),
+                "resume_embedding_id": str(resume_embedding.id),
+            },
         }
 
+        # Task 539: semantic_score, semantic_score_computed_at and
+        # updated_at all change together on this one ORM object before a
+        # single update()/commit() - one row, one transaction, so this is
+        # already atomic without any extra locking.
         campaign_candidate.semantic_score = similarity
         campaign_candidate.semantic_score_breakdown = breakdown
+        campaign_candidate.semantic_score_computed_at = computed_at
+        campaign_candidate.updated_at = computed_at
         self.campaign_candidate_repository.update(campaign_candidate)
 
         return breakdown
-
-    def _read_threshold(self) -> float:
-        raw = self.config_repository.get_configs_by_keys([SEMANTIC_PASS_THRESHOLD_KEY]).get(
-            SEMANTIC_PASS_THRESHOLD_KEY,
-        )
-        return float(raw) if raw is not None else _DEFAULT_SEMANTIC_PASS_THRESHOLD
 
     @staticmethod
     def _skills_from_deterministic_breakdown(campaign_candidate) -> tuple[list[str], list[str]]:

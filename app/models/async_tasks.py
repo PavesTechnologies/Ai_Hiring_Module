@@ -122,6 +122,18 @@ class CeleryTaskLog(Base):
     output_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Task 538: computation duration (e.g. the semantic-similarity pgvector
+    # query), in milliseconds - distinct from completed_at - queued_at
+    # (which spans queueing/scheduling delay, not just the computation).
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Resume-upload resilience: True only when apply_async itself raised
+    # (broker unreachable) - the message never reached the queue, so this
+    # row is safe to redispatch with the same task_id. False (the default)
+    # covers BOTH "never attempted yet" and "apply_async succeeded, message
+    # is already queued waiting for a worker" - the recovery job must never
+    # touch those, since process_resume_document has no SUCCESS-shortcut
+    # and would reprocess a still-queued message a second time.
+    dispatch_failed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

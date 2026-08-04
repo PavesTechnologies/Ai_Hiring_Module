@@ -264,6 +264,9 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="EMBEDDING_BATCH_SIZE",
+            value="32",
+            description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
             key="MAX_DLQ_REPLAYS_PER_TASK",
             value="3",
             description="Maximum times a dead-lettered task chain may be replayed before further replays are blocked (M04-E04-S03-T02 infinite-loop guard)",
@@ -328,6 +331,49 @@ try:
             key="MAX_AI_RETRY_COUNT",
             value="3",
             description="Descriptive value for upload-failure notification copy (D11) - matches the real hardcoded retry_policy.py DEFAULT_POLICY.max_attempts; does not itself control retry behavior",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="JD_EMBEDDING_MAX_CHARS",
+            value="2000",
+            description="Max characters of a JD's raw_text included in the JD embedding input (M08-E01 S02 JD embedding generation) - only the raw_text portion is truncated, never the title or skill lists",
+        ),
+        # EMBED_RESUME resilient retry / circuit breaker
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_EMBED_RETRY_COUNT",
+            value="4",
+            description="Max real embedding-call attempts for EMBED_RESUME before dead-lettering and setting ai_evaluation_status=MANUAL_REVIEW - matches the 4-step 30/60/120/240s backoff below",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBED_RETRY_BASE_DELAY_SECONDS",
+            value="30",
+            description="First backoff delay for a transient EMBED_RESUME failure (30, 60, 120, 240s doubling up to EMBED_RETRY_MAX_DELAY_SECONDS)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBED_RETRY_MAX_DELAY_SECONDS",
+            value="240",
+            description="Backoff delay ceiling for a transient EMBED_RESUME failure",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBEDDING_CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+            value="10",
+            description="Consecutive EMBED_RESUME failures before the EMBEDDING_SERVICE circuit breaker opens (circuit_breaker_state.service_name='EMBEDDING_SERVICE')",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBEDDING_FAILURE_ALERT_THRESHOLD",
+            value="20.00",
+            description="Percentage of SCREENING candidates with a NULL semantic_score (not yet flagged MANUAL_REVIEW) in a campaign above which the embedding-health monitor emails HR_ADMIN",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="EMBEDDING_REINDEX_THRESHOLD",
+            value="50000",
+            description="Once resume_embeddings row count exceeds this, the Embedding Storage Dashboard shows a warning and queues REINDEX_IVFFLAT to rebuild idx_resume_embeddings_embedding with better-tuned clustering",
         ),
     ]
 

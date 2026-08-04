@@ -1,18 +1,27 @@
+import logging
 from uuid import UUID, uuid4
 
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
+from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Resume
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.resume_upload_service import ResumeUploadService
-from app.tasks.resume_processing_tasks import process_resume_document
+from app.tasks.resume_processing_tasks import (
+    RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
+    process_resume_document,
+)
+
+logger = logging.getLogger(__name__)
 
 UPLOAD_CONSENT_SOURCE = "UPLOAD_FORM"
 
@@ -32,11 +41,14 @@ class ResumeIntakeService:
         campaign_candidate_service: CampaignCandidateService,
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
+        task_log_repo: CeleryTaskLogRepository,
     ):
         self.resume_service = resume_service
         self.campaign_candidate_service = campaign_candidate_service
         self.campaign_repo = campaign_repo
         self.audit_service = audit_service
+        self.task_log_repo = task_log_repo
+        self.task_log_service = CeleryTaskLogService(task_log_repo)
 
     def upload_resume(
         self,
@@ -126,12 +138,57 @@ class ResumeIntakeService:
             self.campaign_repo.rollback()
             raise
 
+        logger.info("Resume stored | resume_id=%s campaign_id=%s", resume.id, campaign_id)
+
         task_id = uuid4()
         self.resume_service.record_task_id(resume, str(task_id))
-        process_resume_document.apply_async(
-            kwargs={"resume_id": str(resume.id), "prompt_template_id": str(campaign.prompt_template_id)},
-            task_id=str(task_id),
+
+        # Resume-upload resilience: the celery_task_log row is created and
+        # committed BEFORE any Celery operation is attempted - the status
+        # endpoint (and the recovery job) must always find a row for this
+        # task_id, whether or not the broker is reachable right now.
+        # Idempotency-key-guarded (same pattern as
+        # embedding_tasks._enqueue_resume_embedding) purely as a safety net;
+        # resume.id is fresh for every genuinely new upload.
+        idempotency_key = f"{RESUME_DOCUMENT_PROCESSING_TASK_TYPE}:{resume.id}"
+        task_log, was_created = self.task_log_repo.create_if_new_idempotency_key(
+            CeleryTaskLog(
+                task_id=str(task_id),
+                task_type=RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
+                idempotency_key=idempotency_key,
+                resume_id=resume.id,
+                status=TaskStatus.QUEUED,
+            ),
         )
+        self.task_log_repo.commit()
+
+        if not was_created:
+            # Lost a race against another request for this exact resume_id -
+            # reuse the winner's row/task_id rather than returning a task_id
+            # with no matching celery_task_log row.
+            task_id = UUID(task_log.task_id)
+            logger.info(
+                "Task already created for resume_id=%s (race) - reusing task_id=%s", resume.id, task_id,
+            )
+            return resume, campaign_candidate, campaign, task_id, True
+
+        logger.info("Task created | resume_id=%s task_id=%s", resume.id, task_id)
+
+        try:
+            process_resume_document.apply_async(
+                kwargs={"resume_id": str(resume.id), "prompt_template_id": str(campaign.prompt_template_id)},
+                task_id=str(task_id),
+            )
+            logger.info("Task queued | resume_id=%s task_id=%s", resume.id, task_id)
+        except Exception as exc:
+            # Broker/Celery unavailable: never fail the upload, never touch
+            # the already-committed resume/candidate/campaign_candidate -
+            # celery_task_log stays QUEUED (not a terminal failure) and is
+            # picked up by the recovery job once the broker is back.
+            logger.exception(
+                "Queue unavailable - resume_id=%s task_id=%s", resume.id, task_id,
+            )
+            self.task_log_service.mark_dispatch_failed(task_log, str(exc))
 
         return resume, campaign_candidate, campaign, task_id, True
 

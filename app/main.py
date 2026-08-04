@@ -58,6 +58,27 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+
+@app.on_event("startup")
+def _recover_stalled_resume_uploads_on_startup() -> None:
+    """
+    Resume-upload resilience: recovers any RESUME_DOCUMENT_PROCESSING
+    upload whose Celery dispatch failed while this (or another) app
+    instance was previously running with the broker unreachable. Calls
+    the recovery logic directly (its own DB session, not a Celery
+    dispatch) so it still works even if Celery/Redis are themselves down
+    right now - the periodic Beat task (recover-stalled-resume-uploads)
+    is the safety net for that case. Best-effort: a failure here (e.g. DB
+    unreachable at boot) is logged, never prevents the app from starting.
+    """
+    from app.tasks.resume_processing_tasks import recover_stalled_resume_uploads
+    try:
+        recovered = recover_stalled_resume_uploads()
+        logger.info("Startup resume-upload recovery scan completed | recovered=%s", recovered)
+    except Exception:
+        logger.exception("Startup resume-upload recovery scan failed")
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(

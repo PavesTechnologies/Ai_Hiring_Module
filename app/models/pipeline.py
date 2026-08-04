@@ -80,7 +80,11 @@ class CampaignCandidate(Base):
     deterministic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     deterministic_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     score_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(7, 6), nullable=True)
+    semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    # Task 539: set alongside semantic_score/updated_at on every successful
+    # computation - when the currently-stored semantic_score was computed,
+    # distinct from updated_at (which also moves on unrelated edits).
+    semantic_score_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # M08-E02: semantic-layer analog of score_breakdown - overall_similarity/
     # semantic_passed/semantic_threshold/matching_skills/missing_skills/
     # matched_keywords/semantic_explanation, written by SemanticScoringService.

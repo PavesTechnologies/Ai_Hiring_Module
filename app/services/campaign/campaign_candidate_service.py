@@ -1403,7 +1403,8 @@ class CampaignCandidateService:
         actor_role: str | None = None,
     ) -> CandidateScorecardResponse:
         """
-        HR_ADMIN override of a deterministic rejection - re-enters the
+        HR_ADMIN override of a deterministic OR semantic rejection (M08-E02
+        S03 T03 extends this beyond deterministic-only) - re-enters the
         candidate into SCREENING. Applies only to this single
         campaign_candidate_id; never touches any other candidate or
         campaign. candidate_rejections is never deleted - the override is
@@ -1426,9 +1427,12 @@ class CampaignCandidateService:
                 rejections = self.candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate_id)
                 latest_rejection = rejections[0] if rejections else None  # newest-first
 
-            if latest_rejection is None or latest_rejection.rejection_layer != RejectionLayer.DETERMINISTIC:
+            if latest_rejection is None or latest_rejection.rejection_layer not in (
+                RejectionLayer.DETERMINISTIC, RejectionLayer.SEMANTIC,
+            ):
                 raise CampaignException(
-                    "HR override is only available for candidates rejected at the deterministic layer.",
+                    "HR override is only available for candidates rejected at the "
+                    "deterministic or semantic layer.",
                     409,
                 )
 
@@ -1457,6 +1461,11 @@ class CampaignCandidateService:
                     409,
                 )
 
+            # Story 543: no separate SEMANTIC_OVERRIDE_APPLIED action type
+            # exists (and adding one is an unnecessary enum/migration for
+            # what audit_log.details already records) - reuses
+            # DETERMINISTIC_OVERRIDE_APPLIED for both layers, with
+            # overridden_layer distinguishing which one in the detail.
             self.audit_service.log(
                 actor_id=actor_id,
                 actor_role=actor_role,
@@ -1467,6 +1476,7 @@ class CampaignCandidateService:
                 details={
                     "override_reason": override_reason,
                     "original_rejection_reason": latest_rejection.rejection_reason,
+                    "overridden_layer": latest_rejection.rejection_layer.value,
                 },
             )
 
@@ -1483,10 +1493,27 @@ class CampaignCandidateService:
             raise
 
     def _queue_post_override_evaluation(self, campaign_candidate: CampaignCandidate) -> None:
+        """
+        Story 543: routes on whether a semantic_score already exists -
+        never queues AI_EVALUATE ahead of semantic scoring, mirroring the
+        same PASS-gates-AI_EVALUATE ordering
+        calculate_semantic_score_task's own auto-trigger enforces
+        (app.tasks.semantic_scoring_tasks._queue_ai_evaluate_if_not_duplicate).
+        - semantic_score already set (candidate was rejected AT the
+          semantic layer, or was re-scored since) -> AI_EVALUATE is queued
+          immediately, since semantic has already run.
+        - semantic_score missing (a deterministic-layer override, or any
+          candidate whose semantic score was never computed) -> SEMANTIC_SCORE
+          is enqueued instead; AI_EVALUATE is queued automatically once that
+          later passes (same shared pass-path as the normal pipeline), never
+          queued upfront here.
+        """
         if self.celery_task_log_service is None:
             return
         try:
-            self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
+            if campaign_candidate.semantic_score is not None:
+                self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
+                return
 
             # M08-E02: reuses the exact same enqueue/idempotency helper
             # calculate_deterministic_score_task's own auto-trigger uses
@@ -1494,7 +1521,14 @@ class CampaignCandidateService:
             # never a second/independent implementation of "how do I queue
             # semantic scoring for this candidate."
             if self.resume_repo is not None:
-                _enqueue_semantic_scoring(campaign_candidate, self.celery_task_log_service, self.resume_repo)
+                campaign = (
+                    self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+                    if self.campaign_repo is not None else None
+                )
+                jd_id = campaign.jd_id if campaign is not None else None
+                _enqueue_semantic_scoring(
+                    campaign_candidate, self.celery_task_log_service, self.resume_repo, jd_id=jd_id,
+                )
         except Exception:
             logger.exception(
                 "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",

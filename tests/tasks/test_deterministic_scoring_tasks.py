@@ -143,10 +143,14 @@ class _Harness:
             p.stop()
 
 
-def _make_campaign_candidate(campaign_id, resume_id, pipeline_stage=PipelineStage.SCREENING, candidate_id=None):
+def _make_campaign_candidate(
+    campaign_id, resume_id, pipeline_stage=PipelineStage.SCREENING, candidate_id=None,
+    deterministic_passed=None,
+):
     return SimpleNamespace(
         id=uuid4(), campaign_id=campaign_id, resume_id=resume_id, candidate_id=candidate_id or uuid4(),
         screened_at=None, updated_at=None, pipeline_stage=pipeline_stage,
+        deterministic_passed=deterministic_passed,
     )
 
 
@@ -542,7 +546,7 @@ def test_handles_decimal_min_experience_years_without_crashing():
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume(parsed_json={"total_experience_years": 6.0})
@@ -597,7 +601,7 @@ def test_experience_education_wiring_is_passed_through_to_scoring_service():
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume(parsed_json={"total_experience_years": 6.0})
@@ -620,7 +624,7 @@ def test_no_rejection_when_nothing_missing():
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume()
@@ -636,16 +640,17 @@ def test_no_rejection_when_nothing_missing():
 def test_auto_enqueues_semantic_scoring_after_successful_pass():
     """
     M08-E02: a candidate who passes deterministic screening is
-    auto-enqueued for semantic scoring via the shared
-    _enqueue_semantic_scoring helper (the same one
-    CampaignCandidateService._queue_post_override_evaluation uses) - called
-    with this exact campaign_candidate, task_log_service, and resume_repo.
+    auto-enqueued for semantic scoring via the shared _enqueue_semantic_scoring
+    helper (the same one CampaignCandidateService._queue_post_override_evaluation
+    and trigger_pending_semantic_scoring_for_resume use) - never executed
+    inline/synchronously inside this task, only a Celery apply_async
+    dispatch via that helper.
     """
     from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume()
@@ -689,7 +694,7 @@ def test_semantic_scoring_enqueued_only_after_commit():
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume()
@@ -711,7 +716,7 @@ def test_semantic_enqueue_failure_never_crashes_or_undoes_the_deterministic_pass
 
     with _Harness() as h:
         campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
+        cc = _make_campaign_candidate(campaign.id, uuid4(), deterministic_passed=True)
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_by_id.return_value = _make_resume()
