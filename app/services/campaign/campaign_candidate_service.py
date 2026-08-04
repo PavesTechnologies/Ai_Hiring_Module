@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
 from app.dependencies import campaign
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_PAGE_SIZE
 from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
 from app.exceptions.pipeline_transition_exceptions import (
@@ -21,6 +21,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
     AIEvaluationStatus,
+    AIRecommendation,
     CampaignCandidate,
     CandidateRejection,
     PipelineStage,
@@ -67,7 +68,9 @@ from app.schemas.campaign.campaign_candidate_schema import (
     RejectionBreakdownEntry,
     ScoreCalculationDetail,
     ScoreConfigurationDetail,
+    CampaignCandidateSummaryResponse,
     CandidateSemanticResponse,
+    RankedCampaignCandidatesResponse,
     SemanticScoreBreakdownResponse,
     SemanticScoreSummary,
     ResubmissionInfoResponse,
@@ -655,11 +658,142 @@ class CampaignCandidateService:
             for campaign_candidate, candidate, resume in rows
         ]
 
+    def get_ranked_campaign_candidates(
+        self,
+        campaign_id: UUID,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
+        pipeline_stage: PipelineStage | None = None,
+        composite_score_min: float | None = None,
+        composite_score_max: float | None = None,
+        ai_recommendation: AIRecommendation | None = None,
+        ai_evaluation_status: AIEvaluationStatus | None = None,
+        include_pending: bool = True,
+        include_rejected: bool = True,
+        include_fraud: bool = True,
+        hr_override: bool | None = None,
+    ) -> RankedCampaignCandidatesResponse:
+        """
+        M10-E03 Phase 1: the ranked, filtered, paginated candidate list -
+        the extended shape of get_campaign_candidates(), which remains
+        unchanged above for any existing direct caller. All filtering and
+        ordering happens in
+        CampaignCandidateRepository.get_ranked_by_campaign() (PostgreSQL,
+        never Python); this method only validates, delegates, and maps
+        rows to response DTOs with their 1-based rank within the current
+        page. Read-only - never writes an audit entry, matching every
+        other read-only listing/detail endpoint in this service.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        if page < 1:
+            raise CampaignException("page must be >= 1.", 422)
+        if page_size < 1 or page_size > MAX_PAGE_SIZE:
+            raise CampaignException(f"page_size must be between 1 and {MAX_PAGE_SIZE}.", 422)
+        if (
+            composite_score_min is not None
+            and composite_score_max is not None
+            and composite_score_min > composite_score_max
+        ):
+            raise CampaignException("composite_score_min must not be greater than composite_score_max.", 422)
+
+        rows, total = self.campaign_candidate_repo.get_ranked_by_campaign(
+            campaign_id,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            pipeline_stage=pipeline_stage,
+            composite_score_min=composite_score_min,
+            composite_score_max=composite_score_max,
+            ai_recommendation=ai_recommendation,
+            ai_evaluation_status=ai_evaluation_status,
+            include_pending=include_pending,
+            include_rejected=include_rejected,
+            include_fraud=include_fraud,
+            hr_override=hr_override,
+        )
+
+        first_rank_on_page = (page - 1) * page_size + 1
+        items = [
+            self._to_campaign_candidate_response(campaign_candidate, candidate, resume, rank=first_rank_on_page + offset)
+            for offset, (campaign_candidate, candidate, resume) in enumerate(rows)
+        ]
+
+        return RankedCampaignCandidatesResponse(items=items, page=page, page_size=page_size, total=total)
+
+    def get_campaign_candidate_summary(self, campaign_id: UUID) -> CampaignCandidateSummaryResponse:
+        """
+        M10-E03 Phase 1: aggregate ranking statistics for one campaign -
+        total/ranked/pending/rejected/fraud counts, composite_score
+        highest/lowest/average, and pipeline-stage + AI-recommendation
+        breakdowns. Reuses CampaignRepository.get_stage_counts() (M07-E01)
+        as-is for the pipeline-stage breakdown - and derives
+        rejected_candidates from that same result - rather than running a
+        second, duplicate REJECTED-count query.  Read-only - never writes
+        an audit entry.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        stage_counts = self.campaign_repo.get_stage_counts(campaign_id)
+        aggregates = self.campaign_candidate_repo.get_score_aggregates(campaign_id)
+        ai_recommendation_counts = self.campaign_candidate_repo.get_ai_recommendation_counts(campaign_id)
+
+        pending = aggregates["total"] - aggregates["ranked"] - aggregates["failed"]
+
+        return CampaignCandidateSummaryResponse(
+            total_candidates=aggregates["total"],
+            ranked_candidates=aggregates["ranked"],
+            pending_candidates=pending,
+            rejected_candidates=stage_counts.get(PipelineStage.REJECTED.value, 0),
+            fraud_candidates=aggregates["fraud"],
+            highest_composite_score=aggregates["highest"],
+            lowest_composite_score=aggregates["lowest"],
+            average_composite_score=(
+                round(aggregates["average"], 2) if aggregates["average"] is not None else None
+            ),
+            pipeline_stage_counts=stage_counts,
+            ai_recommendation_counts=ai_recommendation_counts,
+        )
+
+    @staticmethod
+    def _derive_ranking_status(campaign_candidate: CampaignCandidate) -> str:
+        """
+        M10-E03 Phase 1: RANKED/PENDING/FAILED, derived on every read from
+        already-loaded columns - never stored. RANKED whenever
+        composite_score is present, regardless of pipeline_stage (a
+        rejected candidate that was scored before rejection keeps its
+        RANKED status - rejection is surfaced separately via
+        pipeline_stage/include_rejected, not by hiding the score). Absent a
+        score: FAILED only when ai_evaluation_status is explicitly FAILED
+        (a genuine pipeline error); every other no-score case (not yet
+        reached AI evaluation, still IN_PROGRESS, SKIPPED, MANUAL_REVIEW,
+        or rejected at an earlier layer before AI evaluation ever ran) is
+        PENDING.
+        """
+        if campaign_candidate.composite_score is not None:
+            return "RANKED"
+        # getattr-guarded: real CampaignCandidate rows always have this
+        # column; some pre-M10-E03 test fixtures build bare SimpleNamespace
+        # objects that predate it - defaulting to None (-> PENDING) keeps
+        # those fixtures passing unchanged rather than requiring every one
+        # of them to be updated for an unrelated field.
+        if getattr(campaign_candidate, "ai_evaluation_status", None) == AIEvaluationStatus.FAILED:
+            return "FAILED"
+        return "PENDING"
+
     def _to_campaign_candidate_response(
         self,
         campaign_candidate: CampaignCandidate,
         candidate: Candidate | None,
         resume: Resume | None,
+        rank: int | None = None,
     ) -> CampaignCandidateResponse:
         designation, experience = self._extract_designation_and_experience(resume)
 
@@ -690,6 +824,15 @@ class CampaignCandidateService:
                 float(campaign_candidate.composite_score)
                 if campaign_candidate.composite_score is not None else None
             ),
+            # getattr-guarded (see _derive_ranking_status's docstring note) -
+            # real CampaignCandidate rows always have these columns; a few
+            # pre-M10-E03 test fixtures build bare SimpleNamespace objects
+            # that predate them.
+            is_fraud_flagged=getattr(campaign_candidate, "is_fraud_flagged", False),
+            hr_override=getattr(campaign_candidate, "hr_override", False),
+            ai_recommendation=getattr(campaign_candidate, "ai_recommendation", None),
+            rank=rank,
+            ranking_status=self._derive_ranking_status(campaign_candidate),
             location=None,
             risk_score=None,
             created_at=campaign_candidate.created_at,
@@ -1529,6 +1672,13 @@ class CampaignCandidateService:
                 _enqueue_semantic_scoring(
                     campaign_candidate, self.celery_task_log_service, self.resume_repo, jd_id=jd_id,
                 )
+
+            # M10-E01: an HR override is NOT a composite-score trigger. It
+            # only restarts the remaining scoring pipeline (re-queued above:
+            # AI_EVALUATE + semantic scoring) - composite_score is
+            # (re)computed only once that pipeline's AI evaluation step
+            # eventually completes, or on a campaign weight change. Never
+            # enqueue composite scoring directly from here.
         except Exception:
             logger.exception(
                 "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",

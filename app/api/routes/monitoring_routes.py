@@ -83,6 +83,10 @@ def get_embedding_dashboard(
     return APIResponse.ok(
         data=service.get_dashboard(),
         message="Embedding dashboard retrieved successfully.",
+    )
+
+
+@router.get(
     "/upload-queue-dashboard",
     response_model=APIResponse[UploadQueueDashboardResponse],
     status_code=status.HTTP_200_OK,
