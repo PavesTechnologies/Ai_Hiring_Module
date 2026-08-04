@@ -1,6 +1,7 @@
 import json
 import logging
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -553,7 +554,7 @@ class SkillOntologyService:
                     validation_errors=[BulkImportValidationErrorResponse(message=str(exc))],
                 )
         finally:
-            Path(tmp_path).unlink(missing_ok=True)
+            self._cleanup_temp_file(tmp_path)
 
         return self._validate_rows(skills)
 
@@ -579,7 +580,7 @@ class SkillOntologyService:
             except (ValueError, FileNotFoundError) as exc:
                 raise BadRequestError(str(exc)) from exc
         finally:
-            Path(tmp_path).unlink(missing_ok=True)
+            self._cleanup_temp_file(tmp_path)
 
         return self._execute_bulk_import(
             skills, file_name=file.filename, updated_by=updated_by, actor_role=actor_role
@@ -591,10 +592,39 @@ class SkillOntologyService:
             tmp.write(file.file.read())
             return tmp.name
 
+    @staticmethod
+    def _cleanup_temp_file(tmp_path: str) -> None:
+        """
+        On Windows, antivirus/indexing can briefly hold a lock on a
+        just-written .xlsx temp file even after openpyxl closes it, making
+        unlink() raise PermissionError (WinError 32) right after a
+        successful parse. Retry briefly, then give up and log rather than
+        fail the request — the OS temp directory reclaims orphaned files
+        on its own, so a missed cleanup here is not worth losing the import.
+        """
+        for attempt in range(3):
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+                return
+            except PermissionError:
+                if attempt == 2:
+                    logger.warning("Could not delete temp upload file %s; leaving for OS cleanup", tmp_path)
+                    return
+                time.sleep(0.2)
+
     def _validate_rows(self, skills: list[dict]) -> BulkImportValidationResponse:
         existing_by_name = self.repository.get_all_canonical_names()
         seen_in_file: set[str] = set()
         errors: list[BulkImportValidationErrorResponse] = []
+
+        # A parent_skill may reference a canonical_name defined anywhere in
+        # this same file, regardless of row order — build the full set
+        # upfront rather than checking against seen_in_file, which only
+        # ever contains rows already processed and wrongly rejects a
+        # forward reference (parent defined further down the file).
+        all_canonical_names_in_file = {
+            skill["canonical_name"] for skill in skills if skill["canonical_name"]
+        }
 
         for skill in skills:
             row_number = skill["row_number"]
@@ -625,7 +655,7 @@ class SkillOntologyService:
                     ))
 
             parent_name = skill["parent_skill"]
-            if parent_name and parent_name not in existing_by_name and parent_name not in seen_in_file:
+            if parent_name and parent_name not in existing_by_name and parent_name not in all_canonical_names_in_file:
                 errors.append(BulkImportValidationErrorResponse(
                     row=row_number, column="parent_skill",
                     message=f"Parent skill '{parent_name}' does not exist.",
@@ -665,6 +695,20 @@ class SkillOntologyService:
             existing_by_name = self.repository.get_all_canonical_names()
             seen_in_file: set[str] = set()
 
+            # SkillOntology.id is client-generated (uuid4), not DB-assigned,
+            # so every new skill's id can be reserved upfront. That lets a
+            # parent_skill reference resolve correctly regardless of
+            # whether the parent's row appears earlier or later in this
+            # same file — looking parent_skill up only in existing_by_name
+            # (which, mid-loop, only holds rows already processed) rejected
+            # a parent defined further down the file as "does not exist"
+            # even though it's right there in the upload.
+            planned_ids: dict[str, UUID] = {
+                skill["canonical_name"]: uuid4()
+                for skill in skills
+                if skill["canonical_name"] and skill["canonical_name"] not in existing_by_name
+            }
+
             for skill in skills:
                 row_number = skill["row_number"]
                 canonical_name = skill["canonical_name"]
@@ -691,9 +735,12 @@ class SkillOntologyService:
                     parent_skill_id = None
                     if skill["parent_skill"]:
                         parent = existing_by_name.get(skill["parent_skill"])
-                        if not parent:
+                        if parent:
+                            parent_skill_id = parent.id
+                        elif skill["parent_skill"] in planned_ids:
+                            parent_skill_id = planned_ids[skill["parent_skill"]]
+                        else:
                             raise ValueError(f"Parent skill '{skill['parent_skill']}' does not exist.")
-                        parent_skill_id = parent.id
 
                     cleaned_aliases = self._clean_aliases(skill["aliases"])
 
@@ -711,7 +758,7 @@ class SkillOntologyService:
                             updated += 1
                         else:
                             new_skill = SkillOntology(
-                                id=uuid4(),
+                                id=planned_ids[canonical_name],
                                 canonical_name=canonical_name,
                                 aliases=cleaned_aliases,
                                 category=skill["category"],

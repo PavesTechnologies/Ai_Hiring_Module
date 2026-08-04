@@ -10,6 +10,7 @@ from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Re
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from app.models.skills import CandidateSkill
+from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 
 _SORT_COLUMNS = {
     "created_at": Resume.created_at,
@@ -205,14 +206,7 @@ class ResumeRepository:
         return resume
 
     def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
-        version = (
-            self.db.query(EmbeddingModelVersion)
-            .filter(EmbeddingModelVersion.is_active.is_(True))
-            .first()
-        )
-        if not version:
-            raise RuntimeError("No active embedding model version is configured.")
-        return version
+        return EmbeddingModelVersionRepository(self.db).get_active()
 
     def create_resume_embedding(
         self,

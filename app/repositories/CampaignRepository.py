@@ -118,6 +118,38 @@ class CampaignRepository:
         )
         return self.db.execute(stmt).all()
 
+    def get_campaigns_by_created_by(
+        self,
+        created_by: str,
+        show_closed: bool = False,
+        search: str | None = None,
+        status: CampaignStatus | None = None,
+        page: int = 1,
+        page_size: int = 6,
+    ) -> tuple[list[HiringCampaign], int]:
+        conditions = [HiringCampaign.created_by == created_by]
+        if not show_closed:
+            conditions.append(HiringCampaign.status != CampaignStatus.CLOSED)
+        if search:
+            conditions.append(HiringCampaign.name.ilike(f"%{search}%"))
+        if status:
+            conditions.append(HiringCampaign.status == status)
+
+        total = self.db.execute(
+            select(func.count()).select_from(HiringCampaign).where(*conditions)
+        ).scalar_one()
+
+        stmt = (
+            select(HiringCampaign)
+            .where(*conditions)
+            .options(joinedload(HiringCampaign.job_description))
+            .order_by(HiringCampaign.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        campaigns = self.db.execute(stmt).scalars().all()
+        return campaigns, total
+
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[HiringCampaign]:
         stmt = (select(HiringCampaign)
             .where(HiringCampaign.hiring_manager_id == manager_id,

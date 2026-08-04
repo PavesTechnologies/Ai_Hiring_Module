@@ -196,13 +196,6 @@ try:
             value="20",
             description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
         ),
-        # M07-E03 S05: Deterministic Rejection Analytics
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="MIN_CANDIDATES_FOR_ANALYTICS",
-            value="20",
-            description="Minimum candidates a campaign must have before JD calibration recommendations are generated in the Rejection Analytics report",
-        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="SKILL_MISMATCH_RATE_THRESHOLD",

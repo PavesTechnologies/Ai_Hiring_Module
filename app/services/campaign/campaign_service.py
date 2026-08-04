@@ -26,7 +26,7 @@ from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CampaignMinimalResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CampaignMinimalResponse, CampaignPageResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
@@ -538,16 +538,27 @@ class CampaignService:
             for c in campaigns
         ]
 
-    def get_all_campaigns_for_hrAdmin(self, show_closed: bool = False) -> list[CampaignResponse]:
-        # HR_ADMIN must see every campaign in the org, not just the
-        # ones they personally created — reuses get_all_campaigns() instead of
-        # a separate created_by-scoped repo query.
-        campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
+    def get_all_campaigns_for_hrAdmin(
+        self,
+        created_by: str,
+        show_closed: bool = False,
+        search: str | None = None,
+        status: CampaignStatus | None = None,
+        page: int = 1,
+        page_size: int = 6,
+    ) -> CampaignPageResponse:
+        # Scoped to the requesting HR_ADMIN's own campaigns (created_by from
+        # their token) and paginated, 6 per page by default — this endpoint
+        # no longer returns every campaign in the org in one shot.
+        campaigns, total = self.campaign_repo.get_campaigns_by_created_by(
+            created_by=created_by, show_closed=show_closed, search=search, status=status,
+            page=page, page_size=page_size,
+        )
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
         prompt_names = self._prompt_name_map(campaigns)
-        return [
+        items = [
             CampaignResponse(id=c.id,
                 name=c.name,
                 status=c.status.value,
@@ -573,6 +584,7 @@ class CampaignService:
             )
             for c in campaigns
         ]
+        return CampaignPageResponse(items=items, page=page, page_size=page_size, total=total)
 
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id, show_closed=show_closed)

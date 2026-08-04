@@ -28,6 +28,12 @@ class CampaignResponse(BaseModel):
     duplicated_from_campaign_id: UUID | None = None
     duplicated_from_campaign_name: str | None = None
 
+class CampaignPageResponse(BaseModel):
+    items: list[CampaignResponse]
+    page: int
+    page_size: int
+    total: int
+
 class CampaignMinimalResponse(BaseModel):
     """id + name only — for dropdowns/pickers that don't need the full campaign shape."""
     model_config = ConfigDict(from_attributes=True)
