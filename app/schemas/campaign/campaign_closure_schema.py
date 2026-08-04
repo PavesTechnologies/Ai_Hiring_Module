@@ -24,8 +24,7 @@ class CampaignClosureImpactSummaryResponse(BaseModel):
     in_progress_task_count: int          # celery_task_log QUEUED or RUNNING
     pending_human_decision_count: int    # candidates in INTERVIEW or HM_REVIEW
     in_progress_bulk_job_count: int      # bulk_upload_jobs in PROCESSING
-    warning: str = (
-        "Closing will stop new uploads, cancel queued processing tasks, and "
+    warning: str = ("Closing will stop new uploads, cancel queued processing tasks, and "
         "permanently conclude this campaign. This cannot be undone."
     )
 

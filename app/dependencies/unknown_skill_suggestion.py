@@ -1,5 +1,7 @@
 from fastapi import Depends
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.dependencies.campaign import get_config_repository
 from app.dependencies.unknown_skill import get_skill_repository
 from app.repositories.config_repository import ConfigRepository
@@ -8,8 +10,8 @@ from app.services.ai.embedding_service import EmbeddingService
 from app.services.skills.unknown_skill_suggestion_service import UnknownSkillSuggestionService
 
 
-def get_embedding_service() -> EmbeddingService:
-    return EmbeddingService()
+def get_embedding_service(db: Session = Depends(get_db)) -> EmbeddingService:
+    return EmbeddingService(db)
 
 
 def get_unknown_skill_suggestion_service(

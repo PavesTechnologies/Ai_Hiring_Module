@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, ProcessingStage, StageFailureLog
@@ -73,5 +73,13 @@ class StageFailureLogRepository:
         self.db.refresh(log)
         return log
 
+    def delete_by_task_id(self, task_id: str) -> None:
+        """Dead-letter cleanup — removes every failed-attempt log row for one task_id."""
+        self.db.execute(delete(StageFailureLog).where(StageFailureLog.task_id == task_id))
+        self.db.flush()
+
     def commit(self) -> None:
         self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()

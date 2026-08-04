@@ -68,6 +68,15 @@ class ResumeIntakeService:
     ) -> tuple[Resume, CampaignCandidateResponse, HiringCampaign, UUID | None, bool]:
         campaign = self._precheck_campaign_eligibility(campaign_id)
 
+        # Fast, non-authoritative — rejects a candidate who already has a
+        # campaign_candidates row for this campaign before any file upload
+        # or Resume row is created, instead of only being caught afterward
+        # by create_campaign_candidate's own identical check (which used to
+        # leave an orphaned, unprocessed Resume row behind on every rejection).
+        self.campaign_candidate_service.check_no_existing_campaign_membership(
+            campaign_id, candidate_email,
+        )
+
         # Epic 3 (M05-E03) Phase C2 — may raise DuplicateResumeFileException
         # (no route-level handling needed; the global ResumeException
         # handler already covers it) when no resolution was given for a

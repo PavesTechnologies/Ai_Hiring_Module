@@ -88,20 +88,27 @@ class ResumeExtractionResponse(BaseModel):
     # call exists anymore.
     full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
+    # Non-technical/behavioral skills (e.g. "Communication", "Leadership"),
+    # kept separate from `skills` so they never reach
+    # SkillNormalizationService's skill-ontology matching/scoring pipeline -
+    # display-only, empty list if the resume has none.
+    soft_skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
+    department: str | None = None
+    location: str | None = None
     summary: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("skills", "certifications")
+    @field_validator("skills", "soft_skills", "certifications")
     @classmethod
     def clean_lists(cls, values: list[str]) -> list[str]:
         return _clean_string_list(values)
 
-    @field_validator("full_name", "summary")
+    @field_validator("full_name", "department", "location", "summary")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
@@ -126,9 +133,12 @@ class ResumeExtractionGenerationSchema(BaseModel):
     """
     full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
+    soft_skills: list[str] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
+    department: str | None = None
+    location: str | None = None
     summary: str | None = None

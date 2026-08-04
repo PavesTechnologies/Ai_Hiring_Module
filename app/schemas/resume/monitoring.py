@@ -100,6 +100,7 @@ class FailureInfo(BaseModel):
     error_message: str | None
     classification: str | None
     moved_to_dlq: bool
+    dlq_id: UUID | None = None
 
 
 class ResumeDetailResponse(BaseModel):
@@ -114,6 +115,8 @@ class ResumeDetailResponse(BaseModel):
 
 class ResumeListItem(BaseModel):
     id: UUID
+    resume_id: UUID
+    task_id: str | None
     candidate_id: UUID
     candidate_full_name: str
     candidate_email: str

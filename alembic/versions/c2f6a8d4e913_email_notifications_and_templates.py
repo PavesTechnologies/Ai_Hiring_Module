@@ -21,10 +21,10 @@ depends_on = None
 
 def upgrade() -> None:
     email_trigger_event_enum = postgresql.ENUM(
-        "CANDIDATE_REJECTED", name="email_trigger_event_enum",
+        "CANDIDATE_REJECTED", name="email_trigger_event_enum", create_type=False,
     )
     email_notification_status_enum = postgresql.ENUM(
-        "QUEUED", "SENT", "FAILED", name="email_notification_status_enum",
+        "QUEUED", "SENT", "FAILED", name="email_notification_status_enum", create_type=False,
     )
     email_trigger_event_enum.create(op.get_bind(), checkfirst=True)
     email_notification_status_enum.create(op.get_bind(), checkfirst=True)

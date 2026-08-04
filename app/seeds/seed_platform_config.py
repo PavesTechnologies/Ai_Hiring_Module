@@ -196,13 +196,6 @@ try:
             value="20",
             description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
         ),
-        # M07-E03 S05: Deterministic Rejection Analytics
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="MIN_CANDIDATES_FOR_ANALYTICS",
-            value="20",
-            description="Minimum candidates a campaign must have before JD calibration recommendations are generated in the Rejection Analytics report",
-        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="SKILL_MISMATCH_RATE_THRESHOLD",
@@ -274,18 +267,39 @@ try:
             key="EMBEDDING_BATCH_SIZE",
             value="32",
             description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="CROSS_CAMPAIGN_SUBMISSION_ALERT_THRESHOLD",
+            key="MAX_DLQ_REPLAYS_PER_TASK",
             value="3",
-            description="Number of distinct campaign_candidates rows within CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS above which a CAMPAIGN_RESUBMISSION_DETECTED alert is raised for a candidate",
+            description="Maximum times a dead-lettered task chain may be replayed before further replays are blocked (M04-E04-S03-T02 infinite-loop guard)",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="CROSS_CAMPAIGN_SUBMISSION_WINDOW_DAYS",
-            value="30",
-            description="Rolling window, in days, over which candidate campaign submissions are counted for the resubmission-alert threshold",
+            key="INTERVIEW_SLA_DAYS",
+            value="7",
+            description="Days a candidate may sit in INTERVIEW before being flagged as stalled (M04-E04-S04)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DETERMINISTIC_HIGH_REJECTION_THRESHOLD",
+            value="60.00",
+            description="DETERMINISTIC-layer rejection rate (%, of total rejections) above which the rejection-analytics panel recommends reviewing JD mandatory skills (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SEMANTIC_HIGH_REJECTION_THRESHOLD",
+            value="40.00",
+            description="SEMANTIC-layer rejection rate (%) above which the rejection-analytics panel recommends lowering semantic_threshold (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="AI_HIGH_REJECTION_THRESHOLD",
+            value="40.00",
+            description="AI-layer rejection rate (%) above which the rejection-analytics panel recommends lowering ai_threshold (M04-E04-S05-T02)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MIN_CANDIDATES_FOR_ANALYTICS",
+            value="10",
+            description="Minimum processed candidates before rejection-analytics recommendations are shown (M04-E04-S05-T02)",
         ),
         # Epic 4 (M05-E04) Phase D0: platform-wide upload-queue alert thresholds
         PlatformConfig(

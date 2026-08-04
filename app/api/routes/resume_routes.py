@@ -6,9 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, Security, Up
 from pydantic import ValidationError
 
 from app.dependencies.resume import (
+    get_resume_cleanup_service,
     get_resume_intake_service,
     get_resume_monitoring_service,
     get_resume_processing_status_service,
+    get_resume_service,
 )
 from app.enums.constants import Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
@@ -24,13 +26,16 @@ from app.schemas.resume.monitoring import (
 from app.schemas.resume.request import ResumeUploadRequest
 from app.schemas.resume.response import (
     ResumeProcessingStatusResponse,
+    ResumeRetryResponse,
     ResumeUploadAcceptedResponse,
     ResumeVersionHistoryResponse,
 )
 from app.schemas.response import APIResponse
+from app.services.resume.resume_cleanup_service import ResumeCleanupService
 from app.services.resume.resume_intake_service import ResumeIntakeService
 from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
+from app.services.resume.resume_upload_service import ResumeUploadService
 
 router = APIRouter(
     prefix="/resumes",
@@ -264,4 +269,92 @@ def get_resume_parse_attempts(
     return APIResponse.ok(
         data=service.get_parse_attempts(resume_id),
         message="Parse attempt history retrieved successfully.",
+    )
+
+
+@router.post(
+    "/{resume_id}/retry",
+    response_model=APIResponse[ResumeRetryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def retry_resume_parse(
+    resume_id: UUID,
+    service: ResumeUploadService = Depends(get_resume_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Epic 4 (M05-E04) Phase D10 - re-dispatches a FAILED resume's
+    processing from its existing, already-stored file (no re-upload).
+    HR_ADMIN only, matching the equivalent bulk-file replay route's
+    strictness.
+    """
+    resume, new_task_id = service.retry_parse(
+        resume_id, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(
+        data=ResumeRetryResponse(
+            resume_id=resume.id, task_id=new_task_id, parse_status=resume.parse_status.value,
+        ),
+        message="Resume retry enqueued.",
+    )
+
+
+@router.post(
+    "/dead-letter-queue/{dlq_id}/replay",
+    response_model=APIResponse[ResumeRetryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def replay_resume_dlq_entry(
+    dlq_id: UUID,
+    service: ResumeUploadService = Depends(get_resume_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Epic 4 (M05-E04) Phase D10 - replays a dead-lettered (retries
+    exhausted) resume-processing failure from its DLQ entry. HR_ADMIN
+    only, matching the equivalent bulk-file replay route's strictness.
+    """
+    resume, new_task_id = service.replay_from_dlq(
+        dlq_id, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+    )
+    return APIResponse.ok(
+        data=ResumeRetryResponse(
+            resume_id=resume.id, task_id=new_task_id, parse_status=resume.parse_status.value,
+        ),
+        message="Resume DLQ entry replay enqueued.",
+    )
+
+
+@router.delete(
+    "/{resume_id}",
+    response_model=APIResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Delete a single resume (cleanup)",
+    description=(
+        "Permanently removes one resume version and everything that "
+        "references it - its own campaign_candidates links (across every "
+        "campaign it was linked to), stage history, skills, embeddings, "
+        "parse attempts, task/DLQ history, and the stored file - without "
+        "touching the candidate itself or their other resume versions. "
+        "Intended for cleaning up stuck/orphaned resumes (e.g. a "
+        "processing task that was enqueued but never picked up). "
+        "HR_ADMIN or RECRUITER."
+    ),
+)
+def delete_resume(
+    resume_id: UUID,
+    reason: str | None = Query(default=None, max_length=500),
+    service: ResumeCleanupService = Depends(get_resume_cleanup_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    service.delete_resume(
+        resume_id=resume_id,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+        reason=reason,
+    )
+
+    return APIResponse.ok(
+        data=None,
+        message="Resume deleted successfully.",
     )

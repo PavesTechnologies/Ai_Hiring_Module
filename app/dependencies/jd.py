@@ -13,6 +13,7 @@ from app.dependencies.storage import get_storage_service
 from app.core.storage_service import StorageService
 
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.stage_execution_service import StageExecutionService
@@ -73,6 +74,12 @@ def get_stage_tracker(
     repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
 ) -> StageExecutionService:
     return StageExecutionService(repository)
+
+
+def get_checkpoint_repository(
+    db: Session = Depends(get_db),
+) -> CheckpointRepository:
+    return CheckpointRepository(db)
 
 
 def get_celery_task_log_repository(

@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.embeddings import EmbeddingModelVersion
+from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.models.jd.job_descriptions import JDEmbedding, JobDescription
 from app.models.jd.job_descriptions import EmbeddingStatus
 from app.schemas.jd.request import JDSearchRequest
@@ -306,14 +307,7 @@ class JDRepository:
         )
 
     def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
-        version = (
-            self.db.query(EmbeddingModelVersion)
-            .filter(EmbeddingModelVersion.is_active.is_(True))
-            .first()
-        )
-        if not version:
-            raise RuntimeError("No active embedding model version is configured.")
-        return version
+        return EmbeddingModelVersionRepository(self.db).get_active()
 
     def create_jd_embedding(
         self,

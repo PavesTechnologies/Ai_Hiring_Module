@@ -37,20 +37,41 @@ class SkillExcelReader:
             worksheet = workbook.active
 
             rows = worksheet.iter_rows(values_only=True)
-            header_row = next(rows, None)
-            if header_row is None:
-                raise ValueError(f"Skill ontology Excel file has no header row: {path}")
 
-            headers = [str(cell).strip() if cell is not None else "" for cell in header_row]
-            missing_columns = [column for column in REQUIRED_COLUMNS if column not in headers]
-            if missing_columns:
+            # The header is normally row 1, but some tools (Google Sheets
+            # exports, manually-built workbooks) prepend a title row or
+            # blank spacer row above it. Scan the first few rows for one
+            # that actually contains the required columns instead of only
+            # ever looking at the very first row.
+            header_row = None
+            headers: list[str] = []
+            first_row_headers: list[str] | None = None
+            header_row_number = 0
+            for header_row_number in range(1, 6):
+                candidate = next(rows, None)
+                if candidate is None:
+                    break
+                candidate_headers = [SkillExcelReader._normalize_header(cell) for cell in candidate]
+                if first_row_headers is None:
+                    first_row_headers = candidate_headers
+                if all(column in candidate_headers for column in REQUIRED_COLUMNS):
+                    header_row = candidate
+                    headers = candidate_headers
+                    break
+
+            if header_row is None:
+                if first_row_headers is None:
+                    raise ValueError(f"Skill ontology Excel file has no header row: {path}")
+                missing_columns = [column for column in REQUIRED_COLUMNS if column not in first_row_headers]
                 raise ValueError(
-                    f"Skill ontology Excel is missing required column(s): {', '.join(missing_columns)}"
+                    f"Skill ontology Excel is missing required column(s): {', '.join(missing_columns)}. "
+                    f"Detected header row: {first_row_headers}"
                 )
+
             column_index = {column: headers.index(column) for column in REQUIRED_COLUMNS}
 
             skills: list[dict[str, Any]] = []
-            for row_number, row in enumerate(rows, start=2):
+            for row_number, row in enumerate(rows, start=header_row_number + 1):
                 if row is None or all(cell is None or str(cell).strip() == "" for cell in row):
                     continue  # skip completely blank rows (spreadsheet padding, not real data)
 
@@ -93,4 +114,14 @@ class SkillExcelReader:
     def _parse_bool(value: Any) -> bool:
         if isinstance(value, bool):
             return value
-        return str(value).strip().upper() == "TRUE"
+        return str(value).strip().upper() in ("TRUE", "ACTIVE", "YES", "1")
+
+    @staticmethod
+    def _normalize_header(cell: Any) -> str:
+        if cell is None:
+            return ""
+        # Headers pasted from Word/PDF/web pages often carry a BOM or
+        # non-breaking space instead of a plain one, which plain str.strip()
+        # leaves behind and makes an otherwise-correct header fail the
+        # REQUIRED_COLUMNS membership check.
+        return str(cell).replace("﻿", "").replace("\xa0", " ").strip().lower()
