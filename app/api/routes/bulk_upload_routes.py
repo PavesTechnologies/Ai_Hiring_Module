@@ -401,7 +401,7 @@ def replay_bulk_upload_file(
     bulk_upload_job_id: UUID,
     file_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
     Re-enqueues a single FAILED file's parse task from its dead-lettered

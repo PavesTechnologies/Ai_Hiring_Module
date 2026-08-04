@@ -471,6 +471,7 @@ class CampaignCandidateService:
 
         return ResubmissionInfoResponse(
             campaign_candidate_id=campaign_candidate.id,
+            candidate_id=campaign_candidate.candidate_id,
             current_pipeline_stage=campaign_candidate.pipeline_stage,
             current_resume_id=campaign_candidate.resume_id,
             can_update_resume=can_update_resume,

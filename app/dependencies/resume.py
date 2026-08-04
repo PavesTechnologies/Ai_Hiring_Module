@@ -37,6 +37,7 @@ from app.services.compliance.candidate_erasure_service import CandidateErasureSe
 from app.services.compliance.consent_service import ConsentService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
+from app.services.resume.resume_cleanup_service import ResumeCleanupService
 from app.services.resume.resume_intake_service import ResumeIntakeService
 from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
@@ -212,6 +213,26 @@ def get_candidate_erasure_service(
         candidate_rejection_repo=candidate_rejection_repo,
         consent_repo=consent_repo,
         email_notification_repo=email_notification_repo,
+        celery_task_log_repo=celery_task_log_repo,
+        dead_letter_queue_repo=dead_letter_queue_repo,
+        storage_service=storage_service,
+        audit_service=audit_service,
+    )
+
+
+def get_resume_cleanup_service(
+    resume_repo: ResumeRepository = Depends(get_resume_repository),
+    campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    candidate_rejection_repo: CandidateRejectionRepository = Depends(get_candidate_rejection_repository),
+    celery_task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+    storage_service: StorageService = Depends(get_storage_service),
+    audit_service: AuditService = Depends(get_audit_service),
+) -> ResumeCleanupService:
+    return ResumeCleanupService(
+        resume_repo=resume_repo,
+        campaign_candidate_repo=campaign_candidate_repo,
+        candidate_rejection_repo=candidate_rejection_repo,
         celery_task_log_repo=celery_task_log_repo,
         dead_letter_queue_repo=dead_letter_queue_repo,
         storage_service=storage_service,
