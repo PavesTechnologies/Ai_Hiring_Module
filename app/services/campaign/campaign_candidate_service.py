@@ -1494,6 +1494,13 @@ class CampaignCandidateService:
             # semantic scoring for this candidate."
             if self.resume_repo is not None:
                 _enqueue_semantic_scoring(campaign_candidate, self.celery_task_log_service, self.resume_repo)
+
+            # M10-E01: an HR override is NOT a composite-score trigger. It
+            # only restarts the remaining scoring pipeline (re-queued above:
+            # AI_EVALUATE + semantic scoring) - composite_score is
+            # (re)computed only once that pipeline's AI evaluation step
+            # eventually completes, or on a campaign weight change. Never
+            # enqueue composite scoring directly from here.
         except Exception:
             logger.exception(
                 "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",

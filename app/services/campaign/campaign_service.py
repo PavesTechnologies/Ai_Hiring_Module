@@ -1,3 +1,4 @@
+import logging
 import math
 import statistics
 from datetime import datetime, timezone
@@ -13,14 +14,19 @@ from app.tasks.resume_processing_tasks import process_resume_document
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.enums.constants import ActionType, EntityType, UserRole
+from app.enums.constants import ActionType, COMPOSITE_SCORE_FORMULA_VERSION, EntityType, UserRole
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
-from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.campaigns import CampaignStatus, CampaignWeightConfigurationHistory, HiringCampaign
 from app.models.identity import User
 from app.models.identity import UserRole as LocalUserRole
 from app.models.jd.job_descriptions import JDVerificationStatus
+from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.campaign_weight_configuration_history_repository import (
+    CampaignWeightConfigurationHistoryRepository,
+)
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
@@ -30,6 +36,8 @@ from app.schemas.campaign.campaign_response import CampaignResponse, CampaignSco
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
+from app.services.celery_task_log_service import CeleryTaskLogService
+from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
 from app.schemas.campaign.campaign_closure_schema import (CampaignCloseRequest,
     CampaignClosureImpactSummaryResponse,
@@ -51,7 +59,7 @@ from app.schemas.campaign.campaign_detail_response import (CampaignDetailRespons
     PipelineLimitsSection,
     HiringManagerSection,
 )
-from app.models.pipeline import PipelineStage, RejectionLayer, TransitionSource
+from app.models.pipeline import CompositeScoreTriggerSource, PipelineStage, RejectionLayer, TransitionSource
 from app.schemas.campaign.campaign_monitoring_schema import (StalledCandidateItem,
     StalledCandidatesResponse,
     StageOverrideRequest,
@@ -79,6 +87,12 @@ from app.repositories.dead_letter_queue_repository import DeadLetterQueueReposit
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 from app.utils.excel_export import ExcelExport
 
+logger = logging.getLogger(__name__)
+
+# M10-E01 Design Decision 9: weight-field names whose change (as opposed to
+# a threshold-only change) must trigger a composite-score recalculation.
+_WEIGHT_FIELDS = {"weight_deterministic", "weight_semantic", "weight_ai"}
+
 
 class CampaignService:
 
@@ -92,6 +106,7 @@ class CampaignService:
         circuit_breaker_repo: CircuitBreakerRepository | None = None,
         dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
         prompt_template_repo: PromptTemplateRepository | None = None,
+        campaign_weight_configuration_history_repo: CampaignWeightConfigurationHistoryRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
@@ -104,6 +119,11 @@ class CampaignService:
         # working unchanged.
         self.circuit_breaker_repo = circuit_breaker_repo or CircuitBreakerRepository(db)
         self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(db)
+        # M10-E02 — same defaulted-from-db convention as the two repos above,
+        # so the existing get_campaign_service DI wiring needs no change.
+        self.campaign_weight_configuration_history_repo = (
+            campaign_weight_configuration_history_repo or CampaignWeightConfigurationHistoryRepository(db)
+        )
         self.prompt_template_repo = prompt_template_repo or PromptTemplateRepository(db)
 
     def _get_warning_thresholds(self) -> tuple[float, int]:
@@ -141,7 +161,20 @@ class CampaignService:
         chk_weights_sum_100; this gives a clean 4xx before that's ever reached),
         and no single layer may fall below MIN_LAYER_WEIGHT, which would bypass
         that layer from the composite score entirely.
+
+        M10-E02: also defensively re-validates each individual weight is
+        within [0, 100] - CampaignScoringUpdateRequest already enforces
+        this at the schema layer, but update_campaign's PATCH body
+        (CampaignUpdateRequest) did not until this same epic added matching
+        Field(ge=0, le=100) constraints there too; this service-level check
+        is the second, independent line of defense neither request schema
+        can be relied on alone (M10-E02's own "no partial writes" mandate).
+        A pair like weight_deterministic=-50/weight_semantic=200/weight_ai=-50
+        sums to 100.00 but must still be rejected.
         """
+        if any(w < 0 or w > 100 for w in (weight_deterministic, weight_semantic, weight_ai)):
+            raise CampaignException("Each scoring weight must be between 0 and 100.", 422)
+
         if weight_deterministic + weight_semantic + weight_ai != Decimal("100.00"):
             raise CampaignException("Scoring weights must sum to 100.00", 422)
 
@@ -153,6 +186,97 @@ class CampaignService:
         ):
             raise CampaignException(f"Each scoring layer must be at least {min_layer_weight}%.", 400,
             )
+
+    def _enqueue_composite_recalculation_for_campaign(self, campaign_id: UUID) -> None:
+        """
+        M10-E01 Design Decision 9: a campaign's scoring weights changing
+        recalculates ONLY composite_score for every existing candidate in
+        that campaign - deterministic_score/semantic_score/effective_ai_score
+        are never recomputed, since none of those layers depend on
+        weight_deterministic/weight_semantic/weight_ai. Shared by both
+        scoring-edit paths (update_scoring_configuration and
+        update_campaign) so they can never drift out of sync, same
+        reasoning as _validate_scoring_weights above. Reuses the exact same
+        enqueue/idempotency helper every other composite-score trigger uses
+        (app.tasks.composite_scoring_tasks._enqueue_composite_scoring) -
+        never a second/independent implementation. Best-effort, called only
+        after the weight-change transaction has already committed - a
+        failure here must never undo that already-successful change, same
+        convention as CampaignCandidateService._queue_post_override_evaluation.
+        """
+        try:
+            campaign_candidate_repo = CampaignCandidateRepository(self.db)
+            task_log_service = CeleryTaskLogService(CeleryTaskLogRepository(self.db))
+            for campaign_candidate_id in campaign_candidate_repo.get_ids_by_campaign(campaign_id):
+                _enqueue_composite_scoring(
+                    campaign_candidate_id, task_log_service, CompositeScoreTriggerSource.CAMPAIGN_WEIGHT_CHANGE,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue composite-score recalculation for campaign_id=%s", campaign_id,
+            )
+
+    def _record_weight_configuration_change(
+        self,
+        campaign: HiringCampaign,
+        old_weights: dict[str, Decimal],
+        changed_by: str,
+    ) -> None:
+        """
+        M10-E02 Story 2: inserts one immutable campaign_weight_configuration_history
+        row and writes one CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED audit entry,
+        capturing the before (`old_weights`, read by the caller BEFORE
+        mutating `campaign`) and after (`campaign`'s current, already-updated
+        weight_deterministic/semantic/ai) values. Shared by both scoring-edit
+        paths (update_scoring_configuration and update_campaign) so the two
+        can never drift out of sync, same reasoning as
+        _validate_scoring_weights/_enqueue_composite_recalculation_for_campaign
+        above.
+
+        Callers are expected to invoke this ONLY when the weight fields
+        actually changed (gated the same way _enqueue_composite_recalculation_for_campaign
+        already is) - a no-op resubmission of identical weights must never
+        reach this method, so no additional no-op check is duplicated here.
+        Flushes only (via the repository/audit_service) - does not commit;
+        that remains the caller's responsibility, so this row is rolled
+        back together with the campaign update and its own audit entry as
+        one atomic unit on any downstream failure.
+        """
+        self.campaign_weight_configuration_history_repo.create(CampaignWeightConfigurationHistory(
+            campaign_id=campaign.id,
+            old_weight_deterministic=old_weights["weight_deterministic"],
+            old_weight_semantic=old_weights["weight_semantic"],
+            old_weight_ai=old_weights["weight_ai"],
+            new_weight_deterministic=campaign.weight_deterministic,
+            new_weight_semantic=campaign.weight_semantic,
+            new_weight_ai=campaign.weight_ai,
+            changed_by=changed_by,
+            formula_version=COMPOSITE_SCORE_FORMULA_VERSION,
+        ))
+
+        self.audit_service.log(
+            actor_id=changed_by,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign.id,
+            campaign_id=campaign.id,
+            details={
+                "title": f"Campaign '{campaign.name}' weight configuration changed",
+                "old_weights": {
+                    "weight_deterministic": str(old_weights["weight_deterministic"]),
+                    "weight_semantic": str(old_weights["weight_semantic"]),
+                    "weight_ai": str(old_weights["weight_ai"]),
+                },
+                "new_weights": {
+                    "weight_deterministic": str(campaign.weight_deterministic),
+                    "weight_semantic": str(campaign.weight_semantic),
+                    "weight_ai": str(campaign.weight_ai),
+                },
+                "changed_by": changed_by,
+                "formula_version": COMPOSITE_SCORE_FORMULA_VERSION,
+            },
+        )
 
     def _already_processed_warning(self, candidate_count: int) -> str | None:
         """
@@ -661,62 +785,102 @@ class CampaignService:
         request: CampaignScoringUpdateRequest,
         updated_by: str,
     ) -> CampaignScoringConfigurationResponse:
+        """
+        Updates a campaign's scoring weights/thresholds. M10-E02: wrapped in
+        a single transaction (validate -> persist campaign -> persist weight
+        -configuration history -> audit -> commit -> best-effort Composite
+        Score recalculation) - any failure before commit rolls back every
+        write together, so a history row or audit entry can never be
+        persisted without the campaign update actually landing, or vice
+        versa. Uses get_by_id_for_update (a locking SELECT ... FOR UPDATE,
+        already used elsewhere for campaign-row races) so two concurrent
+        weight-change requests against the same campaign serialize instead
+        of racing to commit.
+        """
+        try:
+            campaign = self.campaign_repo.get_by_id_for_update(campaign_id)
+            if not campaign:
+                raise CampaignException(f"Campaign with ID '{campaign_id}' not found",
+                    404,
+                    None,
+                )
 
-        campaign = self.campaign_repo.get_by_id(campaign_id)
-        if not campaign:
-            raise CampaignException(f"Campaign with ID '{campaign_id}' not found",
-                404,
-                None,
+            self._validate_scoring_weights(request.weight_deterministic,
+                request.weight_semantic,
+                request.weight_ai,
             )
 
-        self._validate_scoring_weights(request.weight_deterministic,
-            request.weight_semantic,
-            request.weight_ai,
-        )
-
-        # T03: capture before/after for every field that actually changed,
-        # atomically with the save (audit is written in the same transaction).
-        # Uses the same field list as update_campaign()'s scoring path so both
-        # edit paths record identical shapes in the Weight Change History.
-        changes = {
-            field: {
-                "before": str(getattr(campaign, field)),
-                "after": str(getattr(request, field)),
+            # T03: capture before/after for every field that actually changed,
+            # atomically with the save (audit is written in the same transaction).
+            # Uses the same field list as update_campaign()'s scoring path so both
+            # edit paths record identical shapes in the Weight Change History.
+            changes = {
+                field: {
+                    "before": str(getattr(campaign, field)),
+                    "after": str(getattr(request, field)),
+                }
+                for field in self._SCORING_FIELDS
+                if Decimal(str(getattr(campaign, field))) != getattr(request, field)
             }
-            for field in self._SCORING_FIELDS
-            if Decimal(str(getattr(campaign, field))) != getattr(request, field)
-        }
 
-        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
+            # M10-E02: a genuine weight change (as opposed to a
+            # thresholds-only change, or an exact resubmission of the
+            # current weights - the no-op case) - captured BEFORE
+            # update_scoring_configuration() below mutates `campaign` in
+            # place, so this is the true "before" snapshot for history/audit.
+            weight_fields_changed = _WEIGHT_FIELDS & changes.keys()
+            old_weights = None
+            if weight_fields_changed:
+                old_weights = {
+                    "weight_deterministic": Decimal(str(campaign.weight_deterministic)),
+                    "weight_semantic": Decimal(str(campaign.weight_semantic)),
+                    "weight_ai": Decimal(str(campaign.weight_ai)),
+                }
 
-        campaign = (self.campaign_repo.update_scoring_configuration(campaign,
-                request,
-            )
-        )
+            candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
 
-        if changes:
-            # same action_type update_campaign() uses for scoring edits,
-            # so both edit paths land in the same Weight Change History query.
-            self.audit_service.log(actor_id=updated_by,
-                actor_role="HR_ADMIN",
-                action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED,
-                entity_type=EntityType.CAMPAIGN,
-                entity_id=campaign.id,
-                campaign_id=campaign.id,
-                details={
-                    "title": f"Campaign '{campaign.name}' thresholds updated",
-                    "changes": changes,
-                    "candidates_already_processed": candidate_count,
-                },
+            campaign = (self.campaign_repo.update_scoring_configuration(campaign,
+                    request,
+                )
             )
 
-        self.campaign_repo.commit()
+            if changes:
+                # same action_type update_campaign() uses for scoring edits,
+                # so both edit paths land in the same Weight Change History query.
+                self.audit_service.log(actor_id=updated_by,
+                    actor_role="HR_ADMIN",
+                    action_type=ActionType.CAMPAIGN_SCORING_CONFIG_CHANGED,
+                    entity_type=EntityType.CAMPAIGN,
+                    entity_id=campaign.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "title": f"Campaign '{campaign.name}' thresholds updated",
+                        "changes": changes,
+                        "candidates_already_processed": candidate_count,
+                    },
+                )
 
-        result = self.get_scoring_configuration(campaign.id)
-        result.warning = self._already_processed_warning(candidate_count)
+            # M10-E02 Story 2: history + dedicated audit entry, only for an
+            # actual weight change - never for a thresholds-only change, and
+            # never for a no-op resubmission of identical weights (in which
+            # case weight_fields_changed is empty and this is skipped
+            # entirely, per the No-Op Detection requirement).
+            if weight_fields_changed:
+                self._record_weight_configuration_change(campaign, old_weights, updated_by)
 
-        return result
-    
+            self.campaign_repo.commit()
+
+            if weight_fields_changed:
+                self._enqueue_composite_recalculation_for_campaign(campaign.id)
+
+            result = self.get_scoring_configuration(campaign.id)
+            result.warning = self._already_processed_warning(candidate_count)
+
+            return result
+        except Exception:
+            self.campaign_repo.rollback()
+            raise
+
     def get_weight_presets(self,
         org_id: UUID,
     ) -> list[CampaignWeightPresetResponse]:
@@ -1803,7 +1967,12 @@ class CampaignService:
         updated_by: str,
     ) -> CampaignResponse:
         try:
-            campaign = self.campaign_repo.get_by_id(campaign_id)
+            # M10-E02: locking read (SELECT ... FOR UPDATE) - same
+            # get_by_id_for_update already used by candidate creation's
+            # cap-check race guard - so two concurrent PATCHes against the
+            # same campaign (in particular two concurrent weight changes)
+            # serialize instead of racing to commit.
+            campaign = self.campaign_repo.get_by_id_for_update(campaign_id)
             if not campaign:
                 raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
@@ -1892,6 +2061,15 @@ class CampaignService:
                 campaign.deadline = request.deadline
 
             # ── Prompt Template reassignment ─────────────────────────────
+            # Pre-existing bug fix (unrelated to M10-E02): the response
+            # built at the end of this method reads `updated_prompt`, which
+            # was never assigned anywhere - any successful update_campaign
+            # call raised NameError before returning. Initialized here (same
+            # "default None, set only inside the conditional" pattern
+            # already used for previous_hiring_manager_id right below) so
+            # the response can report the current prompt name whether or
+            # not this PATCH itself changed it.
+            updated_prompt = None
             if (request.prompt_template_id is not None
                     and request.prompt_template_id != campaign.prompt_template_id):
                 new_prompt = validate_prompt_template_selection(
@@ -1905,6 +2083,7 @@ class CampaignService:
                     "after": str(new_prompt.id),
                 }
                 campaign.prompt_template_id = new_prompt.id
+                updated_prompt = new_prompt
 
             # ── reassign hiring manager ─────────────────────
             previous_hiring_manager_id = None
@@ -1944,6 +2123,12 @@ class CampaignService:
                 if getattr(request, field) is not None
                 and Decimal(str(getattr(campaign, field))) != getattr(request, field)
             }
+            # M10-E02: initialized here (before the `if scoring_changes:`
+            # guard) since both are read further below regardless of
+            # whether that block runs at all - a request with no scoring
+            # fields present must never trigger history/audit/recalculation.
+            weight_fields_changed: set[str] = set()
+            old_weights: dict[str, Decimal] | None = None
 
             if scoring_changes:
                 if campaign.status == CampaignStatus.ACTIVE and not request.confirm_scoring_change:
@@ -1961,6 +2146,19 @@ class CampaignService:
                 # sum must equal 100.00 and no layer may fall below MIN_LAYER_WEIGHT,
                 # so this endpoint can't be used to bypass either rule.
                 self._validate_scoring_weights(**merged_weights)
+
+                # M10-E02: the true "before" weight snapshot, captured BEFORE
+                # the setattr loop below mutates `campaign` in place - only
+                # taken when at least one weight field is actually changing
+                # (as opposed to a thresholds-only scoring_changes), so a
+                # no-op/thresholds-only PATCH never triggers history/audit.
+                weight_fields_changed = _WEIGHT_FIELDS & scoring_changes.keys()
+                if weight_fields_changed:
+                    old_weights = {
+                        "weight_deterministic": Decimal(str(campaign.weight_deterministic)),
+                        "weight_semantic": Decimal(str(campaign.weight_semantic)),
+                        "weight_ai": Decimal(str(campaign.weight_ai)),
+                    }
 
                 for field, new_value in scoring_changes.items():
                     changes[field] = {
@@ -2032,7 +2230,20 @@ class CampaignService:
                     },
                 )
 
+            # M10-E02 Story 2: history + dedicated audit entry, only for an
+            # actual weight change - never for a thresholds-only change, and
+            # never for a no-op resubmission of identical weights (in which
+            # case weight_fields_changed is empty and this is skipped
+            # entirely, per the No-Op Detection requirement). Written in the
+            # same transaction as the campaign update and the audit entry
+            # above, before the single commit below.
+            if weight_fields_changed:
+                self._record_weight_configuration_change(campaign, old_weights, updated_by)
+
             self.campaign_repo.commit()
+
+            if weight_fields_changed:
+                self._enqueue_composite_recalculation_for_campaign(campaign.id)
 
             jd = self.jd_repo.get_by_id(campaign.jd_id)
             candidate_count = self.campaign_repo.get_candidate_count(campaign.id)

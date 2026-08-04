@@ -4,7 +4,19 @@
       "Bash(xargs grep -liE \"skill\")",
       "Bash(venv/Scripts/python.exe -c ' *)",
       "Bash(venv/Scripts/python.exe -c \"import google.genai; print\\(google.genai.__version__ if hasattr\\(google.genai,'__version__'\\) else 'no version attr'\\)\")",
-      "Bash(venv/Scripts/pip.exe show *)"
+      "Bash(venv/Scripts/pip.exe show *)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/ -q --ignore=tests/tasks/test_semantic_scoring_tasks.py)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_override_service.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py tests/services/jd/test_jd_service_weight_assignment.py tests/services/resume/test_resume_processing_pipeline_flow.py tests/services/campaign/test_campaign_candidate_rejection_analytics_integration.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_service_composite_recalculation.py -q)",
+      "Bash(./venv/Scripts/python.exe -c ' *)",
+      "Bash(./venv/Scripts/python.exe -m alembic upgrade e2c8a4f6b9d1:b1f4c9a2e7d3 --sql)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_composite_scoring_service.py tests/tasks/test_composite_scoring_tasks.py tests/services/campaign/test_campaign_candidate_override_service.py tests/services/campaign/test_campaign_service_composite_recalculation.py -q)",
+      "Bash(./venv/Scripts/python.exe -m alembic heads)",
+      "Bash(./venv/Scripts/python.exe -m alembic upgrade b1f4c9a2e7d3:c2e6a1f8d4b7 --sql)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_weight_configuration_history.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_weight_configuration_history.py::test_update_scoring_configuration_records_history_and_audit_and_recalculates_on_weight_change tests/services/campaign/test_campaign_weight_configuration_history.py::test_update_scoring_configuration_uses_locking_read -q)",
+      "Bash(git diff *)"
     ]
   }
 }

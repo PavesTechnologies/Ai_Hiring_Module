@@ -117,9 +117,14 @@ class CampaignUpdateRequest(BaseModel):
         default=None, description="Must reference an ACTIVE RESUME_PARSE prompt template."
     )
 
-    weight_deterministic: Optional[Decimal] = None
-    weight_semantic: Optional[Decimal] = None
-    weight_ai: Optional[Decimal] = None
+    # M10-E02: matches CampaignScoringUpdateRequest's own Field(ge=0, le=100)
+    # constraints - previously unconstrained here, which meant a PATCH could
+    # submit a negative or >100 individual weight as long as the three
+    # summed to 100.00 (e.g. -50/200/-50). Optional[...] is preserved (every
+    # field in this PATCH body is still optional), only the bounds are new.
+    weight_deterministic: Optional[Decimal] = Field(default=None, ge=0, le=100, decimal_places=2)
+    weight_semantic: Optional[Decimal] = Field(default=None, ge=0, le=100, decimal_places=2)
+    weight_ai: Optional[Decimal] = Field(default=None, ge=0, le=100, decimal_places=2)
     semantic_threshold: Optional[Decimal] = None
     ai_threshold: Optional[Decimal] = None
     deterministic_threshold: Optional[Decimal] = None

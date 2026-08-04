@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum as SAEnum,
-    ForeignKey, Numeric, SmallInteger, String, Text, UniqueConstraint, func,
+    ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -60,6 +60,21 @@ class TransitionSource(enum.Enum):
     OVERRIDE = "OVERRIDE"
 
 
+class CompositeScoreTriggerSource(enum.Enum):
+    """
+    M10-E01: what caused a composite_score (re)calculation. Composite Score
+    has exactly two valid triggers - AI Evaluation completing, and a
+    campaign's scoring weights changing. Never resume upload/parsing/
+    reprocessing/reset, a deterministic/semantic completion, or an HR
+    override - an HR override only restarts the remaining scoring pipeline
+    (deterministic re-pass -> semantic -> AI evaluation), and it is that
+    eventual AI evaluation completing which (re)triggers Composite Score,
+    not the override itself.
+    """
+    AI_EVALUATION = "AI_EVALUATION"
+    CAMPAIGN_WEIGHT_CHANGE = "CAMPAIGN_WEIGHT_CHANGE"
+
+
 class CampaignCandidate(Base):
     __tablename__ = "campaign_candidates"
     __table_args__ = (
@@ -95,6 +110,11 @@ class CampaignCandidate(Base):
     ai_retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
     composite_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
+    # M10-E01: when composite_score was last (re)computed - None until the
+    # first successful calculation, overwritten (never appended) on every
+    # subsequent one. The immutable per-calculation trail lives in
+    # candidate_composite_score_history instead.
+    composite_score_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fraud_flags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_fraud_flagged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -144,3 +164,43 @@ class CandidateRejection(Base):
     rejection_detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     rejected_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey(_USERS_FK), nullable=True)
     rejected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CandidateCompositeScoreHistory(Base):
+    """
+    M10-E01: one immutable row per composite_score calculation - an
+    append-only audit trail distinct from campaign_candidates.composite_score
+    itself (which only ever holds the latest value). Rows are never updated
+    or deleted; every recalculation (AI evaluation completing, or a
+    campaign weight change) inserts a new row. CompositeScoringService is
+    the only writer of both this table and campaign_candidates.composite_score.
+    """
+    __tablename__ = "candidate_composite_score_history"
+    __table_args__ = (
+        Index("ix_composite_score_history_campaign_candidate_id", "campaign_candidate_id"),
+        Index("ix_composite_score_history_calculated_at", "calculated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=False)
+    deterministic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    # Raw 0-1 cosine similarity, exactly as stored on campaign_candidates.
+    semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(7, 6), nullable=True)
+    # semantic_score normalized to the same 0-100 scale as
+    # deterministic_score/effective_ai_score, for combination in the
+    # formula - see CompositeScoringService.normalize_scores.
+    normalized_semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(7, 4), nullable=True)
+    effective_ai_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    # The campaign's configured weights at calculation time, used exactly
+    # as-is - no redistribution. Missing score components are COALESCEd to
+    # 0 (see CompositeScoringService.normalize_scores), never handled by
+    # rescaling weights.
+    weight_deterministic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    weight_semantic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    weight_ai: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    composite_score: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False)
+    formula_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    trigger_source: Mapped[CompositeScoreTriggerSource] = mapped_column(
+        SAEnum(CompositeScoreTriggerSource, name="composite_score_trigger_source_enum"), nullable=False,
+    )
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

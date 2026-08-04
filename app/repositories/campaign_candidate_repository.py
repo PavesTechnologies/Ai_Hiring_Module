@@ -289,6 +289,7 @@ class CampaignCandidateRepository:
         campaign_candidate.ai_evaluation_status = AIEvaluationStatus.PENDING
         campaign_candidate.ai_retry_count = 0
         campaign_candidate.composite_score = None
+        campaign_candidate.composite_score_computed_at = None
         campaign_candidate.fraud_flags = None
         campaign_candidate.is_fraud_flagged = False
         campaign_candidate.rejection_reason = None
@@ -383,6 +384,20 @@ class CampaignCandidateRepository:
         )
 
         return self.db.execute(stmt).all()
+
+    def get_ids_by_campaign(
+        self,
+        campaign_id: UUID,
+    ) -> list[UUID]:
+        """
+        M10-E01: bare campaign_candidate ids for a campaign, used solely to
+        fan out composite-score recalculation after a campaign's scoring
+        weights change - deliberately not the full joined
+        get_all_by_campaign query (Candidate/Resume are irrelevant to
+        recalculation and would be wasted work at fan-out scale).
+        """
+        stmt = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id)
+        return list(self.db.execute(stmt).scalars().all())
 
     def update(
         self,

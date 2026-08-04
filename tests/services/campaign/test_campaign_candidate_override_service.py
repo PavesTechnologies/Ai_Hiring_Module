@@ -254,6 +254,21 @@ def test_apply_hr_override_queues_ai_evaluate_and_semantic_score_when_embedding_
         assert call_args[1] is celery_task_log_service
 
 
+def test_apply_hr_override_never_enqueues_composite_scoring_directly():
+    """
+    M10-E01 (corrected): an HR override only restarts the remaining
+    scoring pipeline (AI_EVALUATE + semantic scoring, asserted above) - it
+    must NEVER enqueue composite scoring directly. Composite Score has
+    exactly two valid triggers: AI Evaluation completing, and a campaign
+    weight change. composite_scoring_tasks is not even imported by
+    campaign_candidate_service anymore, so there is nothing to patch here -
+    this test documents and locks in that absence.
+    """
+    import app.services.campaign.campaign_candidate_service as module
+
+    assert not hasattr(module, "_enqueue_composite_scoring")
+
+
 def test_apply_hr_override_does_not_enqueue_duplicate_ai_evaluate():
     service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=False)
     celery_task_log_service.repository.get_by_campaign_candidate_and_task_type.return_value = [
