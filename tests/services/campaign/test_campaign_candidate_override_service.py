@@ -124,13 +124,14 @@ def test_apply_hr_override_requires_a_deterministic_rejection_to_exist():
     assert exc_info.value.status_code == 409
 
 
-def test_apply_hr_override_rejects_non_deterministic_rejection_layer():
+def test_apply_hr_override_rejects_non_deterministic_or_semantic_rejection_layer():
+    """M08-E02 S03 T03: DETERMINISTIC and SEMANTIC are both allowed now - any other layer still isn't."""
     candidate = _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED)
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_by_id.return_value = candidate
     candidate_rejection_repo = MagicMock()
     candidate_rejection_repo.get_by_campaign_candidate_id.return_value = [
-        _make_rejection(rejection_layer=RejectionLayer.SEMANTIC),
+        _make_rejection(rejection_layer=RejectionLayer.AI),
     ]
 
     service = make_service(campaign_candidate_repo=campaign_candidate_repo, candidate_rejection_repo=candidate_rejection_repo)
@@ -141,13 +142,26 @@ def test_apply_hr_override_rejects_non_deterministic_rejection_layer():
     assert exc_info.value.status_code == 409
 
 
+def test_apply_hr_override_allows_semantic_rejection_layer():
+    """M08-E02 S03 T03: a SEMANTIC-layer rejection must pass this gate exactly like DETERMINISTIC does."""
+    service, candidate, _, _, _, _, _ = _make_applying_harness(rejection_layer=RejectionLayer.SEMANTIC)
+
+    result = service.apply_hr_override(candidate.id, "a reason that is at least twenty chars", "hr-1", "HR_ADMIN")
+
+    assert isinstance(result, CandidateScorecardResponse)
+
+
 # ----------------------------------------------------------------------
 # T02 - Apply Override & Re-enter Candidate Into Pipeline
 # ----------------------------------------------------------------------
 
-def _make_applying_harness(embedding_exists=False, stage_transition_result=True):
+def _make_applying_harness(
+    embedding_exists=False, stage_transition_result=True,
+    rejection_layer=RejectionLayer.DETERMINISTIC, semantic_score=None,
+):
     candidate = _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED)
-    rejection = _make_rejection(reason="Missing required skills: Python.")
+    candidate.semantic_score = semantic_score
+    rejection = _make_rejection(reason="Missing required skills: Python.", rejection_layer=rejection_layer)
 
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_by_id.return_value = candidate
@@ -217,29 +231,35 @@ def test_apply_hr_override_rolls_back_and_never_commits_when_transition_blocked(
     audit_service.log.assert_not_called()
 
 
-def test_apply_hr_override_queues_ai_evaluate_only_when_no_embedding():
-    service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=False)
-
-    service.apply_hr_override(candidate.id, "This rejection was a mistake, overriding.", "hr-1", "HR_ADMIN")
-
-    created_task_types = [call.kwargs["task_type"] for call in celery_task_log_service.create_log.call_args_list]
-    assert created_task_types == [AI_EVALUATE_TASK_TYPE]
-
-
-def test_apply_hr_override_queues_ai_evaluate_and_semantic_score_when_embedding_exists():
+def test_apply_hr_override_does_not_queue_ai_evaluate_upfront_when_semantic_score_missing():
     """
-    M08-E02: semantic scoring is now enqueued via the shared
-    _enqueue_semantic_scoring helper (also used by
-    calculate_deterministic_score_task's own auto-trigger) - patched here
-    (never a real broker call in a unit test, same convention as
-    test_deterministic_scoring_tasks.py's send_candidate_email_task_mock)
-    and must be called with this exact campaign_candidate, the service's
-    celery_task_log_service, and its resume_repo.
+    M08-E02 S03 T03: a deterministic-layer override (or any candidate
+    whose semantic score was never computed) must not have AI_EVALUATE
+    queued ahead of semantic scoring - that only happens automatically
+    once semantic scoring later passes.
     """
-    with patch(
-        "app.services.campaign.campaign_candidate_service._enqueue_semantic_scoring",
-    ) as enqueue_semantic_scoring_mock:
-        service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=True)
+    with patch("app.services.campaign.campaign_candidate_service._enqueue_semantic_scoring") as enqueue_semantic_scoring_mock:
+        service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(
+            embedding_exists=False, semantic_score=None,
+        )
+
+        service.apply_hr_override(candidate.id, "This rejection was a mistake, overriding.", "hr-1", "HR_ADMIN")
+
+        created_task_types = [call.kwargs["task_type"] for call in celery_task_log_service.create_log.call_args_list]
+        assert AI_EVALUATE_TASK_TYPE not in created_task_types
+        enqueue_semantic_scoring_mock.assert_called_once()
+
+
+def test_apply_hr_override_queues_ai_evaluate_immediately_when_semantic_score_already_exists():
+    """
+    M08-E02 S03 T03: a SEMANTIC-layer override already has a semantic_score
+    (that's how it got rejected at that layer) - AI_EVALUATE is queued
+    immediately, and SEMANTIC_SCORE is never re-enqueued.
+    """
+    with patch("app.services.campaign.campaign_candidate_service._enqueue_semantic_scoring") as enqueue_semantic_scoring_mock:
+        service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(
+            rejection_layer=RejectionLayer.SEMANTIC, semantic_score=0.42,
+        )
 
         service.apply_hr_override(candidate.id, "This rejection was a mistake, overriding.", "hr-1", "HR_ADMIN")
 
@@ -248,10 +268,7 @@ def test_apply_hr_override_queues_ai_evaluate_and_semantic_score_when_embedding_
         for call in celery_task_log_service.create_log.call_args_list:
             assert call.kwargs["campaign_candidate_id"] == candidate.id
 
-        enqueue_semantic_scoring_mock.assert_called_once()
-        call_args = enqueue_semantic_scoring_mock.call_args.args
-        assert call_args[0] is candidate
-        assert call_args[1] is celery_task_log_service
+        enqueue_semantic_scoring_mock.assert_not_called()
 
 
 def test_apply_hr_override_never_enqueues_composite_scoring_directly():
@@ -270,7 +287,9 @@ def test_apply_hr_override_never_enqueues_composite_scoring_directly():
 
 
 def test_apply_hr_override_does_not_enqueue_duplicate_ai_evaluate():
-    service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(embedding_exists=False)
+    service, candidate, _, _, _, _, celery_task_log_service = _make_applying_harness(
+        rejection_layer=RejectionLayer.SEMANTIC, semantic_score=0.42,
+    )
     celery_task_log_service.repository.get_by_campaign_candidate_and_task_type.return_value = [
         SimpleNamespace(status=TaskStatus.QUEUED),
     ]
@@ -281,7 +300,9 @@ def test_apply_hr_override_does_not_enqueue_duplicate_ai_evaluate():
 
 
 def test_apply_hr_override_queuing_failure_never_raises_or_undoes_the_override():
-    service, candidate, _, campaign_candidate_repo, _, _, celery_task_log_service = _make_applying_harness()
+    service, candidate, _, campaign_candidate_repo, _, _, celery_task_log_service = _make_applying_harness(
+        rejection_layer=RejectionLayer.SEMANTIC, semantic_score=0.42,
+    )
     celery_task_log_service.create_log.side_effect = Exception("broker unreachable")
 
     # Must not raise even though queuing blew up - the override itself already committed.

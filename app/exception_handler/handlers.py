@@ -40,7 +40,13 @@ async def campaign_exception_handler(
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content=response.model_dump(),
+        # mode="json" — exc.data can be a ResubmissionInfoResponse (e.g. the
+        # "candidate already exists in this campaign" 409) carrying UUID
+        # fields (campaign_candidate_id/current_resume_id); the default
+        # mode="python" leaves those as actual UUID objects, which the
+        # stdlib json.dumps() this JSONResponse uses underneath cannot
+        # serialize. Same fix already applied to resume_exception_handler.
+        content=response.model_dump(mode="json"),
     )
 
 

@@ -1055,7 +1055,9 @@ class ResubmissionInfoResponse(BaseModel):
     is unchanged - same status code, same message, same behavior for every
     existing caller).
     """
+    candidate_exists: bool = True
     campaign_candidate_id: UUID
+    candidate_id: UUID
     current_pipeline_stage: PipelineStage
     current_resume_id: UUID
     can_update_resume: bool

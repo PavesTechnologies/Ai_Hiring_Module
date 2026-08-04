@@ -1,3 +1,4 @@
+import json
 import logging
 from uuid import UUID, uuid4
 
@@ -8,6 +9,7 @@ from app.models.async_tasks import DocumentType
 from app.models.candidates import FileFormat
 from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
@@ -291,3 +293,117 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
     finally:
         db.close()
         stage_db.close()
+
+
+RESUME_UPLOAD_RECOVERY_TASK_TYPE = "RESUME_UPLOAD_RECOVERY_SCAN"
+
+
+def recover_stalled_resume_uploads(db=None) -> int:
+    """
+    Resume-upload resilience: redispatches every RESUME_DOCUMENT_PROCESSING
+    celery_task_log row whose apply_async() call itself failed at enqueue
+    time (dispatch_failed=True - the broker was unreachable, so nothing
+    was ever actually queued). Deliberately never touches
+    dispatch_failed=False rows - those already reached the broker and are
+    just waiting for a worker; process_resume_document has no
+    SUCCESS-shortcut, so redispatching an already-queued message would
+    reprocess the same resume twice.
+
+    Callable two ways:
+    - Directly, with its own SessionLocal (db=None) - used by the FastAPI
+      startup hook, which must work even if Celery/Redis themselves are
+      still unreachable (dispatching this AS a Celery task would defeat
+      the point).
+    - Via recover_stalled_resume_uploads_task below (Celery Beat), passing
+      that task's own db session.
+
+    claim_for_redispatch's atomic UPDATE...WHERE means two concurrent
+    calls (a Beat tick racing the startup scan, or two app instances
+    starting at once) never redispatch the same row twice.
+
+    Returns the number of tasks successfully redispatched.
+    """
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
+    try:
+        task_log_repo = CeleryTaskLogRepository(db)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+        campaign_candidate_repo = CampaignCandidateRepository(db)
+        campaign_repo = CampaignRepository(db)
+
+        stalled = task_log_repo.get_queued_dispatch_failed(RESUME_DOCUMENT_PROCESSING_TASK_TYPE)
+        recovered = 0
+
+        for task_log in stalled:
+            if not task_log_repo.claim_for_redispatch(task_log.id):
+                logger.info(
+                    "Resume upload recovery skipped | task_id=%s reason=already_claimed", task_log.task_id,
+                )
+                continue
+
+            campaign_candidates = campaign_candidate_repo.get_by_resume_id(task_log.resume_id)
+            campaign = (
+                campaign_repo.get_by_id(campaign_candidates[0].campaign_id)
+                if campaign_candidates else None
+            )
+            if campaign is None:
+                logger.error(
+                    "Resume upload recovery failed | task_id=%s resume_id=%s reason=campaign_not_found",
+                    task_log.task_id, task_log.resume_id,
+                )
+                task_log_service.mark_dispatch_failed(task_log, "Campaign not found for resume_id.")
+                continue
+
+            try:
+                process_resume_document.apply_async(
+                    kwargs={
+                        "resume_id": str(task_log.resume_id),
+                        "prompt_template_id": str(campaign.prompt_template_id),
+                    },
+                    task_id=task_log.task_id,
+                )
+                recovered += 1
+                logger.info(
+                    "Recovery dispatched task | task_id=%s resume_id=%s", task_log.task_id, task_log.resume_id,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Resume upload recovery failed | task_id=%s resume_id=%s reason=queue_unavailable",
+                    task_log.task_id, task_log.resume_id,
+                )
+                task_log_service.mark_dispatch_failed(task_log, str(exc))
+
+        return recovered
+    finally:
+        if owns_session:
+            db.close()
+
+
+@celery_app.task(name="resume.recover_stalled_uploads")
+def recover_stalled_resume_uploads_task() -> None:
+    """Celery Beat entry point - periodic safety net alongside the FastAPI startup scan."""
+    db = SessionLocal()
+    task_log = None
+    try:
+        task_log_repo = CeleryTaskLogRepository(db)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+        task_log = task_log_service.create_log(
+            task_id=str(uuid4()),
+            task_type=RESUME_UPLOAD_RECOVERY_TASK_TYPE,
+        )
+
+        recovered = recover_stalled_resume_uploads(db)
+
+        summary = json.dumps({"recovered": recovered})
+        task_log_service.mark_success(task_log, summary=summary)
+        logger.info("Resume upload recovery scan completed | recovered=%s", recovered)
+
+    except Exception as ex:
+        db.rollback()
+        if task_log:
+            task_log_service.mark_failure(task_log, str(ex))
+        logger.exception("Resume upload recovery scan failed")
+
+    finally:
+        db.close()

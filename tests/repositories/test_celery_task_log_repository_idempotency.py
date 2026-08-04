@@ -53,3 +53,41 @@ def test_create_if_new_idempotency_key_falls_back_to_existing_row_on_integrity_e
 
     assert was_created is False
     assert result is existing_log
+
+
+# ----------------------------------------------------------------------
+# Resume-upload resilience: get_queued_dispatch_failed / claim_for_redispatch.
+# ----------------------------------------------------------------------
+
+def test_get_queued_dispatch_failed_filters_by_task_type_status_and_flag():
+    db = MagicMock()
+    repo = CeleryTaskLogRepository(db)
+    matching_rows = [MagicMock(), MagicMock()]
+    db.query.return_value.filter.return_value.all.return_value = matching_rows
+
+    result = repo.get_queued_dispatch_failed("RESUME_DOCUMENT_PROCESSING")
+
+    assert result == matching_rows
+    db.query.assert_called_once_with(CeleryTaskLog)
+
+
+def test_claim_for_redispatch_returns_true_when_row_claimed():
+    db = MagicMock()
+    repo = CeleryTaskLogRepository(db)
+    db.execute.return_value = MagicMock(rowcount=1)
+
+    claimed = repo.claim_for_redispatch("some-log-id")
+
+    assert claimed is True
+    db.commit.assert_called_once()
+
+
+def test_claim_for_redispatch_returns_false_when_already_claimed():
+    """A concurrent recovery run (or an already-recovered row) must not be claimed twice."""
+    db = MagicMock()
+    repo = CeleryTaskLogRepository(db)
+    db.execute.return_value = MagicMock(rowcount=0)
+
+    claimed = repo.claim_for_redispatch("some-log-id")
+
+    assert claimed is False

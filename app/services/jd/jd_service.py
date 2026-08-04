@@ -21,6 +21,7 @@ from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchReq
 from app.schemas.jd.response import UpdateJDResponse, JDListItem, PaginatedJDResponse
 from app.services.jd.hash_service import HashService
 from app.services.audit_service import AuditService
+from app.services.embedding_queue_service import EmbeddingQueueService, JDEmbeddingQueueError
 from app.enums.constants import ActionType, EntityType
 from app.schemas.jd.response import GetJDResponse
 from app.exception_handler.exceptions import NotFoundError, BadRequestError, ConflictError
@@ -106,12 +107,21 @@ class JDService:
         audit_service: AuditService,
         storage_service: StorageService,
         prompt_template_repository: PromptTemplateRepository,
+        embedding_queue_service: EmbeddingQueueService | None = None,
     ):
         self.repository = repository
         self.hash_service = hash_service
         self.audit_service = audit_service
         self.storage_service = storage_service
         self.prompt_template_repository = prompt_template_repository
+        # Optional, defaulted (like SkillSeedService's own
+        # embedding_queue_service) rather than a new required constructor
+        # arg, so every existing JDService(...) call site keeps working
+        # unchanged. EmbeddingQueueService (not the task module directly)
+        # is what's safe to import here - see its own class docstring;
+        # importing app.tasks.jd_processing_tasks directly would be
+        # circular, since that module imports JDService.
+        self.embedding_queue_service = embedding_queue_service or EmbeddingQueueService()
 
     def persist_processed_jd(
         self,
@@ -657,6 +667,19 @@ class JDService:
         )
 
         self.repository.commit()
+
+        # EMBED_JD: only after the transaction above has committed - this
+        # metadata-only update path creates a brand-new JD version (new
+        # jd_id) but, unlike create/reprocess, never gives it an embedding
+        # itself - this is the trigger that closes that gap.
+        # force_regenerate=False since new_jd.id has no jd_embeddings row
+        # yet (a fresh jd_id), so JDEmbeddingService just generates one for
+        # the first time - never an overwrite. A failure here must never
+        # crash or mask the already-successful JD update.
+        try:
+            self.embedding_queue_service.queue_jd_embedding(new_jd.id, force_regenerate=False)
+        except JDEmbeddingQueueError:
+            logger.exception("Failed to enqueue EMBED_JD after metadata-only JD update for jd_id=%s", new_jd.id)
 
         return UpdateJDResponse(
             id= new_jd.id,

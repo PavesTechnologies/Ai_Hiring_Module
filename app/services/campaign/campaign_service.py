@@ -365,6 +365,13 @@ class CampaignService:
                 if request.deadline <= datetime.now(timezone.utc):
                     raise CampaignException("Campaign deadline must be a future date", 422)
 
+            selected_prompt = validate_prompt_template_selection(
+                request.prompt_template_id,
+                expected_task_type="RESUME_PARSE",
+                repository=self.prompt_template_repo,
+                exception_factory=lambda msg: CampaignException(msg, 422),
+            )
+
             campaign = HiringCampaign(org_id=org_id,
                 jd_id=request.jd_id,
                 name=request.name.strip(),

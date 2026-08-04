@@ -47,6 +47,51 @@ def test_queue_rejection_email_returns_none_when_no_active_template():
     email_notification_repo.commit.assert_not_called()
 
 
+# ----------------------------------------------------------------------
+# Story 542 - duplicate-notification prevention, regardless of which
+# layer (deterministic, semantic, ...) the rejection came from.
+# ----------------------------------------------------------------------
+
+def test_queue_rejection_email_skips_when_already_queued():
+    template = MagicMock(id=uuid4())
+    service, _, email_notification_repo = make_service(active_template=template)
+    email_notification_repo.get_by_campaign_candidate_id_and_trigger_event.return_value = [
+        MagicMock(status=EmailNotificationStatus.QUEUED),
+    ]
+
+    notification = service.queue_rejection_email(uuid4(), uuid4())
+
+    assert notification is None
+    email_notification_repo.create.assert_not_called()
+
+
+def test_queue_rejection_email_skips_when_already_sent():
+    template = MagicMock(id=uuid4())
+    service, _, email_notification_repo = make_service(active_template=template)
+    email_notification_repo.get_by_campaign_candidate_id_and_trigger_event.return_value = [
+        MagicMock(status=EmailNotificationStatus.SENT),
+    ]
+
+    notification = service.queue_rejection_email(uuid4(), uuid4())
+
+    assert notification is None
+    email_notification_repo.create.assert_not_called()
+
+
+def test_queue_rejection_email_retries_after_a_prior_failed_attempt():
+    """A FAILED prior notification must not permanently block a legitimate retry."""
+    template = MagicMock(id=uuid4())
+    service, _, email_notification_repo = make_service(active_template=template)
+    email_notification_repo.get_by_campaign_candidate_id_and_trigger_event.return_value = [
+        MagicMock(status=EmailNotificationStatus.FAILED),
+    ]
+
+    notification = service.queue_rejection_email(uuid4(), uuid4())
+
+    assert notification is not None
+    email_notification_repo.create.assert_called_once()
+
+
 def test_render_content_only_substitutes_candidate_name_and_job_title():
     subject, body = CandidateRejectionEmailService.render_content(
         "Update on your application for {job_title}",

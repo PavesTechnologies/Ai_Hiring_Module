@@ -37,7 +37,25 @@ class CandidateRejectionEmailService:
         error) if no active template is configured - the caller must not
         enqueue an EMAIL_SEND task in that case, since there would be
         nothing to render.
+
+        Story 542: idempotent regardless of which layer (deterministic,
+        semantic, ...) the rejection came from - a QUEUED or already-SENT
+        notification for this exact campaign_candidate_id is never
+        duplicated (a prior FAILED attempt is retried by queuing a new one).
         """
+        already_notified = any(
+            notification.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT)
+            for notification in self.email_notification_repo.get_by_campaign_candidate_id_and_trigger_event(
+                campaign_candidate_id, EmailTriggerEvent.CANDIDATE_REJECTED,
+            )
+        )
+        if already_notified:
+            logger.info(
+                "Rejection email already queued/sent - skipping duplicate | "
+                "candidate_id=%s campaign_candidate_id=%s", candidate_id, campaign_candidate_id,
+            )
+            return None
+
         template = self.email_template_repo.get_active_by_trigger_event(EmailTriggerEvent.CANDIDATE_REJECTED)
         if template is None:
             logger.error(
