@@ -345,7 +345,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
-        embedding_service = EmbeddingService()
+        embedding_service = EmbeddingService(db)
         skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
@@ -461,6 +461,11 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             job_repo.commit()
             _maybe_finalize_job(job_repo, job.id)
 
+            # So the file-detail monitoring endpoint can resolve the existing
+            # candidate this duplicate matched to (get_by_file_path finds
+            # nothing — this job_file's own storage_path was never given a
+            # Resume row, since matched_resume's is reused instead).
+            task_log.resume_id = matched_resume.id
             task_log_service.mark_success(
                 task_log,
                 summary="Duplicate file detected. Existing candidate linked. AI processing skipped.",
@@ -554,6 +559,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             ocr_used=False,
             uploaded_by=job.uploaded_by,
             bulk_upload_job_id=job.id,
+            task_id=task_id,
         )
         resume = resume_repo.create(resume)
         resume_repo.commit()
@@ -674,6 +680,19 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             task_log_service.mark_failure(task_log, exc.message)
 
     except Exception as exc:
+        db.rollback()
+        if resume is not None:
+            # Same fix as the StageExecutionError branch above — otherwise a
+            # resume that reached Resume-row creation but then failed on some
+            # other, non-StageExecutionError exception (e.g. campaign
+            # candidate creation) is left at parse_status=PENDING forever
+            # instead of a visible terminal state.
+            try:
+                resume_repo.mark_parse_failed(resume)
+                resume_repo.commit()
+            except Exception:
+                logger.exception("Failed to mark resume %s parse_status=FAILED.", resume.id)
+                db.rollback()
         if job_file is not None and job is not None:
             file_repo.update_status(job_file.id, BulkUploadFileStatus.FAILED)
             job_repo.increment_failed_count(job.id)

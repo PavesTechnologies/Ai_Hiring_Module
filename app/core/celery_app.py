@@ -88,6 +88,12 @@ celery_app.conf.beat_schedule = {
         # two daily/hourly jobs.
         "schedule": crontab(minute=0, hour=3),
     },
+    "detect-stalled-candidates": {
+        "task": "campaign.detect_stalled_candidates",
+        # M04-E04-S04: daily, offset from the health-alert sweep so the two
+        # campaign-wide scans never contend for the same rows.
+        "schedule": crontab(minute=30, hour=3),
+    },
     "evaluate-resubmission-alerts": {
         "task": "campaign.evaluate_resubmission_alerts",
         # Epic 3 (M05-E03) Phase C4 — daily, off-peak, its own distinct hour

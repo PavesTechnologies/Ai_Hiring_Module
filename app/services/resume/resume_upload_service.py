@@ -1,22 +1,33 @@
 import hashlib
 import logging
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.encryption_service import EncryptionService
 from app.core.storage_service import StorageService
 from app.enums.constants import ActionType, EntityType
-from app.exceptions.resume_exceptions import DuplicateResumeFileException, EncryptionUnavailableException
+from app.exception_handler.exceptions import NotFoundError
+from app.exceptions.campaign_exceptions import CampaignException
+from app.exceptions.resume_exceptions import (
+    DeadLetterEntryNotReplayableException,
+    DuplicateResumeFileException,
+    EncryptionUnavailableException,
+    ResumeNotRetryableException,
+)
 from app.exceptions.storage_exception import StorageException
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.schemas.resume.response import DuplicateFileWarningResponse
 from app.services.audit_service import AuditService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.upload_resume_result import UploadResumeResult
+from app.tasks.resume_processing_tasks import process_resume_document
 
 _AVAILABLE_RESOLUTIONS = ["use_existing", "upload_anyway"]
 
@@ -62,6 +73,8 @@ class ResumeUploadService:
         candidate_repo: CandidateRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
         encryption_service: EncryptionService,
+        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
+        campaign_repo: CampaignRepository | None = None,
     ):
         self.resume_repo = resume_repo
         self.candidate_service = candidate_service
@@ -72,6 +85,11 @@ class ResumeUploadService:
         self.candidate_repo = candidate_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.encryption_service = encryption_service
+        # Epic 4 (M05-E04) Phase D10 - optional, additive: every existing
+        # caller of this constructor omits these two and is unaffected;
+        # only retry_parse/replay_from_dlq need them.
+        self.dead_letter_queue_repo = dead_letter_queue_repo
+        self.campaign_repo = campaign_repo
 
     def upload(
         self,
@@ -308,3 +326,146 @@ class ResumeUploadService:
                 "Failed to record circuit-breaker failure for service '%s'.", service_name,
             )
             self.circuit_breaker_repo.rollback()
+
+    def retry_parse(
+        self,
+        resume_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> tuple[Resume, UUID]:
+        """
+        Epic 4 (M05-E04) Phase D10 - re-dispatches a FAILED resume's
+        processing from its existing, already-stored file_path (no new
+        upload). Mirrors BulkUploadService.replay_failed_file's shape:
+        domain-state flip + audit log committed atomically, dispatch
+        happens after commit so a Celery-dispatch failure never rolls
+        back the already-committed status flip.
+        """
+        resume = self.resume_repo.get_by_id(resume_id)
+        if resume is None:
+            raise NotFoundError(f"Resume {resume_id} not found.")
+        if resume.parse_status != ParseStatus.FAILED:
+            raise ResumeNotRetryableException(
+                f"Only a FAILED resume can be retried (current status: {resume.parse_status.value})."
+            )
+
+        campaign = self._resolve_owning_campaign(resume_id)
+        if campaign is None:
+            raise ResumeNotRetryableException(
+                "This resume has no linked campaign, so its prompt template cannot be resolved for a retry."
+            )
+        new_task_id = uuid4()
+
+        try:
+            self.resume_repo.mark_parse_pending(resume)
+            self.resume_repo.set_task_id(resume, str(new_task_id))
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.RESUME_UPLOAD_RETRIED,
+                entity_type=EntityType.RESUME,
+                entity_id=resume.id,
+                campaign_id=campaign.id,
+                details={"new_task_id": str(new_task_id)},
+            )
+            self.resume_repo.commit()
+        except Exception:
+            self.resume_repo.rollback()
+            raise
+
+        process_resume_document.apply_async(
+            kwargs={
+                "resume_id": str(resume.id),
+                "prompt_template_id": str(campaign.prompt_template_id),
+            },
+            task_id=str(new_task_id),
+        )
+        return resume, new_task_id
+
+    def replay_from_dlq(
+        self,
+        dlq_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> tuple[Resume, UUID]:
+        """
+        Epic 4 (M05-E04) Phase D10 - replays a dead-lettered resume-parse
+        failure from its DLQ entry. input_payload is never read (it's
+        always None for resumes - ResumeProcessingPipeline never writes
+        checkpoints); resume_id (populated by the RetryDriver fix this
+        same phase made) is the actual reconstruction path.
+        """
+        if self.dead_letter_queue_repo is None:
+            raise RuntimeError("dead_letter_queue_repo was not configured on this service.")
+
+        dlq_entry = self.dead_letter_queue_repo.get_by_id(dlq_id)
+        if dlq_entry is None:
+            raise NotFoundError(f"Dead letter queue entry {dlq_id} not found.")
+        if dlq_entry.replayed_at is not None:
+            raise DeadLetterEntryNotReplayableException("This entry has already been replayed.")
+        if dlq_entry.resume_id is None:
+            raise DeadLetterEntryNotReplayableException(
+                "This entry is not a resume-processing failure and cannot be replayed here."
+            )
+
+        resume = self.resume_repo.get_by_id(dlq_entry.resume_id)
+        if resume is None:
+            raise NotFoundError(f"Resume {dlq_entry.resume_id} not found.")
+
+        campaign = self._resolve_owning_campaign(resume.id)
+        if campaign is None:
+            raise DeadLetterEntryNotReplayableException(
+                "This resume has no linked campaign, so its prompt template cannot be resolved for a replay."
+            )
+        new_task_id = uuid4()
+
+        try:
+            self.resume_repo.mark_parse_pending(resume)
+            self.resume_repo.set_task_id(resume, str(new_task_id))
+            self.dead_letter_queue_repo.mark_replayed(
+                dlq_entry.id, replayed_by=actor_id, replayed_at=datetime.now(timezone.utc),
+            )
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.INDIVIDUAL_UPLOAD_DLQ_REPLAYED,
+                entity_type=EntityType.RESUME,
+                entity_id=resume.id,
+                campaign_id=campaign.id,
+                details={
+                    "dead_letter_queue_id": str(dlq_entry.id),
+                    "original_task_id": dlq_entry.original_task_id,
+                    "new_task_id": str(new_task_id),
+                },
+            )
+            self.resume_repo.commit()
+        except Exception:
+            self.resume_repo.rollback()
+            raise
+
+        process_resume_document.apply_async(
+            kwargs={
+                "resume_id": str(resume.id),
+                "prompt_template_id": str(campaign.prompt_template_id),
+            },
+            task_id=str(new_task_id),
+        )
+        return resume, new_task_id
+
+    def _resolve_owning_campaign(self, resume_id: UUID):
+        """
+        Epic 4 (M05-E04) Phase D10 - a resume can in principle be linked
+        to more than one campaign; the most recently linked one wins,
+        mirroring the same tie-break convention already established by
+        CampaignCandidateRepository.get_most_recent_campaign_for_candidate
+        (Epic 3 Phase C4). Returns None if the resume has no campaign
+        link at all - callers dispatch with prompt_template_id=None in
+        that case rather than failing outright.
+        """
+        if self.campaign_candidate_repo is None or self.campaign_repo is None:
+            return None
+        campaign_candidates = self.campaign_candidate_repo.get_by_resume_id(resume_id)
+        if not campaign_candidates:
+            return None
+        most_recent = max(campaign_candidates, key=lambda cc: cc.created_at)
+        return self.campaign_repo.get_by_id(most_recent.campaign_id)

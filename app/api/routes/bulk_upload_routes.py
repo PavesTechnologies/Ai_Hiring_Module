@@ -127,6 +127,7 @@ def list_bulk_upload_history(
                     duplicate_count=job.duplicate_count,
                     created_at=job.created_at,
                     completed_at=job.completed_at,
+                    error_summary=job.error_summary,
                 )
                 for job in items
             ],
@@ -400,7 +401,7 @@ def replay_bulk_upload_file(
     bulk_upload_job_id: UUID,
     file_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
     Re-enqueues a single FAILED file's parse task from its dead-lettered

@@ -11,10 +11,13 @@ class JDReadinessIssue(BaseModel):
 
 
 class CampaignReopenReadinessResponse(BaseModel):
-    """S04-T01: readiness validation + current config, for the reopen confirmation dialog."""
+    """readiness validation + current config, for the reopen confirmation dialog."""
 
     is_ready: bool
     issues: list[JDReadinessIssue]
+    # advisory only — surfaced in the dialog but deliberately does NOT affect
+    # is_ready, so a campaign sitting at its candidate cap can still reopen.
+    warnings: list[JDReadinessIssue] = []
 
     campaign_id: UUID
     campaign_name: str
@@ -29,7 +32,7 @@ class CampaignReopenReadinessResponse(BaseModel):
 
 
 class CampaignReopenResultResponse(BaseModel):
-    """S04-T02/T03: result of a successful reopen."""
+    """result of a successful reopen."""
 
     campaign_id: UUID
     campaign_name: str
@@ -39,3 +42,4 @@ class CampaignReopenResultResponse(BaseModel):
     original_closure_reason: str | None
     closed_at: datetime | None
     duration_closed_days: float | None
+    warning: str | None = None

@@ -17,6 +17,10 @@ class DeadLetterQueueRepository:
         stmt = select(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id)
         return self.db.execute(stmt).scalars().first()
 
+    def get_by_id(self, dlq_id: UUID) -> DeadLetterQueue | None:
+        """Epic 4 (M05-E04) Phase D10 - keyed by the row's own PK, for individual-resume DLQ replay."""
+        return self.db.get(DeadLetterQueue, dlq_id)
+
     def mark_replayed(self, dlq_id: UUID, replayed_by: str, replayed_at: datetime) -> None:
         self.db.execute(
             update(DeadLetterQueue)
@@ -70,5 +74,13 @@ class DeadLetterQueueRepository:
         self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.campaign_candidate_id == campaign_candidate_id))
         self.db.flush()
 
+    def delete_by_task_id(self, original_task_id: str) -> None:
+        """Dead-letter cleanup — removes the dead-letter entry for one task_id."""
+        self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id))
+        self.db.flush()
+
     def commit(self) -> None:
         self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()

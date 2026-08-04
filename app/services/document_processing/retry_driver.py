@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import UUID
 
 from app.models.async_tasks import FailureClassification, ProcessingStage
 from app.services.document_processing.error_classifier import classify
@@ -14,7 +15,15 @@ class RetryDriver:
         self.task_log = task_log
         self.task_type = task_type
 
-    def handle_failure(self, celery_task, task_id: str, document_type, error, attempt_number: int) -> bool:
+    def handle_failure(
+        self,
+        celery_task,
+        task_id: str,
+        document_type,
+        error,
+        attempt_number: int,
+        resume_id: UUID | None = None,
+    ) -> bool:
         classification = classify(error.original)
         self.stage_failure_log_repo.record(
             task_id,
@@ -41,6 +50,14 @@ class RetryDriver:
                 retry_count=attempt_number,
                 first_attempted_at=self.task_log.queued_at,
                 last_attempted_at=datetime.now(timezone.utc),
+                # Epic 4 (M05-E04) Phase D10 — resumes never populate
+                # checkpoint.context_data (ResumeProcessingPipeline never
+                # passes context/checkpoint_repo, per its own docstring),
+                # so resume_id is the only reliable way a DLQ row can be
+                # traced back to its resume for replay. Optional, defaults
+                # to None, so JD's own call site (which never passes this)
+                # is completely unaffected.
+                resume_id=resume_id,
             )
             self.dead_letter_queue_repo.commit()
             return False

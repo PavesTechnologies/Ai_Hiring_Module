@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import (
@@ -160,6 +160,13 @@ class DocumentProcessingRepository:
             stage.value: round(failed / total, 4) if total else 0.0
             for stage, failed, total in self.db.execute(stmt).all()
         }
+
+    def delete_by_task_id(self, task_id: str) -> None:
+        """Dead-letter cleanup — removes every stage-execution row for one task_id."""
+        self.db.execute(
+            delete(DocumentProcessingStageExecution).where(DocumentProcessingStageExecution.task_id == task_id)
+        )
+        self.db.flush()
 
     def link_document_id(self, task_id: str, document_id: UUID) -> None:
         (

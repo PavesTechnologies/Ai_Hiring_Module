@@ -242,6 +242,37 @@ class CampaignCandidateService:
         # M07-E03 S05: optional, additive - same reasoning as above.
         self.skill_repo = skill_repo
 
+    def check_no_existing_campaign_membership(
+        self,
+        campaign_id: UUID,
+        candidate_email: str,
+    ) -> None:
+        """
+        Fast, non-authoritative pre-check for ResumeIntakeService.upload_resume
+        to call BEFORE any file upload / candidate / resume creation happens —
+        create_campaign_candidate's own identical check further down only
+        runs after all of that has already been committed, so a rejection
+        there used to leave an orphaned Resume row behind on every "already
+        in this campaign" upload attempt. Not a substitute for that
+        locked, race-safe check, which remains the source of truth for the
+        actual insert.
+        """
+        if self.encryption_service is None or self.candidate_repo is None:
+            return
+
+        email_hash = self.encryption_service.generate_hash(candidate_email)
+        candidate = self.candidate_repo.get_by_email_hash(email_hash)
+        if candidate is None:
+            return
+
+        existing = self.campaign_candidate_repo.get_by_campaign_and_candidate(campaign_id, candidate.id)
+        if existing:
+            raise CampaignException(
+                "Candidate already exists in this campaign.",
+                409,
+                data=self._build_resubmission_info(existing),
+            )
+
     def create_campaign_candidate(
         self,
         request: CampaignCandidateCreateRequest,
@@ -440,6 +471,7 @@ class CampaignCandidateService:
 
         return ResubmissionInfoResponse(
             campaign_candidate_id=campaign_candidate.id,
+            candidate_id=campaign_candidate.candidate_id,
             current_pipeline_stage=campaign_candidate.pipeline_stage,
             current_resume_id=campaign_candidate.resume_id,
             can_update_resume=can_update_resume,

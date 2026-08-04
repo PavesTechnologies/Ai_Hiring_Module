@@ -11,6 +11,7 @@ from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
 from app.models.jd.job_descriptions import JDEmbedding
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from app.models.skills import CandidateSkill
+from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 
 _SORT_COLUMNS = {
     "created_at": Resume.created_at,
@@ -125,6 +126,21 @@ class ResumeRepository:
         self.db.execute(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))
         self.db.flush()
 
+    def delete_embedding_by_resume(self, resume_id: UUID) -> None:
+        """
+        Single-resume cleanup — narrower than delete_embeddings_by_candidate,
+        which would also remove embeddings for this candidate's OTHER resume
+        versions. resume_embeddings has no FK constraint at all, so this is
+        the only way to avoid orphaning it.
+        """
+        self.db.execute(delete(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_candidate_skills_by_resume(self, resume_id: UUID) -> None:
+        """Single-resume cleanup — narrower than delete_candidate_skills_by_candidate, scoped to just this resume version's skills."""
+        self.db.execute(delete(CandidateSkill).where(CandidateSkill.resume_id == resume_id))
+        self.db.flush()
+
     def record_parse_attempt(
         self,
         resume_id: UUID,
@@ -181,6 +197,13 @@ class ResumeRepository:
         self.db.refresh(resume)
         return resume
 
+    def mark_parse_pending(self, resume: Resume) -> Resume:
+        """Epic 4 (M05-E04) Phase D10 - flips a FAILED resume back to PENDING before re-dispatching it (retry/DLQ replay)."""
+        resume.parse_status = ParseStatus.PENDING
+        self.db.flush()
+        self.db.refresh(resume)
+        return resume
+
     def set_task_id(self, resume: Resume, task_id: str) -> Resume:
         resume.task_id = task_id
         self.db.flush()
@@ -188,14 +211,7 @@ class ResumeRepository:
         return resume
 
     def get_active_embedding_model_version(self) -> EmbeddingModelVersion:
-        version = (
-            self.db.query(EmbeddingModelVersion)
-            .filter(EmbeddingModelVersion.is_active.is_(True))
-            .first()
-        )
-        if not version:
-            raise RuntimeError("No active embedding model version is configured.")
-        return version
+        return EmbeddingModelVersionRepository(self.db).get_active()
 
     def create_resume_embedding(
         self,
