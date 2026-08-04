@@ -83,6 +83,10 @@ class CampaignCandidate(Base):
             "composite_score IS NULL OR (composite_score >= 0 AND composite_score <= 100)",
             name="chk_composite_score_range",
         ),
+        # M10-E03 Phase 1: backs the ranked candidate list's default query -
+        # WHERE campaign_id = X ORDER BY composite_score [ASC|DESC] NULLS
+        # LAST - avoiding a full per-campaign scan + in-memory sort.
+        Index("ix_campaign_candidates_campaign_id_composite_score", "campaign_id", "composite_score"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

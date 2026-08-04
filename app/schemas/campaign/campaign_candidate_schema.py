@@ -1,10 +1,24 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 
 from app.models.candidates import ParseStatus
-from app.models.pipeline import PipelineStage, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage, RejectionLayer
+
+# M10-E03 Phase 1: allowed values for the ranked candidate list's `sort_by`/
+# `sort_order` query params - Literal (not a DB-facing enum) since these are
+# request-shape-only concepts with no persisted representation. FastAPI
+# validates any other value as a 422 automatically.
+CandidateSortField = Literal[
+    "composite_score", "deterministic_score", "semantic_score", "ai_score", "created_at",
+]
+SortOrder = Literal["asc", "desc"]
+
+# M10-E03 Phase 1: derived, never persisted - see
+# CampaignCandidateService._derive_ranking_status.
+RankingStatus = Literal["RANKED", "PENDING", "FAILED"]
 
 class CampaignCandidateCreateRequest(BaseModel):
     campaign_id: UUID
@@ -41,6 +55,23 @@ class CampaignCandidateResponse(BaseModel):
     semantic_score: float | None = None
     composite_score: float | None = None
 
+    # M10-E03 Phase 1: exposed so the ranked list can explain *why* a
+    # candidate is where it is (or is excluded by a filter) - all three are
+    # read straight off the already-loaded CampaignCandidate row, never a
+    # new query. Default to the "nothing flagged" value so every existing
+    # caller that builds this response without passing them (e.g. the
+    # scorecard/detail responses) is unaffected.
+    is_fraud_flagged: bool = False
+    hr_override: bool = False
+    ai_recommendation: AIRecommendation | None = None
+
+    # M10-E03 Phase 1: derived per-request, never stored (see
+    # CampaignCandidateService._derive_ranking_status). rank is only
+    # meaningful within a specific ranked/filtered/sorted query - None
+    # outside that context (e.g. the single-candidate scorecard).
+    rank: int | None = None
+    ranking_status: RankingStatus | None = None
+
     # Not available in the backend today - always null until a real source exists.
     location: str | None = None
     risk_score: float | None = None
@@ -49,6 +80,33 @@ class CampaignCandidateResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True,
     )
+
+
+class RankedCampaignCandidatesResponse(BaseModel):
+    """
+    M10-E03 Phase 1: paginated wrapper for the ranked candidate list -
+    mirrors CampaignPageResponse's exact shape (items/page/page_size/total),
+    the pagination convention already established elsewhere in this
+    project, rather than inventing a new one.
+    """
+    items: list[CampaignCandidateResponse]
+    page: int
+    page_size: int
+    total: int
+
+
+class CampaignCandidateSummaryResponse(BaseModel):
+    """M10-E03 Phase 1: aggregate counts/statistics for one campaign's candidates - read-only, never audited."""
+    total_candidates: int
+    ranked_candidates: int
+    pending_candidates: int
+    rejected_candidates: int
+    fraud_candidates: int
+    highest_composite_score: float | None = None
+    lowest_composite_score: float | None = None
+    average_composite_score: float | None = None
+    pipeline_stage_counts: dict[str, int]
+    ai_recommendation_counts: dict[str, int]
 
 
 class DeterministicScoreSummary(BaseModel):

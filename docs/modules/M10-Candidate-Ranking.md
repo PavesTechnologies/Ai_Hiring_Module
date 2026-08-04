@@ -169,6 +169,17 @@ QUEUED/RUNNING `celery_task_log` row for the same `campaign_candidate_id` +
 enqueues a second one. `campaign_candidate_service.py` no longer imports
 this helper at all - an HR override has no composite-scoring call site.
 
+**Worker registration:** `app.tasks.composite_scoring_tasks` is listed in
+`celery_app.conf.imports` (`app/core/celery_app.py`), the same mechanism
+every other task module in this codebase uses (`deterministic_scoring_tasks`,
+`semantic_scoring_tasks`, etc.). Without this, a real Celery worker process
+never imports the module and `scoring.calculate_composite_score` would be
+unavailable to it - `_enqueue_composite_scoring` would happily publish the
+task, but no worker could execute it. Verified via
+`celery_app.loader.import_default_modules()` (the same call Celery's own
+worker boot uses): `scoring.calculate_composite_score` registers alongside
+every pre-existing task, with no duplicates.
+
 ---
 
 ### Composite Formula
@@ -710,3 +721,282 @@ to read `campaign_weight_configuration_history` directly (as opposed to
 via the existing `GET /{campaign_id}/scoring-history`, which reads from
 the audit log) was not requested and was not added - `get_by_campaign_id`
 exists on the new repository for exactly that purpose if/when it is.
+
+---
+
+## Epic 3 Phase 1: Ranked Candidate List Backend
+
+### Overview
+
+Epic 1 gave every candidate a `composite_score`. Epic 2 made changing the
+weights behind that score fully auditable. Neither epic made the score
+*usable* for its actual purpose: ranking candidates within a campaign.
+Phase 1 closes that gap on the backend - the existing candidate-listing
+endpoint now returns candidates ordered by rank, with filtering,
+pagination, and a per-campaign summary, computed entirely in PostgreSQL.
+
+### Business Purpose
+
+Before this phase, `GET /campaign-candidates/campaign/{campaign_id}`
+returned every candidate in `created_at DESC` order - `composite_score`
+was present on the response but played no role in how candidates were
+ordered. A recruiter had no way to see "who is my best candidate right
+now" without manually sorting the raw list client-side. This phase makes
+the backend itself rank-aware: default ordering is by `composite_score`
+(highest first, unscored candidates never at the top), with the filters
+and pagination a real campaign (hundreds to thousands of candidates)
+requires.
+
+### Architecture
+
+No new services, repositories, or Celery tasks. Per the epic's explicit
+constraint, this extends exactly two existing classes:
+- `CampaignCandidateRepository` - three new methods
+  (`get_ranked_by_campaign`, `get_score_aggregates`,
+  `get_ai_recommendation_counts`).
+- `CampaignCandidateService` - two new methods
+  (`get_ranked_campaign_candidates`, `get_campaign_candidate_summary`)
+  plus one new static helper (`_derive_ranking_status`).
+
+The pre-existing `get_campaign_candidates`/`get_all_by_campaign` (the
+unpaginated, unranked pair) are left completely unmodified - they remain
+available to any other caller; the route no longer calls them, but
+nothing about their behavior changed.
+
+### Endpoint Changes
+
+`GET /campaign-candidates/campaign/{campaign_id}` - the existing endpoint,
+extended in place (never a second/new endpoint) with query parameters:
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `page` | int | 1 | 1-based |
+| `page_size` | int | `DEFAULT_PAGE_SIZE` (20) | max `MAX_PAGE_SIZE` (100) - both existing constants, reused as-is |
+| `sort_by` | `composite_score` \| `deterministic_score` \| `semantic_score` \| `ai_score` \| `created_at` | unset (→ default ranking) | invalid values rejected with 422 by FastAPI's `Literal` validation |
+| `sort_order` | `asc` \| `desc` | `desc` | |
+| `pipeline_stage` | existing `PipelineStage` enum | none | |
+| `composite_score_min` / `_max` | float, 0-100 | none | `min > max` rejected with 422 |
+| `ai_recommendation` | existing `AIRecommendation` enum | none | |
+| `ai_evaluation` | existing `AIEvaluationStatus` enum | none | filters on `ai_evaluation_status` |
+| `include_pending` / `include_rejected` / `include_fraud` | bool | `true` | `false` excludes |
+| `hr_override` | bool \| none | none | `true`/`false` filters; omitted = no filter |
+
+Response shape changed from a bare `list[CampaignCandidateResponse]` to
+`RankedCampaignCandidatesResponse` (`items`/`page`/`page_size`/`total`) -
+the same pagination envelope shape `CampaignPageResponse` already uses
+elsewhere in this project, not a new convention.
+
+### Summary Endpoint
+
+`GET /campaign-candidates/campaign/{campaign_id}/summary` (new route, same
+router/prefix) → `CampaignCandidateSummaryResponse`: total/ranked/pending/
+rejected/fraud candidate counts, highest/lowest/average `composite_score`,
+a pipeline-stage breakdown, and an AI-recommendation breakdown. Read-only,
+never audited (see Audit below).
+
+### Repository Changes
+
+`CampaignCandidateRepository` (`app/repositories/campaign_candidate_repository.py`):
+- `get_ranked_by_campaign(...)` - one filtered/sorted/paginated `SELECT`
+  (same LEFT JOIN shape as `get_all_by_campaign`) plus one `COUNT(*)` with
+  an identical filter set, so the service can build page metadata without
+  a second Python-side pass.
+- `get_score_aggregates(campaign_id)` - one query, five aggregates
+  (`COUNT`/`SUM(CASE...)`/`MAX`/`MIN`/`AVG`) backing the summary endpoint.
+- `get_ai_recommendation_counts(campaign_id)` - a `GROUP BY
+  ai_recommendation`, mirroring `CampaignRepository.get_stage_counts`'s
+  exact shape for the analogous column.
+
+No other repository method was modified.
+
+### Service Changes
+
+`CampaignCandidateService` (`app/services/campaign/campaign_candidate_service.py`):
+- `get_ranked_campaign_candidates(...)` - validates campaign existence,
+  `page`/`page_size` bounds, and `composite_score_min <=
+  composite_score_max`; delegates filtering/sorting/pagination entirely to
+  the repository; maps each row to `CampaignCandidateResponse` with its
+  1-based `rank` within the requested page.
+- `get_campaign_candidate_summary(...)` - validates campaign existence;
+  reuses `CampaignRepository.get_stage_counts` (Epic-independent,
+  pre-existing) for the pipeline-stage breakdown and derives
+  `rejected_candidates` from that same result, rather than running a
+  second `REJECTED`-count query.
+- `_derive_ranking_status(campaign_candidate)` (static) - see Ranking
+  Status below.
+- `_to_campaign_candidate_response` - extended (not duplicated) with
+  `rank`, `ranking_status`, `is_fraud_flagged`, `hr_override`,
+  `ai_recommendation`; `rank` defaults to `None` for every existing call
+  site (the scorecard/detail responses), so nothing outside the ranked
+  list is affected.
+
+### Schema Changes
+
+`app/schemas/campaign/campaign_candidate_schema.py`:
+- `CampaignCandidateResponse` - extended with `is_fraud_flagged: bool =
+  False`, `hr_override: bool = False`, `ai_recommendation: AIRecommendation
+  | None = None`, `rank: int | None = None`, `ranking_status: RankingStatus
+  | None = None`. `CandidateScorecardResponse` (which extends this class)
+  inherits them unchanged - no duplicate DTO.
+- **New:** `RankedCampaignCandidatesResponse` (`items`/`page`/`page_size`/`total`).
+- **New:** `CampaignCandidateSummaryResponse`.
+- **New:** `CandidateSortField`, `SortOrder`, `RankingStatus` - `Literal`
+  type aliases (not new DB-facing enums) for the request/response shapes
+  that have no persisted representation.
+
+### Ranking Algorithm
+
+Default (`sort_by` omitted):
+```sql
+ORDER BY composite_score DESC NULLS LAST,
+         deterministic_score DESC,
+         created_at ASC,
+         id ASC
+```
+Explicit `sort_by`:
+```sql
+ORDER BY <chosen column> [ASC|DESC] NULLS LAST,
+         created_at ASC,
+         id ASC
+```
+`ai_score` maps to `effective_ai_score` - the same column
+`CompositeScoringService` itself treats as authoritative (not the raw
+`ai_ats_score`). Every ordering is built as a SQLAlchemy `ORDER BY` clause
+and executed by PostgreSQL; no candidate row is ever re-sorted in Python
+(verified in `test_campaign_candidate_ranking_repository.py` by asserting
+on the compiled SQL text itself, not just the returned row order).
+
+### Tie-breaking Rules
+
+`created_at ASC, id ASC` is appended to *every* ordering, default or
+explicit. Two candidates with identical `composite_score` (or identical
+values on whatever column was chosen) fall back to submission order, then
+to `id` - a UUID comparison with no business meaning beyond guaranteeing a
+strict total order. This is what makes pagination stable: without a final
+tiebreaker, `LIMIT`/`OFFSET` pagination over ties can non-deterministically
+skip or repeat rows across pages; with it, the same query always produces
+the same page contents.
+
+### Pagination
+
+Offset-based (`page`/`page_size`), mirroring `CampaignPageResponse`'s
+existing convention exactly - not a new pagination style. `total` is
+computed by a second query sharing the exact same filter predicates as
+the main query, so `total` always agrees with what filtering actually
+produced.
+
+### Filtering
+
+`pipeline_stage`, `composite_score_min`/`_max`, `ai_recommendation`,
+`ai_evaluation` (→ `ai_evaluation_status`), and `hr_override` are plain
+equality/range predicates. `include_pending=false` excludes any row with
+`composite_score IS NULL` (covering both `PENDING` and `FAILED`
+`ranking_status`, since both only exist when the score is `NULL`).
+`include_rejected=false` excludes `pipeline_stage = REJECTED`.
+`include_fraud=false` excludes `is_fraud_flagged = true`. All predicates
+combine with `AND` - there is no OR-combination support in Phase 1.
+
+### Ranking Status
+
+Derived on every read from already-loaded columns, in
+`CampaignCandidateService._derive_ranking_status` - **never stored**:
+- `RANKED` - `composite_score IS NOT NULL` (regardless of
+  `pipeline_stage` - a candidate scored before being rejected keeps its
+  `RANKED` status; rejection is a separate, filterable concern).
+- `FAILED` - `composite_score IS NULL AND ai_evaluation_status = FAILED`.
+- `PENDING` - `composite_score IS NULL` and everything else (not yet
+  reached AI evaluation, still `IN_PROGRESS`/`SKIPPED`/`MANUAL_REVIEW`, or
+  rejected at an earlier layer before AI evaluation ever ran).
+
+`rank` is likewise never stored - it is 1-based position within the
+current filtered/sorted page only, recomputed on every request. Changing
+any filter changes which candidates exist in the result set and therefore
+changes every subsequent rank.
+
+### Performance
+
+- The default and every explicit sort share one composite index -
+  `ix_campaign_candidates_campaign_id_composite_score` on
+  `(campaign_id, composite_score)` - added by this phase's migration. A
+  plain btree index is bidirectionally scannable, so it serves `ASC`,
+  `DESC`, and `composite_score_min`/`_max` range filters alike; no second,
+  direction-specific index was added.
+- `get_ranked_by_campaign` reuses `get_all_by_campaign`'s exact 2-way LEFT
+  JOIN shape (`Candidate`, `Resume`) - no new join, no N+1.
+- `get_score_aggregates` is one query for five aggregates (not five
+  separate round trips).
+- `LIMIT`/`OFFSET` bounds the result set returned to the application
+  regardless of campaign size - a campaign with thousands of candidates
+  never has its full row set loaded into Python; only `page_size` rows are.
+
+### Database Indexes
+
+New: `ix_campaign_candidates_campaign_id_composite_score` on
+`campaign_candidates(campaign_id, composite_score)` -
+`alembic/versions/f1a3c7e9b2d4_ranked_candidate_list_index.py`. No other
+schema change - every other column this phase reads
+(`deterministic_score`, `semantic_score`, `effective_ai_score`,
+`pipeline_stage`, `is_fraud_flagged`, `hr_override`, `ai_recommendation`,
+`created_at`, `id`) already existed.
+
+### RBAC
+
+Both routes require `HR_ADMIN`, `RECRUITER`, or `HIRING_MANAGER` (existing
+`require_roles(...)` mechanism, same roles already used for Campaign
+Management elsewhere in `campaign_routes.py`). Before this phase, the
+candidate-listing route had **no** role restriction at all (confirmed
+during the Epic 3 Phase 1 audit) - this is a deliberate tightening, not
+an accidental side effect.
+
+### Edge Cases
+
+| Edge case | Handling |
+|---|---|
+| Campaign does not exist | Both endpoints raise `CampaignException(404)` before any repository call |
+| Zero candidates | `total=0`, `items=[]`; summary returns all-zero counts and `None` scores (guarded against `SUM`/`MAX`/`MIN`/`AVG` returning `NULL` over an empty set) |
+| Pending / rejected / fraud candidates | Included by default; excluded individually via `include_pending`/`include_rejected`/`include_fraud` |
+| `NULL` composite_score | Never sorts to the top - `NULLS LAST` on every score-based ordering |
+| Identical composite/deterministic scores | Resolved by the `created_at ASC, id ASC` tiebreaker - never ambiguous |
+| Concurrent composite recalculation | No locking (consistent with Epic 1/2's own "derived data, last-commit-wins" design) - a page read mid-recalculation may show some rows already updated and others not; never inconsistent within a single row |
+| Large campaigns | Bounded by `LIMIT`/`page_size`; indexed by `(campaign_id, composite_score)` |
+| Invalid pagination / sorting / filters | `page < 1`, `page_size` outside `[1, MAX_PAGE_SIZE]`, and `composite_score_min > max` are rejected with 422 by the service; invalid `sort_by`/`sort_order`/enum filter values are rejected with 422 by FastAPI's `Literal`/enum `Query` validation before the service ever runs |
+| No matching candidates after filtering | `total=0`, `items=[]` - not an error |
+| All candidates pending / rejected / fraud | Each is a normal, valid result set - no special-cased behavior |
+| Ranking stability across pages | Guaranteed by the `created_at ASC, id ASC` tiebreaker (see Tie-breaking Rules) |
+
+### Audit
+
+Neither `get_ranked_campaign_candidates` nor `get_campaign_candidate_summary`
+calls `audit_service.log(...)` - explicitly verified by
+`test_never_writes_an_audit_entry`/`test_summary_never_writes_an_audit_entry`
+in the new service test file. Both are pure reads.
+
+### Testing
+
+- `tests/repositories/test_campaign_candidate_ranking_repository.py` -
+  asserts against the *compiled SQL text* of `get_ranked_by_campaign`
+  (default ordering, explicit `sort_by`, `NULLS LAST`, `AND`-combined
+  filters, `LIMIT`/`OFFSET`) rather than mocking real rows, so ranking
+  correctness is verified at the SQL level, not the Python level. Also
+  covers `get_score_aggregates` (including the empty-campaign
+  `NULL`-vs-`0` distinction) and `get_ai_recommendation_counts`.
+- `tests/services/campaign/test_campaign_candidate_ranking_service.py` -
+  `_derive_ranking_status` for every state combination, pagination
+  validation, rank computation across pages, filter pass-through,
+  no-audit-on-read, the summary endpoint's `pending = total - ranked -
+  failed` derivation and empty-campaign zeroed breakdown, and a
+  backward-compatibility check that the pre-existing
+  `get_campaign_candidates()` is unaffected.
+- `tests/api/test_campaign_candidate_ranking_routes.py` - structural RBAC
+  verification against the actual FastAPI route/dependency graph (this
+  project has no HTTP/TestClient test infrastructure anywhere, so this
+  inspects the same `require_roles(...)` closure a real request would be
+  dispatched through, rather than introducing a new test category).
+
+### Future Scope
+
+Explicitly out of scope for this phase (per its own instructions):
+frontend, exports, scheduled exports, ranking preview/simulation,
+candidate name search (blocked on PII encryption at rest - would need a
+future searchable-index approach, not a plain `ILIKE`), and deterministic
+sub-weight configuration. All left for later epics/phases.
