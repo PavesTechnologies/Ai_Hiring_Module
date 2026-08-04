@@ -1,8 +1,12 @@
 from fastapi import Depends
 
 from app.dependencies.bulk_upload import get_bulk_upload_job_file_repository, get_bulk_upload_job_repository
-from app.dependencies.campaign import get_campaign_repository
-from app.dependencies.jd import get_celery_task_log_repository, get_document_processing_repository
+from app.dependencies.campaign import get_campaign_repository, get_config_repository
+from app.dependencies.jd import (
+    get_celery_task_log_repository,
+    get_document_processing_repository,
+    get_jd_repository,
+)
 from app.dependencies.resume import (
     get_circuit_breaker_repository,
     get_resume_repository,

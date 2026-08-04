@@ -148,8 +148,6 @@ class EntityType(enum.Enum):
     # inside its own try/except. Added so the audit entry actually gets written.
     CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
     PROMPT_TEMPLATE = "PROMPT_TEMPLATE"
-  
-    CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
 
 
 S3_RESUME_PREFIX = "resumes/"
