@@ -85,3 +85,70 @@ def test_get_embedding_by_content_hash_returns_none_when_no_match():
     result = repo.get_embedding_by_content_hash("somehash", uuid4())
 
     assert result is None
+
+
+# ----------------------------------------------------------------------
+# replace_jd_embedding - overwrites the existing jd_embeddings row for a
+# jd_id in place (jd_id is unique - only ever one row per JD version) -
+# used exclusively by the "jd_skills changed on an already-active JD"
+# regeneration trigger, never for a brand-new JD version (which always
+# gets its own fresh row via create_jd_embedding_idempotent instead).
+# ----------------------------------------------------------------------
+
+def test_replace_jd_embedding_overwrites_existing_row_in_place():
+    db, repo = _repo_with_mock_db()
+    jd_id = uuid4()
+    existing_row = MagicMock(jd_id=jd_id)
+    db.query.return_value.filter.return_value.first.return_value = existing_row
+    new_model_version_id = uuid4()
+
+    result = repo.replace_jd_embedding(
+        jd_id=jd_id,
+        embedding=[0.2] * 384,
+        embedding_model_version_id=new_model_version_id,
+        content_hash="newhash456",
+    )
+
+    assert result is existing_row
+    assert existing_row.embedding == [0.2] * 384
+    assert existing_row.embedding_model_version_id == new_model_version_id
+    assert existing_row.input_text_hash == "newhash456"
+    assert existing_row.created_at is not None
+    db.flush.assert_called_once()
+    # Never a second insert for the same jd_id - only a mutate-and-flush
+    # of the existing row.
+    db.add.assert_not_called()
+
+
+def test_replace_jd_embedding_inserts_when_no_existing_row():
+    db, repo = _repo_with_mock_db()
+    jd_id = uuid4()
+    # No existing jd_embeddings row for this jd_id yet.
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    result = repo.replace_jd_embedding(
+        jd_id=jd_id,
+        embedding=[0.3] * 384,
+        embedding_model_version_id=uuid4(),
+        content_hash="firsthash789",
+    )
+
+    assert result.jd_id == jd_id
+    assert result.input_text_hash == "firsthash789"
+    db.add.assert_called_once()
+
+
+def test_count_embeddings_returns_scalar_count():
+    db = MagicMock()
+    repo = JDRepository(db)
+    db.query.return_value.scalar.return_value = 7
+
+    assert repo.count_embeddings() == 7
+
+
+def test_count_embeddings_returns_zero_when_scalar_is_none():
+    db = MagicMock()
+    repo = JDRepository(db)
+    db.query.return_value.scalar.return_value = None
+
+    assert repo.count_embeddings() == 0

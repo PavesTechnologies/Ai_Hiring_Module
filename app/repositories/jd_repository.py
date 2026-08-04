@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -56,13 +57,7 @@ class JDRepository:
         content_hash: str,
         lineage_root_id: UUID,
     ) -> JobDescription | None:
-        """
-        Finds another JD (outside this lineage family) sharing the same
-        content_hash. A JD belongs to the family identified by
-        `lineage_root_id` if its own lineage_root_id matches it, or - for
-        the root version itself, whose lineage_root_id is NULL - if its id
-        matches it.
-        """
+       
         return (
             self.db.query(JobDescription)
             .filter(
@@ -76,12 +71,7 @@ class JDRepository:
         )
 
     def has_active_campaign(self, jd_id: UUID) -> bool:
-        """
-        A campaign still counts as active for JD-locking purposes unless it's
-        CLOSED - a PAUSED campaign can be resumed at any time, so the JD it's
-        attached to must stay locked, matching the != CLOSED convention used
-        for "ongoing" campaigns elsewhere (e.g. CampaignRepository.get_all_campaigns).
-        """
+       
         return (
             self.db.query(HiringCampaign.id)
             .filter(
@@ -282,12 +272,7 @@ class JDRepository:
         self,
         jd_ids: list[UUID],
     ) -> dict[UUID, dict[str, int]]:
-        """
-        Active vs. passed (CLOSED) campaign counts per JD, in one grouped
-        query rather than N+1 per-JD lookups - used to annotate JD list/search
-        results. "Active" here matches the != CLOSED convention used by
-        has_active_campaign() (a PAUSED campaign can still be resumed).
-        """
+      
         counts = {jd_id: {"active": 0, "passed": 0} for jd_id in jd_ids}
         if not jd_ids:
             return counts
@@ -350,30 +335,21 @@ class JDRepository:
         return jd_embedding
 
     def get_embedding_by_jd_id(self, jd_id: UUID) -> JDEmbedding | None:
-        """
-        M08-E02: read counterpart to create_jd_embedding - the JD embedding
-        Semantic Matching loads for a campaign's job_description, reusing
-        exactly what M08-E01/the JD processing pipeline already generated
-        and stored. Never regenerates - returns None if the JD has no
-        embedding yet (still processing, or created before embeddings existed).
-        """
+
         return (
             self.db.query(JDEmbedding)
             .filter(JDEmbedding.jd_id == jd_id)
             .first()
         )
 
+    def count_embeddings(self) -> int:
+        """Embedding Storage Dashboard - total jd_embeddings row count."""
+        return self.db.query(func.count(JDEmbedding.id)).scalar() or 0
+
     def get_embedding_by_content_hash(
         self, content_hash: str, embedding_model_version_id: UUID,
     ) -> JDEmbedding | None:
-        """
-        M08-E01 S02: dedup lookup for JD embedding generation - any existing
-        jd_embeddings row (for ANY jd_id) whose input_text_hash and
-        embedding_model_version_id both match. When found, the caller
-        copies its embedding vector onto a new row for the current jd_id
-        instead of calling the embedding service again. Mirrors
-        ResumeRepository.get_embedding_by_hash's exact pattern.
-        """
+        
         stmt = select(JDEmbedding).where(
             JDEmbedding.input_text_hash == content_hash,
             JDEmbedding.embedding_model_version_id == embedding_model_version_id,
@@ -387,21 +363,7 @@ class JDRepository:
         embedding_model_version_id: UUID,
         content_hash: str,
     ) -> tuple[JDEmbedding, bool]:
-        """
-        Dedup-safe counterpart to create_jd_embedding, for the new (not yet
-        Celery-wired) generation path - jd_embeddings.jd_id is unique, so
-        calling this twice for the same jd_id (a retry, a duplicate
-        trigger, concurrent callers) would otherwise raise IntegrityError.
-        A SAVEPOINT scopes the loser's IntegrityError to just this insert
-        attempt (mirrors ResumeRepository.create_resume_embedding's pattern
-        for the same class of race), then falls back to the row that
-        already exists for this jd_id instead of raising.
-
-        create_jd_embedding itself is left completely untouched - the
-        existing JD processing pipeline's single, already-working call
-        site keeps its exact current behavior, no backward-compatibility
-        risk. Returns (jd_embedding, was_created).
-        """
+       
         jd_embedding = JDEmbedding(
             jd_id=jd_id,
             embedding=embedding,
@@ -418,3 +380,29 @@ class JDRepository:
         except IntegrityError:
             existing = self.get_embedding_by_jd_id(jd_id)
             return existing, False
+
+    def replace_jd_embedding(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        content_hash: str,
+    ) -> JDEmbedding:
+       
+        existing = self.get_embedding_by_jd_id(jd_id)
+        if existing is None:
+            jd_embedding, _ = self.create_jd_embedding_idempotent(
+                jd_id=jd_id,
+                embedding=embedding,
+                embedding_model_version_id=embedding_model_version_id,
+                content_hash=content_hash,
+            )
+            return jd_embedding
+
+        existing.embedding = embedding
+        existing.embedding_model_version_id = embedding_model_version_id
+        existing.input_text_hash = content_hash
+        existing.created_at = datetime.now(timezone.utc)
+        self.db.flush()
+        self.db.refresh(existing)
+        return existing

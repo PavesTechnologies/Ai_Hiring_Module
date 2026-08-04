@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
+from app.models.embeddings import ResumeEmbedding
 from app.models.jd.job_descriptions import JobDescription
 from app.models.pipeline import (
     AIEvaluationStatus,
@@ -404,6 +405,62 @@ class CampaignCandidateRepository:
         """
         self.db.delete(campaign_candidate)
         self.db.flush()
+
+    def get_pending_semantic_score_with_ready_embedding(self) -> list[CampaignCandidate]:
+        """
+        Automatic recovery (M08-E02): every campaign_candidate that already
+        passed deterministic screening but has no semantic_score yet, AND
+        whose resume now has an embedding - i.e. exactly the candidates
+        calculate_semantic_score_task's own missing-resume-embedding skip
+        path (see MISSING_RESUME_EMBEDDING_REASON) left behind, but whose
+        embedding has since become available (a later EMBED_RESUME retry
+        succeeded, or its earlier permanent failure was manually resolved).
+
+        resume_embeddings has no FK/relationship to campaign_candidates or
+        resumes (see ResumeRepository's own comments on this) - the join
+        below is a manual EXISTS-style join condition on resume_id, the
+        same pattern get_campaign_history_entries already uses to bridge
+        the two tables.
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .join(ResumeEmbedding, ResumeEmbedding.resume_id == CampaignCandidate.resume_id)
+            .filter(
+                CampaignCandidate.deterministic_passed.is_(True),
+                CampaignCandidate.semantic_score.is_(None),
+            )
+            .distinct()
+            .all()
+        )
+
+    def get_screening_semantic_health_stats(self, campaign_id: UUID) -> tuple[int, int]:
+        """
+        Requirement 5 (embedding health monitoring): returns (affected_count,
+        total_screening_count) for one campaign - affected_count is every
+        SCREENING candidate with semantic_score IS NULL that hasn't already
+        been triaged to MANUAL_REVIEW (i.e. silently stuck, not yet
+        flagged); total_screening_count is every SCREENING candidate in
+        the campaign, the percentage's denominator.
+        """
+        total_screening_count = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+            )
+            .scalar()
+        )
+        affected_count = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+                CampaignCandidate.semantic_score.is_(None),
+                CampaignCandidate.ai_evaluation_status != AIEvaluationStatus.MANUAL_REVIEW,
+            )
+            .scalar()
+        )
+        return affected_count or 0, total_screening_count or 0
 
     def commit(self) -> None:
         """

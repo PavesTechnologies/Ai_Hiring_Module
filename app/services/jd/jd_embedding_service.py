@@ -53,10 +53,39 @@ class JDEmbeddingService:
         self.config_repository = config_repository
         self.embedding_service = embedding_service
 
-    def generate_and_store_embedding(self, jd_id: UUID) -> JDEmbedding:
+    def generate_and_store_embedding(self, jd_id: UUID, force_regenerate: bool = False) -> JDEmbedding:
+        """
+        force_regenerate=False (default - the "JD activated" trigger):
+        if a jd_embeddings row already exists for this jd_id, returns it
+        unchanged without rebuilding the text/hash or touching the
+        embedding model at all - activation doesn't imply anything about
+        this JD's content actually changed. Used for JD create/reprocess
+        (where the existing inline pipeline stage already embeds the JD
+        before this ever runs - a guaranteed no-op there) and for a
+        metadata-only JD update (a brand-new jd_id with no row yet, so
+        this generates one for the first time).
+
+        force_regenerate=True (the "jd_skills changed" trigger): always
+        rebuilds the text/hash from this JD's current jd_skills - even if
+        a row already exists - and, when the content actually changed,
+        overwrites that existing row in place via
+        JDRepository.replace_jd_embedding (jd_id is unique - there is only
+        ever one row per JD version to update). Still skips calling the
+        embedding model itself if the freshly-built text's hash matches
+        some other existing jd_embeddings row (content_hash dedup).
+        """
         job_description = self.jd_repository.get_by_id(jd_id)
         if job_description is None:
             raise ValueError(f"JobDescription '{jd_id}' not found.")
+
+        if not force_regenerate:
+            existing_for_jd = self.jd_repository.get_embedding_by_jd_id(jd_id)
+            if existing_for_jd is not None:
+                logger.info(
+                    "JD embedding already exists for jd_id=%s - skipping (not a skill-triggered regeneration).",
+                    jd_id,
+                )
+                return existing_for_jd
 
         mandatory_names, preferred_names = self._resolve_skill_names(jd_id)
         max_chars = self._read_max_chars()
@@ -87,6 +116,14 @@ class JDEmbeddingService:
         else:
             vector = self.embedding_service.generate_embedding(embedding_text)
             logger.info("Generated new JD embedding for jd_id=%s", jd_id)
+
+        if force_regenerate:
+            return self.jd_repository.replace_jd_embedding(
+                jd_id=jd_id,
+                embedding=vector,
+                embedding_model_version_id=embedding_model_version.id,
+                content_hash=content_hash,
+            )
 
         jd_embedding, was_created = self.jd_repository.create_jd_embedding_idempotent(
             jd_id=jd_id,

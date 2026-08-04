@@ -52,30 +52,7 @@ def process_jd_document(
     old_file_path: str | None = None,
     original_filename: str | None = None,
 ) -> None:
-    """
-    Background leg of the JD processing pipeline (everything after
-    Validation/Storage, which already ran synchronously in the route):
-    Text Extraction -> Text Cleaning -> AI Extraction -> JSON Validation ->
-    Skill Normalization -> Embedding Generation -> Persistence.
-
-    existing_jd_id/version_number/parent_jd_id/lineage_root_id are only set
-    for an update-triggered reprocess (JDService.update_jd() returned
-    JDReprocessRequired) — absent, this is a normal create run. old_file_path
-    is the document a reprocess is replacing, deleted only after the new
-    version has successfully persisted (mirrors the cleanup update_jd()
-    used to do synchronously, moved here since persistence itself is now
-    async for this path too).
-
-    Stage tracking runs on its own session (`stage_db`), separate from the
-    business-write session (`db`). StageExecutionService commits once at
-    the start and once at the end of every stage — if it shared a session
-    with JDRepository/SkillRepository/AuditRepository, those frequent
-    commits would finalize whatever business writes happened to be pending
-    at that moment, undermining the "nothing persists before Persistence
-    succeeds" guarantee. Keeping them on separate connections makes that
-    guarantee structural rather than incidental (today it only holds
-    because no pre-Persistence stage happens to write business data).
-    """
+    
     db = SessionLocal()
     stage_db = SessionLocal()
     task_log = None
@@ -112,10 +89,6 @@ def process_jd_document(
             prompt_template_repository=PromptTemplateRepository(db),
         )
 
-        # One EmbeddingService instance shared by the pipeline's own JD-level
-        # embedding stage and by skill-level semantic matching — the
-        # underlying sentence-transformer model is a class-level singleton
-        # either way, but there's no reason to instantiate the wrapper twice.
         embedding_service = EmbeddingService()
 
         checkpoint_repo = CheckpointRepository(stage_db)
@@ -170,10 +143,6 @@ def process_jd_document(
             checkpoint_repo.delete(task_id)
             checkpoint_repo.commit()
 
-        # jd_id is never None here: pipeline.run() now raises
-        # DuplicateJDException (caught below) instead of returning None for
-        # a detected duplicate, so a normal return always means a JD was
-        # persisted.
         task_log.jd_id = jd_id
         task_log_repo.update(task_log)
         task_log_repo.commit()
@@ -192,6 +161,11 @@ def process_jd_document(
                     "Failed to delete superseded JD document '%s' for JD %s.",
                     old_file_path, jd_id,
                 )
+        try:
+            from app.services.embedding_queue_service import EmbeddingQueueService, JDEmbeddingQueueError
+            EmbeddingQueueService().queue_jd_embedding(jd_id, force_regenerate=False)
+        except JDEmbeddingQueueError:
+            logger.exception("Failed to enqueue EMBED_JD after JD creation/reprocess for jd_id=%s", jd_id)
 
     except StageExecutionError as stage_exc:
         should_retry = False
@@ -209,10 +183,7 @@ def process_jd_document(
             logger.exception("JD document processing task failed for task_id %s", task_id)
             raise stage_exc.original
     except Exception as ex:
-        # A DB-level failure inside pipeline.run() leaves `db`'s transaction
-        # aborted; mark_failure reuses the same session, so without this
-        # rollback its own read/write dies with InFailedSqlTransaction and
-        # masks the real error above.
+        
         db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))

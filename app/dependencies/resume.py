@@ -130,12 +130,14 @@ def get_resume_intake_service(
     campaign_candidate_service: CampaignCandidateService = Depends(get_campaign_candidate_service),
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
 ) -> ResumeIntakeService:
     return ResumeIntakeService(
         resume_service=resume_service,
         campaign_candidate_service=campaign_candidate_service,
         campaign_repo=campaign_repo,
         audit_service=audit_service,
+        task_log_repo=task_log_repo,
     )
 
 

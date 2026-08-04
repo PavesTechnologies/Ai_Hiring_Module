@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -52,6 +52,41 @@ class CeleryTaskLogRepository:
         self.db.refresh(log)
 
         return log
+
+    def get_queued_dispatch_failed(self, task_type: str) -> list[CeleryTaskLog]:
+        """
+        Resume-upload resilience: rows whose apply_async() call itself
+        failed at enqueue time (dispatch_failed=True) - never rows that
+        were successfully queued and are simply waiting for a worker,
+        which must never be redispatched (process_resume_document has no
+        SUCCESS-shortcut, so a duplicate dispatch would reprocess the same
+        resume twice).
+        """
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(
+                CeleryTaskLog.task_type == task_type,
+                CeleryTaskLog.status == TaskStatus.QUEUED,
+                CeleryTaskLog.dispatch_failed.is_(True),
+            )
+            .all()
+        )
+
+    def claim_for_redispatch(self, task_log_id: UUID) -> bool:
+        """
+        Atomic compare-and-swap (single UPDATE...WHERE, not a
+        read-then-write) - the caller may only call apply_async if this
+        returns True. Prevents two concurrent recovery runs (e.g. the
+        startup scan racing a Beat tick, or two app instances starting at
+        once) from redispatching the same row twice.
+        """
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(CeleryTaskLog.id == task_log_id, CeleryTaskLog.dispatch_failed.is_(True))
+            .values(dispatch_failed=False),
+        )
+        self.db.commit()
+        return result.rowcount == 1
 
     def get_by_task_id(self, task_id: str) -> CeleryTaskLog | None:
         return (
