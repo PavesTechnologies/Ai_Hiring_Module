@@ -175,6 +175,7 @@ def get_resume_monitoring_service(
     stage_failure_log_repository: StageFailureLogRepository = Depends(get_stage_failure_log_repository),
     dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     storage_service: StorageService = Depends(get_storage_service),
+    campaign_candidate_repository: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
 ) -> ResumeMonitoringService:
     return ResumeMonitoringService(
         resume_repository=resume_repository,
@@ -185,6 +186,7 @@ def get_resume_monitoring_service(
         stage_failure_log_repository=stage_failure_log_repository,
         dead_letter_queue_repository=dead_letter_queue_repository,
         storage_service=storage_service,
+        campaign_candidate_repository=campaign_candidate_repository,
     )
 
 

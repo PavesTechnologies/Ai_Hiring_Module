@@ -8,6 +8,7 @@ from app.core.storage_service import StorageService
 from app.exceptions.storage_exception import StorageException
 from app.exception_handler.exceptions import NotFoundError
 from app.models.candidates import ParseStatus
+from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
@@ -59,6 +60,7 @@ class ResumeMonitoringService:
         stage_failure_log_repository: StageFailureLogRepository,
         dead_letter_queue_repository: DeadLetterQueueRepository,
         storage_service: StorageService,
+        campaign_candidate_repository: CampaignCandidateRepository,
     ):
         self.resume_repository = resume_repository
         self.candidate_repository = candidate_repository
@@ -68,6 +70,7 @@ class ResumeMonitoringService:
         self.stage_failure_log_repository = stage_failure_log_repository
         self.dead_letter_queue_repository = dead_letter_queue_repository
         self.storage_service = storage_service
+        self.campaign_candidate_repository = campaign_candidate_repository
 
     def get_timeline(self, resume_id: UUID, attempt_number: int | None = None) -> ResumeTimelineResponse:
         """
@@ -247,6 +250,22 @@ class ResumeMonitoringService:
             for candidate in self.candidate_repository.get_by_ids([r.candidate_id for r in resumes])
         }
 
+        # Same batching for campaign_candidates. A resume reused across
+        # campaigns ("use existing" duplicate resolution) can have more
+        # than one row here; when campaign_id is part of this search's own
+        # filters it's already an exact, unambiguous match. When it isn't,
+        # the most recently created link is shown as a best-effort pick —
+        # there's no single "correct" one to prefer without a campaign in
+        # scope.
+        campaign_candidates_by_resume_id: dict[UUID, UUID] = {}
+        for cc in sorted(
+            self.campaign_candidate_repository.get_by_resume_ids(
+                [r.id for r in resumes], campaign_id=campaign_id,
+            ),
+            key=lambda cc: cc.created_at,
+        ):
+            campaign_candidates_by_resume_id[cc.resume_id] = cc.id
+
         items = []
         for resume in resumes:
             candidate = candidates_by_id.get(resume.candidate_id)
@@ -264,6 +283,7 @@ class ResumeMonitoringService:
                     resume_id=resume.id,
                     task_id=resume.task_id,
                     candidate_id=resume.candidate_id,
+                    campaign_candidate_id=campaign_candidates_by_resume_id.get(resume.id),
                     candidate_full_name=full_name,
                     candidate_email=email,
                     file_format=resume.file_format.value,

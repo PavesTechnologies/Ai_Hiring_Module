@@ -163,6 +163,26 @@ class CampaignCandidateRepository:
             .all()
         )
 
+    def get_by_resume_ids(
+        self,
+        resume_ids: list[UUID],
+        campaign_id: UUID | None = None,
+    ) -> list[CampaignCandidate]:
+        """
+        Batched counterpart to get_by_resume_id - one query for a whole
+        list page's worth of resumes instead of one query per row (mirrors
+        CandidateRepository.get_by_ids' convention). A resume reused across
+        campaigns (via "use existing" duplicate resolution) can have more
+        than one row here per resume_id; pass campaign_id to disambiguate
+        to the single row for that specific campaign.
+        """
+        if not resume_ids:
+            return []
+        stmt = select(CampaignCandidate).where(CampaignCandidate.resume_id.in_(resume_ids))
+        if campaign_id is not None:
+            stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
+        return list(self.db.execute(stmt).scalars().all())
+
     def get_by_campaign_and_candidate(
         self,
         campaign_id: UUID,
