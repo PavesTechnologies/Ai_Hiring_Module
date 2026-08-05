@@ -1000,3 +1000,434 @@ frontend, exports, scheduled exports, ranking preview/simulation,
 candidate name search (blocked on PII encryption at rest - would need a
 future searchable-index approach, not a plain `ILIKE`), and deterministic
 sub-weight configuration. All left for later epics/phases.
+
+---
+
+## Epic 3 Phase 2: Candidate Ranking Explainability APIs
+
+### Overview
+
+Epics 1, 2, and Phase 1 built and exposed the ranking machinery itself
+(composite scores, weight history, a ranked/filtered/paginated list).
+Phase 2 adds nothing new to that machinery - it exposes three read-only
+views over data M10 already owns and already writes, so a recruiter (or
+the frontend) can answer "how did this candidate get here" without any
+new calculation, new table, or new source of truth.
+
+### Business Purpose
+
+Before this phase, a candidate's pipeline-stage history
+(`campaign_candidate_stage_history`) and composite-score calculation
+history (`candidate_composite_score_history`, Epic 1) were both written
+correctly but neither had a single-candidate-scoped read path - the
+former was only readable campaign-wide (`CampaignRepository.get_stage_history`,
+backing the campaign-wide activity timeline), and the latter had a
+repository method (`get_by_campaign_candidate_id`) that no route had ever
+called. Phase 2 exposes both, plus a third, purely aggregating endpoint
+that answers "why does this candidate currently have this ranking"
+without requiring the frontend to separately fetch and cross-reference
+the scorecard, the campaign's scoring config, and the composite history.
+
+### Architecture
+
+No new services, no new repositories, no new tables, no new Celery tasks,
+no new business logic. Every story extends exactly the two classes every
+prior M10 phase has extended:
+- `CampaignCandidateRepository` - one new method
+  (`get_stage_history_by_campaign_candidate_id`).
+- `CampaignCandidateService` - three new methods
+  (`get_candidate_timeline`, `get_candidate_composite_history`,
+  `get_candidate_ranking_details`), plus one new constructor dependency
+  (`composite_score_history_repo`, defaulted so no pre-existing call site
+  is affected).
+
+`CandidateCompositeScoreHistoryRepository` (Epic 1) is reused completely
+unmodified - Story 2 and Story 3 both call its existing
+`get_by_campaign_candidate_id` method; nothing was added to it. Candidate
+Ranking remains the single owner of ranking, composite history, ranking
+explainability, and timeline data - no information here is duplicated
+from, or re-derived independently of, Epics 1/2/Phase 1's existing
+storage.
+
+### Timeline API (Story 1)
+
+`GET /campaign-candidates/{campaign_candidate_id}/timeline` →
+`CandidateTimelineResponse` = `{campaign_candidate_id, current_stage,
+events: [CandidateTimelineEventResponse]}`. Each event: `from_stage`,
+`to_stage` (existing `PipelineStage` enum), `transition_source` (existing
+`TransitionSource` enum), `changed_by`, `changed_at`, `comments` (the
+existing `change_reason` column), `metadata` (the existing
+`scores_snapshot` JSONB column) - no new enum values, no new columns,
+every field read exactly as stored on `campaign_candidate_stage_history`.
+Ordered oldest-first, matching this codebase's existing "Timeline" naming
+convention (`ProcessingTimelineEntry`'s own "oldest first" ordering) -
+distinct from the "most recent first" convention used by `*_history`
+-named reads elsewhere in this module.
+
+### Composite History API (Story 2)
+
+`GET /campaign-candidates/{campaign_candidate_id}/composite-history` →
+`CandidateCompositeScoreHistoryResponse` = `{campaign_candidate_id,
+entries: [CandidateCompositeScoreHistoryEntryResponse]}`, most recent
+first. Each entry is Epic 1's `candidate_composite_score_history` row
+returned verbatim: `calculated_at`, `trigger_source` (existing
+`CompositeScoreTriggerSource` enum), `formula_version`, the three weights
+*as they were at calculation time*, each raw/normalized component score,
+`composite_score`, and a constant `computed_by: "SYSTEM"` (every
+composite calculation in this codebase is system-triggered - AI
+evaluation completing or a campaign weight change - there is no
+user-initiated composite calculation to attribute to a person, so this is
+a fixed literal, not a derived lookup).
+
+### Ranking Details API (Story 3)
+
+`GET /campaign-candidates/{campaign_candidate_id}/ranking-details` →
+`CandidateRankingDetailsResponse`: `composite_score`,
+`deterministic_score`, `semantic_score`, `ai_evaluation_score` (=
+`effective_ai_score` - the column `CompositeScoringService` itself reads,
+and Phase 1's own `ai_score` sort-column convention), the campaign's
+**current** `weight_deterministic`/`weight_semantic`/`weight_ai`,
+`formula_version` (read from the candidate's most recent
+`candidate_composite_score_history` row - `None` if composite has never
+been calculated), `ranking_status` (Phase 1's `_derive_ranking_status`,
+called verbatim - no second status concept), `composite_score_computed_at`,
+and the full HR override state (`hr_override`, `hr_override_by`,
+`hr_override_reason`, `hr_override_at`).
+
+**Current vs. historical weights, deliberately distinct**: this endpoint
+reports the campaign's *current* weights (what the score would be
+computed against right now), while the Composite History API (Story 2)
+reports the weights *actually in effect at each past calculation*. If a
+campaign's weights changed after a candidate's most recent calculation,
+these two endpoints will legitimately disagree on the weights - that is
+the correct, intended behavior, not a bug: it is exactly the information
+an explainability view needs to surface ("your weights changed since this
+candidate was last scored").
+
+### Repository Changes
+
+`CampaignCandidateRepository` (`app/repositories/campaign_candidate_repository.py`):
+- **New:** `get_stage_history_by_campaign_candidate_id(campaign_candidate_id)`
+  - the single-candidate-scoped counterpart to the pre-existing, unmodified,
+  campaign-scoped `CampaignRepository.get_stage_history(campaign_id)`.
+
+No other repository was modified. `CandidateCompositeScoreHistoryRepository`
+(Epic 1) is used exactly as it already existed.
+
+### Service Changes
+
+`CampaignCandidateService` (`app/services/campaign/campaign_candidate_service.py`):
+- Constructor gained one new optional dependency,
+  `composite_score_history_repo: CandidateCompositeScoreHistoryRepository
+  | None = None`, defaulted from `campaign_candidate_repo.db` (this
+  service has no `db` handle of its own - it is pure repository
+  composition - so the fallback derives its session from the one
+  repository every caller already constructs with the correct
+  request-scoped session, rather than adding a new `db` parameter to the
+  service itself). Every pre-existing call site is unaffected.
+- **New:** `get_candidate_timeline`, `get_candidate_composite_history`,
+  `get_candidate_ranking_details` - all three: fetch, map, return; no
+  writes, no audit calls, no calls into `CompositeScoringService` or any
+  other calculation.
+
+### Schema Changes
+
+`app/schemas/campaign/campaign_candidate_schema.py` - five new response
+classes (`CandidateTimelineEventResponse`, `CandidateTimelineResponse`,
+`CandidateCompositeScoreHistoryEntryResponse`,
+`CandidateCompositeScoreHistoryResponse`, `CandidateRankingDetailsResponse`).
+None duplicate `CampaignCandidateResponse`/`CandidateScorecardResponse` -
+they are new, narrowly-scoped views, reusing the existing
+`PipelineStage`/`TransitionSource`/`CompositeScoreTriggerSource`/
+`RankingStatus` types rather than introducing parallel enums.
+
+### API Contracts
+
+| Endpoint | Response | 404 when |
+|---|---|---|
+| `GET /campaign-candidates/{campaign_candidate_id}/timeline` | `CandidateTimelineResponse` | campaign_candidate not found |
+| `GET /campaign-candidates/{campaign_candidate_id}/composite-history` | `CandidateCompositeScoreHistoryResponse` | campaign_candidate not found |
+| `GET /campaign-candidates/{campaign_candidate_id}/ranking-details` | `CandidateRankingDetailsResponse` | campaign_candidate not found, or (defensively) its campaign not found |
+
+An invalid (non-UUID) `campaign_candidate_id` is rejected with FastAPI's
+own 422 path-parameter validation before any of these handlers run - no
+custom validation was added or needed.
+
+### RBAC
+
+All three routes: `require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER,
+UserRole.HIRING_MANAGER)` - the exact same roles/mechanism Phase 1 applied
+to the ranked-list and summary endpoints, "the roles already allowed to
+access Campaign Candidates." No new authorization concept was introduced.
+
+### Performance
+
+Each endpoint issues a small, fixed number of queries regardless of
+history size: Timeline is 2 (candidate fetch + stage-history fetch),
+Composite History is 2 (candidate fetch + history fetch), Ranking Details
+is 3 (candidate fetch + campaign fetch + history fetch, the last one
+shared with Story 2's exact query - reading only its first, already-
+most-recent-first row for `formula_version`, never a second/duplicate
+query). None of the three loads `Candidate`/`Resume` (no join needed - no
+name/designation/experience is returned by any of them), so none pay
+Phase 1's LEFT JOIN cost. A candidate with a very large stage or composite
+history is bounded only by however many rows actually exist for that one
+`campaign_candidate_id` - there is no artificial cap, but there is also no
+per-candidate history size in this system large enough (bounded by the
+number of pipeline transitions and recalculations one candidate can ever
+accumulate) to require pagination the way the campaign-wide ranked list
+does.
+
+### Edge Cases
+
+| Edge case | Handling |
+|---|---|
+| Campaign candidate not found | `CampaignException(404)` on all three endpoints |
+| Campaign not found (defensive) | `CampaignException(404)` on Ranking Details only (the only one of the three that reads the campaign) |
+| Timeline empty | `events: []`, `current_stage` still reported from the candidate row itself |
+| Composite history empty / composite never calculated | `entries: []`; Ranking Details' `formula_version` is `None` |
+| Pending AI evaluation / pending composite | `ranking_status: "PENDING"` (Phase 1's existing derivation, unchanged) |
+| Missing HR override | `hr_override: false`, `hr_override_by/reason/at: null` - and `getattr`-guarded (same convention Phase 1 established) so legacy test fixtures without these fields never crash |
+| Archived / closed campaign | Not gated - consistent with Phase 1's own ranked-list endpoint, which likewise never checks campaign status; explainability data for a closed campaign's candidates remains viewable, deliberately |
+| Concurrent composite recalculation | No locking (consistent with Epics 1/2's "derived data, last-commit-wins" design) - a read may reflect a calculation that completes mid-request on either side; every one of these three reads is a single, independently-consistent query, never a multi-step read that could observe a torn state |
+| Large history | See Performance - verified up to 500 synthetic rows in the service tests, no pagination needed at this data's realistic scale |
+| Permission denied | `require_roles(...)` raises `ForbiddenError` before the service is ever called, identical to every other RBAC-protected route in this codebase |
+| Invalid UUID | FastAPI's own path-parameter validation - 422, before routing to the handler |
+| Unknown transition source / trigger source | Cannot occur - both are native Postgres enum columns; a value outside `TransitionSource`/`CompositeScoreTriggerSource` could never have been written by any existing writer |
+| Null timestamps | `changed_at`/`calculated_at` are `NOT NULL` columns with `server_default=now()` - cannot be null; `composite_score_computed_at`/`hr_override_at` are nullable and modeled as `datetime | None` throughout |
+
+### Testing
+
+- `tests/repositories/test_campaign_candidate_explainability_repository.py`
+  - `get_stage_history_by_campaign_candidate_id` filters by the correct
+  candidate id and orders ascending (compiled-SQL assertions, same
+  technique Phase 1's repository tests use), plus the empty-history case.
+- `tests/services/campaign/test_campaign_candidate_explainability_service.py`
+  - constructor backward-compatibility (default derivation of
+  `composite_score_history_repo`), not-found handling for all three
+  methods, empty timeline/history, exact field mapping (including the
+  deliberate current-vs-historical-weights distinction), `formula_version`
+  from the most recent history row, `ranking_status` reuse, HR override
+  state (including the legacy-fixture-safe default), no-audit-on-read for
+  all three, and large-history handling (500 rows).
+- `tests/api/test_campaign_candidate_explainability_routes.py` -
+  structural RBAC verification (same technique as Phase 1's route tests)
+  for all three new routes, response-model identity checks, and a
+  backward-compatibility check that the pre-existing scorecard route is
+  still registered unchanged.
+
+### Future Scope
+
+Explicitly out of scope for this phase (per its own instructions): no new
+scoring, ranking logic, composite calculation, analytics, dashboards,
+charts, search, or exports. If a future phase needs pagination on the
+Timeline or Composite History APIs (for a hypothetical candidate with an
+extremely large history), or a bulk/multi-candidate variant of Ranking
+Details, those remain natural extensions of the same repository/service
+methods added here - not a reason to introduce new ones now.
+
+---
+
+## Epic 3 Phase 3: Campaign Ranked Candidate Export
+
+### Overview
+
+Phase 1 built the ranked, filtered, sorted, paginated candidate list.
+Phase 3 adds exactly one capability on top of it: downloading the
+**complete** filtered/sorted ranked list as an XLSX file - reusing Phase
+1's ranking query, the project's one existing Excel-export utility, and
+the same audit/RBAC/`StreamingResponse` conventions every other export in
+this codebase already follows. No new ranking logic, no new calculation,
+no new export framework.
+
+### Business Purpose
+
+A recruiter viewing the ranked list on-screen sees one page at a time
+(Phase 1's `page`/`page_size`). Sharing "the full ranked list for this
+campaign" outside the UI - with a hiring manager, in an offline review,
+as a point-in-time record - requires the entire filtered set in one file,
+not 20 rows at a time. Phase 3 is that single capability: apply the same
+filters/sort the recruiter was already using on-screen, and produce one
+downloadable XLSX containing every matching candidate.
+
+### Architecture
+
+No new services, no new repositories, no new tables, no new Excel
+library, no new Celery task. Exactly three existing components are
+extended:
+- `CampaignCandidateRepository.get_ranked_by_campaign` (Phase 1) - reused
+  **unmodified**, called twice (see Performance below) instead of once.
+- `ExcelExport` (`app/utils/excel_export.py`) - one new `@staticmethod`,
+  `export_candidate_ranking`, built with the same `_write_sheet` helper
+  `export_deterministic_rejection_summary` already established.
+- `CampaignCandidateService` - one new method,
+  `export_ranked_campaign_candidates`, following the exact structure of
+  the two pre-existing exports on this same class
+  (`export_rejected_candidates`, `export_override_report`).
+
+### Export Endpoint
+
+`GET /campaign-candidates/campaign/{campaign_id}/export` - the query
+parameters are **exactly** Phase 1's filter/sort set, minus `page`/
+`page_size` (deliberately absent - see Pagination below):
+`sort_by`, `sort_order`, `pipeline_stage`, `composite_score_min`/`_max`,
+`ai_recommendation`, `ai_evaluation`, `include_pending`/`include_rejected`/
+`include_fraud`, `hr_override`. Returns a `StreamingResponse` (no
+`response_model` - matches every other `StreamingResponse` export in this
+codebase, which likewise declare none).
+
+### Excel Structure
+
+One sheet, "Candidate Ranking", built via `ExcelExport.export_candidate_ranking`:
+
+| Column | Source |
+|---|---|
+| Rank | 1-based position within the complete filtered/sorted result set |
+| Candidate UUID | `campaign_candidate.candidate_id` (never the candidate's name/email/phone) |
+| Composite Score | `composite_score` |
+| Deterministic Score | `deterministic_score` |
+| Semantic Score | `semantic_score` |
+| AI Evaluation Score | `effective_ai_score` (same column Phase 2's Ranking Details API and Phase 1's `ai_score` sort key both already use) |
+| Pipeline Stage | `pipeline_stage.value` |
+| AI Recommendation | `ai_recommendation.value`, or blank when not yet AI-evaluated |
+| Ranking Status | `CampaignCandidateService._derive_ranking_status(...)` (Phase 1), called verbatim |
+| Composite Score Computed At | `composite_score_computed_at` |
+
+**No PII column exists** - no candidate name, email, phone, or resume
+reference, matching the explicit rule every existing export in this
+codebase already follows (`export_rejected_candidates`/
+`export_override_report`'s own "never includes candidate name/email/
+phone/resume" docstrings).
+
+### Audit Behaviour
+
+One `ActionType.CANDIDATE_RANKING_EXPORTED` entry per export request
+(never per row), written via the existing `AuditService.log(...)` call -
+the same mechanism, same call shape, as every other export in this
+codebase. `details` contains `export_format: "XLSX"`, `applied_filters`
+(every filter/sort parameter that was actually passed, enum values
+normalized to their `.value` strings), and `rows_exported`. `entity_type`
+is `EntityType.CAMPAIGN`, `entity_id`/`campaign_id` are the campaign being
+exported - there is no per-candidate audit entry.
+
+### RBAC
+
+`dependencies=[Security(require_roles(UserRole.HR_ADMIN))]` - **the export
+convention, not the read-only convention**. This is deliberately stricter
+than Phase 1's ranked-list/summary endpoints and Phase 2's explainability
+endpoints (all three: `HR_ADMIN`+`RECRUITER`+`HIRING_MANAGER`), and
+identical to every other export endpoint already in this codebase
+(`export-rejected`, `override-report/export`, `rejection-analytics/export`)
+- confirmed by a structural test asserting the export route's allowed-role
+set equals `export-rejected`'s exactly.
+
+### Repository Reuse
+
+`CampaignCandidateRepository.get_ranked_by_campaign` is called **twice**,
+both times with its existing, unmodified signature - no new repository
+method, no new SQL:
+1. `page=1, page_size=1` - a cheap call whose only purpose is reading the
+   filtered `total` (the main `SELECT ... LIMIT 1` result itself is
+   discarded).
+2. Only if `total > 0`: `page=1, page_size=total` - fetches every
+   matching row in the one page that now exactly covers the whole
+   filtered result set.
+
+Both calls pass through the identical filter/sort kwargs, so the two
+calls are guaranteed to see the same filtered set (no risk of the two
+calls disagreeing about which rows match).
+
+### Service Reuse
+
+`CampaignCandidateService.export_ranked_campaign_candidates` follows the
+exact structure of `export_rejected_candidates`/`export_override_report`:
+validate → fetch via the repository → map rows to plain `dict`s via a new
+private `_to_ranking_export_row` (mirroring `_to_export_row`/
+`_to_override_export_row`'s existing pattern) → `ExcelExport.export_candidate_ranking(...)`
+→ build the timestamped filename → one `audit_service.log(...)` call →
+`StreamingResponse`. `get_ranked_campaign_candidates` (Phase 1) is
+untouched and continues to be used by the on-screen list exclusively.
+
+### ExcelExport Reuse
+
+`ExcelExport.export_candidate_ranking` reuses `ExcelExport._write_sheet`
+(the shared header-styling/freeze-panes/auto-filter/auto-fit/tz-aware-
+datetime-formatting writer `export_deterministic_rejection_summary`
+already introduced) rather than hand-rolling the same boilerplate a third
+time. No new openpyxl usage pattern, no new style constants - the same
+`HEADER_FONT`/`HEADER_FILL` etc. class attributes every other method on
+this class already uses.
+
+### Performance
+
+- No Python-side sorting or filtering - both `get_ranked_by_campaign`
+  calls push every filter/sort into the SQL `WHERE`/`ORDER BY` exactly as
+  Phase 1 already does; nothing is recalculated (every score column is
+  read exactly as already persisted by Epic 1/Phase 1).
+- Two repository calls instead of one - the first (`page_size=1`) is a
+  cheap way to learn the filtered total without guessing a page-size
+  ceiling or extending the repository to accept "no limit."
+- Synchronous, in-memory XLSX generation - the same accepted pattern every
+  export in this codebase already uses (openpyxl builds the full workbook
+  in memory, `StreamingResponse` serves the resulting `BytesIO`). No
+  chunking, no background job, no async export was introduced - explicitly
+  out of scope per this phase's own instructions.
+
+### Edge Cases
+
+| Edge case | Handling |
+|---|---|
+| Campaign not found | `CampaignException(404)`, before either repository call |
+| `composite_score_min > composite_score_max` | `CampaignException(422)`, before either repository call |
+| Empty campaign / no matching filters | Second repository call is skipped entirely (`total == 0`); a header-only workbook is still produced and still audited (`rows_exported: 0`) |
+| All Pending | `composite_score` renders as a blank cell (not `0`, not an error); `Ranking Status` = `PENDING` |
+| All Rejected | Included unless `include_rejected=false` is explicitly passed - same filter Phase 1 already exposes |
+| All Fraud | Included unless `include_fraud=false` - same filter |
+| Missing composite score | `None` values for `composite_score`/`deterministic_score`/`semantic_score`/`ai_evaluation_score`/`composite_score_computed_at` render as blank cells - openpyxl handles `None` natively, no special-casing needed |
+| Large campaign | Verified with 1,200 synthetic rows in the service tests - one workbook, one second repository call with `page_size` equal to the true total, no truncation |
+| Permission denied | `require_roles(UserRole.HR_ADMIN)` raises `ForbiddenError` before the service is ever called |
+| Invalid UUID | FastAPI's own path-parameter validation - 422, before routing to the handler |
+| Audit failure | Not swallowed - an exception from `audit_service.log(...)` propagates exactly as it already does in `export_rejected_candidates`/`export_override_report` (neither of those catches audit failures either; this phase introduces no new error-handling behavior here) |
+| Excel generation / streaming failure | Same as every existing export - an exception from `ExcelExport`/`StreamingResponse` propagates to FastAPI's default error handling; no new try/except was added, matching the pre-existing convention |
+
+### Testing
+
+- `tests/services/campaign/test_campaign_candidate_ranking_export_service.py`
+  - not-found and validation errors, the two-call pagination-ignoring
+  behavior (including the empty-campaign skip-second-call case), full
+  filter/sort pass-through, audit content, a real openpyxl round-trip
+  (headers, data, explicit no-PII-column assertion), 1-based sequential
+  ranking, all-pending/all-fraud edge cases, a 1,200-row large-dataset
+  case, and a backward-compatibility check that `get_ranked_campaign_candidates`
+  (Phase 1) still never audits.
+- `tests/api/test_campaign_candidate_ranking_export_routes.py` -
+  structural RBAC verification (same technique as every prior phase's
+  route tests): the export route is `HR_ADMIN`-only, matches
+  `export-rejected`'s role set exactly, has no `response_model` (matching
+  every other `StreamingResponse` export), and the ranked-list route's own
+  3-role RBAC is confirmed unaffected.
+
+### Backward Compatibility
+
+- `get_ranked_campaign_candidates`/`get_campaign_candidate_summary`
+  (Phase 1) and all three Phase 2 explainability methods are untouched -
+  not modified, not called by the new export method.
+- `export_rejected_candidates`/`export_override_report`/
+  `export_deterministic_rejection_summary` and their `ExcelExport`
+  counterparts are untouched.
+- `CampaignCandidateRepository.get_ranked_by_campaign`'s signature and
+  behavior are unchanged - Phase 3 calls it exactly as Phase 1 left it.
+- The only schema change is the new `CANDIDATE_RANKING_EXPORTED` audit
+  enum value (`alembic/versions/a7c3e9f1d5b8_candidate_ranking_export_audit_action.py`,
+  branching off Phase 1's own index migration) - no ranking or composite
+  table was touched.
+
+### Future Scope
+
+Explicitly out of scope for this phase (per its own instructions): single-
+candidate export, Timeline export, Composite History export, CSV export,
+scheduled export, email export, async/background export, export-ready
+notifications, dashboard export, analytics export. Phase 3 intentionally
+exports the **entire** filtered ranked candidate list, ignoring pagination
+entirely, in XLSX only, with no PII - any of the above would be a new,
+separate capability layered on top of this one, not a modification to it.

@@ -125,6 +125,13 @@ class ActionType(enum.Enum):
     # on a no-op resubmission of identical weights, and never for a
     # thresholds-only change - see CampaignService._record_weight_configuration_change).
     CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED = "CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED"
+    # M10-E03 Phase 3 — same DB-enum caveat as every M10 entry above; needs
+    # the paired migration (alembic/versions/<new>_candidate_ranking_export_audit_action.py)
+    # before CampaignCandidateService.export_ranked_campaign_candidates can
+    # log it. Written once per export request (never per row), following
+    # the exact same convention as REJECTED_CANDIDATES_EXPORTED/
+    # OVERRIDE_REPORT_EXPORTED above.
+    CANDIDATE_RANKING_EXPORTED = "CANDIDATE_RANKING_EXPORTED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
