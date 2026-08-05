@@ -31,7 +31,7 @@ router = APIRouter(
 def get_queue_status(
     campaign_id: UUID | None = Query(default=None),
     service: OpsMonitoringService = Depends(get_ops_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.SUPER_ADMIN, UserRole.HIRING_MANAGER)),
 ):
     """
     Read-only ops monitoring endpoint — a database approximation of queue
@@ -52,7 +52,7 @@ def get_queue_status(
 def get_processing_metrics(
     window: Literal["1h", "24h", "7d"] = Query(default="24h"),
     service: OpsMonitoringService = Depends(get_ops_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.SUPER_ADMIN, UserRole.HIRING_MANAGER)),
 ):
     """
     Read-only ops monitoring endpoint — aggregates bounded to a fixed time
@@ -72,7 +72,7 @@ def get_processing_metrics(
 )
 def get_upload_queue_dashboard(
     service: OpsMonitoringService = Depends(get_ops_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.SUPER_ADMIN, UserRole.HIRING_MANAGER)),
 ):
     """
     Epic 4 (M05-E04) Phase D12 — read-only, platform-wide upload queue

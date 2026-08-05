@@ -4,6 +4,7 @@ class UserRole(str, Enum):
     HR_ADMIN       = "HR_ADMIN"
     RECRUITER      = "RECRUITER"
     HIRING_MANAGER = "HIRING_MANAGER"
+    SUPER_ADMIN    = "SUPER_ADMIN"
 class PipelineStage(str, Enum):
     APPLIED       = "APPLIED"
     SCREENING     = "SCREENING"
