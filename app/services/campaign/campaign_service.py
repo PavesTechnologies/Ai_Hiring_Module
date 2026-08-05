@@ -10,6 +10,8 @@ from app.middleware.rbac import TokenUser
 from app.models.async_tasks import TaskStatus
 from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
 from app.tasks.resume_processing_tasks import process_resume_document
+from app.tasks.embedding_tasks import generate_resume_embedding_task, EMBED_RESUME_TASK_TYPE
+from app.repositories.resume_repository import ResumeRepository
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -107,6 +109,7 @@ class CampaignService:
         dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
         prompt_template_repo: PromptTemplateRepository | None = None,
         campaign_weight_configuration_history_repo: CampaignWeightConfigurationHistoryRepository | None = None,
+        resume_repo: ResumeRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
@@ -119,6 +122,10 @@ class CampaignService:
         # working unchanged.
         self.circuit_breaker_repo = circuit_breaker_repo or CircuitBreakerRepository(db)
         self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(db)
+        # EMBED_RESUME DLQ-replay pre-checks (resume exists / has parsed_json
+        # / doesn't already have an embedding) - same defaulted-from-db
+        # convention as the repos above.
+        self.resume_repo = resume_repo or ResumeRepository(db)
         # M10-E02 — same defaulted-from-db convention as the two repos above,
         # so the existing get_campaign_service DI wiring needs no change.
         self.campaign_weight_configuration_history_repo = (
@@ -1400,7 +1407,34 @@ class CampaignService:
             {"resume_id": str(e.resume_id)},
             e.resume_id is not None,
         ),
+        EMBED_RESUME_TASK_TYPE: lambda e: (generate_resume_embedding_task,
+            {"resume_id": str(e.resume_id)},
+            e.resume_id is not None,
+        ),
     }
+
+    def _embed_resume_replay_skip_reason(self, entry) -> str | None:
+        """
+        EMBED_RESUME-specific pre-checks before replaying a DEAD entry -
+        none of the other registered task types need this (they re-validate
+        entirely inside their own task on execution), but re-running the
+        embedding model is comparatively expensive, so it's worth confirming
+        there's still something to do before dispatching:
+        - the resume must still exist
+        - it must still have parsed_json (generate_resume_embedding_task
+          raises ValueError and dead-letters again immediately otherwise)
+        - it must not already have an embedding (e.g. resolved through a
+          different path since this entry was dead-lettered)
+        Returns None when the replay should proceed.
+        """
+        resume = self.resume_repo.get_by_id(entry.resume_id)
+        if resume is None:
+            return "Resume no longer exists."
+        if not resume.parsed_json or not isinstance(resume.parsed_json, dict):
+            return "Resume has no parsed_json - nothing available to embed."
+        if self.resume_repo.get_embedding(entry.resume_id) is not None:
+            return "Resume embedding already exists - nothing to replay."
+        return None
 
     def replay_dead_letter_tasks(self,
         campaign_id: UUID,
@@ -1443,6 +1477,11 @@ class CampaignService:
                     reason="Entry has no entity reference to rebuild the task from.",
                 ))
                 continue
+            if entry.task_type == EMBED_RESUME_TASK_TYPE:
+                skip_reason = self._embed_resume_replay_skip_reason(entry)
+                if skip_reason is not None:
+                    results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED", reason=skip_reason))
+                    continue
             if self.campaign_repo.count_dlq_chain(entry) >= max_replays:
                 results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED",
                     reason=f"Replay limit reached ({max_replays}).",

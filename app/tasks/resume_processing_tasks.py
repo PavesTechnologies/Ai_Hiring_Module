@@ -217,31 +217,36 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         task_log_repo.update(task_log)
         task_log_repo.commit()
         task_log_service.mark_success(task_log, summary=f"Resume {processed_resume_id} parsed.")
-        logger.warning(
-        "=== CALLING _enqueue_deterministic_scoring === resume_id=%s",
-        processed_resume_id,
-    )
-        # Resume processing has already fully succeeded and committed above
-        # - a failure enqueueing deterministic scoring must never overwrite
-        # that success (or crash this task); log and move on.
-        try:
-            _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service)
-            logger.warning(
-                "=== _enqueue_deterministic_scoring() RETURNED === resume_id=%s", processed_resume_id,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,
-            )
 
-        # M08-E01: same independent, best-effort enqueue pattern as
-        # deterministic scoring above - a failure here must never affect
-        # the already-committed resume processing result.
+        # M08-E01: enqueued BEFORE deterministic scoring, not after -
+        # calculate_deterministic_score_task's own auto-trigger calls
+        # _enqueue_semantic_scoring internally as soon as it finishes, and
+        # that check requires the resume embedding to already exist. With
+        # a sequential worker (e.g. Windows solo pool), whichever of these
+        # two is enqueued first is also the one that finishes first, so
+        # enqueueing deterministic scoring first meant it reliably ran (and
+        # took its "no resume embedding yet" fallback) before EMBED_RESUME
+        # had even started - leaving semantic scoring dependent entirely on
+        # the later trigger_pending_semantic_scoring_for_resume catch-up
+        # (called from generate_resume_embedding_task) or the 15-minute
+        # recover_pending_semantic_scores Beat job to pick it back up. A
+        # failure here must never affect the already-committed resume
+        # processing result.
         try:
             _enqueue_resume_embedding(db, processed_resume_id, task_log_service)
         except Exception:
             logger.exception(
                 "Failed to enqueue resume embedding after resume %s parsed.", processed_resume_id,
+            )
+
+        # Resume processing has already fully succeeded and committed above
+        # - a failure enqueueing deterministic scoring must never overwrite
+        # that success (or crash this task); log and move on.
+        try:
+            _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,
             )
 
     except StageExecutionError as stage_exc:
