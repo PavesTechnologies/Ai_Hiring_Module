@@ -153,7 +153,7 @@ def test_apply_async_failure_never_rolls_back_the_upload_transaction():
 def test_lost_idempotency_race_reuses_existing_task_id_and_never_dispatches():
     existing_task_id = str(uuid4())
     existing_log = SimpleNamespace(task_id=existing_task_id)
-    service, campaign, resume, *_ = _make_harness(race_existing_log=existing_log)
+    service, campaign, resume, resume_service, *_ = _make_harness(race_existing_log=existing_log)
 
     with patch(f"{MODULE}.process_resume_document") as mock_task:
         _resume, _cc, _campaign, task_id, requires_processing = _upload(service, campaign)
@@ -161,6 +161,26 @@ def test_lost_idempotency_race_reuses_existing_task_id_and_never_dispatches():
     assert requires_processing is True
     assert task_id == UUID(existing_task_id)
     mock_task.apply_async.assert_not_called()
+
+
+def test_lost_idempotency_race_corrects_resume_task_id_to_the_winners_value():
+    """
+    record_task_id is called once up front with a freshly-generated
+    task_id (before the idempotency check can run), and that generated
+    task_id has no matching celery_task_log row when the race is lost -
+    resume.task_id must be corrected to the WINNER's task_id (the one that
+    actually got dispatched), or resumes.task_id and celery_task_log.task_id
+    would permanently disagree for this resume.
+    """
+    existing_task_id = str(uuid4())
+    existing_log = SimpleNamespace(task_id=existing_task_id)
+    service, campaign, resume, resume_service, *_ = _make_harness(race_existing_log=existing_log)
+
+    with patch(f"{MODULE}.process_resume_document"):
+        _upload(service, campaign)
+
+    recorded_task_ids = [call.args[1] for call in resume_service.record_task_id.call_args_list]
+    assert recorded_task_ids[-1] == existing_task_id
 
 
 # ----------------------------------------------------------------------

@@ -108,13 +108,13 @@ try:
         PlatformConfig(
             id=uuid.uuid4(),
             key="ZIP_MAX_SIZE_MB",
-            value="200",
+            value="500",
             description="Maximum accepted ZIP archive size in MB for bulk resume uploads",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="MAX_FILES_PER_ZIP",
-            value="20",
+            value="200",
             description=(
                 "Maximum number of resume files processed from a single bulk-upload "
                 "ZIP archive; extraction stops and the uploader is asked to split the "
@@ -140,24 +140,6 @@ try:
             key="DEADLINE_WARNING_DAYS",
             value="3",
             description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="HM_REVIEW_SLA_DAYS",
-            value="5",
-            description="Days a candidate can sit in HM_REVIEW before the campaign is flagged overdue_review",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="STALE_CAMPAIGN_DAYS",
-            value="7",
-            description="Days without a new candidate before a campaign is flagged pipeline_stalled",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="MIN_LAYER_WEIGHT",
-            value="5.00",
-            description="Minimum weight (%) any single scoring layer may be set to — prevents a layer from being configured to 0 and bypassed entirely",
         ),
         # M07-E02: Experience & Education Validation config
         PlatformConfig(

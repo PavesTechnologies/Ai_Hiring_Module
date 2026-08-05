@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.monitoring import get_embedding_dashboard_service, get_ops_monitoring_service
 from app.enums.constants import UserRole
 from app.middleware.rbac import TokenUser, require_roles
+from app.schemas.embedding_dashboard import EmbeddingDashboardResponse
 from app.schemas.monitoring import (
     ProcessingMetricsResponse,
     QueueStatusResponse,
@@ -65,6 +66,27 @@ def get_processing_metrics(
 
 
 @router.get(
+    "/upload-queue-dashboard",
+    response_model=APIResponse[UploadQueueDashboardResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_upload_queue_dashboard(
+    service: OpsMonitoringService = Depends(get_ops_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Epic 4 (M05-E04) Phase D12 — read-only, platform-wide upload queue
+    dashboard: pending/queued/running/dead resume-intake counts, circuit
+    breaker health for the two upload-critical external services, and a
+    per-campaign queue-depth breakdown (capped, deterministically sorted).
+    """
+    return APIResponse.ok(
+        data=service.get_upload_queue_dashboard(),
+        message="Upload queue dashboard retrieved successfully.",
+    )
+
+
+@router.get(
     "/embedding-dashboard",
     response_model=APIResponse[EmbeddingDashboardResponse],
     status_code=status.HTTP_200_OK,
@@ -86,22 +108,3 @@ def get_embedding_dashboard(
     )
 
 
-@router.get(
-    "/upload-queue-dashboard",
-    response_model=APIResponse[UploadQueueDashboardResponse],
-    status_code=status.HTTP_200_OK,
-)
-def get_upload_queue_dashboard(
-    service: OpsMonitoringService = Depends(get_ops_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    """
-    Epic 4 (M05-E04) Phase D12 — read-only, platform-wide upload queue
-    dashboard: pending/queued/running/dead resume-intake counts, circuit
-    breaker health for the two upload-critical external services, and a
-    per-campaign queue-depth breakdown (capped, deterministically sorted).
-    """
-    return APIResponse.ok(
-        data=service.get_upload_queue_dashboard(),
-        message="Upload queue dashboard retrieved successfully.",
-    )

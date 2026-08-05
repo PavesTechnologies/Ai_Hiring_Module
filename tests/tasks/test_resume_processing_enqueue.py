@@ -113,6 +113,12 @@ def test_recovers_and_redispatches_every_claimed_stalled_task():
     assert mock_task.apply_async.call_count == 2
     dispatched_task_ids = {c.kwargs["task_id"] for c in mock_task.apply_async.call_args_list}
     assert dispatched_task_ids == {log.task_id for log in stalled}
+    # Explicit regression guard: apply_async's task_id must be
+    # celery_task_log.task_id, never celery_task_log.resume_id - resume_id
+    # is only ever passed as a kwarg value, never as the Celery task_id.
+    assert dispatched_task_ids.isdisjoint({str(log.resume_id) for log in stalled})
+    for call in mock_task.apply_async.call_args_list:
+        assert call.kwargs["task_id"] != call.kwargs["kwargs"]["resume_id"]
 
 
 def test_skips_rows_that_lose_the_claim_race():
