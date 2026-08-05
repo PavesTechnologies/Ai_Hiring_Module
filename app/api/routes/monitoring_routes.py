@@ -12,6 +12,7 @@ from app.schemas.monitoring import (
     QueueStatusResponse,
     UploadQueueDashboardResponse,
 )
+from app.schemas.embedding_dashboard import EmbeddingDashboardResponse
 from app.schemas.response import APIResponse
 from app.services.embedding_dashboard_service import EmbeddingDashboardService
 from app.services.ops_monitoring_service import OpsMonitoringService
@@ -104,4 +105,21 @@ def get_embedding_dashboard(
     return APIResponse.ok(
         data=service.get_dashboard(),
         message="Embedding dashboard retrieved successfully.",
+    "/upload-queue-dashboard",
+    response_model=APIResponse[UploadQueueDashboardResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_upload_queue_dashboard(
+    service: OpsMonitoringService = Depends(get_ops_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Epic 4 (M05-E04) Phase D12 — read-only, platform-wide upload queue
+    dashboard: pending/queued/running/dead resume-intake counts, circuit
+    breaker health for the two upload-critical external services, and a
+    per-campaign queue-depth breakdown (capped, deterministically sorted).
+    """
+    return APIResponse.ok(
+        data=service.get_upload_queue_dashboard(),
+        message="Upload queue dashboard retrieved successfully.",
     )
