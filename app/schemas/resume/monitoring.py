@@ -100,6 +100,7 @@ class FailureInfo(BaseModel):
     error_message: str | None
     classification: str | None
     moved_to_dlq: bool
+    dlq_id: UUID | None = None
 
 
 class ResumeDetailResponse(BaseModel):

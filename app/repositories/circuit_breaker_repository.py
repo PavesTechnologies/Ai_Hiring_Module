@@ -8,11 +8,6 @@ _OPEN_COOLDOWN = timedelta(minutes=5)
 
 
 class CircuitBreakerRepository:
-    """
-    CRUD for circuit_breaker_state. No HALF_OPEN probing logic — this is
-    the minimal Phase 11 scope (record failures, flip to OPEN past
-    threshold), not a full circuit-breaker state machine.
-    """
 
     def __init__(self, db: Session):
         self.db = db
@@ -43,14 +38,7 @@ class CircuitBreakerRepository:
         return state
 
     def increment_failure(self, service_name: str) -> tuple[CircuitBreakerState, bool]:
-        """
-        Increments the failure count for service_name (creating a CLOSED
-        row on first failure if none exists), flipping to OPEN once
-        failure_count reaches failure_threshold. Returns (state,
-        just_opened) — just_opened is True only on the call that actually
-        caused the CLOSED -> OPEN transition, so the caller can decide
-        whether to audit-log it exactly once.
-        """
+       
         state = self.get_or_create(service_name)
         was_open = state.state == CBState.OPEN
 
@@ -67,6 +55,19 @@ class CircuitBreakerRepository:
         self.db.flush()
         self.db.refresh(state)
         return state, just_opened
+
+    def transition_to_half_open_if_due(self, service_name: str) -> CircuitBreakerState:
+       
+        state = self.get_or_create(service_name)
+        if (
+            state.state == CBState.OPEN
+            and state.retry_after is not None
+            and datetime.now(timezone.utc) >= state.retry_after
+        ):
+            state.state = CBState.HALF_OPEN
+            self.db.flush()
+            self.db.refresh(state)
+        return state
 
     def reset(self, service_name: str) -> CircuitBreakerState | None:
         state = self.get_by_service_name(service_name)

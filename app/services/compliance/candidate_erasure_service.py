@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.enums.constants import ActionType, EntityType
@@ -113,6 +114,72 @@ class CandidateErasureService:
                     "resume_versions_deleted": len(resumes),
                     "campaign_candidates_deleted": len(campaign_candidates),
                     "had_bulk_origin": had_bulk_origin,
+                    "reason": reason,
+                },
+            )
+
+            self.candidate_repo.commit()
+        except Exception:
+            self.candidate_repo.rollback()
+            raise
+
+    def request_erasure(
+        self,
+        candidate_id: UUID,
+        actor_id: str,
+        actor_role: str | None,
+        reason: str | None = None,
+    ) -> None:
+        """
+        Candidate Erasure - "requested" phase, distinct from erase_candidate
+        (the full hard-delete flow above): an immediate, non-destructive
+        privacy safeguard for the moment erasure is first requested,
+        before the full cascade delete necessarily happens. Unlike
+        erase_candidate:
+          - resume_embeddings rows are RETAINED (never deleted) for
+            referential integrity - each row's embedding vector is
+            overwritten with a 384-dimension zero vector instead, via
+            ResumeRepository.zero_out_embeddings_for_candidate.
+          - is_talent_pool_eligible is set FALSE on every one of those
+            rows (same repository call).
+          - jd_embeddings is never touched - JDs are never candidate PII.
+          - candidate.updated_at and every resume.updated_at are bumped
+            (neither has an onupdate=func.now() at the DB level, so this
+            must be done explicitly, same convention as every other
+            manual updated_at bump in this codebase, e.g.
+            deterministic_scoring_tasks.py's campaign_candidate.updated_at).
+
+        Reuses ActionType.CANDIDATE_DATA_ERASED (already live in the DB
+        enum - no new migration) for the audit log, with
+        details.phase="requested" distinguishing it from erase_candidate's
+        own (phase="completed") log entry.
+        """
+        candidate = self.candidate_repo.get_by_id(candidate_id)
+        if candidate is None:
+            raise NotFoundError(f"Candidate {candidate_id} not found.")
+
+        try:
+            now = datetime.now(timezone.utc)
+
+            self.candidate_repo.update_erasure_fields(candidate_id, erasure_requested_at=now)
+            candidate.updated_at = now
+
+            resumes = self.resume_repo.get_all_versions_by_candidate(candidate_id)
+            for resume in resumes:
+                resume.updated_at = now
+
+            embeddings_zeroed = self.resume_repo.zero_out_embeddings_for_candidate(candidate_id)
+
+            self.audit_service.log(
+                actor_id=actor_id,
+                actor_role=actor_role,
+                action_type=ActionType.CANDIDATE_DATA_ERASED,
+                entity_type=EntityType.CANDIDATE,
+                entity_id=candidate_id,
+                details={
+                    "phase": "requested",
+                    "resume_embeddings_zeroed": embeddings_zeroed,
+                    "resume_versions_touched": len(resumes),
                     "reason": reason,
                 },
             )

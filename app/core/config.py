@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
 
+    # Frontend base URL - used to build direct links (e.g. a campaign
+    # monitoring link) in platform alert emails. Empty by default so a
+    # missing FRONTEND_URL env var never crashes anything that builds a
+    # link from it - it just produces a relative path instead of an
+    # absolute URL.
+    frontend_base_url: str = ""
+
 
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str

@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, nullslast, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
+from app.models.embeddings import ResumeEmbedding
 from app.models.jd.job_descriptions import JobDescription
 from app.models.pipeline import (
     AIEvaluationStatus,
+    AIRecommendation,
     CampaignCandidate,
     CampaignCandidateStageHistory,
     PipelineStage,
@@ -289,6 +291,7 @@ class CampaignCandidateRepository:
         campaign_candidate.ai_evaluation_status = AIEvaluationStatus.PENDING
         campaign_candidate.ai_retry_count = 0
         campaign_candidate.composite_score = None
+        campaign_candidate.composite_score_computed_at = None
         campaign_candidate.fraud_flags = None
         campaign_candidate.is_fraud_flagged = False
         campaign_candidate.rejection_reason = None
@@ -384,6 +387,188 @@ class CampaignCandidateRepository:
 
         return self.db.execute(stmt).all()
 
+    def get_ids_by_campaign(
+        self,
+        campaign_id: UUID,
+    ) -> list[UUID]:
+        """
+        M10-E01: bare campaign_candidate ids for a campaign, used solely to
+        fan out composite-score recalculation after a campaign's scoring
+        weights change - deliberately not the full joined
+        get_all_by_campaign query (Candidate/Resume are irrelevant to
+        recalculation and would be wasted work at fan-out scale).
+        """
+        stmt = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id)
+        return list(self.db.execute(stmt).scalars().all())
+
+    # M10-E03 Phase 1: sort_by -> the actual column it maps to. "ai_score"
+    # maps to effective_ai_score (the score CompositeScoringService itself
+    # reads), not the raw ai_ats_score - the same column the composite
+    # formula already treats as authoritative.
+    _RANKING_SORT_COLUMNS = {
+        "composite_score": CampaignCandidate.composite_score,
+        "deterministic_score": CampaignCandidate.deterministic_score,
+        "semantic_score": CampaignCandidate.semantic_score,
+        "ai_score": CampaignCandidate.effective_ai_score,
+        "created_at": CampaignCandidate.created_at,
+    }
+
+    def get_ranked_by_campaign(
+        self,
+        campaign_id: UUID,
+        page: int,
+        page_size: int,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
+        pipeline_stage: PipelineStage | None = None,
+        composite_score_min: float | None = None,
+        composite_score_max: float | None = None,
+        ai_recommendation: AIRecommendation | None = None,
+        ai_evaluation_status: AIEvaluationStatus | None = None,
+        include_pending: bool = True,
+        include_rejected: bool = True,
+        include_fraud: bool = True,
+        hr_override: bool | None = None,
+    ) -> tuple[list, int]:
+        """
+        M10-E03 Phase 1: the ranked candidate list's core query - one
+        filtered/sorted/paginated SELECT (joined with Candidate/Resume,
+        same LEFT JOIN shape as get_all_by_campaign) plus one COUNT(*) with
+        the identical filter set, so the caller can build page metadata
+        without a second round trip through Python. All filters combine
+        with AND. Ranking is always performed by PostgreSQL - ORDER BY is
+        built here and nowhere does this method (or any caller) re-sort in
+        Python.
+
+        Default ordering (sort_by=None): composite_score DESC NULLS LAST,
+        deterministic_score DESC, created_at ASC, id ASC - so unscored
+        ("pending") candidates are never ranked ahead of scored ones.
+        Explicit sort_by: the chosen column (NULLS LAST regardless of
+        direction, for the same reason), then created_at ASC, id ASC -
+        every ordering ends in those two columns so ties (identical scores,
+        identical timestamps) still produce a total, stable order across
+        pages.
+
+        include_pending=False excludes any candidate with composite_score
+        IS NULL entirely (covers both the PENDING and FAILED
+        ranking_status, since both only exist when composite_score is
+        NULL) - see CampaignCandidateService._derive_ranking_status for how
+        those two are distinguished for display.
+        """
+        filters = [CampaignCandidate.campaign_id == campaign_id]
+        if pipeline_stage is not None:
+            filters.append(CampaignCandidate.pipeline_stage == pipeline_stage)
+        if composite_score_min is not None:
+            filters.append(CampaignCandidate.composite_score >= composite_score_min)
+        if composite_score_max is not None:
+            filters.append(CampaignCandidate.composite_score <= composite_score_max)
+        if ai_recommendation is not None:
+            filters.append(CampaignCandidate.ai_recommendation == ai_recommendation)
+        if ai_evaluation_status is not None:
+            filters.append(CampaignCandidate.ai_evaluation_status == ai_evaluation_status)
+        if not include_pending:
+            filters.append(CampaignCandidate.composite_score.is_not(None))
+        if not include_rejected:
+            filters.append(CampaignCandidate.pipeline_stage != PipelineStage.REJECTED)
+        if not include_fraud:
+            filters.append(CampaignCandidate.is_fraud_flagged.is_(False))
+        if hr_override is not None:
+            filters.append(CampaignCandidate.hr_override.is_(hr_override))
+
+        total = self.db.execute(
+            select(func.count()).select_from(CampaignCandidate).where(*filters)
+        ).scalar() or 0
+
+        stmt = (
+            select(CampaignCandidate, Candidate, Resume)
+            .outerjoin(Candidate, CampaignCandidate.candidate_id == Candidate.id)
+            .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
+            .where(*filters)
+        )
+
+        if sort_by is None:
+            stmt = stmt.order_by(
+                nullslast(CampaignCandidate.composite_score.desc()),
+                CampaignCandidate.deterministic_score.desc(),
+                CampaignCandidate.created_at.asc(),
+                CampaignCandidate.id.asc(),
+            )
+        else:
+            column = self._RANKING_SORT_COLUMNS[sort_by]
+            ordered_column = column.asc() if sort_order == "asc" else column.desc()
+            stmt = stmt.order_by(
+                nullslast(ordered_column),
+                CampaignCandidate.created_at.asc(),
+                CampaignCandidate.id.asc(),
+            )
+
+        stmt = stmt.limit(page_size).offset((page - 1) * page_size)
+
+        return self.db.execute(stmt).all(), total
+
+    def get_score_aggregates(self, campaign_id: UUID) -> dict:
+        """
+        M10-E03 Phase 1: one query, five aggregates - total/ranked/pending-
+        vs-failed split/rejected/fraud counts plus highest/lowest/average
+        composite_score - backing the ranking summary endpoint. ranked =
+        COUNT(composite_score) (COUNT on a column ignores NULLs, so this is
+        exactly "candidates with a composite score" with no CASE needed).
+        failed is the only split requiring a CASE: composite_score IS NULL
+        AND ai_evaluation_status = FAILED - the same distinction
+        CampaignCandidateService._derive_ranking_status draws per-row.
+        SUM(...)/MAX/MIN/AVG all return NULL (not 0) over zero matching
+        rows - guarded with `or 0`/`is not None` below so an empty campaign
+        returns 0 counts and None scores rather than raising.
+        """
+        stmt = select(
+            func.count(CampaignCandidate.id),
+            func.count(CampaignCandidate.composite_score),
+            func.sum(case(
+                (and_(
+                    CampaignCandidate.composite_score.is_(None),
+                    CampaignCandidate.ai_evaluation_status == AIEvaluationStatus.FAILED,
+                ), 1),
+                else_=0,
+            )),
+            func.sum(case((CampaignCandidate.pipeline_stage == PipelineStage.REJECTED, 1), else_=0)),
+            func.sum(case((CampaignCandidate.is_fraud_flagged.is_(True), 1), else_=0)),
+            func.max(CampaignCandidate.composite_score),
+            func.min(CampaignCandidate.composite_score),
+            func.avg(CampaignCandidate.composite_score),
+        ).where(CampaignCandidate.campaign_id == campaign_id)
+
+        total, ranked, failed, rejected, fraud, highest, lowest, average = self.db.execute(stmt).one()
+
+        return {
+            "total": total or 0,
+            "ranked": ranked or 0,
+            "failed": failed or 0,
+            "rejected": rejected or 0,
+            "fraud": fraud or 0,
+            "highest": float(highest) if highest is not None else None,
+            "lowest": float(lowest) if lowest is not None else None,
+            "average": float(average) if average is not None else None,
+        }
+
+    def get_ai_recommendation_counts(self, campaign_id: UUID) -> dict[str, int]:
+        """
+        M10-E03 Phase 1: AI recommendation breakdown for the ranking
+        summary - mirrors CampaignRepository.get_stage_counts' exact
+        GROUP BY shape for the analogous pipeline_stage breakdown, applied
+        to ai_recommendation instead. NULL (not yet AI-evaluated) is
+        excluded - it isn't a recommendation value, and total_candidates/
+        pending_candidates already account for those rows.
+        """
+        stmt = (
+            select(CampaignCandidate.ai_recommendation, func.count())
+            .where(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.ai_recommendation.is_not(None),
+            )
+            .group_by(CampaignCandidate.ai_recommendation)
+        )
+        return {recommendation.value: count for recommendation, count in self.db.execute(stmt).all()}
+
     def update(
         self,
         campaign_candidate: CampaignCandidate,
@@ -404,6 +589,62 @@ class CampaignCandidateRepository:
         """
         self.db.delete(campaign_candidate)
         self.db.flush()
+
+    def get_pending_semantic_score_with_ready_embedding(self) -> list[CampaignCandidate]:
+        """
+        Automatic recovery (M08-E02): every campaign_candidate that already
+        passed deterministic screening but has no semantic_score yet, AND
+        whose resume now has an embedding - i.e. exactly the candidates
+        calculate_semantic_score_task's own missing-resume-embedding skip
+        path (see MISSING_RESUME_EMBEDDING_REASON) left behind, but whose
+        embedding has since become available (a later EMBED_RESUME retry
+        succeeded, or its earlier permanent failure was manually resolved).
+
+        resume_embeddings has no FK/relationship to campaign_candidates or
+        resumes (see ResumeRepository's own comments on this) - the join
+        below is a manual EXISTS-style join condition on resume_id, the
+        same pattern get_campaign_history_entries already uses to bridge
+        the two tables.
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .join(ResumeEmbedding, ResumeEmbedding.resume_id == CampaignCandidate.resume_id)
+            .filter(
+                CampaignCandidate.deterministic_passed.is_(True),
+                CampaignCandidate.semantic_score.is_(None),
+            )
+            .distinct()
+            .all()
+        )
+
+    def get_screening_semantic_health_stats(self, campaign_id: UUID) -> tuple[int, int]:
+        """
+        Requirement 5 (embedding health monitoring): returns (affected_count,
+        total_screening_count) for one campaign - affected_count is every
+        SCREENING candidate with semantic_score IS NULL that hasn't already
+        been triaged to MANUAL_REVIEW (i.e. silently stuck, not yet
+        flagged); total_screening_count is every SCREENING candidate in
+        the campaign, the percentage's denominator.
+        """
+        total_screening_count = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+            )
+            .scalar()
+        )
+        affected_count = (
+            self.db.query(func.count(CampaignCandidate.id))
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+                CampaignCandidate.semantic_score.is_(None),
+                CampaignCandidate.ai_evaluation_status != AIEvaluationStatus.MANUAL_REVIEW,
+            )
+            .scalar()
+        )
+        return affected_count or 0, total_screening_count or 0
 
     def commit(self) -> None:
         """

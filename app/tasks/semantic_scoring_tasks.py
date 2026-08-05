@@ -1,21 +1,23 @@
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from celery.exceptions import Retry
+
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
-from app.models.async_tasks import FailureClassification, TaskStatus
+from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import CandidateRejection, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, CandidateRejection, RejectionLayer
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
-from app.repositories.config_repository import ConfigRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -25,71 +27,185 @@ from app.services.campaign.stage_transition_service import StageTransitionServic
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
-from app.tasks.deterministic_scoring_tasks import _cancel_downstream_ai_evaluation
+from app.tasks.deterministic_scoring_tasks import (
+    AI_EVALUATE_TASK_TYPE,
+    _cancel_downstream_ai_evaluation,
+    _queue_rejection_email,
+)
 
 logger = logging.getLogger(__name__)
 
-# Must match campaign_candidate_service.SEMANTIC_SCORE_TASK_TYPE exactly -
-# duplicated (not imported) to avoid a circular import between the service
-# and task layers, same convention already established for
-# AI_EVALUATE_TASK_TYPE (see deterministic_scoring_tasks.py /
-# campaign_candidate_service.py, both of which independently define the
-# same "AI_EVALUATE" string with a cross-referencing comment).
+
 SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 
-# Same campaign-status gate as calculate_deterministic_score_task - a
-# CLOSED campaign is a legitimate reason to skip, not a failure.
+
 _SCOREABLE_CAMPAIGN_STATUSES = {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}
 
-# M08-E02: same shape as embedding_tasks.py's _EMBED_RESUME_RETRY_POLICY -
-# this task (unlike deterministic scoring) depends on another async
-# pipeline's output (resume/JD embeddings) that may not exist yet at run
-# time, so it needs real retry/dead-letter handling, not deterministic
-# scoring's immediate-fail-and-raise.
+
 _SEMANTIC_SCORE_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
 
+# Exact reason text required for the "resume embedding not available" skip
+# path - recorded verbatim on the candidate_rejections row so it's both
+# human-readable and machine-matchable (idempotency check below).
+MISSING_RESUME_EMBEDDING_REASON = "Resume embedding not available — semantic scoring skipped"
 
-def _enqueue_semantic_scoring(
-    campaign_candidate, task_log_service: CeleryTaskLogService, resume_repo: ResumeRepository,
+# Task 536: JD embedding pre-flight - retry on a flat interval (distinct
+# from _SEMANTIC_SCORE_RETRY_POLICY's exponential backoff, which is for
+# unexpected/transient exceptions, not this deliberate pre-check) before
+# giving up and routing to MANUAL_REVIEW.
+_JD_EMBEDDING_MAX_RETRIES = 3
+_JD_EMBEDDING_RETRY_DELAY_SECONDS = 60
+JD_EMBEDDING_NOT_FOUND_REASON = "JD_EMBEDDING_NOT_FOUND"
+MODEL_VERSION_MISMATCH_REASON = "MODEL_VERSION_MISMATCH"
+
+
+def _queue_ai_evaluate_if_not_duplicate(
+    campaign_candidate, task_log_service: CeleryTaskLogService,
 ) -> None:
     """
-    Shared semantic-scoring enqueue helper - the single place this is done,
-    reused by both call sites that need it:
-      - calculate_deterministic_score_task, immediately after a candidate
-        passes deterministic screening and that task's own transaction has
-        already committed (M08-E02 auto-trigger).
-      - CampaignCandidateService._queue_post_override_evaluation, after an
-        HR_ADMIN override of a deterministic rejection.
-
-    Idempotency: a QUEUED/RUNNING celery_task_log row for this
-    campaign_candidate_id + SEMANTIC_SCORE already means scoring is in
-    flight - never a second/parallel idempotency mechanism, and never
-    duplicated between the two call sites. Silently no-ops if the resume
-    has no embedding yet (EMBED_RESUME may still be running) - neither
-    caller is ever blocked or made to wait on it.
+    Story 541: on a semantic PASS, queue AI_EVALUATE - the identical
+    bookkeeping-only placeholder pattern already established by
+    CampaignCandidateService._queue_task_log_if_not_duplicate (M09 AI
+    Evaluation itself isn't built yet, so this only records a QUEUED
+    celery_task_log row for the real task to pick up once it exists; it
+    never dispatches anything).
     """
-    if resume_repo.get_embedding(campaign_candidate.resume_id) is None:
-        return
-
     task_log_repo = task_log_service.repository
     already_queued = any(
         log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
         for log in task_log_repo.get_by_campaign_candidate_and_task_type(
-            campaign_candidate.id, SEMANTIC_SCORE_TASK_TYPE,
+            campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
         )
     )
     if already_queued:
         return
-
-    log = task_log_service.create_log(
+    task_log_service.create_log(
         task_id=str(uuid4()),
-        task_type=SEMANTIC_SCORE_TASK_TYPE,
+        task_type=AI_EVALUATE_TASK_TYPE,
         campaign_candidate_id=campaign_candidate.id,
     )
+
+
+def _score_and_persist_semantic(
+    campaign_candidate,
+    campaign,
+    resume_repo: ResumeRepository,
+    jd_repo: JDRepository,
+    candidate_rejection_repo: CandidateRejectionRepository,
+    stage_transition_service: StageTransitionService,
+    campaign_candidate_repo: CampaignCandidateRepository,
+    audit_service: AuditService,
+    task_log_repo: CeleryTaskLogRepository,
+    task_log_service: CeleryTaskLogService,
+) -> dict:
+
+    scoring_service = SemanticScoringService(resume_repo, jd_repo, campaign_candidate_repo)
+    breakdown = scoring_service.calculate_and_store_semantic_score_breakdown(
+        campaign_candidate.id, campaign.jd_id, campaign_candidate.resume_id,
+        semantic_threshold=float(campaign.semantic_threshold),
+    )
+
+    rejection_reason = None
+    stage_transition_succeeded = False
+    if breakdown["semantic_passed"]:
+        # Story 541: PASS -> queue AI_EVALUATE (never for a rejected candidate).
+        _queue_ai_evaluate_if_not_duplicate(campaign_candidate, task_log_service)
+    else:
+        rejection_reason = breakdown["semantic_explanation"]
+        candidate_rejection_repo.create(CandidateRejection(
+            campaign_candidate_id=campaign_candidate.id,
+            rejection_layer=RejectionLayer.SEMANTIC,
+            rejection_reason=rejection_reason,
+            rejection_detail=breakdown,
+        ))
+
+        stage_transition_succeeded = stage_transition_service.transition_to_rejected(
+            campaign_candidate,
+            change_reason="Semantic similarity filter rejection",
+            scores_snapshot=breakdown,
+        )
+
+        _cancel_downstream_ai_evaluation(
+            campaign_candidate, task_log_repo, task_log_service, campaign_candidate_repo,
+        )
+
+    summary_payload = {
+        "semantic_score": breakdown["semantic_score"],
+        "semantic_passed": breakdown["semantic_passed"],
+        "semantic_threshold": breakdown["semantic_threshold"],
+        "matching_skills_count": len(breakdown["matching_skills"]),
+        "missing_skills_count": len(breakdown["missing_skills"]),
+        "rejection_reason": rejection_reason,
+        "semantic_score_breakdown": breakdown,
+        # Story 538/540: surfaced at the top level (not just nested in
+        # semantic_score_breakdown) so the caller can record duration_ms on
+        # celery_task_log without re-parsing the breakdown.
+        "computation_duration_ms": breakdown["computation_duration_ms"],
+        "score_clamped_to_zero": breakdown["score_clamped_to_zero"],
+        "score_clamp_reason": breakdown["score_clamp_reason"],
+    }
+
+    audit_service.log(
+        actor_id=None,
+        actor_role="SYSTEM",
+        action_type=ActionType.SEMANTIC_SCORE_COMPUTED,
+        entity_type=EntityType.CAMPAIGN_CANDIDATE,
+        entity_id=campaign_candidate.id,
+        campaign_id=campaign.id,
+        details=summary_payload,
+    )
+
+    campaign_candidate_repo.commit()
+
+    # Story 542: only after the transaction above has committed - never
+    # send a rejection email for a candidate whose pipeline_stage didn't
+    # actually move to REJECTED (transition blocked - see stage_transition_succeeded
+    # above). Reuses the exact same helper the deterministic layer uses -
+    # it swallows its own failures, so a delivery problem here never masks
+    # the already-successful scoring outcome or blocks this task.
+    if not breakdown["semantic_passed"] and stage_transition_succeeded:
+        _queue_rejection_email(campaign_candidate_repo.db, campaign_candidate)
+
+    return summary_payload
+
+
+def trigger_pending_semantic_scoring_for_resume(db, resume_id) -> None:
+
+    campaign_candidate_repo = CampaignCandidateRepository(db)
+    resume_repo = ResumeRepository(db)
+    task_log_repo = CeleryTaskLogRepository(db)
+    task_log_service = CeleryTaskLogService(task_log_repo)
+
+    pending_candidates = [
+        cc for cc in campaign_candidate_repo.get_by_resume_id(resume_id)
+        if cc.deterministic_passed and cc.semantic_score_breakdown is None
+    ]
+    for campaign_candidate in pending_candidates:
+        _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo)
+
+
+def _semantic_score_idempotency_key(campaign_candidate_id) -> str:
+    """
+    Task 535: idempotency_key = hash(campaign_candidate_id + "SEM") - one
+    stable identity per candidate's SEMANTIC_SCORE celery_task_log row,
+    backed by uq_celery_task_log_idempotency_key. A re-trigger (HR
+    override, recovery scan) after a prior terminal (FAILURE/DEAD) attempt
+    reuses and resets this SAME row rather than inserting a second one -
+    the partial unique index would otherwise reject a second insert with
+    the same key.
+    """
+    return hashlib.sha256(f"{campaign_candidate_id}SEM".encode("utf-8")).hexdigest()
+
+
+def _dispatch_semantic_score_task(campaign_candidate, log: CeleryTaskLog) -> None:
     try:
         calculate_semantic_score_task.apply_async(
             kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
             task_id=log.task_id,
+        )
+        logger.info(
+            "Semantic scoring queued | campaign_candidate_id=%s task_id=%s",
+            campaign_candidate.id, log.task_id,
         )
     except Exception:
         logger.exception(
@@ -97,25 +213,77 @@ def _enqueue_semantic_scoring(
         )
 
 
+def _enqueue_semantic_scoring(
+    campaign_candidate,
+    task_log_service: CeleryTaskLogService,
+    resume_repo: ResumeRepository,
+    jd_id=None,
+) -> None:
+
+    if resume_repo.get_embedding(campaign_candidate.resume_id) is None:
+        logger.info(
+            "Semantic scoring enqueue skipped | campaign_candidate_id=%s reason=no_resume_embedding_yet",
+            campaign_candidate.id,
+        )
+        # Task 537: give the candidate a path forward instead of silently
+        # stalling forever - EMBED_RESUME's own idempotency_key makes this
+        # a no-op if it's already queued/run for this resume.
+        # trigger_pending_semantic_scoring_for_resume picks this candidate
+        # back up once that embedding actually completes.
+        try:
+            from app.tasks.embedding_tasks import _enqueue_resume_embedding
+            _enqueue_resume_embedding(
+                task_log_service.repository.db, campaign_candidate.resume_id, task_log_service,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue EMBED_RESUME fallback for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
+        return
+
+    task_log_repo = task_log_service.repository
+    idempotency_key = _semantic_score_idempotency_key(campaign_candidate.id)
+    new_task_id = str(uuid4())
+
+    existing_log = task_log_repo.get_by_idempotency_key(idempotency_key)
+    if existing_log is None:
+        candidate_log = CeleryTaskLog(
+            task_id=new_task_id,
+            task_type=SEMANTIC_SCORE_TASK_TYPE,
+            idempotency_key=idempotency_key,
+            campaign_candidate_id=campaign_candidate.id,
+            jd_id=jd_id,
+            status=TaskStatus.QUEUED,
+        )
+        log, was_created = task_log_repo.create_if_new_idempotency_key(candidate_log)
+        task_log_repo.commit()
+        if was_created:
+            _dispatch_semantic_score_task(campaign_candidate, log)
+            return
+        existing_log = log  # lost the race - another caller's row already exists
+
+    if existing_log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.SUCCESS):
+        logger.info(
+            "Semantic scoring enqueue skipped | campaign_candidate_id=%s reason=already_queued_or_scored",
+            campaign_candidate.id,
+        )
+        return
+
+    # A terminal (FAILURE/DEAD) row for this candidate already exists - a
+    # legitimate re-trigger (HR override, recovery scan). Reuse the same
+    # idempotency-keyed row (with a fresh Celery task_id) rather than
+    # inserting a second one, which the unique index would reject.
+    existing_log.task_id = new_task_id
+    existing_log.status = TaskStatus.QUEUED
+    log = task_log_repo.update(existing_log)
+    task_log_repo.commit()
+    _dispatch_semantic_score_task(campaign_candidate, log)
+
+
 @celery_app.task(name="scoring.calculate_semantic_score", bind=True)
 def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
-    """
-    M08-E02 Phase 2: Semantic Similarity Scoring for one campaign_candidate.
-    Reuses already-generated resume/JD embeddings (M08-E01's EMBED_RESUME
-    and the JD processing pipeline) - never regenerates either. Mirrors
-    calculate_deterministic_score_task's overall shape (existence checks,
-    campaign status gate, rejection + stage transition + downstream
-    AI-evaluation cancellation on failure, audit logging via the same
-    CAMPAIGN_CANDIDATE entity type), plus embedding_tasks.py's retry/
-    dead-letter machinery (RetryPolicy + error_classifier + DeadLetterQueue),
-    reused as-is rather than reimplemented.
-
-    Only runs for a candidate that already passed deterministic screening
-    (deterministic_passed=True) - a candidate rejected at the deterministic
-    layer, or not yet screened at all, is skipped gracefully, never scored.
-    Only semantic_score/semantic_score_breakdown are ever written here -
-    deterministic_score/score_breakdown/screened_at are never touched.
-    """
+   
     db = SessionLocal()
     task_log = None
     task_id = self.request.id
@@ -125,7 +293,6 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
         campaign_repo = CampaignRepository(db)
         resume_repo = ResumeRepository(db)
         jd_repo = JDRepository(db)
-        config_repo = ConfigRepository(db)
         candidate_rejection_repo = CandidateRejectionRepository(db)
         allowed_transition_repo = AllowedTransitionRepository(db)
         audit_service = AuditService(AuditRepository(db))
@@ -136,9 +303,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
-        # Same broker-redelivery guard as calculate_deterministic_score_task/
-        # generate_resume_embedding_task: only a completed (SUCCESS) run
-        # short-circuits - RUNNING/FAILURE/RETRY are still reprocessed.
+       
         if existing_task_log is not None and existing_task_log.status == TaskStatus.SUCCESS:
             logger.info(
                 "Semantic scoring already completed for task_id=%s campaign_candidate_id=%s - skipping.",
@@ -153,6 +318,11 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
                 campaign_candidate_id=campaign_candidate.id if campaign_candidate is not None else None,
             )
         task_log = task_log_service.mark_running(existing_task_log)
+
+        logger.info(
+            "Semantic scoring task started | campaign_candidate_id=%s task_id=%s",
+            campaign_candidate_id, task_id,
+        )
 
         if campaign_candidate is None:
             summary = json.dumps({
@@ -191,89 +361,150 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
             )
             return
 
-        scoring_service = SemanticScoringService(resume_repo, jd_repo, config_repo, campaign_candidate_repo)
-        breakdown = scoring_service.calculate_and_store_semantic_score_breakdown(
-            campaign_candidate.id, campaign.jd_id, campaign_candidate.resume_id,
+        resume_embedding = resume_repo.get_embedding(campaign_candidate.resume_id)
+        if resume_embedding is None:
+            # Requirement: a missing resume embedding is a graceful skip,
+            # never a retry-then-dead-letter failure (that's what this task
+            # used to do via MissingResumeEmbeddingError, before
+            # recover_pending_semantic_scores existed to pick this
+            # candidate back up automatically once EMBED_RESUME eventually
+            # succeeds for this resume). semantic_score is left NULL
+            # (already its default - never set to anything here),
+            # ai_evaluation_status flags MANUAL_REVIEW so this shows up as
+            # needing attention, and a SEMANTIC-layer candidate_rejections
+            # row records why - but pipeline_stage is deliberately left
+            # untouched (no stage_transition_service call at all): this is
+            # NOT an automatic rejection of the candidate, just a record of
+            # why no semantic score exists yet.
+            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            campaign_candidate_repo.update(campaign_candidate)
+
+            # Idempotent: if this candidate was already re-queued once
+            # before the embedding was ready (e.g. an HR override
+            # re-triggered it) and hit this exact skip again, don't insert
+            # a second identical rejection row.
+            already_recorded = any(
+                rejection.rejection_layer == RejectionLayer.SEMANTIC
+                and rejection.rejection_reason == MISSING_RESUME_EMBEDDING_REASON
+                for rejection in candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate.id)
+            )
+            if not already_recorded:
+                candidate_rejection_repo.create(CandidateRejection(
+                    campaign_candidate_id=campaign_candidate.id,
+                    rejection_layer=RejectionLayer.SEMANTIC,
+                    rejection_reason=MISSING_RESUME_EMBEDDING_REASON,
+                    rejection_detail={"reason": MISSING_RESUME_EMBEDDING_REASON},
+                ))
+
+            campaign_candidate_repo.commit()
+
+            summary = json.dumps({
+                "skipped": True,
+                "reason": MISSING_RESUME_EMBEDDING_REASON,
+                "semantic_score": None,
+            })
+            task_log_service.mark_success(task_log, summary=summary)
+            logger.info(
+                "Semantic scoring skipped | campaign_candidate_id=%s reason=no_resume_embedding",
+                campaign_candidate_id,
+            )
+            return
+
+        # Task 536: JD embedding pre-flight - retried on a flat 60s
+        # interval (distinct from the exponential-backoff exception path
+        # below), since a JD embedding can legitimately still be in
+        # flight (EMBED_JD queued but not yet complete) when semantic
+        # scoring first runs.
+        jd_embedding = jd_repo.get_embedding_by_jd_id(campaign.jd_id)
+        if jd_embedding is None:
+            if self.request.retries < _JD_EMBEDDING_MAX_RETRIES:
+                task_log_service.mark_retry(task_log)
+                logger.info(
+                    "JD embedding not found, scheduling retry | campaign_candidate_id=%s jd_id=%s attempt=%s",
+                    campaign_candidate_id, campaign.jd_id, self.request.retries + 1,
+                )
+                self.retry(countdown=_JD_EMBEDDING_RETRY_DELAY_SECONDS, max_retries=_JD_EMBEDDING_MAX_RETRIES)
+                return
+
+            campaign_candidate.semantic_score = None
+            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            campaign_candidate_repo.update(campaign_candidate)
+            campaign_candidate_repo.commit()
+
+            summary = json.dumps({
+                "skipped": True,
+                "reason": JD_EMBEDDING_NOT_FOUND_REASON,
+                "semantic_score": None,
+            })
+            task_log_service.mark_success(task_log, summary=summary)
+            logger.warning(
+                "%s | campaign_candidate_id=%s jd_id=%s retries_exhausted=%s",
+                JD_EMBEDDING_NOT_FOUND_REASON, campaign_candidate_id, campaign.jd_id, _JD_EMBEDDING_MAX_RETRIES,
+            )
+            return
+
+        # Task 536: model-version-mismatch pre-flight - a resume embedded
+        # under one EmbeddingModelVersion is not comparable to a JD
+        # embedded under another; route to MANUAL_REVIEW rather than
+        # silently computing a meaningless similarity score.
+        if resume_embedding.embedding_model_version_id != jd_embedding.embedding_model_version_id:
+            campaign_candidate.semantic_score = None
+            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            campaign_candidate_repo.update(campaign_candidate)
+            campaign_candidate_repo.commit()
+
+            summary = json.dumps({
+                "skipped": True,
+                "reason": MODEL_VERSION_MISMATCH_REASON,
+                "semantic_score": None,
+            })
+            task_log_service.mark_success(task_log, summary=summary)
+            logger.warning(
+                "%s | campaign_candidate_id=%s resume_model_version_id=%s jd_model_version_id=%s",
+                MODEL_VERSION_MISMATCH_REASON, campaign_candidate_id,
+                resume_embedding.embedding_model_version_id, jd_embedding.embedding_model_version_id,
+            )
+            return
+
+        # All pre-flight validations passed - recorded in celery_task_log
+        # before the similarity calculation itself runs.
+        task_log.output_summary = json.dumps({
+            "validations": {
+                "resume_embedding_found": True,
+                "jd_embedding_found": True,
+                "model_versions_match": True,
+            },
+        })
+        task_log_repo.update(task_log)
+        task_log_repo.commit()
+        logger.info(
+            "Semantic scoring pre-flight validations passed | campaign_candidate_id=%s", campaign_candidate_id,
         )
 
-        rejection_reason = None
-        if not breakdown["semantic_passed"]:
-            # T02-style: one human-readable reason, never a raw field name/
-            # UUID. Recorded on every semantic failure (not just the first),
-            # same convention as deterministic scoring's candidate_rejections.
-            rejection_reason = breakdown["semantic_explanation"]
-            candidate_rejection_repo.create(CandidateRejection(
-                campaign_candidate_id=campaign_candidate.id,
-                rejection_layer=RejectionLayer.SEMANTIC,
-                rejection_reason=rejection_reason,
-                rejection_detail=breakdown,
-            ))
-
-            # SCREENING -> REJECTED, validated against allowed_transitions -
-            # exactly the same StageTransitionService deterministic scoring
-            # already uses, extended to SEMANTIC by design (see that
-            # service's own docstring: "so any future rejection layer
-            # (SEMANTIC, AI) reuses the exact same validate-then-apply
-            # behavior instead of re-implementing it").
-            stage_transition_service.transition_to_rejected(
-                campaign_candidate,
-                change_reason="Semantic similarity filter rejection",
-                scores_snapshot=breakdown,
-            )
-
-            # A candidate rejected at the SEMANTIC layer must never have a
-            # queued AI_EVALUATE task run against them either - reused as-is
-            # from deterministic_scoring_tasks.py, fully generic (no
-            # deterministic-specific behavior inside it).
-            _cancel_downstream_ai_evaluation(
-                campaign_candidate, task_log_repo, task_log_service, campaign_candidate_repo,
-            )
-
-        summary_payload = {
-            "semantic_score": breakdown["semantic_score"],
-            "semantic_passed": breakdown["semantic_passed"],
-            "semantic_threshold": breakdown["semantic_threshold"],
-            "matching_skills_count": len(breakdown["matching_skills"]),
-            "missing_skills_count": len(breakdown["missing_skills"]),
-            "rejection_reason": rejection_reason,
-            "semantic_score_breakdown": breakdown,
-        }
-
-        # Shares this task's db session - flushed here, committed together
-        # with the campaign_candidate/rejection writes below, same
-        # convention as calculate_deterministic_score_task's audit call.
-        audit_service.log(
-            actor_id=None,
-            actor_role="SYSTEM",
-            action_type=ActionType.SEMANTIC_SCORE_COMPUTED,
-            entity_type=EntityType.CAMPAIGN_CANDIDATE,
-            entity_id=campaign_candidate.id,
-            campaign_id=campaign.id,
-            details=summary_payload,
+        summary_payload = _score_and_persist_semantic(
+            campaign_candidate, campaign, resume_repo, jd_repo,
+            candidate_rejection_repo, stage_transition_service, campaign_candidate_repo,
+            audit_service, task_log_repo, task_log_service,
         )
 
-        campaign_candidate_repo.commit()
+        # Task 538: computation duration recorded on this same task_log row -
+        # mark_success() persists whatever is currently set on task_log, so
+        # this must be assigned before that call.
+        task_log.duration_ms = summary_payload["computation_duration_ms"]
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 
-        # M09: only after the transaction above has committed - a candidate
-        # that just passed semantic screening is auto-enqueued for AI
-        # evaluation, the terminal screening stage. Mirrors exactly how
-        # calculate_deterministic_score_task enqueues semantic scoring
-        # after its own pass (same local-import-inside-the-if-branch shape,
-        # kept consistent even though ai_evaluation_tasks.py doesn't import
-        # back from this module). A failure here must never crash or mask
-        # the already-successful semantic outcome, same reasoning as that
-        # enqueue call.
-        if breakdown["semantic_passed"]:
-            try:
-                from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
-                _enqueue_ai_evaluation(campaign_candidate, task_log_service)
-            except Exception:
-                logger.exception(
-                    "Failed to enqueue AI evaluation after semantic pass for campaign_candidate_id=%s",
-                    campaign_candidate.id,
-                )
+        logger.info(
+            "Semantic scoring task completed | campaign_candidate_id=%s semantic_passed=%s",
+            campaign_candidate_id, summary_payload["semantic_passed"],
+        )
+
+    except Retry:
+        # Task 536's JD-embedding-missing pre-flight retry (self.retry()
+        # with no exc= raises Retry directly) - a scheduled retry, not a
+        # business failure. Must never fall into the generic
+        # classify()/dead-letter handling below.
+        raise
 
     except Exception as ex:
         db.rollback()
@@ -290,10 +521,6 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
             self.retry(exc=ex, countdown=delay, max_retries=_SEMANTIC_SCORE_RETRY_POLICY.max_attempts)
             return
 
-        # Retries exhausted (or a permanent failure) - dead-letter, mark the
-        # task_log DEAD, log the failure reason. Never re-raised: this is
-        # now dead-lettered/terminal bookkeeping, same convention as
-        # generate_resume_embedding_task.
         error_message = str(ex)
         try:
             DeadLetterQueueRepository(db).create(
@@ -316,7 +543,66 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
 
         if task_log:
             task_log_service.mark_dead(task_log, error_message)
+        logger.info(
+            "Semantic scoring task failed | campaign_candidate_id=%s task_id=%s", campaign_candidate_id, task_id,
+        )
         logger.exception("Semantic scoring task permanently failed for campaign_candidate_id %s", campaign_candidate_id)
+
+    finally:
+        db.close()
+
+
+SEMANTIC_SCORE_RECOVERY_TASK_TYPE = "SEMANTIC_SCORE_RECOVERY_SCAN"
+
+
+@celery_app.task(name="scoring.recover_pending_semantic_scores")
+def recover_pending_semantic_scores() -> None:
+    """
+    Requirement 4 (automatic recovery), run periodically via Celery Beat:
+    calculate_semantic_score_task's own missing-resume-embedding skip path
+    (see MISSING_RESUME_EMBEDDING_REASON above) deliberately never retries
+    itself anymore - it succeeds-with-skip immediately, on the assumption
+    that this scan is what eventually catches the candidate back up once
+    EMBED_RESUME actually succeeds for that resume (a later retry, or a
+    manually resolved permanent failure).
+
+    Re-enqueues via the existing _enqueue_semantic_scoring helper (never
+    executes semantic scoring business logic itself) - that helper's own
+    idempotency check (a QUEUED/RUNNING/SUCCESS SEMANTIC_SCORE
+    celery_task_log row already existing) means a candidate that was
+    somehow already re-queued by something else in the meantime is safely
+    skipped, never double-dispatched.
+    """
+    db = SessionLocal()
+    task_log = None
+    try:
+        campaign_candidate_repo = CampaignCandidateRepository(db)
+        resume_repo = ResumeRepository(db)
+        task_log_repo = CeleryTaskLogRepository(db)
+        task_log_service = CeleryTaskLogService(task_log_repo)
+
+        task_log = task_log_service.create_log(
+            task_id=str(uuid4()),
+            task_type=SEMANTIC_SCORE_RECOVERY_TASK_TYPE,
+        )
+
+        pending_candidates = campaign_candidate_repo.get_pending_semantic_score_with_ready_embedding()
+        for campaign_candidate in pending_candidates:
+            _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo)
+
+        summary = json.dumps({
+            "candidates_found": len(pending_candidates),
+        })
+        task_log_service.mark_success(task_log, summary=summary)
+        logger.info(
+            "Semantic score recovery scan completed | candidates_found=%s", len(pending_candidates),
+        )
+
+    except Exception as ex:
+        db.rollback()
+        if task_log:
+            task_log_service.mark_failure(task_log, str(ex))
+        logger.exception("Semantic score recovery scan failed")
 
     finally:
         db.close()

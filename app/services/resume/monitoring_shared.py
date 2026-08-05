@@ -98,4 +98,5 @@ def build_failure_info(executions, failure_logs, dlq_entry, task_log) -> Failure
         error_message=task_log.error_message if task_log else None,
         classification=matching_failure.classification.value if matching_failure else None,
         moved_to_dlq=dlq_entry is not None,
+        dlq_id=dlq_entry.id if dlq_entry else None,
     )

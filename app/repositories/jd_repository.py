@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.embeddings import EmbeddingModelVersion
@@ -56,13 +58,7 @@ class JDRepository:
         content_hash: str,
         lineage_root_id: UUID,
     ) -> JobDescription | None:
-        """
-        Finds another JD (outside this lineage family) sharing the same
-        content_hash. A JD belongs to the family identified by
-        `lineage_root_id` if its own lineage_root_id matches it, or - for
-        the root version itself, whose lineage_root_id is NULL - if its id
-        matches it.
-        """
+       
         return (
             self.db.query(JobDescription)
             .filter(
@@ -76,12 +72,7 @@ class JDRepository:
         )
 
     def has_active_campaign(self, jd_id: UUID) -> bool:
-        """
-        A campaign still counts as active for JD-locking purposes unless it's
-        CLOSED - a PAUSED campaign can be resumed at any time, so the JD it's
-        attached to must stay locked, matching the != CLOSED convention used
-        for "ongoing" campaigns elsewhere (e.g. CampaignRepository.get_all_campaigns).
-        """
+       
         return (
             self.db.query(HiringCampaign.id)
             .filter(
@@ -282,12 +273,7 @@ class JDRepository:
         self,
         jd_ids: list[UUID],
     ) -> dict[UUID, dict[str, int]]:
-        """
-        Active vs. passed (CLOSED) campaign counts per JD, in one grouped
-        query rather than N+1 per-JD lookups - used to annotate JD list/search
-        results. "Active" here matches the != CLOSED convention used by
-        has_active_campaign() (a PAUSED campaign can still be resumed).
-        """
+      
         counts = {jd_id: {"active": 0, "passed": 0} for jd_id in jd_ids}
         if not jd_ids:
             return counts
@@ -343,15 +329,74 @@ class JDRepository:
         return jd_embedding
 
     def get_embedding_by_jd_id(self, jd_id: UUID) -> JDEmbedding | None:
-        """
-        M08-E02: read counterpart to create_jd_embedding - the JD embedding
-        Semantic Matching loads for a campaign's job_description, reusing
-        exactly what M08-E01/the JD processing pipeline already generated
-        and stored. Never regenerates - returns None if the JD has no
-        embedding yet (still processing, or created before embeddings existed).
-        """
+
         return (
             self.db.query(JDEmbedding)
             .filter(JDEmbedding.jd_id == jd_id)
             .first()
         )
+
+    def count_embeddings(self) -> int:
+        """Embedding Storage Dashboard - total jd_embeddings row count."""
+        return self.db.query(func.count(JDEmbedding.id)).scalar() or 0
+
+    def get_embedding_by_content_hash(
+        self, content_hash: str, embedding_model_version_id: UUID,
+    ) -> JDEmbedding | None:
+        
+        stmt = select(JDEmbedding).where(
+            JDEmbedding.input_text_hash == content_hash,
+            JDEmbedding.embedding_model_version_id == embedding_model_version_id,
+        )
+        return self.db.execute(stmt).scalars().first()
+
+    def create_jd_embedding_idempotent(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        content_hash: str,
+    ) -> tuple[JDEmbedding, bool]:
+       
+        jd_embedding = JDEmbedding(
+            jd_id=jd_id,
+            embedding=embedding,
+            embedding_model_version_id=embedding_model_version_id,
+            input_text_hash=content_hash,
+            embedding_status=EmbeddingStatus.READY,
+        )
+        try:
+            with self.db.begin_nested():
+                self.db.add(jd_embedding)
+                self.db.flush()
+            self.db.refresh(jd_embedding)
+            return jd_embedding, True
+        except IntegrityError:
+            existing = self.get_embedding_by_jd_id(jd_id)
+            return existing, False
+
+    def replace_jd_embedding(
+        self,
+        jd_id: UUID,
+        embedding: list[float],
+        embedding_model_version_id: UUID,
+        content_hash: str,
+    ) -> JDEmbedding:
+       
+        existing = self.get_embedding_by_jd_id(jd_id)
+        if existing is None:
+            jd_embedding, _ = self.create_jd_embedding_idempotent(
+                jd_id=jd_id,
+                embedding=embedding,
+                embedding_model_version_id=embedding_model_version_id,
+                content_hash=content_hash,
+            )
+            return jd_embedding
+
+        existing.embedding = embedding
+        existing.embedding_model_version_id = embedding_model_version_id
+        existing.input_text_hash = content_hash
+        existing.created_at = datetime.now(timezone.utc)
+        self.db.flush()
+        self.db.refresh(existing)
+        return existing
