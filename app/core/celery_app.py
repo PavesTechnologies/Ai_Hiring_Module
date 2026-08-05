@@ -14,6 +14,21 @@ celery_app = Celery(
 celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
+    # Ops fix: by default Celery acks (removes) a message the instant a
+    # worker *receives* it, before the task body runs — if that worker
+    # process then dies (crash, manual restart, deploy) before actually
+    # executing, the message is gone forever with no redelivery, leaving
+    # its celery_task_log row stuck at QUEUED/RETRY permanently (observed
+    # live: 3 resume-processing tasks orphaned this way after a worker
+    # restart). task_acks_late defers the ack until after the task
+    # finishes (success or failure); task_reject_on_worker_lost requeues
+    # the message instead of silently dropping it if the worker is killed
+    # mid-execution. This makes every task at-least-once rather than
+    # at-most-once — safe here since resume/bulk processing is already
+    # idempotent by design (duplicate-file/candidate detection, version
+    # bumping), so a redelivered/re-run task cannot double-create data.
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
 )
 
 # ── Worker pool: Windows dev vs. Linux production ────────────────────────────
@@ -38,15 +53,12 @@ celery_app.conf.imports = (
     "app.tasks.skill_ontology_tasks",
     "app.tasks.deterministic_scoring_tasks",
     "app.tasks.semantic_scoring_tasks",
-<<<<<<< HEAD
     "app.tasks.ai_evaluation_tasks",
-=======
     "app.tasks.composite_scoring_tasks",
     "app.tasks.jd_embedding_tasks",
     "app.tasks.embedding_health_tasks",
     "app.tasks.reindex_tasks",
     "app.tasks.talent_pool_tasks",
->>>>>>> 7d7bf73cf98944e3e93c6b48fc54330dcb8a5225
 )
 
 
