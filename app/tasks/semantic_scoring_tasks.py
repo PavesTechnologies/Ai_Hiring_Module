@@ -171,16 +171,38 @@ def _score_and_persist_semantic(
 
 def trigger_pending_semantic_scoring_for_resume(db, resume_id) -> None:
 
+    # TEMPORARY DIAGNOSTIC LOGGING (enqueue-trigger investigation) - remove
+    # once the missing-SEMANTIC_SCORE-row issue is confirmed resolved.
+    logger.info("TRACE: trigger_pending_semantic_scoring_for_resume entered | resume_id=%s", resume_id)
+
     campaign_candidate_repo = CampaignCandidateRepository(db)
     resume_repo = ResumeRepository(db)
     task_log_repo = CeleryTaskLogRepository(db)
     task_log_service = CeleryTaskLogService(task_log_repo)
 
-    pending_candidates = [
-        cc for cc in campaign_candidate_repo.get_by_resume_id(resume_id)
-        if cc.deterministic_passed and cc.semantic_score_breakdown is None
-    ]
+    all_candidates = campaign_candidate_repo.get_by_resume_id(resume_id)
+    logger.info(
+        "TRACE: get_by_resume_id found %s campaign_candidate(s) | resume_id=%s",
+        len(all_candidates), resume_id,
+    )
+    pending_candidates = []
+    for cc in all_candidates:
+        if cc.deterministic_passed and cc.semantic_score_breakdown is None:
+            pending_candidates.append(cc)
+        else:
+            logger.info(
+                "TRACE: campaign_candidate_id=%s skipped | deterministic_passed=%s "
+                "semantic_score_breakdown_is_none=%s",
+                cc.id, cc.deterministic_passed, cc.semantic_score_breakdown is None,
+            )
+    logger.info(
+        "TRACE: %s pending candidate(s) eligible for semantic scoring | resume_id=%s",
+        len(pending_candidates), resume_id,
+    )
     for campaign_candidate in pending_candidates:
+        logger.info(
+            "TRACE: calling _enqueue_semantic_scoring | campaign_candidate_id=%s", campaign_candidate.id,
+        )
         _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo)
 
 
@@ -219,6 +241,13 @@ def _enqueue_semantic_scoring(
     resume_repo: ResumeRepository,
     jd_id=None,
 ) -> None:
+
+    # TEMPORARY DIAGNOSTIC LOGGING (enqueue-trigger investigation) - remove
+    # once the missing-SEMANTIC_SCORE-row issue is confirmed resolved.
+    logger.info(
+        "TRACE: _enqueue_semantic_scoring entered | campaign_candidate_id=%s resume_id=%s",
+        campaign_candidate.id, campaign_candidate.resume_id,
+    )
 
     if resume_repo.get_embedding(campaign_candidate.resume_id) is None:
         logger.info(
@@ -259,6 +288,10 @@ def _enqueue_semantic_scoring(
         log, was_created = task_log_repo.create_if_new_idempotency_key(candidate_log)
         task_log_repo.commit()
         if was_created:
+            logger.info(
+                "TRACE: celery_task_log row created (task_id=%s) BEFORE dispatch | campaign_candidate_id=%s",
+                new_task_id, campaign_candidate.id,
+            )
             _dispatch_semantic_score_task(campaign_candidate, log)
             return
         existing_log = log  # lost the race - another caller's row already exists

@@ -289,7 +289,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
                 return
             try:
                 batch_size = _read_embedding_batch_size(config_repo)
-                embedding_vectors = EmbeddingService().generate_embeddings([input_text], batch_size=batch_size)
+                embedding_vectors = EmbeddingService(db).generate_embeddings([input_text], batch_size=batch_size)
             except Exception as embed_ex:
                 db.rollback()
                 cb_repo.increment_failure(EMBEDDING_SERVICE_NAME)
@@ -360,9 +360,19 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
 
         resume_repo.commit()
 
+        # TEMPORARY DIAGNOSTIC LOGGING (enqueue-trigger investigation) -
+        # remove once the missing-SEMANTIC_SCORE-row issue is confirmed
+        # resolved in production.
+        logger.info(
+            "TRACE: about to call trigger_pending_semantic_scoring_for_resume | resume_id=%s vector_action=%s",
+            resume_id, vector_action,
+        )
         try:
             from app.tasks.semantic_scoring_tasks import trigger_pending_semantic_scoring_for_resume
             trigger_pending_semantic_scoring_for_resume(db, resume.id)
+            logger.info(
+                "TRACE: trigger_pending_semantic_scoring_for_resume returned normally | resume_id=%s", resume_id,
+            )
         except Exception:
             logger.exception(
                 "Failed to trigger pending semantic scoring after embedding for resume_id=%s", resume_id,
