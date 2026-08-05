@@ -7,20 +7,26 @@ from app.dependencies.campaign_candidate import (
     get_campaign_candidate_service,
 )
 
+from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.middleware.rbac import TokenUser, get_current_user, require_roles
 from app.models.identity import UserRole
+from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
+    CampaignCandidateSummaryResponse,
     CampaignRejectionAnalyticsResponse,
     CandidateDeterministicResponse,
     CandidateRejectionHistoryEntryResponse,
     CandidateScorecardResponse,
     CandidateSemanticResponse,
+    CandidateSortField,
     CandidateSummaryResponse,
     HrOverrideRequest,
     OverrideReportResponse,
+    RankedCampaignCandidatesResponse,
+    SortOrder,
     UpdateResumeResubmissionResponse,
 )
 
@@ -63,25 +69,92 @@ def create_campaign_candidate(
 
 @router.get(
     "/campaign/{campaign_id}",
-    response_model=APIResponse[list[CampaignCandidateResponse]],
+    response_model=APIResponse[RankedCampaignCandidatesResponse],
     status_code=status.HTTP_200_OK,
-    summary="Get Campaign Candidates",
-    description="Retrieve all candidates belonging to a campaign.",
+    summary="Get Ranked Campaign Candidates",
+    description=(
+        "M10-E03 Phase 1 - retrieve candidates belonging to a campaign, ranked by "
+        "composite_score by default (highest first, pending/unscored candidates last), "
+        "with filtering, sorting, and pagination. Ranking is always performed by "
+        "PostgreSQL, never in application code."
+    ),
 )
 def get_campaign_candidates(
+    campaign_id: UUID,
+    page: int = Query(default=1, ge=1, description="1-based page number."),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    sort_by: CandidateSortField | None = Query(
+        default=None,
+        description="Defaults to the composite ranking order (composite_score DESC NULLS LAST, "
+        "deterministic_score DESC, created_at ASC, id ASC) when omitted.",
+    ),
+    sort_order: SortOrder = Query(default="desc"),
+    pipeline_stage: PipelineStage | None = Query(default=None),
+    composite_score_min: float | None = Query(default=None, ge=0, le=100),
+    composite_score_max: float | None = Query(default=None, ge=0, le=100),
+    ai_recommendation: AIRecommendation | None = Query(default=None),
+    ai_evaluation: AIEvaluationStatus | None = Query(
+        default=None, description="Filters by the candidate's ai_evaluation_status.",
+    ),
+    include_pending: bool = Query(default=True, description="If false, excludes candidates with no composite_score yet."),
+    include_rejected: bool = Query(default=True, description="If false, excludes REJECTED-stage candidates."),
+    include_fraud: bool = Query(default=True, description="If false, excludes fraud-flagged candidates."),
+    hr_override: bool | None = Query(
+        default=None, description="If set, filters to only overridden (true) or only non-overridden (false) candidates.",
+    ),
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+
+    result = service.get_ranked_campaign_candidates(
+        campaign_id,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        pipeline_stage=pipeline_stage,
+        composite_score_min=composite_score_min,
+        composite_score_max=composite_score_max,
+        ai_recommendation=ai_recommendation,
+        ai_evaluation_status=ai_evaluation,
+        include_pending=include_pending,
+        include_rejected=include_rejected,
+        include_fraud=include_fraud,
+        hr_override=hr_override,
+    )
+
+    return APIResponse.ok(
+        data=result,
+        message="Campaign candidates retrieved successfully.",
+    )
+
+
+@router.get(
+    "/campaign/{campaign_id}/summary",
+    response_model=APIResponse[CampaignCandidateSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Campaign Candidate Ranking Summary",
+    description=(
+        "M10-E03 Phase 1 - aggregate ranking statistics for a campaign: total/ranked/"
+        "pending/rejected/fraud counts, highest/lowest/average composite_score, and "
+        "pipeline-stage + AI-recommendation breakdowns. Read-only - never audited."
+    ),
+)
+def get_campaign_candidate_summary(
     campaign_id: UUID,
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
 
-    candidates = service.get_campaign_candidates(
-        campaign_id
-    )
+    summary = service.get_campaign_candidate_summary(campaign_id)
 
     return APIResponse.ok(
-        data=candidates,
-        message="Campaign candidates retrieved successfully.",
+        data=summary,
+        message="Campaign candidate summary retrieved successfully.",
     )
 
 @router.get(

@@ -105,5 +105,6 @@ def get_embedding_dashboard(
     return APIResponse.ok(
         data=service.get_dashboard(),
         message="Embedding dashboard retrieved successfully.",
-)
+    )
+
 

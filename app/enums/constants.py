@@ -113,6 +113,18 @@ class ActionType(enum.Enum):
     PROMPT_UPDATED = "PROMPT_UPDATED"
     PROMPT_DELETED = "PROMPT_DELETED"
     PROMPT_STATUS_CHANGED = "PROMPT_STATUS_CHANGED"
+    # M10-E01 — the DB-side audit_action_type_enum does NOT yet contain this
+    # value (same caveat as every other entry above); needs the paired
+    # migration (alembic/versions/<new>_composite_scoring_support.py) before
+    # CompositeScoringService can log it.
+    COMPOSITE_SCORE_COMPUTED = "COMPOSITE_SCORE_COMPUTED"
+    # M10-E02 — same DB-enum caveat as COMPOSITE_SCORE_COMPUTED above; needs
+    # the paired migration (alembic/versions/<new>_campaign_weight_configuration_history.py)
+    # before CampaignService can log it. Written whenever a campaign's
+    # weight_deterministic/weight_semantic/weight_ai actually change (never
+    # on a no-op resubmission of identical weights, and never for a
+    # thresholds-only change - see CampaignService._record_weight_configuration_change).
+    CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED = "CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"
@@ -149,3 +161,10 @@ MAX_PAGE_SIZE     = 100
 
 
 API_PREFIX = "/airs"
+
+# M10-E01: version tag stamped on every composite_score calculation
+# (campaign_candidates.composite_score and every
+# candidate_composite_score_history row). Bump this — and only this — the
+# moment CompositeScoringService's formula itself changes; never hardcode
+# "v1" (or any other version string) anywhere else in the codebase.
+COMPOSITE_SCORE_FORMULA_VERSION = "v1"
