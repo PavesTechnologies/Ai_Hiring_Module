@@ -1,10 +1,15 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
+from celery.exceptions import Retry
+
 from app.models.async_tasks import TaskStatus
+from app.models.config import CBState
+from app.models.pipeline import AIEvaluationStatus
 
 TASKS_MODULE = "app.tasks.embedding_tasks"
 
@@ -55,6 +60,16 @@ class _Harness:
         self.dead_letter_queue_repo = MagicMock()
         self.embedding_service_instance = MagicMock()
         self.embedding_service_instance.generate_embeddings.return_value = [[0.1] * 384]
+        self.campaign_candidate_repo = MagicMock()
+        self.campaign_candidate_repo.get_by_resume_id.return_value = []
+        self.cb_repo = MagicMock()
+        # Default: circuit CLOSED, so every existing test (none of which
+        # care about the circuit breaker) proceeds straight through to the
+        # embedding-service call exactly as before this feature existed.
+        self.cb_repo.get_or_create.return_value = SimpleNamespace(state=CBState.CLOSED, retry_after=None)
+        self.cb_repo.transition_to_half_open_if_due.return_value = SimpleNamespace(
+            state=CBState.CLOSED, retry_after=None,
+        )
 
     def __enter__(self):
         self._patches = [
@@ -64,6 +79,8 @@ class _Harness:
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
             patch(f"{TASKS_MODULE}.DeadLetterQueueRepository", return_value=self.dead_letter_queue_repo),
             patch(f"{TASKS_MODULE}.EmbeddingService", return_value=self.embedding_service_instance),
+            patch(f"{TASKS_MODULE}.CampaignCandidateRepository", return_value=self.campaign_candidate_repo),
+            patch(f"{TASKS_MODULE}.CircuitBreakerRepository", return_value=self.cb_repo),
         ]
         for p in self._patches:
             p.start()
@@ -117,10 +134,17 @@ def test_reuses_existing_vector_on_dedup_hit():
         h.resume_repo.create_resume_embedding.assert_called_once()
         create_kwargs = h.resume_repo.create_resume_embedding.call_args.kwargs
         assert create_kwargs["embedding"] == [0.9] * 384
-        # T4: is_anonymized/is_talent_pool_eligible must be copied from the
-        # matched row, not silently re-defaulted to True/True.
+        # T4: is_anonymized is a property of the text/vector itself, so it
+        # is still copied from the matched row.
         assert create_kwargs["is_anonymized"] is True
-        assert create_kwargs["is_talent_pool_eligible"] is False
+        # Talent Pool Eligibility: is_talent_pool_eligible is deliberately
+        # NEVER copied from a different candidate's matched row (that
+        # would let one candidate's disqualification leak onto an
+        # unrelated candidate who just happens to share anonymised text) -
+        # omitted here entirely so create_resume_embedding's own default
+        # (True) applies; the daily reconciliation task is what corrects
+        # this candidate's own eligibility afterward, never this dedup path.
+        assert "is_talent_pool_eligible" not in create_kwargs
 
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
@@ -341,3 +365,226 @@ def test_batch_size_uses_default_when_unset():
     config_repo.get_configs_by_keys.return_value = {}
 
     assert _read_embedding_batch_size(config_repo) == _DEFAULT_EMBEDDING_BATCH_SIZE
+
+
+# ----------------------------------------------------------------------
+# M08-E02: after a resume embedding commits (new or reused), this task
+# must trigger any campaign_candidate for that resume that already passed
+# deterministic screening but was left un-scored semantically because
+# _enqueue_deterministic_scoring races ahead of _enqueue_resume_embedding
+# (see resume_processing_tasks.py) - see
+# trigger_pending_semantic_scoring_for_resume's own docstring for the
+# full race explanation.
+# ----------------------------------------------------------------------
+
+def test_triggers_pending_semantic_scoring_after_embedding_commits():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+
+        with patch(
+            "app.tasks.semantic_scoring_tasks.trigger_pending_semantic_scoring_for_resume",
+        ) as trigger_mock:
+            generate_resume_embedding_task(resume_id=str(resume.id))
+
+            trigger_mock.assert_called_once()
+            call_args = trigger_mock.call_args.args
+            assert call_args[1] == resume.id
+            h.resume_repo.commit.assert_called_once()
+
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.SUCCESS
+
+
+def test_pending_semantic_scoring_trigger_failure_never_crashes_embedding_task():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+
+        with patch(
+            "app.tasks.semantic_scoring_tasks.trigger_pending_semantic_scoring_for_resume",
+            side_effect=Exception("boom"),
+        ):
+            # Must not raise - the embedding itself already committed
+            # successfully and must still be reported as a success.
+            generate_resume_embedding_task(resume_id=str(resume.id))
+
+
+# ----------------------------------------------------------------------
+# Resilient retry: circuit breaker gating before the embedding-service
+# call, HTTP-status-aware classification (429/500/503/400), config-driven
+# MAX_EMBED_RETRY_COUNT, and MANUAL_REVIEW on permanent failure.
+# ----------------------------------------------------------------------
+
+class _HTTPStatusError(Exception):
+    def __init__(self, status_code, headers=None):
+        super().__init__(f"HTTP {status_code}")
+        self.response = SimpleNamespace(status_code=status_code, headers=headers or {})
+
+
+def test_circuit_open_reschedules_without_calling_embedding_service():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        future = datetime.now(timezone.utc) + timedelta(seconds=42)
+        h.cb_repo.transition_to_half_open_if_due.return_value = SimpleNamespace(
+            state=CBState.OPEN, retry_after=future,
+        )
+
+        with pytest.raises(Exception):  # Celery's Retry exception propagates when called directly
+            generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.embedding_service_instance.generate_embeddings.assert_not_called()
+        h.cb_repo.increment_failure.assert_not_called()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.RETRY
+        # The circuit-breaker-open reschedule must never count against
+        # MAX_EMBED_RETRY_COUNT's own counter.
+        assert task_log.retry_count == 0
+
+
+def test_dedup_hit_never_checks_circuit_breaker():
+    """A content-hash dedup hit never calls the model, so an OPEN circuit must not block it."""
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        h.resume_repo.get_embedding_by_hash.return_value = SimpleNamespace(
+            embedding=[0.5] * 384, is_anonymized=True, is_talent_pool_eligible=True,
+        )
+        h.cb_repo.transition_to_half_open_if_due.return_value = SimpleNamespace(state=CBState.OPEN, retry_after=None)
+
+        generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.cb_repo.transition_to_half_open_if_due.assert_not_called()
+        h.embedding_service_instance.generate_embeddings.assert_not_called()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.SUCCESS
+
+
+def test_successful_embedding_call_resets_circuit_breaker():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+
+        generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.cb_repo.reset.assert_called_once_with("EMBEDDING_SERVICE")
+
+
+def test_rate_limited_failure_retries_using_retry_after_header():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(
+            429, headers={"Retry-After": "17"},
+        )
+
+        with patch(f"{TASKS_MODULE}.generate_resume_embedding_task.retry") as retry_mock:
+            retry_mock.side_effect = Retry("retry called")
+            with pytest.raises(Retry):
+                generate_resume_embedding_task(resume_id=str(resume.id))
+
+            assert retry_mock.call_args.kwargs["countdown"] == 17.0
+
+        h.cb_repo.increment_failure.assert_called_once_with("EMBEDDING_SERVICE")
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.RETRY
+        assert task_log.retry_count == 1
+
+
+def test_server_error_failure_uses_config_driven_exponential_backoff():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(503)
+        h.config_repo.get_configs_by_keys.return_value = {
+            "MAX_EMBED_RETRY_COUNT": "4",
+            "EMBED_RETRY_BASE_DELAY_SECONDS": "30",
+            "EMBED_RETRY_MAX_DELAY_SECONDS": "240",
+        }
+
+        with patch(f"{TASKS_MODULE}.generate_resume_embedding_task.retry") as retry_mock:
+            retry_mock.side_effect = Retry("retry called")
+            with pytest.raises(Retry):
+                generate_resume_embedding_task(resume_id=str(resume.id))
+
+            assert retry_mock.call_args.kwargs["countdown"] == 30
+
+
+def test_permanent_400_failure_dead_letters_immediately_and_sets_manual_review():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        cc = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
+        h.campaign_candidate_repo.get_by_resume_id.return_value = [cc]
+        h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(400)
+
+        generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.dead_letter_queue_repo.create.assert_called_once()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.DEAD
+        assert cc.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+
+
+def test_retries_exhausted_dead_letters_and_sets_manual_review_for_all_candidates():
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        cc_a = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
+        cc_b = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
+        h.campaign_candidate_repo.get_by_resume_id.return_value = [cc_a, cc_b]
+        h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(503)
+        h.config_repo.get_configs_by_keys.return_value = {"MAX_EMBED_RETRY_COUNT": "4"}
+        h.task_log_repo.get_by_task_id.return_value = SimpleNamespace(
+            status=TaskStatus.RUNNING, retry_count=4, queued_at=None, id=uuid4(), started_at=None,
+        )
+
+        generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.dead_letter_queue_repo.create.assert_called_once()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.DEAD
+        assert cc_a.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert cc_b.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+
+
+def test_upstream_db_error_never_touches_circuit_breaker():
+    """
+    A ConnectionError from get_active_embedding_model_version() happens
+    before the embedding-service call is ever reached - unrelated to
+    EMBEDDING_SERVICE's own health, so it must never increment the
+    circuit breaker (it goes through the legacy generic-classifier path
+    instead, unchanged from before this feature existed).
+    """
+    from app.tasks.embedding_tasks import generate_resume_embedding_task
+
+    with _Harness() as h:
+        resume = _make_resume(parsed_json=_PARSED_JSON)
+        h.resume_repo.get_by_id.return_value = resume
+        h.resume_repo.get_active_embedding_model_version.side_effect = ConnectionError("db unreachable")
+
+        with pytest.raises(ConnectionError):
+            generate_resume_embedding_task(resume_id=str(resume.id))
+
+        h.cb_repo.increment_failure.assert_not_called()
+        task_log = h.task_log_repo.update.call_args.args[0]
+        assert task_log.status == TaskStatus.RETRY

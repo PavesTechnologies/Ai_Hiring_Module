@@ -3,11 +3,12 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
+from app.models.jd.job_descriptions import JDEmbedding
 from app.models.pipeline import CampaignCandidate, PipelineStage
 from app.models.skills import CandidateSkill
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
@@ -16,6 +17,10 @@ _SORT_COLUMNS = {
     "created_at": Resume.created_at,
     "parse_status": Resume.parse_status,
 }
+
+# Embedding Storage Dashboard - the ivfflat index created by
+# alembic/versions/b3e7a1c9d5f2_resume_embeddings_ivfflat_index.py.
+RESUME_EMBEDDINGS_IVFFLAT_INDEX = "idx_resume_embeddings_embedding"
 
 
 class ResumeRepository:
@@ -302,6 +307,17 @@ class ResumeRepository:
         stmt = select(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id)
         return self.db.execute(stmt).scalars().first()
 
+    def get_embeddings_by_candidate(self, candidate_id: UUID) -> list[ResumeEmbedding]:
+        """
+        Daily talent-pool-eligibility reconciliation - every
+        resume_embeddings row for one candidate (a candidate can have more
+        than one resume version), read-only, so the reconciliation task
+        can compare each row's current is_talent_pool_eligible against
+        what it should be before deciding whether an UPDATE is even needed.
+        """
+        stmt = select(ResumeEmbedding).where(ResumeEmbedding.candidate_id == candidate_id)
+        return list(self.db.execute(stmt).scalars().all())
+
     def get_cosine_similarity(self, resume_embedding_id: UUID, target_vector: list[float]) -> float | None:
         """
         M08-E02: cosine similarity between one resume_embeddings row and any
@@ -315,6 +331,124 @@ class ResumeRepository:
         stmt = select(distance).where(ResumeEmbedding.id == resume_embedding_id)
         result = self.db.execute(stmt).scalar_one_or_none()
         return None if result is None else 1.0 - result
+
+    def compute_semantic_similarity(self, resume_id: UUID, jd_id: UUID) -> float | None:
+        """
+        Story 538: the entire formula - 1 - (re.embedding <=> je.embedding) -
+        runs as one statement in Postgres via pgvector's <=> operator,
+        filtered directly by resume_id/jd_id; the raw vectors never travel
+        into application memory (unlike get_cosine_similarity, which
+        requires the caller to have already fetched one embedding's full
+        vector). Not an ivfflat nearest-neighbour scan - a pairwise
+        comparison of two already-known vectors has no use for an ANN
+        index, which only helps "find the closest among many."
+        embedding_model_version_id is required to match as part of the same
+        query - a mismatch (or either row not existing) returns None rather
+        than a meaningless cross-version distance. resume_embeddings'
+        (resume_id, embedding_model_version_id) uniqueness constraint means
+        this equality-filtered join can return at most one row even when a
+        resume has embeddings under more than one model version.
+        """
+        similarity = ResumeEmbedding.embedding.cosine_distance(JDEmbedding.embedding)
+        stmt = (
+            select(1 - similarity)
+            .select_from(ResumeEmbedding, JDEmbedding)
+            .where(
+                ResumeEmbedding.resume_id == resume_id,
+                JDEmbedding.jd_id == jd_id,
+                ResumeEmbedding.embedding_model_version_id == JDEmbedding.embedding_model_version_id,
+            )
+        )
+        result = self.db.execute(stmt).scalar_one_or_none()
+        return None if result is None else float(result)
+
+    def count_embeddings(self) -> int:
+        """Embedding Storage Dashboard - total resume_embeddings row count."""
+        return self.db.query(func.count(ResumeEmbedding.id)).scalar() or 0
+
+    def get_ivfflat_index_health(self) -> dict:
+        """
+        Embedding Storage Dashboard - reads Postgres's own
+        pg_stat_user_indexes for RESUME_EMBEDDINGS_IVFFLAT_INDEX (no
+        ORM-level equivalent exists for index introspection, so this is
+        deliberately raw SQL, same convention as other admin/introspection
+        queries in this codebase). "exists": False means the index is
+        missing entirely (e.g. a downgrade ran, or a fresh DB the
+        migration never reached) - a real production concern distinct
+        from "exists but a REINDEX would help."
+        """
+        row = self.db.execute(
+            text(
+                """
+                SELECT
+                    s.indexrelname AS index_name,
+                    pg_relation_size(s.indexrelid) AS size_bytes,
+                    s.idx_scan AS scan_count
+                FROM pg_stat_user_indexes s
+                WHERE s.relname = 'resume_embeddings' AND s.indexrelname = :index_name
+                """
+            ),
+            {"index_name": RESUME_EMBEDDINGS_IVFFLAT_INDEX},
+        ).first()
+
+        if row is None:
+            return {"exists": False, "index_name": RESUME_EMBEDDINGS_IVFFLAT_INDEX, "size_bytes": None, "scan_count": None}
+        return {
+            "exists": True,
+            "index_name": row.index_name,
+            "size_bytes": row.size_bytes,
+            "scan_count": row.scan_count,
+        }
+
+    def get_distinct_candidate_ids_with_embeddings(self) -> list[UUID]:
+        """
+        Daily talent-pool-eligibility reconciliation - every candidate_id
+        that has at least one resume_embeddings row, so the reconciliation
+        task only ever evaluates candidates that actually have an embedding
+        to correct (never every candidate in the system).
+        """
+        stmt = select(ResumeEmbedding.candidate_id).distinct()
+        return list(self.db.execute(stmt).scalars().all())
+
+    def set_talent_pool_eligibility_for_candidate(self, candidate_id: UUID, eligible: bool) -> int:
+        """
+        Bulk-updates is_talent_pool_eligible on every resume_embeddings row
+        for one candidate (a candidate can have more than one resume
+        version, each with its own embedding row) - used by both the daily
+        reconciliation task (either direction) and anywhere else that only
+        needs to flip eligibility without touching the vector itself
+        (unlike zero_out_embeddings_for_candidate, which is erasure-specific
+        and also destroys the vector). Returns the number of rows updated.
+        """
+        result = self.db.execute(
+            update(ResumeEmbedding)
+            .where(ResumeEmbedding.candidate_id == candidate_id)
+            .values(is_talent_pool_eligible=eligible)
+        )
+        self.db.flush()
+        return result.rowcount
+
+    def zero_out_embeddings_for_candidate(self, candidate_id: UUID) -> int:
+        """
+        Candidate erasure (requested phase - see CandidateErasureService.
+        request_erasure): overwrites the embedding vector itself with a
+        384-dimension zero vector and marks every row
+        is_talent_pool_eligible=False, for every resume_embeddings row
+        belonging to this candidate - the rows are NEVER deleted (retained
+        for referential integrity, per the erasure-request requirement,
+        unlike the full erase_candidate() hard-delete flow's
+        delete_embeddings_by_candidate). jd_embeddings is never touched
+        here - JDs are never candidate PII. Returns the number of rows
+        updated.
+        """
+        zero_vector = [0.0] * 384
+        result = self.db.execute(
+            update(ResumeEmbedding)
+            .where(ResumeEmbedding.candidate_id == candidate_id)
+            .values(embedding=zero_vector, is_talent_pool_eligible=False)
+        )
+        self.db.flush()
+        return result.rowcount
 
     def get_embedding_by_hash(
         self, input_text_hash: str, embedding_model_version_id: UUID,

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
-    Integer, Numeric, String, UniqueConstraint, func, text,
+    Index, Integer, Numeric, String, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -45,6 +45,14 @@ class HiringCampaign(Base):
     prompt_template_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=False, index=True
     )
+    # AI Evaluation screening stage (app/tasks/ai_evaluation_tasks.py) reads
+    # this to load the campaign's ACTIVE AI_EVALUATE prompt template.
+    # Nullable, no backfill: selecting a value on Campaign create/update is
+    # a later phase - this column only gives the task layer somewhere to
+    # read from.
+    ai_evaluate_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=True, index=True
+    )
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
     recruiter_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -60,3 +68,37 @@ class HiringCampaign(Base):
         foreign_keys=[jd_id],
         lazy="joined",   # sets the default; repository can still override per-query with joinedload/selectinload
     )
+
+
+class CampaignWeightConfigurationHistory(Base):
+    """
+    M10-E02: one immutable row per Campaign Weight Configuration change -
+    an append-only audit trail distinct from hiring_campaigns.weight_* itself
+    (which only ever holds the latest values). Rows are never updated or
+    deleted; every weight change (via update_scoring_configuration or
+    update_campaign) inserts exactly one row capturing the before/after
+    weights, who changed them, and the composite-score formula version in
+    effect at the time. A no-op update (identical weights resubmitted)
+    never reaches this table at all - CampaignService only calls its
+    repository's create() when the weight fields actually changed.
+    """
+    __tablename__ = "campaign_weight_configuration_history"
+    __table_args__ = (
+        Index("ix_campaign_weight_config_history_campaign_id", "campaign_id"),
+        Index("ix_campaign_weight_config_history_changed_at", "changed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=False)
+    old_weight_deterministic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    old_weight_semantic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    old_weight_ai: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    new_weight_deterministic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    new_weight_semantic: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    new_weight_ai: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    changed_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Reuses app.enums.constants.COMPOSITE_SCORE_FORMULA_VERSION - never a
+    # second/independent version constant (M10-E01 already established
+    # this exact rule for candidate_composite_score_history).
+    formula_version: Mapped[str] = mapped_column(String(20), nullable=False)

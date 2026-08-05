@@ -44,3 +44,29 @@ class GeminiExtractionService:
             raise ValueError(
                 f"Gemini returned invalid JSON: {e}"
             )
+
+    def generate_structured(self, prompt: str, response_schema: type) -> dict:
+        """
+        Calls Gemini with an already fully-composed prompt and returns the
+        parsed JSON payload, unvalidated. extract_raw's "Job Description:"
+        framing is JD/Resume-extraction specific (one prompt + one
+        normalized_text blob); callers that assemble their own complete
+        prompt from more than one document (e.g. AI Evaluation, which needs
+        both a JD JSON and a resume JSON) use this instead, so extract_raw
+        and its existing callers stay untouched.
+        """
+        response = self.client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            }
+        )
+
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Gemini returned invalid JSON: {e}"
+            )

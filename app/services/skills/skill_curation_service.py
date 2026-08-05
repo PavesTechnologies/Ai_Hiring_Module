@@ -15,7 +15,11 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.unknown_skill.skill_resolution_request import UnknownSkillResolutionType
 from app.services.audit_service import AuditService
-from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
+from app.services.embedding_queue_service import (
+    EmbeddingQueueError,
+    EmbeddingQueueService,
+    JDEmbeddingQueueError,
+)
 from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
 from app.services.skills.skill_normalization_service import (
     SkillMatchTier,
@@ -120,7 +124,7 @@ class SkillCurationService:
         unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
         target_skill = self._get_skill_or_404(target_skill_id)
 
-        self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
+        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
         self.skill_repository.update_unknown_skill_status(
             unknown_skill, UnknownSkillStatus.MAPPED_TO_EXISTING
         )
@@ -142,6 +146,7 @@ class SkillCurationService:
             },
         )
         self.skill_repository.commit()
+        self._trigger_jd_reembedding(touched_jd_ids)
         return unknown_skill
 
     def promote_to_canonical(
@@ -170,7 +175,7 @@ class SkillCurationService:
             category=category,
         )
 
-        self._create_retroactive_jd_skills(unknown_skill, new_skill.id)
+        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, new_skill.id)
         self.skill_repository.update_unknown_skill_status(
             unknown_skill, UnknownSkillStatus.PROMOTED_TO_CANONICAL
         )
@@ -186,6 +191,7 @@ class SkillCurationService:
         )
         self.skill_repository.commit()
         self._enqueue_skill_embedding(new_skill.id)
+        self._trigger_jd_reembedding(touched_jd_ids)
         return new_skill
 
     def create_canonical_skill_from_unknown(
@@ -211,6 +217,7 @@ class SkillCurationService:
         then hard-deleted rather than left around with a terminal status.
         """
         affected_resume_ids: set[UUID] = set()
+        affected_jd_ids: set[UUID] = set()
         result = self._create_canonical_skill_from_unknown_core(
             unknown_skill_id,
             actor_id,
@@ -222,10 +229,12 @@ class SkillCurationService:
             source=source,
             is_active=is_active,
             affected_resume_ids=affected_resume_ids,
+            affected_jd_ids=affected_jd_ids,
         )
         self.skill_repository.commit()
         self._enqueue_skill_embedding(result["skill"].id)
         self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
+        self._trigger_jd_reembedding(affected_jd_ids)
         return result
 
     def bulk_approve_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
@@ -242,9 +251,12 @@ class SkillCurationService:
         results = []
         for unknown_skill_id in unknown_skill_ids:
             affected_resume_ids: set[UUID] = set()
+            affected_jd_ids: set[UUID] = set()
             try:
                 result = self._create_canonical_skill_from_unknown_core(
-                    unknown_skill_id, actor_id, affected_resume_ids=affected_resume_ids,
+                    unknown_skill_id, actor_id,
+                    affected_resume_ids=affected_resume_ids,
+                    affected_jd_ids=affected_jd_ids,
                 )
                 self.skill_repository.commit()
             except (NotFoundError, BadRequestError) as exc:
@@ -258,6 +270,7 @@ class SkillCurationService:
 
             self._enqueue_skill_embedding(result["skill"].id)
             self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
+            self._trigger_jd_reembedding(affected_jd_ids)
             results.append({
                 "unknown_skill_id": unknown_skill_id,
                 "success": True,
@@ -281,6 +294,7 @@ class SkillCurationService:
         source: str = "manual entry",
         is_active: bool = True,
         affected_resume_ids: set[UUID] | None = None,
+        affected_jd_ids: set[UUID] | None = None,
     ) -> dict:
         """
         Uncommitted core shared by the single create-canonical endpoint and
@@ -326,7 +340,7 @@ class SkillCurationService:
         )
 
         migration = self._finalize_unknown_skill_resolution(
-            unknown_skill, new_skill.id, affected_resume_ids,
+            unknown_skill, new_skill.id, affected_resume_ids, affected_jd_ids,
         )
 
         self.audit_service.log(
@@ -385,7 +399,7 @@ class SkillCurationService:
 
         jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
         jd_ids = {link.jd_id for link in jd_links}
-        self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
+        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
         for link in jd_links:
             self.skill_repository.delete_jd_unknown_skill(link)
 
@@ -424,6 +438,7 @@ class SkillCurationService:
         )
         self.skill_repository.commit()
         self._trigger_reevaluation(unknown_skill.id, affected_resume_ids)
+        self._trigger_jd_reembedding(touched_jd_ids)
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
         """
@@ -538,9 +553,18 @@ class SkillCurationService:
             },
         )
         self.skill_repository.commit()
+        self._trigger_jd_reembedding({jd_skill.jd_id})
         return jd_skill
 
-    def _create_retroactive_jd_skills(self, unknown_skill: UnknownSkill, canonical_skill_id: UUID) -> None:
+    def _create_retroactive_jd_skills(self, unknown_skill: UnknownSkill, canonical_skill_id: UUID) -> set[UUID]:
+        """
+        Returns every jd_id that actually got a NEW JDSkill row created
+        here - never one that already had an independently-matched row for
+        this canonical skill (the idempotency guard below skips those, and
+        their jd_skills genuinely didn't change) - so callers can trigger
+        JD re-embedding only for JDs whose skill set truly changed.
+        """
+        touched_jd_ids: set[UUID] = set()
         for link in self.skill_repository.get_pending_jd_links(unknown_skill.id):
             # Idempotency guard: a JD could in principle already have an
             # independently-matched JDSkill row for this same canonical
@@ -562,13 +586,16 @@ class SkillCurationService:
                     weight=_DEFAULT_JD_SKILL_WEIGHT,
                 )
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
+                touched_jd_ids.add(link.jd_id)
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
+        return touched_jd_ids
 
     def _finalize_unknown_skill_resolution(
         self,
         unknown_skill: UnknownSkill,
         canonical_skill_id: UUID | None,
         affected_resume_ids: set[UUID] | None = None,
+        affected_jd_ids: set[UUID] | None = None,
     ) -> dict:
         """
         Common tail shared by every "resolve this UnknownSkill for good"
@@ -579,13 +606,16 @@ class SkillCurationService:
         whatever JDUnknownSkill/CandidateSkill links remain) and recomputes
         is_verified for every JD that was touched.
 
-        affected_resume_ids, when given, is mutated in place with every
-        resume_id whose candidate_skills changed here - deliberately not
-        threaded through the return dict, since that dict is spread
-        verbatim into audit_service.log(details=...) by every caller and a
-        raw set of UUIDs isn't JSON-safe. Callers that need the async
-        candidate re-evaluation trigger pass their own set and read it back
-        directly after this returns.
+        affected_resume_ids/affected_jd_ids, when given, are mutated in
+        place - resume_ids whose candidate_skills changed, jd_ids that
+        actually got a new JDSkill row (see _create_retroactive_jd_skills)
+        - deliberately not threaded through the return dict, since that
+        dict is spread verbatim into audit_service.log(details=...) by
+        every caller and a raw set of UUIDs isn't JSON-safe. Callers that
+        need the async candidate re-evaluation / JD re-embedding triggers
+        pass their own sets and read them back directly after this returns.
+        Pure delete (canonical_skill_id=None) never creates jd_skills, so
+        affected_jd_ids is never populated on that path.
         """
         jd_skills_migrated = 0
         candidate_skills_migrated = 0
@@ -593,7 +623,9 @@ class SkillCurationService:
         if canonical_skill_id is not None:
             jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
             jd_ids = {link.jd_id for link in jd_links}
-            self._create_retroactive_jd_skills(unknown_skill, canonical_skill_id)
+            touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, canonical_skill_id)
+            if affected_jd_ids is not None:
+                affected_jd_ids.update(touched_jd_ids)
             jd_skills_migrated = len(jd_links)
             for link in jd_links:
                 self.skill_repository.delete_jd_unknown_skill(link)
@@ -662,6 +694,29 @@ class SkillCurationService:
             self.embedding_queue_service.queue_skill_embedding(skill_id)
         except EmbeddingQueueError:
             logger.exception("Failed to enqueue embedding generation for skill '%s'.", skill_id)
+
+    def _trigger_jd_reembedding(self, jd_ids: set[UUID]) -> None:
+        """
+        Requirement (M08): whenever jd_skills are inserted/updated for a
+        JD via this service (retroactive unknown-skill resolution, or an
+        HR remap), that JD's embedding is stale and must be regenerated.
+        force_regenerate=True so EMBED_JD always rebuilds from this JD's
+        current skills and overwrites its existing jd_embeddings row in
+        place (see JDRepository.replace_jd_embedding), rather than the
+        cheap no-op the plain "JD activated" trigger uses.
+
+        Fire-and-forget, same reasoning as _enqueue_skill_embedding: the
+        jd_skills mutation has already committed by the time this runs, so
+        a broker outage here must never undo it or fail the request -
+        only logged. generate_jd_embedding itself checks whether the JD is
+        still is_active_version before doing anything, so an inactive JD
+        (superseded/closed) is safely skipped there, not here.
+        """
+        for jd_id in jd_ids:
+            try:
+                self.embedding_queue_service.queue_jd_embedding(jd_id, force_regenerate=True)
+            except JDEmbeddingQueueError:
+                logger.exception("Failed to enqueue JD re-embedding for jd_id='%s'.", jd_id)
 
     def _append_alias_validated(self, skill: SkillOntology, alias: str, actor_id: str) -> None:
         # Acquire before validating: aliases have no DB uniqueness

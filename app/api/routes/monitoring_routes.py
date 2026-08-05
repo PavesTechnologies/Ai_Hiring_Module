@@ -3,15 +3,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
 
-from app.dependencies.monitoring import get_ops_monitoring_service
+from app.dependencies.monitoring import get_embedding_dashboard_service, get_ops_monitoring_service
 from app.enums.constants import UserRole
 from app.middleware.rbac import TokenUser, require_roles
+from app.schemas.embedding_dashboard import EmbeddingDashboardResponse
 from app.schemas.monitoring import (
     ProcessingMetricsResponse,
     QueueStatusResponse,
     UploadQueueDashboardResponse,
 )
+from app.schemas.embedding_dashboard import EmbeddingDashboardResponse
 from app.schemas.response import APIResponse
+from app.services.embedding_dashboard_service import EmbeddingDashboardService
 from app.services.ops_monitoring_service import OpsMonitoringService
 
 router = APIRouter(
@@ -81,3 +84,27 @@ def get_upload_queue_dashboard(
         data=service.get_upload_queue_dashboard(),
         message="Upload queue dashboard retrieved successfully.",
     )
+
+
+@router.get(
+    "/embedding-dashboard",
+    response_model=APIResponse[EmbeddingDashboardResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_embedding_dashboard(
+    service: EmbeddingDashboardService = Depends(get_embedding_dashboard_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Embedding Storage Dashboard: resume/JD embedding counts, estimated
+    storage, active embedding model, and ivfflat index health. Note: this
+    read also has one idempotent side effect - once resume_embeddings
+    exceeds EMBEDDING_REINDEX_THRESHOLD, it queues REINDEX_IVFFLAT (a
+    no-op if one is already queued/running).
+    """
+    return APIResponse.ok(
+        data=service.get_dashboard(),
+        message="Embedding dashboard retrieved successfully.",
+    )
+
+

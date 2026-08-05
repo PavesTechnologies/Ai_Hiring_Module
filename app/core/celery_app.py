@@ -38,6 +38,15 @@ celery_app.conf.imports = (
     "app.tasks.skill_ontology_tasks",
     "app.tasks.deterministic_scoring_tasks",
     "app.tasks.semantic_scoring_tasks",
+<<<<<<< HEAD
+    "app.tasks.ai_evaluation_tasks",
+=======
+    "app.tasks.composite_scoring_tasks",
+    "app.tasks.jd_embedding_tasks",
+    "app.tasks.embedding_health_tasks",
+    "app.tasks.reindex_tasks",
+    "app.tasks.talent_pool_tasks",
+>>>>>>> 7d7bf73cf98944e3e93c6b48fc54330dcb8a5225
 )
 
 
@@ -95,5 +104,34 @@ celery_app.conf.beat_schedule = {
         # Epic 3 (M05-E03) Phase C4 — daily, off-peak, its own distinct hour
         # from the other three scheduled jobs.
         "schedule": crontab(minute=0, hour=4),
+    },
+    "recover-pending-semantic-scores": {
+        "task": "scoring.recover_pending_semantic_scores",
+        # M08-E02 resilient-retry requirement 4 (automatic recovery) — no
+        # specific interval given in the spec, so a frequent-but-cheap
+        # every-15-minutes scan (the query itself is a single indexed join,
+        # not a full-table scan) catches a resume's embedding becoming
+        # available soon after it does, without needing a config key.
+        "schedule": crontab(minute="*/15"),
+    },
+    "monitor-embedding-health": {
+        "task": "embedding.monitor_health",
+        # Requirement 5: runs every 30 minutes exactly, per spec.
+        "schedule": crontab(minute="*/30"),
+    },
+    "validate-talent-pool-eligibility": {
+        "task": "embedding.validate_talent_pool_eligibility",
+        # Talent Pool Eligibility requirement: "daily" per spec, off-peak,
+        # its own distinct hour from the other daily jobs above.
+        "schedule": crontab(minute=0, hour=5),
+    },
+    "recover-stalled-resume-uploads": {
+        "task": "resume.recover_stalled_uploads",
+        # Resume-upload resilience: periodic safety net alongside the
+        # FastAPI startup scan, in case the broker was still unreachable
+        # when a given app instance started - frequent since a stuck
+        # upload leaves a candidate's resume unprocessed for as long as
+        # this interval.
+        "schedule": crontab(minute="*/5"),
     },
 }
