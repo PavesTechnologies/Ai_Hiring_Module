@@ -16,7 +16,20 @@
       "Bash(./venv/Scripts/python.exe -m alembic upgrade b1f4c9a2e7d3:c2e6a1f8d4b7 --sql)",
       "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_weight_configuration_history.py -q)",
       "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_weight_configuration_history.py::test_update_scoring_configuration_records_history_and_audit_and_recalculates_on_weight_change tests/services/campaign/test_campaign_weight_configuration_history.py::test_update_scoring_configuration_uses_locking_read -q)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(./venv/Scripts/python.exe -m py_compile app/services/campaign/campaign_candidate_service.py app/schemas/campaign/campaign_candidate_schema.py app/repositories/campaign_candidate_repository.py)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/ -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/repositories/test_campaign_candidate_explainability_repository.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_explainability_service.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/api/test_campaign_candidate_explainability_routes.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/test_main_startup.py -q)",
+      "Bash(./venv/Scripts/python.exe -c \"import app.main; print\\('APP OK'\\)\")",
+      "Bash(./venv/Scripts/python.exe -m alembic upgrade f1a3c7e9b2d4:a7c3e9f1d5b8 --sql)",
+      "Bash(./venv/Scripts/python.exe -m py_compile app/utils/excel_export.py)",
+      "Bash(./venv/Scripts/python.exe -m py_compile app/services/campaign/campaign_candidate_service.py)",
+      "Bash(./venv/Scripts/python.exe -m py_compile app/api/routes/campaign_candidate.py)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_ranking_export_service.py -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest tests/api/test_campaign_candidate_ranking_export_routes.py -q)"
     ]
   }
 }

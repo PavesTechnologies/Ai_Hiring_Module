@@ -94,6 +94,31 @@ class CampaignCandidateRepository:
         self.db.refresh(history)
         return history
 
+    def get_stage_history_by_campaign_candidate_id(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> list[CampaignCandidateStageHistory]:
+        """
+        M10-E03 Phase 2: the complete pipeline-stage transition history for
+        ONE candidate, oldest first - backs the Candidate Timeline API.
+        Distinct from CampaignRepository.get_stage_history(campaign_id),
+        which returns every candidate's stage history for an entire
+        campaign (used by the campaign-wide activity timeline) - that
+        method is reused as-is and is not touched here; this is simply the
+        single-candidate-scoped counterpart the campaign-wide one never
+        needed. Ordered ascending (oldest first), matching this service's
+        existing "Timeline" convention (_build_processing_timeline's own
+        "oldest first" ordering for the Processing Timeline), as opposed to
+        the "most recent first" convention used by *_history-named reads
+        elsewhere (get_overridden, CandidateCompositeScoreHistoryRepository).
+        """
+        stmt = (
+            select(CampaignCandidateStageHistory)
+            .where(CampaignCandidateStageHistory.campaign_candidate_id == campaign_candidate_id)
+            .order_by(CampaignCandidateStageHistory.changed_at.asc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
     def update_pipeline_stage(
         self,
         campaign_candidate: CampaignCandidate,

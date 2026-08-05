@@ -849,6 +849,60 @@ class ExcelExport:
             ].width = min(max_length + 3, 50)
 
     @staticmethod
+    def export_candidate_ranking(rows):
+        """
+        M10-E03 Phase 3: rows is an iterable of dicts (see
+        CampaignCandidateService._to_ranking_export_row) - one row per
+        candidate in a campaign's COMPLETE filtered/sorted ranked list
+        (pagination is ignored by the caller - every matching candidate,
+        never just one page). Never includes candidate name/email/phone/
+        resume or any other PII - only the opaque candidate_uuid plus
+        ranking/score fields already computed and persisted by the scoring
+        pipeline (Epic 1/Phase 1), never recalculated here. Reuses
+        _write_sheet (same shared header/freeze-panes/auto-filter/auto-fit
+        writer export_deterministic_rejection_summary already uses) rather
+        than hand-rolling the same boilerplate a third time.
+        """
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Candidate Ranking"
+
+        ExcelExport._write_sheet(
+            ws,
+            [
+                "Rank",
+                "Candidate UUID",
+                "Composite Score",
+                "Deterministic Score",
+                "Semantic Score",
+                "AI Evaluation Score",
+                "Pipeline Stage",
+                "AI Recommendation",
+                "Ranking Status",
+                "Composite Score Computed At",
+            ],
+            rows,
+            [
+                "rank",
+                "candidate_uuid",
+                "composite_score",
+                "deterministic_score",
+                "semantic_score",
+                "ai_evaluation_score",
+                "pipeline_stage",
+                "ai_recommendation",
+                "ranking_status",
+                "composite_score_computed_at",
+            ],
+        )
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output
+
+    @staticmethod
     def export_deterministic_rejection_summary(campaign_summary_rows, skill_gap_rows, override_log_rows):
         """
         M07-E03 S05 T03: platform-wide deterministic rejection summary -
