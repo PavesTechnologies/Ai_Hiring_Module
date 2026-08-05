@@ -94,6 +94,31 @@ class CampaignCandidateRepository:
         self.db.refresh(history)
         return history
 
+    def get_stage_history_by_campaign_candidate_id(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> list[CampaignCandidateStageHistory]:
+        """
+        M10-E03 Phase 2: the complete pipeline-stage transition history for
+        ONE candidate, oldest first - backs the Candidate Timeline API.
+        Distinct from CampaignRepository.get_stage_history(campaign_id),
+        which returns every candidate's stage history for an entire
+        campaign (used by the campaign-wide activity timeline) - that
+        method is reused as-is and is not touched here; this is simply the
+        single-candidate-scoped counterpart the campaign-wide one never
+        needed. Ordered ascending (oldest first), matching this service's
+        existing "Timeline" convention (_build_processing_timeline's own
+        "oldest first" ordering for the Processing Timeline), as opposed to
+        the "most recent first" convention used by *_history-named reads
+        elsewhere (get_overridden, CandidateCompositeScoreHistoryRepository).
+        """
+        stmt = (
+            select(CampaignCandidateStageHistory)
+            .where(CampaignCandidateStageHistory.campaign_candidate_id == campaign_candidate_id)
+            .order_by(CampaignCandidateStageHistory.changed_at.asc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
     def update_pipeline_stage(
         self,
         campaign_candidate: CampaignCandidate,
@@ -164,6 +189,26 @@ class CampaignCandidateRepository:
             .filter(CampaignCandidate.resume_id == resume_id)
             .all()
         )
+
+    def get_by_resume_ids(
+        self,
+        resume_ids: list[UUID],
+        campaign_id: UUID | None = None,
+    ) -> list[CampaignCandidate]:
+        """
+        Batched counterpart to get_by_resume_id - one query for a whole
+        list page's worth of resumes instead of one query per row (mirrors
+        CandidateRepository.get_by_ids' convention). A resume reused across
+        campaigns (via "use existing" duplicate resolution) can have more
+        than one row here per resume_id; pass campaign_id to disambiguate
+        to the single row for that specific campaign.
+        """
+        if not resume_ids:
+            return []
+        stmt = select(CampaignCandidate).where(CampaignCandidate.resume_id.in_(resume_ids))
+        if campaign_id is not None:
+            stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
+        return list(self.db.execute(stmt).scalars().all())
 
     def get_by_campaign_and_candidate(
         self,
