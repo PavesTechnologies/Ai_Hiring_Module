@@ -118,6 +118,7 @@ class ResumeListItem(BaseModel):
     resume_id: UUID
     task_id: str | None
     candidate_id: UUID
+    campaign_candidate_id: UUID | None
     candidate_full_name: str
     candidate_email: str
     file_format: str
