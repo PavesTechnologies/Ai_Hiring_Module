@@ -38,6 +38,7 @@ celery_app.conf.imports = (
     "app.tasks.skill_ontology_tasks",
     "app.tasks.deterministic_scoring_tasks",
     "app.tasks.semantic_scoring_tasks",
+    "app.tasks.ai_evaluation_tasks",
 )
 
 

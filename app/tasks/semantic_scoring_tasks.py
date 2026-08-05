@@ -256,6 +256,25 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 
+        # M09: only after the transaction above has committed - a candidate
+        # that just passed semantic screening is auto-enqueued for AI
+        # evaluation, the terminal screening stage. Mirrors exactly how
+        # calculate_deterministic_score_task enqueues semantic scoring
+        # after its own pass (same local-import-inside-the-if-branch shape,
+        # kept consistent even though ai_evaluation_tasks.py doesn't import
+        # back from this module). A failure here must never crash or mask
+        # the already-successful semantic outcome, same reasoning as that
+        # enqueue call.
+        if breakdown["semantic_passed"]:
+            try:
+                from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
+                _enqueue_ai_evaluation(campaign_candidate, task_log_service)
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue AI evaluation after semantic pass for campaign_candidate_id=%s",
+                    campaign_candidate.id,
+                )
+
     except Exception as ex:
         db.rollback()
         classification = classify(ex)

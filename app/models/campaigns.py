@@ -45,6 +45,14 @@ class HiringCampaign(Base):
     prompt_template_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=False, index=True
     )
+    # AI Evaluation screening stage (app/tasks/ai_evaluation_tasks.py) reads
+    # this to load the campaign's ACTIVE AI_EVALUATE prompt template.
+    # Nullable, no backfill: selecting a value on Campaign create/update is
+    # a later phase - this column only gives the task layer somewhere to
+    # read from.
+    ai_evaluate_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=True, index=True
+    )
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
     recruiter_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
