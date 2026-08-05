@@ -165,8 +165,13 @@ class ResumeIntakeService:
         if not was_created:
             # Lost a race against another request for this exact resume_id -
             # reuse the winner's row/task_id rather than returning a task_id
-            # with no matching celery_task_log row.
+            # with no matching celery_task_log row. resume.task_id was
+            # already persisted above using the LOSING task_id (before this
+            # check could run) - it must be corrected to the winner's
+            # task_id too, or resumes.task_id and celery_task_log.task_id
+            # would permanently disagree for this resume.
             task_id = UUID(task_log.task_id)
+            self.resume_service.record_task_id(resume, str(task_id))
             logger.info(
                 "Task already created for resume_id=%s (race) - reusing task_id=%s", resume.id, task_id,
             )
