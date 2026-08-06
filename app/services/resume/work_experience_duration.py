@@ -26,10 +26,10 @@ def _format_duration(months: int) -> str:
     return " ".join(parts)
 
 
-def compute_entry_duration(entry: dict) -> dict | None:
+def _compute_entry_months(entry: dict) -> int | None:
     """
-    Best-effort tenure for one work_experience entry, from its free-form
-    start_date/end_date strings — resumes write these however the
+    Best-effort tenure (in months) for one work_experience entry, from its
+    free-form start_date/end_date strings — resumes write these however the
     candidate/parser phrased them ("Jan 2021", "2021-01", "Present"), so
     parsing is fuzzy/best-effort and returns None rather than raising when a
     date can't be read.
@@ -50,25 +50,36 @@ def compute_entry_duration(entry: dict) -> dict | None:
     total_months = delta.years * 12 + delta.months
     if total_months < 0:
         return None
-
-    return {
-        "duration_years": round(total_months / 12, 1),
-        "duration_text": _format_duration(total_months),
-    }
+    return total_months
 
 
 def annotate_work_experience_durations(parsed_json: dict | None) -> dict | None:
     """
     Returns a copy of parsed_json with a computed duration attached to each
-    work_experience entry — response-time-only annotation, never persisted,
-    doesn't touch the stored parsed_json or the extraction schema/pipeline.
+    work_experience entry, and total_experience_years recomputed from those
+    same entries (professional employment only — internships and volunteer
+    entries excluded) rather than trusting the AI-extracted figure verbatim,
+    which is often just whatever the resume's own text claimed and can drift
+    from what the listed start/end dates actually add up to. Response-time-
+    only — never persisted, doesn't touch the stored parsed_json or the
+    extraction schema/pipeline.
     """
     if not parsed_json or not parsed_json.get("work_experience"):
         return parsed_json
 
     annotated = dict(parsed_json)
+    entry_months = [_compute_entry_months(entry) for entry in parsed_json["work_experience"]]
     annotated["work_experience"] = [
-        {**entry, **(compute_entry_duration(entry) or {"duration_years": None, "duration_text": None})}
-        for entry in parsed_json["work_experience"]
+        {**entry, "duration_text": _format_duration(months) if months is not None else None}
+        for entry, months in zip(parsed_json["work_experience"], entry_months)
     ]
+
+    countable_months = [
+        months
+        for entry, months in zip(parsed_json["work_experience"], entry_months)
+        if months is not None and not entry.get("is_internship") and not entry.get("is_volunteer")
+    ]
+    if countable_months:
+        annotated["total_experience_years"] = round(sum(countable_months) / 12, 1)
+
     return annotated
