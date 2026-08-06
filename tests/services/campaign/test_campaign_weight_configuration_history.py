@@ -25,7 +25,7 @@ def _make_campaign(
         weight_deterministic=weight_deterministic, weight_semantic=weight_semantic, weight_ai=weight_ai,
         semantic_threshold=semantic_threshold, ai_threshold=ai_threshold,
         deterministic_threshold=deterministic_threshold,
-        max_candidates=None, deadline=None, prompt_template_id=uuid4(),
+        max_candidates=None, deadline=None, prompt_template_id=uuid4(), ai_evaluate_prompt_id=None,
         hiring_manager_id="hm-1", recruiter_id="rec-1", created_by="hr-1",
         created_at=datetime.now(timezone.utc), updated_at=None,
     )

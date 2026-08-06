@@ -17,6 +17,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateResponse,
     CampaignCandidateSummaryResponse,
     CampaignRejectionAnalyticsResponse,
+    CandidateAIEvaluationResponse,
     CandidateCompositeScoreHistoryResponse,
     CandidateDeterministicResponse,
     CandidateRankingDetailsResponse,
@@ -510,12 +511,39 @@ def get_candidate_semantic(
     )
 
 
+@router.get(
+    "/{campaign_candidate_id}/ai-evaluation",
+    response_model=APIResponse[CandidateAIEvaluationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate AI Evaluation Result (AI Evaluation tab)",
+    description=(
+        "AI-Evaluation-tab-only view: effective_ai_score, ai_confidence, ai_recommendation, "
+        "ai_strengths, ai_weaknesses, ai_evaluation_status, and the complete validated AI "
+        "response JSON exactly as returned by the LLM. Excludes summary, resume, "
+        "deterministic, semantic, and final status data."
+    ),
+)
+def get_candidate_ai_evaluation(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    ai_evaluation = service.get_candidate_ai_evaluation(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=ai_evaluation,
+        message="Candidate AI evaluation result retrieved successfully.",
+    )
+
+
 # Future tabs (not implemented yet, per this story's explicit scope):
-# GET /{campaign_candidate_id}/resume, GET /{campaign_candidate_id}/ai-evaluation,
-# GET /{campaign_candidate_id}/final-status.
-# Each would follow the exact same pattern as summary/deterministic/semantic
-# above: its own small response schema + its own get_candidate_<tab>()
-# service method, reusing existing mapper helpers rather than recomputing.
+# GET /{campaign_candidate_id}/resume, GET /{campaign_candidate_id}/final-status.
+# Each would follow the exact same pattern as summary/deterministic/semantic/
+# ai-evaluation above: its own small response schema + its own
+# get_candidate_<tab>() service method, reusing existing mapper helpers
+# rather than recomputing.
 
 
 @router.get(

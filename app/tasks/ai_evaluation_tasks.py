@@ -5,22 +5,29 @@ from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
+from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import PipelineStage
+from app.models.pipeline import CandidateRejection, PipelineStage, RejectionLayer
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.allowed_transition_repository import AllowedTransitionRepository
+from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.services.audit_service import AuditService
 from app.services.campaign.ai_evaluation_service import AIEvaluationService
+from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.prompt_template_validation import validate_prompt_template_selection
+from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +104,19 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
     _enqueue_ai_evaluation), after a candidate has passed semantic
     screening. Mirrors calculate_semantic_score_task's overall shape
     (idempotency, campaign-status gate, RetryPolicy + error_classifier +
-    DeadLetterQueue retry/dead-letter handling) exactly.
+    DeadLetterQueue retry/dead-letter handling, task-owns-the-transaction
+    persistence pattern) exactly.
 
-    Persists nothing (no campaign_candidate.ai_* columns, no
-    CandidateRejection, no stage transition, no audit log) and enqueues
-    nothing further - both belong to a future phase. The validated AI
-    response is recorded only in this task's own celery_task_log
-    output_summary, the same bookkeeping every other screening task
-    already writes to that column.
+    Phase 2.4: persists campaign_candidate.ai_* columns (via
+    AIEvaluationService.calculate_and_store_evaluation), creates a
+    CandidateRejection(rejection_layer=AI) and transitions pipeline_stage
+    via StageTransitionService on a REJECT recommendation, and writes an
+    AI_EVALUATION_COMPUTED audit log entry - same division of
+    responsibility as calculate_deterministic_score_task/
+    calculate_semantic_score_task: the service mutates+flushes, this task
+    owns the rejection/stage-transition/audit decisions and the single
+    commit. Enqueues nothing further - this is still the terminal
+    screening stage.
     """
     db = SessionLocal()
     task_log = None
@@ -116,8 +128,12 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         resume_repo = ResumeRepository(db)
         jd_repo = JDRepository(db)
         prompt_template_repo = PromptTemplateRepository(db)
+        candidate_rejection_repo = CandidateRejectionRepository(db)
+        allowed_transition_repo = AllowedTransitionRepository(db)
+        audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
+        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 
@@ -215,14 +231,62 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             exception_factory=ValueError,
         )
 
-        evaluation_service = AIEvaluationService(GeminiExtractionService())
-        ai_response = evaluation_service.evaluate_candidate(
+        evaluation_service = AIEvaluationService(GeminiExtractionService(), campaign_candidate_repo)
+        ai_response = evaluation_service.calculate_and_store_evaluation(
+            campaign_candidate_id=campaign_candidate.id,
             resume_json=resume.parsed_json,
             jd_json=job_description.extracted_json,
             prompt_template_text=prompt.template_text,
         )
 
-        task_log_service.mark_success(task_log, summary=json.dumps(ai_response))
+        recommendation = ai_response["recommendation"]
+        stage_transition_succeeded = False
+        if recommendation == "REJECT":
+            rejection_reason = AIEvaluationService.build_rejection_reason(ai_response)
+            candidate_rejection_repo.create(CandidateRejection(
+                campaign_candidate_id=campaign_candidate.id,
+                rejection_layer=RejectionLayer.AI,
+                rejection_reason=rejection_reason,
+                rejection_detail=ai_response,
+            ))
+
+            stage_transition_succeeded = stage_transition_service.transition_to_rejected(
+                campaign_candidate,
+                change_reason="AI evaluation rejection",
+                scores_snapshot=ai_response,
+            )
+
+        summary_payload = {
+            "campaign_candidate_id": str(campaign_candidate.id),
+            "campaign_id": str(campaign.id),
+            "resume_id": str(campaign_candidate.resume_id),
+            "recommendation": recommendation,
+            "overall_score": ai_response["scores"]["overall_score"],
+            "confidence_score": ai_response["confidence_score"],
+            "ai_response": ai_response,
+        }
+
+        audit_service.log(
+            actor_id=None,
+            actor_role="SYSTEM",
+            action_type=ActionType.AI_EVALUATION_COMPUTED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=campaign_candidate.id,
+            campaign_id=campaign.id,
+            details=summary_payload,
+        )
+
+        campaign_candidate_repo.commit()
+
+        task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
+
+        logger.info(
+            "AI evaluation completed | campaign_candidate_id=%s recommendation=%s",
+            campaign_candidate.id, recommendation,
+        )
+
+        if recommendation == "REJECT" and stage_transition_succeeded:
+            _queue_rejection_email(db, campaign_candidate)
 
     except Exception as ex:
         db.rollback()
