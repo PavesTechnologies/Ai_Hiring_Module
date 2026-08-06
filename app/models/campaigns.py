@@ -47,9 +47,10 @@ class HiringCampaign(Base):
     )
     # AI Evaluation screening stage (app/tasks/ai_evaluation_tasks.py) reads
     # this to load the campaign's ACTIVE AI_EVALUATE prompt template.
-    # Nullable, no backfill: selecting a value on Campaign create/update is
-    # a later phase - this column only gives the task layer somewhere to
-    # read from.
+    # Selected via CampaignCreateRequest/CampaignUpdateRequest.ai_evaluate_prompt_id
+    # (CampaignService.create_campaign/update_campaign), same validate-then-
+    # assign pattern as prompt_template_id. Still nullable/no backfill so
+    # pre-existing rows created before this was wired up are unaffected.
     ai_evaluate_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=True, index=True
     )

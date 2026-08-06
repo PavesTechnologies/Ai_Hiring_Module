@@ -47,6 +47,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
     CampaignRejectionAnalyticsResponse,
+    CandidateAIEvaluationResponse,
     CandidateDeterministicResponse,
     CandidateCampaignHistoryEntryResponse,
     CandidateCampaignHistoryResponse,
@@ -1179,6 +1180,37 @@ class CampaignCandidateService:
                 if campaign_candidate.semantic_score is not None else None
             ),
             semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+        )
+
+    def get_candidate_ai_evaluation(self, campaign_candidate_id: UUID) -> CandidateAIEvaluationResponse:
+        """
+        AI-Evaluation-tab-only view: a pure read of the campaign_candidates.
+        ai_* columns written by AIEvaluationService.calculate_and_store_
+        evaluation (Phase 2.4), mirroring get_candidate_deterministic/
+        get_candidate_semantic exactly. Never recalculates anything, never
+        calls Gemini - that lives entirely in calculate_ai_evaluation_task.
+        Never includes summary/resume/deterministic/semantic/final-status
+        data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        return CandidateAIEvaluationResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            ai_evaluation_status=campaign_candidate.ai_evaluation_status,
+            effective_ai_score=(
+                float(campaign_candidate.effective_ai_score)
+                if campaign_candidate.effective_ai_score is not None else None
+            ),
+            ai_confidence=(
+                float(campaign_candidate.ai_confidence)
+                if campaign_candidate.ai_confidence is not None else None
+            ),
+            ai_recommendation=campaign_candidate.ai_recommendation,
+            ai_strengths=campaign_candidate.ai_strengths,
+            ai_weaknesses=campaign_candidate.ai_weaknesses,
+            ai_response_json=campaign_candidate.ai_response_json,
         )
 
     @staticmethod

@@ -31,6 +31,8 @@ class CampaignCreateRequest(BaseModel):
 
     prompt_template_id: UUID = Field(..., description="Must reference an ACTIVE RESUME_PARSE prompt template.")
 
+    ai_evaluate_prompt_id: UUID = Field(..., description="Must reference an ACTIVE AI_EVALUATE prompt template.")
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str):
@@ -115,6 +117,10 @@ class CampaignUpdateRequest(BaseModel):
 
     prompt_template_id: Optional[UUID] = Field(
         default=None, description="Must reference an ACTIVE RESUME_PARSE prompt template."
+    )
+
+    ai_evaluate_prompt_id: Optional[UUID] = Field(
+        default=None, description="Must reference an ACTIVE AI_EVALUATE prompt template."
     )
 
     # M10-E02: matches CampaignScoringUpdateRequest's own Field(ge=0, le=100)

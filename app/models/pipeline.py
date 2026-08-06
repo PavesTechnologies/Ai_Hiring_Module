@@ -114,6 +114,7 @@ class CampaignCandidate(Base):
     ai_recommendation: Mapped[Optional[AIRecommendation]] = mapped_column(SAEnum(AIRecommendation, name="ai_recommendation_enum"), nullable=True)
     ai_strengths: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ai_weaknesses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_response_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ai_evaluation_status: Mapped[AIEvaluationStatus] = mapped_column(SAEnum(AIEvaluationStatus, name="ai_evaluation_status_enum"), nullable=False, default=AIEvaluationStatus.PENDING)
     ai_retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
