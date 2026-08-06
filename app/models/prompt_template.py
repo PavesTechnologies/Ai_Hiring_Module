@@ -17,9 +17,11 @@ class PromptTemplateStatus(enum.Enum):
 
 class PromptTemplate(Base):
     """
-    One prompt template per task_type (AI_EVALUATE, JD_PARSE, RESUME_PARSE).
-    content_hash/updated_at are maintained by PromptTemplateService, not by
-    the model itself - see _compute_hash()/onupdate below.
+    Prompt templates for a task_type (AI_EVALUATE, JD_PARSE, RESUME_PARSE) -
+    multiple templates per task_type are allowed (e.g. several ACTIVE
+    JD_PARSE variants to choose from). content_hash/updated_at are
+    maintained by PromptTemplateService, not by the model itself - see
+    _compute_hash()/onupdate below.
     """
 
     __tablename__ = "prompt_templates"
@@ -29,7 +31,7 @@ class PromptTemplate(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    task_type: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     template_text: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)

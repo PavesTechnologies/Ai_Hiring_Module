@@ -46,6 +46,20 @@ def get_resume_parse_prompt_lookup(
     return APIResponse.ok(data=prompts, message="Resume parsing prompt templates retrieved successfully.")
 
 
+@router.get(
+    "/lookups/ai-evaluate",
+    response_model=APIResponse[list[PromptLookupResponse]],
+    status_code=status.HTTP_200_OK,
+)
+def get_ai_evaluate_prompt_lookup(
+    service: PromptTemplateService = Depends(get_prompt_template_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """ACTIVE AI_EVALUATE prompt templates (id + name only), sorted by name - for the Hiring Campaign ai_evaluate_prompt_id picker."""
+    prompts = service.get_ai_evaluate_lookup()
+    return APIResponse.ok(data=prompts, message="AI evaluation prompt templates retrieved successfully.")
+
+
 @router.post(
     "",
     response_model=APIResponse[PromptResponse],
