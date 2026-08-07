@@ -5,6 +5,9 @@ from uuid import UUID
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import NotFoundError
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_composite_score_history_repository import (
+    CandidateCompositeScoreHistoryRepository,
+)
 from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
@@ -52,6 +55,7 @@ class CandidateErasureService:
         dead_letter_queue_repo: DeadLetterQueueRepository,
         storage_service,
         audit_service: AuditService,
+        composite_score_history_repo: CandidateCompositeScoreHistoryRepository,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -63,6 +67,7 @@ class CandidateErasureService:
         self.dead_letter_queue_repo = dead_letter_queue_repo
         self.storage_service = storage_service
         self.audit_service = audit_service
+        self.composite_score_history_repo = composite_score_history_repo
 
     def erase_candidate(
         self,
@@ -86,6 +91,7 @@ class CandidateErasureService:
             for campaign_candidate in campaign_candidates:
                 self.candidate_rejection_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 self.campaign_candidate_repo.delete_stage_history(campaign_candidate.id)
+                self.composite_score_history_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 # DLQ before celery_task_log — dead_letter_queue.original_task_id
                 # is a NOT NULL FK to celery_task_log.task_id.
                 self.dead_letter_queue_repo.delete_by_campaign_candidate_id(campaign_candidate.id)

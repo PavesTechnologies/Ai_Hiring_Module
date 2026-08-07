@@ -25,6 +25,15 @@ class EmailTriggerEvent(enum.Enum):
     # active HR_ADMIN) are internal staff, not a candidate - deliberately
     # left unresolved here, per explicit decision, until D11.
     UPLOAD_PERMANENTLY_FAILED = "UPLOAD_PERMANENTLY_FAILED"
+    # M12 (Workflow & Interview Scheduling) - vocabulary only, matching the
+    # UPLOAD_PERMANENTLY_FAILED precedent above: added here alongside the
+    # Postgres-native enum migration (e686c750b7b4) so the two never drift.
+    # Not yet sendable by any code path - no interview_schedules table or
+    # send-email integration exists yet for these.
+    INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
+    INTERVIEW_RESCHEDULED = "INTERVIEW_RESCHEDULED"
+    INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED"
+    CANDIDATE_SELECTED = "CANDIDATE_SELECTED"
 
 
 class EmailNotificationStatus(enum.Enum):
