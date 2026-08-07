@@ -17,12 +17,16 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateResponse,
     CampaignCandidateSummaryResponse,
     CampaignRejectionAnalyticsResponse,
+    CandidateAIEvaluationResponse,
+    CandidateCompositeScoreHistoryResponse,
     CandidateDeterministicResponse,
+    CandidateRankingDetailsResponse,
     CandidateRejectionHistoryEntryResponse,
     CandidateScorecardResponse,
     CandidateSemanticResponse,
     CandidateSortField,
     CandidateSummaryResponse,
+    CandidateTimelineResponse,
     HrOverrideRequest,
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
@@ -128,6 +132,61 @@ def get_campaign_candidates(
     return APIResponse.ok(
         data=result,
         message="Campaign candidates retrieved successfully.",
+    )
+
+
+@router.get(
+    "/campaign/{campaign_id}/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export Campaign Ranked Candidate List",
+    description=(
+        "M10-E03 Phase 3 - exports the campaign's COMPLETE filtered/sorted ranked candidate "
+        "list to XLSX (pagination is ignored - every matching candidate, not one page). "
+        "HR_ADMIN only. Never includes candidate name/email/phone/resume or any other PII."
+    ),
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def export_ranked_campaign_candidates(
+    campaign_id: UUID,
+    sort_by: CandidateSortField | None = Query(
+        default=None,
+        description="Defaults to the composite ranking order (composite_score DESC NULLS LAST, "
+        "deterministic_score DESC, created_at ASC, id ASC) when omitted.",
+    ),
+    sort_order: SortOrder = Query(default="desc"),
+    pipeline_stage: PipelineStage | None = Query(default=None),
+    composite_score_min: float | None = Query(default=None, ge=0, le=100),
+    composite_score_max: float | None = Query(default=None, ge=0, le=100),
+    ai_recommendation: AIRecommendation | None = Query(default=None),
+    ai_evaluation: AIEvaluationStatus | None = Query(
+        default=None, description="Filters by the candidate's ai_evaluation_status.",
+    ),
+    include_pending: bool = Query(default=True, description="If false, excludes candidates with no composite_score yet."),
+    include_rejected: bool = Query(default=True, description="If false, excludes REJECTED-stage candidates."),
+    include_fraud: bool = Query(default=True, description="If false, excludes fraud-flagged candidates."),
+    hr_override: bool | None = Query(
+        default=None, description="If set, filters to only overridden (true) or only non-overridden (false) candidates.",
+    ),
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Depends(get_current_user),
+) -> StreamingResponse:
+    return service.export_ranked_campaign_candidates(
+        campaign_id,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        pipeline_stage=pipeline_stage,
+        composite_score_min=composite_score_min,
+        composite_score_max=composite_score_max,
+        ai_recommendation=ai_recommendation,
+        ai_evaluation_status=ai_evaluation,
+        include_pending=include_pending,
+        include_rejected=include_rejected,
+        include_fraud=include_fraud,
+        hr_override=hr_override,
     )
 
 
@@ -452,12 +511,39 @@ def get_candidate_semantic(
     )
 
 
+@router.get(
+    "/{campaign_candidate_id}/ai-evaluation",
+    response_model=APIResponse[CandidateAIEvaluationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate AI Evaluation Result (AI Evaluation tab)",
+    description=(
+        "AI-Evaluation-tab-only view: effective_ai_score, ai_confidence, ai_recommendation, "
+        "ai_strengths, ai_weaknesses, ai_evaluation_status, and the complete validated AI "
+        "response JSON exactly as returned by the LLM. Excludes summary, resume, "
+        "deterministic, semantic, and final status data."
+    ),
+)
+def get_candidate_ai_evaluation(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    ai_evaluation = service.get_candidate_ai_evaluation(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=ai_evaluation,
+        message="Candidate AI evaluation result retrieved successfully.",
+    )
+
+
 # Future tabs (not implemented yet, per this story's explicit scope):
-# GET /{campaign_candidate_id}/resume, GET /{campaign_candidate_id}/ai-evaluation,
-# GET /{campaign_candidate_id}/final-status.
-# Each would follow the exact same pattern as summary/deterministic/semantic
-# above: its own small response schema + its own get_candidate_<tab>()
-# service method, reusing existing mapper helpers rather than recomputing.
+# GET /{campaign_candidate_id}/resume, GET /{campaign_candidate_id}/final-status.
+# Each would follow the exact same pattern as summary/deterministic/semantic/
+# ai-evaluation above: its own small response schema + its own
+# get_candidate_<tab>() service method, reusing existing mapper helpers
+# rather than recomputing.
 
 
 @router.get(
@@ -478,6 +564,83 @@ def get_campaign_candidate_scorecard(
     return APIResponse.ok(
         data=scorecard,
         message="Candidate scorecard retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/timeline",
+    response_model=APIResponse[CandidateTimelineResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Stage Timeline",
+    description=(
+        "M10-E03 Phase 2 - the complete pipeline-stage transition history for one candidate "
+        "(current stage plus every transition, oldest first). Read-only - never audited."
+    ),
+)
+def get_candidate_timeline(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    timeline = service.get_candidate_timeline(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=timeline,
+        message="Candidate timeline retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/composite-history",
+    response_model=APIResponse[CandidateCompositeScoreHistoryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Composite Score History",
+    description=(
+        "M10-E03 Phase 2 - the complete, immutable composite-score calculation history for one "
+        "candidate (Epic 1's candidate_composite_score_history), most recent first, returned "
+        "exactly as stored. Read-only - never recalculates, never audited."
+    ),
+)
+def get_candidate_composite_history(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    history = service.get_candidate_composite_history(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=history,
+        message="Candidate composite score history retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/ranking-details",
+    response_model=APIResponse[CandidateRankingDetailsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Ranking Details",
+    description=(
+        "M10-E03 Phase 2 - explains why this candidate currently has its ranking: current scores, "
+        "current campaign weights, formula version, ranking status, and HR override state. "
+        "Read-only - never recalculates anything."
+    ),
+)
+def get_candidate_ranking_details(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    details = service.get_candidate_ranking_details(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=details,
+        message="Candidate ranking details retrieved successfully.",
     )
 
 

@@ -10,6 +10,8 @@ from app.middleware.rbac import TokenUser
 from app.models.async_tasks import TaskStatus
 from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
 from app.tasks.resume_processing_tasks import process_resume_document
+from app.tasks.embedding_tasks import generate_resume_embedding_task, EMBED_RESUME_TASK_TYPE
+from app.repositories.resume_repository import ResumeRepository
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -107,6 +109,7 @@ class CampaignService:
         dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
         prompt_template_repo: PromptTemplateRepository | None = None,
         campaign_weight_configuration_history_repo: CampaignWeightConfigurationHistoryRepository | None = None,
+        resume_repo: ResumeRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
@@ -119,6 +122,10 @@ class CampaignService:
         # working unchanged.
         self.circuit_breaker_repo = circuit_breaker_repo or CircuitBreakerRepository(db)
         self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(db)
+        # EMBED_RESUME DLQ-replay pre-checks (resume exists / has parsed_json
+        # / doesn't already have an embedding) - same defaulted-from-db
+        # convention as the repos above.
+        self.resume_repo = resume_repo or ResumeRepository(db)
         # M10-E02 — same defaulted-from-db convention as the two repos above,
         # so the existing get_campaign_service DI wiring needs no change.
         self.campaign_weight_configuration_history_repo = (
@@ -299,18 +306,61 @@ class CampaignService:
         ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
         return self.campaign_repo.get_hiring_manager_names(ids)
 
+    def _close_if_all_positions_filled(self,
+        campaign_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> bool:
+        """
+        max_candidates is an openings count consumed at SELECTED, so the
+        campaign auto-closes once every position is filled. Mirrors
+        PipelineTransitionService._close_if_all_positions_filled — both stage
+        writers must enforce this or the override path bypasses the cap.
+        Does not commit; the caller does.
+        """
+        campaign = self.campaign_repo.get_by_id_for_update(campaign_id)
+        if campaign is None or not campaign.max_candidates:
+            return False
+        if campaign.status == CampaignStatus.CLOSED:
+            return False
+        if self.campaign_repo.get_selected_count(campaign.id) < campaign.max_candidates:
+            return False
+
+        campaign.status = CampaignStatus.CLOSED
+        campaign.updated_at = datetime.now(timezone.utc)
+        self.campaign_repo.update(campaign)
+
+        self.audit_service.log(actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign.id,
+            campaign_id=campaign.id,
+            details={
+                "title": f"Campaign '{campaign.name}' auto-closed",
+                "reason": "ALL_POSITIONS_FILLED",
+                "max_candidates": campaign.max_candidates,
+                "selected_count": campaign.max_candidates,
+            },
+        )
+        return True
+
     def _is_approaching_cap(self,
-        candidate_count: int,
+        selected_count: int,
         max_candidates: int | None,
         warning_percentage: float = 80.0,
     ) -> bool:
         """
-        Returns True if campaign has reached warning_percentage of its candidate cap.
+        True once warning_percentage of the campaign's openings are filled.
+
+        max_candidates is an openings count, so this must be passed the number
+        of SELECTED candidates - not total intake. Passing the candidate count
+        would flag every campaign that simply received a lot of resumes.
         """
         if not max_candidates:
             return False
 
-        return candidate_count >= (max_candidates * (warning_percentage / 100))
+        return selected_count >= (max_candidates * (warning_percentage / 100))
 
 
     def _is_deadline_soon(self,
@@ -372,6 +422,13 @@ class CampaignService:
                 exception_factory=lambda msg: CampaignException(msg, 422),
             )
 
+            selected_ai_evaluate_prompt = validate_prompt_template_selection(
+                request.ai_evaluate_prompt_id,
+                expected_task_type="AI_EVALUATE",
+                repository=self.prompt_template_repo,
+                exception_factory=lambda msg: CampaignException(msg, 422),
+            )
+
             campaign = HiringCampaign(org_id=org_id,
                 jd_id=request.jd_id,
                 name=request.name.strip(),
@@ -385,6 +442,7 @@ class CampaignService:
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 prompt_template_id=selected_prompt.id,
+                ai_evaluate_prompt_id=selected_ai_evaluate_prompt.id,
                 hiring_manager_id=request.hiring_manager_id,
                 recruiter_id=request.recruiter_id,
                 created_by=created_by,
@@ -406,6 +464,8 @@ class CampaignService:
                     "jd_id": str(campaign.jd_id),
                     "previous_prompt_template_id": None,
                     "new_prompt_template_id": str(campaign.prompt_template_id),
+                    "previous_ai_evaluate_prompt_id": None,
+                    "new_ai_evaluate_prompt_id": str(campaign.ai_evaluate_prompt_id),
                 },
             )
 
@@ -432,9 +492,11 @@ class CampaignService:
                 created_at=campaign.created_at,
                 prompt_template_id=campaign.prompt_template_id,
                 prompt_name=selected_prompt.name,
+                ai_evaluate_prompt_id=campaign.ai_evaluate_prompt_id,
+                ai_evaluate_prompt_name=selected_ai_evaluate_prompt.name,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-                approaching_cap=self._is_approaching_cap(candidate_count,
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id),
                     campaign.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -487,7 +549,7 @@ class CampaignService:
             candidate_count=candidate_count,
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
             approaching_cap=self._is_approaching_cap(
-                candidate_count,
+                self.campaign_repo.get_selected_count(campaign.id),
                 campaign.max_candidates,
                 cap_warning_percentage,
             ),
@@ -649,7 +711,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -696,7 +758,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -730,7 +792,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -774,7 +836,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -1193,6 +1255,7 @@ class CampaignService:
             ),
             pipeline_limits=PipelineLimitsSection(max_candidates=campaign.max_candidates,
                 current_candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                selected_count=self.campaign_repo.get_selected_count(campaign.id),
                 deadline=campaign.deadline,
             ),
             hiring_manager=(None if is_hiring_manager_only else (HiringManagerSection(full_name=manager.full_name,
@@ -1400,7 +1463,34 @@ class CampaignService:
             {"resume_id": str(e.resume_id)},
             e.resume_id is not None,
         ),
+        EMBED_RESUME_TASK_TYPE: lambda e: (generate_resume_embedding_task,
+            {"resume_id": str(e.resume_id)},
+            e.resume_id is not None,
+        ),
     }
+
+    def _embed_resume_replay_skip_reason(self, entry) -> str | None:
+        """
+        EMBED_RESUME-specific pre-checks before replaying a DEAD entry -
+        none of the other registered task types need this (they re-validate
+        entirely inside their own task on execution), but re-running the
+        embedding model is comparatively expensive, so it's worth confirming
+        there's still something to do before dispatching:
+        - the resume must still exist
+        - it must still have parsed_json (generate_resume_embedding_task
+          raises ValueError and dead-letters again immediately otherwise)
+        - it must not already have an embedding (e.g. resolved through a
+          different path since this entry was dead-lettered)
+        Returns None when the replay should proceed.
+        """
+        resume = self.resume_repo.get_by_id(entry.resume_id)
+        if resume is None:
+            return "Resume no longer exists."
+        if not resume.parsed_json or not isinstance(resume.parsed_json, dict):
+            return "Resume has no parsed_json - nothing available to embed."
+        if self.resume_repo.get_embedding(entry.resume_id) is not None:
+            return "Resume embedding already exists - nothing to replay."
+        return None
 
     def replay_dead_letter_tasks(self,
         campaign_id: UUID,
@@ -1443,6 +1533,11 @@ class CampaignService:
                     reason="Entry has no entity reference to rebuild the task from.",
                 ))
                 continue
+            if entry.task_type == EMBED_RESUME_TASK_TYPE:
+                skip_reason = self._embed_resume_replay_skip_reason(entry)
+                if skip_reason is not None:
+                    results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED", reason=skip_reason))
+                    continue
             if self.campaign_repo.count_dlq_chain(entry) >= max_replays:
                 results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED",
                     reason=f"Replay limit reached ({max_replays}).",
@@ -1624,6 +1719,11 @@ class CampaignService:
                 "reason": request.reason,
             },
         )
+        # This is the second stage-writing path (PipelineTransitionService is
+        # the other), and _STAGE_OVERRIDE_NEXT maps INTERVIEW -> SELECTED, so
+        # the openings cap has to be honoured here too or overrides bypass it.
+        if target == PipelineStage.SELECTED:
+            self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
         return StalledActionResponse(campaign_candidate_id=cc.id,
             action="STAGE_OVERRIDDEN",
@@ -2042,10 +2142,11 @@ class CampaignService:
                     changes["max_candidates"] = {"before": campaign.max_candidates, "after": None}
                     campaign.max_candidates = None
             elif request.max_candidates is not None and request.max_candidates != campaign.max_candidates:
-                current_count = self.campaign_repo.get_candidate_count(campaign.id)
-                if request.max_candidates < current_count:
-                    raise CampaignException(f"Cannot set candidate cap to {request.max_candidates}: the campaign "
-                        f"already has {current_count} candidates.",
+                # openings can't be cut below the number already filled
+                selected_count = self.campaign_repo.get_selected_count(campaign.id)
+                if request.max_candidates < selected_count:
+                    raise CampaignException(f"Cannot set openings to {request.max_candidates}: the campaign "
+                        f"has already selected {selected_count} candidate(s).",
                         422,
                     )
                 changes["max_candidates"] = {
@@ -2091,6 +2192,26 @@ class CampaignService:
                 }
                 campaign.prompt_template_id = new_prompt.id
                 updated_prompt = new_prompt
+
+            # ── AI Evaluation Prompt Template reassignment ───────────────
+            # Same optional-reassignment shape as prompt_template_id above -
+            # ai_evaluate_prompt_id is nullable on HiringCampaign, so a PATCH
+            # that omits it (or resends the current value) is a no-op here.
+            updated_ai_evaluate_prompt = None
+            if (request.ai_evaluate_prompt_id is not None
+                    and request.ai_evaluate_prompt_id != campaign.ai_evaluate_prompt_id):
+                new_ai_evaluate_prompt = validate_prompt_template_selection(
+                    request.ai_evaluate_prompt_id,
+                    expected_task_type="AI_EVALUATE",
+                    repository=self.prompt_template_repo,
+                    exception_factory=lambda msg: CampaignException(msg, 422),
+                )
+                changes["ai_evaluate_prompt_id"] = {
+                    "before": str(campaign.ai_evaluate_prompt_id) if campaign.ai_evaluate_prompt_id else None,
+                    "after": str(new_ai_evaluate_prompt.id),
+                }
+                campaign.ai_evaluate_prompt_id = new_ai_evaluate_prompt.id
+                updated_ai_evaluate_prompt = new_ai_evaluate_prompt
 
             # ── reassign hiring manager ─────────────────────
             previous_hiring_manager_id = None
@@ -2267,9 +2388,11 @@ class CampaignService:
                 created_at=campaign.created_at,
                 prompt_template_id=campaign.prompt_template_id,
                 prompt_name=updated_prompt.name if updated_prompt else None,
+                ai_evaluate_prompt_id=campaign.ai_evaluate_prompt_id,
+                ai_evaluate_prompt_name=updated_ai_evaluate_prompt.name if updated_ai_evaluate_prompt else None,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates, cap_warning_percentage),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id), campaign.max_candidates, cap_warning_percentage),
                 deadline_soon=self._is_deadline_soon(campaign.deadline, deadline_warning_days),
             )
 
@@ -2497,23 +2620,23 @@ class CampaignService:
 
     def _reopen_cap_warnings(self, campaign) -> list[JDReadinessIssue]:
         """
-        A campaign sitting at/over its candidate cap is worth flagging on
+        A campaign with every opening already filled is worth flagging on
         reopen, but must NOT block it: closed campaigns are read-only, so
-        raising the cap first is impossible and a blocking check would strand
-        the campaign closed forever. The cap still stops new candidates being
-        added on its own; reopening is for progressing the existing ones.
+        raising the opening count first is impossible and a blocking check
+        would strand the campaign closed forever. Reopening is for progressing
+        the candidates already in the pipeline.
         """
         if campaign.max_candidates is None:
             return []
 
-        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
-        if candidate_count < campaign.max_candidates:
+        selected_count = self.campaign_repo.get_selected_count(campaign.id)
+        if selected_count < campaign.max_candidates:
             return []
 
-        return [JDReadinessIssue(code="CANDIDATE_CAP_REACHED",
-            message=(f"This campaign already has {candidate_count} candidate(s), at or above "
-                f"its cap of {campaign.max_candidates}. It will reopen, but no new "
-                f"candidates can be added until the cap is raised or cleared "
+        return [JDReadinessIssue(code="ALL_POSITIONS_FILLED",
+            message=(f"All {campaign.max_candidates} opening(s) on this campaign are already "
+                f"filled ({selected_count} candidate(s) selected). It will reopen, but no "
+                f"further candidates can be selected until the opening count is raised "
                 f"(editable again once the campaign is ACTIVE)."
             ),
         )]

@@ -33,6 +33,9 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import (
     CampaignCandidateRepository,
 )
+from app.repositories.candidate_composite_score_history_repository import (
+    CandidateCompositeScoreHistoryRepository,
+)
 from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.config_repository import ConfigRepository
@@ -44,6 +47,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
     CampaignRejectionAnalyticsResponse,
+    CandidateAIEvaluationResponse,
     CandidateDeterministicResponse,
     CandidateCampaignHistoryEntryResponse,
     CandidateCampaignHistoryResponse,
@@ -69,7 +73,12 @@ from app.schemas.campaign.campaign_candidate_schema import (
     ScoreCalculationDetail,
     ScoreConfigurationDetail,
     CampaignCandidateSummaryResponse,
+    CandidateCompositeScoreHistoryEntryResponse,
+    CandidateCompositeScoreHistoryResponse,
+    CandidateRankingDetailsResponse,
     CandidateSemanticResponse,
+    CandidateTimelineEventResponse,
+    CandidateTimelineResponse,
     RankedCampaignCandidatesResponse,
     SemanticScoreBreakdownResponse,
     SemanticScoreSummary,
@@ -217,10 +226,22 @@ class CampaignCandidateService:
         pipeline_transition_service: PipelineTransitionService | None = None,
         file_validation_service: FileValidationService | None = None,
         storage_service: StorageService | None = None,
+        composite_score_history_repo: CandidateCompositeScoreHistoryRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        # M10-E03 Phase 2 — optional, additive, same convention as every
+        # other optional dep here: every pre-existing call site is
+        # unaffected. This service has no direct `db` handle of its own (it
+        # is pure repository composition), so the fallback derives its
+        # session from campaign_candidate_repo - the one repository every
+        # caller is already required to construct with the correct
+        # request-scoped session - rather than adding a new `db` parameter.
+        self.composite_score_history_repo = (
+            composite_score_history_repo
+            or CandidateCompositeScoreHistoryRepository(campaign_candidate_repo.db)
+        )
         # Epic 3 (M05-E03) Phase C5 — optional, additive, same convention as
         # the other optional deps above: every pre-existing call site
         # (including bulk_upload_tasks.py's own direct construction) never
@@ -344,19 +365,9 @@ class CampaignCandidateService:
             )
             )
 
-            # Defensive backstop: the cap should already have closed this
-            # campaign (see the post-insert check below) by the time it's
-            # actually at/over the limit, so this should rarely fire in
-            # practice — it exists in case max_candidates was lowered below
-            # the current count after the campaign was already reopened/edited.
-            if (
-                campaign.max_candidates
-                and current_count >= campaign.max_candidates
-            ):
-                raise CampaignException(
-                    "This campaign has reached its maximum candidate limit and is now closed.",
-                    409,
-                )
+            # No cap check on intake: max_candidates counts openings, which are
+            # consumed when a candidate reaches SELECTED (enforced in
+            # PipelineTransitionService), not when a resume is added.
 
             # -----------------------------
             # Create Candidate
@@ -400,32 +411,7 @@ class CampaignCandidateService:
             # read before this insert, so +1 accounts for the row just added.
             # --------------------------------------------------
             bulk_jobs_marked = 0
-            if campaign.max_candidates and (current_count + 1) >= campaign.max_candidates:
-                campaign.status = CampaignStatus.CLOSED
-                campaign.updated_at = datetime.now(timezone.utc)
-                self.campaign_repo.update(campaign)
-
-                bulk_jobs_marked = self.campaign_repo.mark_processing_bulk_jobs_partial_failure(
-                    campaign.id
-                )
-
-                self.audit_service.log(
-                    actor_id=actor_id,
-                    actor_role=actor_role,
-                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
-                    entity_type=EntityType.CAMPAIGN,
-                    entity_id=campaign.id,
-                    campaign_id=campaign.id,
-                    details={
-                        "title": f"Campaign '{campaign.name}' auto-closed",
-                        "reason": "CAP_REACHED",
-                        "max_candidates": campaign.max_candidates,
-                        "final_candidate_count": current_count + 1,
-                        "bulk_jobs_marked_partial_failure": bulk_jobs_marked,
-                    },
-                )
-
-            self.campaign_candidate_repo.commit()
+            
 
             self.audit_service.log(
             actor_id=actor_id,
@@ -788,6 +774,137 @@ class CampaignCandidateService:
             return "FAILED"
         return "PENDING"
 
+    def get_candidate_timeline(self, campaign_candidate_id: UUID) -> CandidateTimelineResponse:
+        """
+        M10-E03 Phase 2 Story 1: the complete Candidate Stage Timeline -
+        reuses the existing campaign_candidate_stage_history table as-is
+        (no new history table, no duplicated stage tracking). Read-only:
+        never writes a stage-history row, never writes an audit entry.
+        Every event is returned exactly as stored - from_stage/to_stage/
+        transition_source use the existing PipelineStage/TransitionSource
+        enums verbatim, never a new value set.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        history_rows = self.campaign_candidate_repo.get_stage_history_by_campaign_candidate_id(
+            campaign_candidate_id,
+        )
+
+        events = [
+            CandidateTimelineEventResponse(
+                from_stage=row.from_stage,
+                to_stage=row.to_stage,
+                transition_source=row.transition_source,
+                changed_by=row.changed_by,
+                changed_at=row.changed_at,
+                comments=row.change_reason,
+                metadata=row.scores_snapshot,
+            )
+            for row in history_rows
+        ]
+
+        return CandidateTimelineResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            current_stage=campaign_candidate.pipeline_stage,
+            events=events,
+        )
+
+    def get_candidate_composite_history(self, campaign_candidate_id: UUID) -> CandidateCompositeScoreHistoryResponse:
+        """
+        M10-E03 Phase 2 Story 2: the complete, immutable
+        candidate_composite_score_history trail (Epic 1) for one candidate,
+        most recent first - exactly as CompositeScoringService originally
+        persisted it. Never recalculates, never mutates - the repository
+        this delegates to (CandidateCompositeScoreHistoryRepository) has no
+        update()/delete() method at all, so there is no code path here that
+        could touch this data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        history_rows = self.composite_score_history_repo.get_by_campaign_candidate_id(campaign_candidate_id)
+
+        entries = [
+            CandidateCompositeScoreHistoryEntryResponse(
+                calculated_at=row.calculated_at,
+                trigger_source=row.trigger_source,
+                formula_version=row.formula_version,
+                weight_deterministic=float(row.weight_deterministic),
+                weight_semantic=float(row.weight_semantic),
+                weight_ai=float(row.weight_ai),
+                deterministic_score=float(row.deterministic_score) if row.deterministic_score is not None else None,
+                semantic_score=float(row.semantic_score) if row.semantic_score is not None else None,
+                normalized_semantic_score=(
+                    float(row.normalized_semantic_score) if row.normalized_semantic_score is not None else None
+                ),
+                effective_ai_score=float(row.effective_ai_score) if row.effective_ai_score is not None else None,
+                composite_score=float(row.composite_score),
+            )
+            for row in history_rows
+        ]
+
+        return CandidateCompositeScoreHistoryResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            entries=entries,
+        )
+
+    def get_candidate_ranking_details(self, campaign_candidate_id: UUID) -> CandidateRankingDetailsResponse:
+        """
+        M10-E03 Phase 2 Story 3: "why does this candidate currently have
+        this ranking" - a read-only aggregation of already-stored fields.
+        Never calls CompositeScoringService and never recomputes anything;
+        `weight_*` are the campaign's CURRENT weights (which may have
+        changed since composite_score was last calculated - the weights
+        actually in effect at calculation time are on the Composite History
+        API instead, not duplicated here). `formula_version` is read from
+        the candidate's most recent candidate_composite_score_history row
+        (reusing the same repository call Story 2 uses, not a second/
+        independent query) - None when composite_score has never been
+        calculated. ranking_status reuses _derive_ranking_status verbatim -
+        no second status concept.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        history_rows = self.composite_score_history_repo.get_by_campaign_candidate_id(campaign_candidate_id)
+        formula_version = history_rows[0].formula_version if history_rows else None
+
+        return CandidateRankingDetailsResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            composite_score=(
+                float(campaign_candidate.composite_score) if campaign_candidate.composite_score is not None else None
+            ),
+            deterministic_score=(
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            semantic_score=(
+                float(campaign_candidate.semantic_score) if campaign_candidate.semantic_score is not None else None
+            ),
+            ai_evaluation_score=(
+                float(campaign_candidate.effective_ai_score)
+                if campaign_candidate.effective_ai_score is not None else None
+            ),
+            weight_deterministic=float(campaign.weight_deterministic),
+            weight_semantic=float(campaign.weight_semantic),
+            weight_ai=float(campaign.weight_ai),
+            formula_version=formula_version,
+            ranking_status=self._derive_ranking_status(campaign_candidate),
+            composite_score_computed_at=getattr(campaign_candidate, "composite_score_computed_at", None),
+            hr_override=getattr(campaign_candidate, "hr_override", False),
+            hr_override_by=getattr(campaign_candidate, "hr_override_by", None),
+            hr_override_reason=getattr(campaign_candidate, "hr_override_reason", None),
+            hr_override_at=getattr(campaign_candidate, "hr_override_at", None),
+        )
+
     def _to_campaign_candidate_response(
         self,
         campaign_candidate: CampaignCandidate,
@@ -1028,6 +1145,37 @@ class CampaignCandidateService:
                 if campaign_candidate.semantic_score is not None else None
             ),
             semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+        )
+
+    def get_candidate_ai_evaluation(self, campaign_candidate_id: UUID) -> CandidateAIEvaluationResponse:
+        """
+        AI-Evaluation-tab-only view: a pure read of the campaign_candidates.
+        ai_* columns written by AIEvaluationService.calculate_and_store_
+        evaluation (Phase 2.4), mirroring get_candidate_deterministic/
+        get_candidate_semantic exactly. Never recalculates anything, never
+        calls Gemini - that lives entirely in calculate_ai_evaluation_task.
+        Never includes summary/resume/deterministic/semantic/final-status
+        data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        return CandidateAIEvaluationResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            ai_evaluation_status=campaign_candidate.ai_evaluation_status,
+            effective_ai_score=(
+                float(campaign_candidate.effective_ai_score)
+                if campaign_candidate.effective_ai_score is not None else None
+            ),
+            ai_confidence=(
+                float(campaign_candidate.ai_confidence)
+                if campaign_candidate.ai_confidence is not None else None
+            ),
+            ai_recommendation=campaign_candidate.ai_recommendation,
+            ai_strengths=campaign_candidate.ai_strengths,
+            ai_weaknesses=campaign_candidate.ai_weaknesses,
+            ai_response_json=campaign_candidate.ai_response_json,
         )
 
     @staticmethod
@@ -1416,6 +1564,147 @@ class CampaignCandidateService:
             )
             for index, rejection in enumerate(rejections)
         ]
+
+    # ------------------------------------------------------------------
+    # M10-E03 Phase 3: Export Campaign Ranked Candidate List (HR_ADMIN only - enforced at the route)
+    # ------------------------------------------------------------------
+
+    def export_ranked_campaign_candidates(
+        self,
+        campaign_id: UUID,
+        actor_id: str,
+        actor_role: str | None,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
+        pipeline_stage: PipelineStage | None = None,
+        composite_score_min: float | None = None,
+        composite_score_max: float | None = None,
+        ai_recommendation: AIRecommendation | None = None,
+        ai_evaluation_status: AIEvaluationStatus | None = None,
+        include_pending: bool = True,
+        include_rejected: bool = True,
+        include_fraud: bool = True,
+        hr_override: bool | None = None,
+    ) -> StreamingResponse:
+        """
+        M10-E03 Phase 3: exports the campaign's COMPLETE filtered/sorted
+        ranked candidate list to XLSX - pagination is deliberately ignored
+        (every matching candidate, never one UI page). Reuses
+        CampaignCandidateRepository.get_ranked_by_campaign() exactly, the
+        same filters/ordering get_ranked_campaign_candidates() (Phase 1)
+        already validates and delegates to - no second/duplicate ranking
+        query, no Python-side sorting, no recalculated scores. Called
+        twice: once with page_size=1 to learn the filtered `total` cheaply,
+        then (only if total > 0) once more with page_size=total to fetch
+        every matching row in one page - both calls hit the exact same,
+        unmodified repository method.
+
+        Reuses ExcelExport (no new XLSX engine) and AuditService, the same
+        StreamingResponse convention as export_rejected_candidates/
+        export_override_report. Never includes candidate name/email/phone/
+        resume - only the opaque candidate_uuid plus ranking/score fields
+        already computed and persisted by the scoring pipeline.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+
+        if (
+            composite_score_min is not None
+            and composite_score_max is not None
+            and composite_score_min > composite_score_max
+        ):
+            raise CampaignException("composite_score_min must not be greater than composite_score_max.", 422)
+
+        filters = dict(
+            sort_by=sort_by,
+            sort_order=sort_order,
+            pipeline_stage=pipeline_stage,
+            composite_score_min=composite_score_min,
+            composite_score_max=composite_score_max,
+            ai_recommendation=ai_recommendation,
+            ai_evaluation_status=ai_evaluation_status,
+            include_pending=include_pending,
+            include_rejected=include_rejected,
+            include_fraud=include_fraud,
+            hr_override=hr_override,
+        )
+
+        _, total = self.campaign_candidate_repo.get_ranked_by_campaign(campaign_id, page=1, page_size=1, **filters)
+        rows = []
+        if total > 0:
+            rows, _ = self.campaign_candidate_repo.get_ranked_by_campaign(
+                campaign_id, page=1, page_size=total, **filters,
+            )
+
+        export_rows = [
+            self._to_ranking_export_row(campaign_candidate, rank)
+            for rank, (campaign_candidate, _candidate, _resume) in enumerate(rows, start=1)
+        ]
+
+        excel_file = ExcelExport.export_candidate_ranking(export_rows)
+        filename = f"candidate_ranking_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CANDIDATE_RANKING_EXPORTED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign_id,
+            campaign_id=campaign_id,
+            details={
+                "export_format": "XLSX",
+                "applied_filters": {
+                    key: (value.value if hasattr(value, "value") else value)
+                    for key, value in filters.items()
+                },
+                "rows_exported": len(export_rows),
+            },
+        )
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @staticmethod
+    def _to_ranking_export_row(campaign_candidate: CampaignCandidate, rank: int) -> dict:
+        """
+        M10-E03 Phase 3: one row per candidate in the campaign's complete
+        ranking export. Only ranking/score fields already computed and
+        persisted by the scoring pipeline - never candidate name/email/
+        phone/resume or any other PII, matching every other export in this
+        codebase. ranking_status reuses _derive_ranking_status verbatim -
+        no second status concept.
+        """
+        return {
+            "rank": rank,
+            "candidate_uuid": str(campaign_candidate.candidate_id),
+            "composite_score": (
+                float(campaign_candidate.composite_score)
+                if campaign_candidate.composite_score is not None else None
+            ),
+            "deterministic_score": (
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            "semantic_score": (
+                float(campaign_candidate.semantic_score)
+                if campaign_candidate.semantic_score is not None else None
+            ),
+            "ai_evaluation_score": (
+                float(campaign_candidate.effective_ai_score)
+                if campaign_candidate.effective_ai_score is not None else None
+            ),
+            "pipeline_stage": campaign_candidate.pipeline_stage.value,
+            "ai_recommendation": (
+                campaign_candidate.ai_recommendation.value
+                if getattr(campaign_candidate, "ai_recommendation", None) is not None else ""
+            ),
+            "ranking_status": CampaignCandidateService._derive_ranking_status(campaign_candidate),
+            "composite_score_computed_at": getattr(campaign_candidate, "composite_score_computed_at", None),
+        }
 
     # ------------------------------------------------------------------
     # M07-E03 S03 T03: Export Rejected Candidates (HR_ADMIN only - enforced at the route)

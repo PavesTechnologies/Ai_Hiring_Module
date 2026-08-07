@@ -27,8 +27,11 @@ class ScoringConfigSection(BaseModel):
     deterministic_threshold: float
 
 class PipelineLimitsSection(BaseModel):
+    # max_candidates is the number of openings, measured against selected_count.
+    # current_candidate_count is total intake and is NOT capped by it.
     max_candidates: int | None
     current_candidate_count: int
+    selected_count: int = 0
     deadline: datetime | None
 
 class HiringManagerSection(BaseModel):

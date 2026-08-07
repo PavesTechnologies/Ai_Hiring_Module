@@ -58,18 +58,15 @@ class PromptTemplateRepository:
     def get_active_resume_parse_prompts(self) -> list[PromptTemplate]:
         return self.get_active_by_task_type("RESUME_PARSE")
 
+    def get_active_ai_evaluate_prompts(self) -> list[PromptTemplate]:
+        return self.get_active_by_task_type("AI_EVALUATE")
+
     def get_names_by_ids(self, prompt_template_ids: list[UUID]) -> dict[UUID, str]:
         """Batch id->name lookup - avoids one query per row when annotating a JD/Campaign list with prompt_name."""
         if not prompt_template_ids:
             return {}
         stmt = select(PromptTemplate.id, PromptTemplate.name).where(PromptTemplate.id.in_(set(prompt_template_ids)))
         return {row.id: row.name for row in self.db.execute(stmt)}
-
-    def exists_by_task_type(self, task_type: str, *, exclude_id: Optional[UUID] = None) -> bool:
-        stmt = select(PromptTemplate.id).where(PromptTemplate.task_type == task_type)
-        if exclude_id is not None:
-            stmt = stmt.where(PromptTemplate.id != exclude_id)
-        return self.db.execute(stmt).first() is not None
 
     def exists_by_hash(self, content_hash: str, *, exclude_id: Optional[UUID] = None) -> bool:
         stmt = select(PromptTemplate.id).where(PromptTemplate.content_hash == content_hash)

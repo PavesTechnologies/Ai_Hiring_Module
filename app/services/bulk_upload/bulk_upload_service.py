@@ -156,13 +156,8 @@ class BulkUploadService:
                 "This campaign is closed and no longer accepting applications.", 403,
             )
 
-        if campaign.max_candidates:
-            current_count = self.campaign_repo.get_candidate_count(campaign_id)
-            if current_count >= campaign.max_candidates:
-                raise CampaignException(
-                    "This campaign has reached its maximum candidate limit.", 409,
-                )
-
+        # Deliberately no max_candidates check here — it is an openings count
+        # consumed at SELECTED, not an intake limit (see resume_intake_service).
         return campaign
 
     def _build_object_path(self, campaign_id: UUID) -> str:

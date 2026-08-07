@@ -5,14 +5,7 @@ class UserRole(str, Enum):
     RECRUITER      = "RECRUITER"
     HIRING_MANAGER = "HIRING_MANAGER"
     SUPER_ADMIN    = "SUPER_ADMIN"
-class PipelineStage(str, Enum):
-    APPLIED       = "APPLIED"
-    SCREENING     = "SCREENING"
-    SHORTLISTED   = "SHORTLISTED"
-    INTERVIEW     = "INTERVIEW"
-    OFFER         = "OFFER"
-    HIRED         = "HIRED"
-    REJECTED      = "REJECTED"
+
 class Jurisdiction(str, Enum):
     GLOBAL = "GLOBAL"
     EU     = "EU"
@@ -125,6 +118,21 @@ class ActionType(enum.Enum):
     # on a no-op resubmission of identical weights, and never for a
     # thresholds-only change - see CampaignService._record_weight_configuration_change).
     CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED = "CAMPAIGN_WEIGHT_CONFIGURATION_CHANGED"
+    # M10-E03 Phase 3 — same DB-enum caveat as every M10 entry above; needs
+    # the paired migration (alembic/versions/<new>_candidate_ranking_export_audit_action.py)
+    # before CampaignCandidateService.export_ranked_campaign_candidates can
+    # log it. Written once per export request (never per row), following
+    # the exact same convention as REJECTED_CANDIDATES_EXPORTED/
+    # OVERRIDE_REPORT_EXPORTED above.
+    CANDIDATE_RANKING_EXPORTED = "CANDIDATE_RANKING_EXPORTED"
+    # Phase 2.4 (AI Evaluation persistence) — same DB-enum caveat as every
+    # other entry above; needs the paired migration
+    # (alembic/versions/b4314a02f268_ai_evaluation_computed_audit_action.py)
+    # before calculate_ai_evaluation_task can log it. Written once per AI
+    # Evaluation run (SHORTLIST/HOLD/REJECT alike), mirroring
+    # DETERMINISTIC_SCORE_COMPUTED/SEMANTIC_SCORE_COMPUTED's convention of
+    # logging every completed computation, not just rejections.
+    AI_EVALUATION_COMPUTED = "AI_EVALUATION_COMPUTED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"

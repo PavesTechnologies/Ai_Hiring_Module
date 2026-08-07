@@ -182,18 +182,18 @@ def get_resume_processing_status(
 
 
 @router.get(
-    "/candidate/{candidate_id}/parsed-json",
+    "/candidate/{campaign_candidate_id}/parsed-json",
     response_model=APIResponse[ResumeParsedJsonResponse],
     status_code=status.HTTP_200_OK,
 )
 def get_resume_parsed_json_by_candidate(
-    candidate_id: UUID,
+    campaign_candidate_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
-    """Read-only monitoring endpoint — returns the candidate's active resume's parsed_json."""
+    """Read-only monitoring endpoint — returns the campaign candidate's active resume's parsed_json."""
     return APIResponse.ok(
-        data=service.get_parsed_json_by_candidate(candidate_id),
+        data=service.get_parsed_json_by_campaign_candidate(campaign_candidate_id),
         message="Parsed resume data retrieved successfully.",
     )
 

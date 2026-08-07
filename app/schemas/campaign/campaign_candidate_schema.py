@@ -5,7 +5,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 
 from app.models.candidates import ParseStatus
-from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage, RejectionLayer
+from app.models.pipeline import (
+    AIEvaluationStatus,
+    AIRecommendation,
+    CompositeScoreTriggerSource,
+    PipelineStage,
+    RejectionLayer,
+    TransitionSource,
+)
 
 # M10-E03 Phase 1: allowed values for the ranked candidate list's `sort_by`/
 # `sort_order` query params - Literal (not a DB-facing enum) since these are
@@ -107,6 +114,99 @@ class CampaignCandidateSummaryResponse(BaseModel):
     average_composite_score: float | None = None
     pipeline_stage_counts: dict[str, int]
     ai_recommendation_counts: dict[str, int]
+
+
+class CandidateTimelineEventResponse(BaseModel):
+    """
+    M10-E03 Phase 2: one campaign_candidate_stage_history row, returned
+    exactly as stored - reuses the existing PipelineStage/TransitionSource
+    enums (never a new set of values). `comments`/`metadata` are this
+    story's naming for the model's existing `change_reason`/
+    `scores_snapshot` columns - no new columns, no renamed columns.
+    """
+    from_stage: PipelineStage | None = None
+    to_stage: PipelineStage
+    transition_source: TransitionSource
+    changed_by: str | None = None
+    changed_at: datetime
+    comments: str | None = None
+    metadata: dict | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateTimelineResponse(BaseModel):
+    """M10-E03 Phase 2: the complete Candidate Stage Timeline - current stage plus every transition, oldest first."""
+    campaign_candidate_id: UUID
+    current_stage: PipelineStage
+    events: list[CandidateTimelineEventResponse]
+
+
+class CandidateCompositeScoreHistoryEntryResponse(BaseModel):
+    """
+    M10-E03 Phase 2: one candidate_composite_score_history row (Epic 1),
+    returned exactly as stored - no recalculation, no derived fields beyond
+    what CompositeScoringService itself already persisted at calculation
+    time. `computed_by` is always "SYSTEM" - every composite calculation in
+    this codebase is system-triggered (AI evaluation completing or a
+    campaign weight change); there is no user-initiated composite
+    calculation to attribute to a person.
+    """
+    calculated_at: datetime
+    trigger_source: CompositeScoreTriggerSource
+    formula_version: str
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    normalized_semantic_score: float | None = None
+    effective_ai_score: float | None = None
+    composite_score: float
+    computed_by: Literal["SYSTEM"] = "SYSTEM"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateCompositeScoreHistoryResponse(BaseModel):
+    """M10-E03 Phase 2: the complete, immutable composite-score calculation history for one candidate, most recent first."""
+    campaign_candidate_id: UUID
+    entries: list[CandidateCompositeScoreHistoryEntryResponse]
+
+
+class CandidateRankingDetailsResponse(BaseModel):
+    """
+    M10-E03 Phase 2: "why does this candidate currently have this
+    ranking" - aggregates already-stored fields from CampaignCandidate and
+    HiringCampaign into one response. Never recalculates anything - this
+    is not a second implementation of CompositeScoringService, only a
+    read-only view over its most recent output plus the campaign's
+    *current* weights (which may have changed since that output was
+    computed - see composite_score_computed_at and, for the weights that
+    were actually in effect at calculation time, the Composite History API
+    instead).
+    """
+    campaign_candidate_id: UUID
+    composite_score: float | None = None
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    # The score CompositeScoringService itself reads (effective_ai_score,
+    # not the raw ai_ats_score) - the one that actually explains the
+    # composite result, per M10-E03 Phase 1's own "ai_score" sort-column
+    # convention.
+    ai_evaluation_score: float | None = None
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    # From the candidate's most recent candidate_composite_score_history
+    # row (Epic 1) - None when composite_score has never been calculated.
+    formula_version: str | None = None
+    ranking_status: RankingStatus
+    composite_score_computed_at: datetime | None = None
+    hr_override: bool = False
+    hr_override_by: str | None = None
+    hr_override_reason: str | None = None
+    hr_override_at: datetime | None = None
 
 
 class DeterministicScoreSummary(BaseModel):
@@ -884,6 +984,55 @@ class CandidateSemanticResponse(BaseModel):
             }
         }
     )
+
+
+class CandidateAIEvaluationResponse(BaseModel):
+    """
+    AI-Evaluation-tab-only view of the candidate scorecard. Mirrors
+    CandidateDeterministicResponse/CandidateSemanticResponse exactly: a pure
+    read of the campaign_candidates.ai_* columns written by
+    AIEvaluationService.calculate_and_store_evaluation (Phase 2.4) - never a
+    second/independent computation. ai_response_json is the complete
+    validated AI response exactly as returned by the LLM (Phase 2.4
+    enhancement), included alongside the individual columns for
+    debugging/auditability/future re-evaluation comparison. Never includes
+    summary/resume/deterministic/semantic/final-status data.
+    """
+
+    campaign_candidate_id: UUID
+    ai_evaluation_status: AIEvaluationStatus
+    effective_ai_score: float | None = None
+    ai_confidence: float | None = None
+    ai_recommendation: AIRecommendation | None = None
+    ai_strengths: list[str] | None = None
+    ai_weaknesses: list[str] | None = None
+    ai_response_json: dict | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "campaign_candidate_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "ai_evaluation_status": "COMPLETED",
+                "effective_ai_score": 96.0,
+                "ai_confidence": 0.95,
+                "ai_recommendation": "SHORTLIST",
+                "ai_strengths": ["Strong Java and Spring Boot experience"],
+                "ai_weaknesses": ["Limited banking domain experience"],
+                "ai_response_json": {
+                    "scores": {
+                        "technical_match": 98, "experience_match": 95,
+                        "education_match": 95, "domain_match": 95, "overall_score": 96,
+                    },
+                    "confidence_score": 95,
+                    "recommendation": "SHORTLIST",
+                    "strengths": ["Strong Java and Spring Boot experience"],
+                    "gaps": ["Limited banking domain experience"],
+                },
+            }
+        }
+    )
+
+
 class ProcessingTimelineEntry(BaseModel):
     """Epic 4 (M05-E04) Phase D2 - one celery_task_log row on the scorecard's Processing Timeline."""
 
