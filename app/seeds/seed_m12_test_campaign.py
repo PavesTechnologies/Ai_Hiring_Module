@@ -33,6 +33,7 @@ from app.models.pipeline import (
     PipelineStage,
     TransitionSource,
 )
+from app.models.prompt_template import PromptTemplate
 from app.models.skills import JDSkill, JDSkillVerificationStatus, SkillOntology
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 
@@ -43,10 +44,22 @@ ORG_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 HR_ADMIN_ID = "5100005"
 HIRING_MANAGER_ID = "5100022"
 RECRUITER_ID = "5100024"
-JD_PARSE_PROMPT_TEMPLATE_ID = uuid.UUID("cf73241c-22cd-4103-a192-c2b216779aee")
-RESUME_PARSE_PROMPT_TEMPLATE_ID = uuid.UUID("16368a38-9cf7-4a83-a84a-3cc02ba9da34")
 
-REQUIRED_SKILLS = ["Python", "FastAPI", "PostgreSQL", "SQLAlchemy", "rest api", "git", "Docker", "Microservices", "pytest"]
+
+def _active_prompt_template_id(db, task_type: str) -> uuid.UUID:
+    """
+    Looked up live by task_type rather than hardcoded, since prompt_templates
+    ids are not stable across environments/resets (found the hard way after
+    a dev-DB reset repopulated this table with different real rows/ids).
+    """
+    row = db.query(PromptTemplate).filter(
+        PromptTemplate.task_type == task_type, PromptTemplate.status == "ACTIVE",
+    ).first()
+    if row is None:
+        raise ValueError(f"No ACTIVE prompt_templates row for task_type='{task_type}'.")
+    return row.id
+
+REQUIRED_SKILLS = ["Python", "FastAPI", "PostgreSQL", "SQLAlchemy", "REST API", "git", "Docker", "Microservices", "pytest"]
 PREFERRED_SKILLS = ["Django", "Kubernetes", "AWS", "Redis", "Celery"]
 
 JD_RAW_TEXT = (
@@ -100,6 +113,8 @@ try:
         print(f"Seed campaign '{SEED_CAMPAIGN_NAME}' already exists (id={existing_campaign.id}) — skipping entire batch.")
     else:
         encryption_service = EncryptionService(EncryptionKeyRepository(db))
+        jd_parse_prompt_template_id = _active_prompt_template_id(db, "JD_PARSE")
+        resume_parse_prompt_template_id = _active_prompt_template_id(db, "RESUME_PARSE")
 
         # --- 1. Job description -------------------------------------------------
         jd = JobDescription(
@@ -122,7 +137,7 @@ try:
             content_hash=hashlib.sha256(JD_RAW_TEXT.encode("utf-8")).hexdigest(),
             jurisdiction="INDIA",
             created_by=HR_ADMIN_ID,
-            prompt_template_id=JD_PARSE_PROMPT_TEMPLATE_ID,
+            prompt_template_id=jd_parse_prompt_template_id,
             is_verified=JDVerificationStatus.VERIFIED,
         )
         db.add(jd)
@@ -169,7 +184,7 @@ try:
             ai_threshold=50.00,
             deterministic_threshold=70.00,
             max_candidates=20,
-            prompt_template_id=RESUME_PARSE_PROMPT_TEMPLATE_ID,
+            prompt_template_id=resume_parse_prompt_template_id,
             hiring_manager_id=HIRING_MANAGER_ID,
             recruiter_id=RECRUITER_ID,
             created_by=HR_ADMIN_ID,

@@ -49,7 +49,7 @@ from the versions directory), are applied via an explicit revision id
 (`alembic upgrade <revision>`, never bare `head`), and get a short docstring
 note pointing back here.
 
-**Real fix, not yet scheduled:** someone needs to sit down with all 5 heads,
+**Real fix, not yet scheduled:** someone needs to sit down with all the heads,
 determine which ones (if any) represent schema changes never actually applied
 anywhere live, and author real merge migration(s) — the same pattern already
 used by `a558bcbcdb92_merge_all_outstanding_heads.py`,
@@ -58,3 +58,35 @@ used by `a558bcbcdb92_merge_all_outstanding_heads.py`,
 `3e7800c51995_merge_resume_skill_ontology_bulk_upload_.py` — to collapse back
 to one head. Whoever owns migration history should be looped in before that
 work starts, since it touches every branch, not just the newest one.
+
+**2026-08-07 recurrence:** after a `git merge origin/main` (teammates'
+niharika/sathwik/loki/RMe branches) brought in 6 new migrations, each
+branching off one of the original 5 heads (`d88f97d9d5e0` forked into two:
+`535cfe5721bb` and `e4a9c1f6b8d3`), followed by an RDS dev-DB reset/restore,
+`alembic current` failed outright: `alembic_version` was stamped at
+`7043b9ed5abe`, a revision that has never existed as a file anywhere in this
+repo's git history (confirmed via `git log --all -- "*7043b9ed5abe*"` —
+empty). Table-level schema was fully intact (all 43 tables present), but at
+least one enum type (`email_trigger_event_enum`) was missing our M12
+migration's 4 values at the *type* level, not just the data level — meaning
+the live schema state didn't match any single revision in this repo's
+history, most likely because someone applied all 6 new-head migrations via
+`alembic upgrade` on a checkout that had an uncommitted 7th merge-migration
+file, and that database (or a snapshot of it) is what RDS was reset from.
+
+**How it was fixed this time:** verified live, per migration, which of the 6
+new heads' actual schema effects (specific enum values, a specific added
+column) were genuinely present on RDS — all 6 were. Rather than guess a
+single revision to stamp to, used `alembic stamp --purge <all 7 branch
+tips>` (the 6 verified-live heads plus our own migration's parent,
+`d2a7c9e4f1b6`) to correctly represent multiple simultaneously-current
+independent branches, then `alembic upgrade e686c750b7b4` to bring our own
+branch forward by one. First attempt at the stamp missed the
+`535cfe5721bb`/`e4a9c1f6b8d3` sibling-fork pair (only included one of the
+two), silently dropping a valid head — caught by comparing `alembic current`
+against `alembic heads` after stamping (they must match) and re-stamping
+with the full corrected set. Worth remembering: when a fork exists (one
+parent, multiple children, all independently verified live), **every**
+branch tip needs including in the stamp — including one but not its
+sibling produces a `current` set that looks successful but silently drops a
+branch.
