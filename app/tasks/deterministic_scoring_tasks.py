@@ -9,12 +9,12 @@ from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import AIEvaluationStatus, CandidateRejection, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, DecisionSource
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.CampaignRepository import CampaignRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
@@ -59,9 +59,9 @@ def _cancel_downstream_ai_evaluation(
     campaign_candidate,
     task_log_repo: CeleryTaskLogRepository,
     task_log_service: CeleryTaskLogService,
-    campaign_candidate_repo: CampaignCandidateRepository,
+    ai_evaluation_repo: CampaignCandidateAIEvaluationRepository,
 ) -> None:
-   
+
     queued_ai_evaluate_logs = [
         log for log in task_log_repo.get_by_campaign_candidate_and_task_type(
             campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
@@ -78,8 +78,9 @@ def _cancel_downstream_ai_evaluation(
             log.task_id, campaign_candidate.id,
         )
 
-    campaign_candidate.ai_evaluation_status = AIEvaluationStatus.SKIPPED
-    campaign_candidate_repo.update(campaign_candidate)
+    ai_evaluation = ai_evaluation_repo.get_or_create(campaign_candidate.id)
+    ai_evaluation.ai_evaluation_status = AIEvaluationStatus.SKIPPED
+    ai_evaluation_repo.update(ai_evaluation)
 
 
 def _queue_rejection_email(db, campaign_candidate) -> None:
@@ -119,7 +120,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         skill_repo = SkillRepository(db)
         skill_ontology_repo = SkillOntologyRepository(db)
         config_repo = ConfigRepository(db)
-        candidate_rejection_repo = CandidateRejectionRepository(db)
+        ai_evaluation_repo = CampaignCandidateAIEvaluationRepository(db)
         allowed_transition_repo = AllowedTransitionRepository(db)
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
@@ -245,28 +246,22 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         rejection_reason = None
         stage_transition_succeeded = False
         if not breakdown["deterministic_passed"]:
-           
+
             rejection_reason = CandidateScoringService.build_rejection_reason(
                 breakdown, experience_result, education_result,
             )
-          
-            candidate_rejection_repo.create(CandidateRejection(
-                campaign_candidate_id=campaign_candidate.id,
-                rejection_layer=RejectionLayer.DETERMINISTIC,
-                rejection_reason=rejection_reason,
-                rejection_detail=breakdown,
-            ))
 
-           
             stage_transition_succeeded = stage_transition_service.transition_to_rejected(
                 campaign_candidate,
                 change_reason="Deterministic filter rejection",
                 scores_snapshot=breakdown,
+                decision_source=DecisionSource.DETERMINISTIC,
+                decision_reason=rejection_reason,
+                decision_details=breakdown,
             )
 
-           
             _cancel_downstream_ai_evaluation(
-                campaign_candidate, task_log_repo, task_log_service, campaign_candidate_repo,
+                campaign_candidate, task_log_repo, task_log_service, ai_evaluation_repo,
             )
 
         matched_count = len(breakdown["mandatory_skills"]) - len(missing_entries)

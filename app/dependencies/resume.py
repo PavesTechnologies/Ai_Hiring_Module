@@ -10,7 +10,6 @@ from app.dependencies.campaign_candidate import (
     get_campaign_candidate_repository,
     get_campaign_candidate_service,
     get_campaign_repository,
-    get_candidate_rejection_repository,
 )
 from app.dependencies.jd import (
     get_celery_task_log_repository,
@@ -19,7 +18,6 @@ from app.dependencies.jd import (
 from app.dependencies.storage import get_storage_service
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -202,7 +200,6 @@ def get_candidate_erasure_service(
     candidate_repo: CandidateRepository = Depends(get_candidate_repository),
     resume_repo: ResumeRepository = Depends(get_resume_repository),
     campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
-    candidate_rejection_repo: CandidateRejectionRepository = Depends(get_candidate_rejection_repository),
     consent_repo: ConsentRepository = Depends(get_consent_repository),
     email_notification_repo: EmailNotificationRepository = Depends(get_email_notification_repository),
     celery_task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
@@ -214,7 +211,6 @@ def get_candidate_erasure_service(
         candidate_repo=candidate_repo,
         resume_repo=resume_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         consent_repo=consent_repo,
         email_notification_repo=email_notification_repo,
         celery_task_log_repo=celery_task_log_repo,
@@ -227,7 +223,6 @@ def get_candidate_erasure_service(
 def get_resume_cleanup_service(
     resume_repo: ResumeRepository = Depends(get_resume_repository),
     campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
-    candidate_rejection_repo: CandidateRejectionRepository = Depends(get_candidate_rejection_repository),
     celery_task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
     dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     storage_service: StorageService = Depends(get_storage_service),
@@ -236,7 +231,6 @@ def get_resume_cleanup_service(
     return ResumeCleanupService(
         resume_repo=resume_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         celery_task_log_repo=celery_task_log_repo,
         dead_letter_queue_repo=dead_letter_queue_repo,
         storage_service=storage_service,

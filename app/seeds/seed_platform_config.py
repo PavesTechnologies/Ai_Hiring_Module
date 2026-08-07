@@ -249,6 +249,9 @@ try:
             key="EMBEDDING_BATCH_SIZE",
             value="32",
             description="Batch size for SentenceTransformer.encode() calls in EMBED_RESUME (M08-E01 resume embedding generation)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="MAX_DLQ_REPLAYS_PER_TASK",
             value="3",
             description="Maximum times a dead-lettered task chain may be replayed before further replays are blocked (M04-E04-S03-T02 infinite-loop guard)",

@@ -8,11 +8,13 @@ from app.dependencies.storage import get_storage_service
 
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
+from app.repositories.campaign_candidate_ai_evaluation_repository import (
+    CampaignCandidateAIEvaluationRepository,
+)
 from app.repositories.campaign_candidate_repository import (
     CampaignCandidateRepository,
 )
 from app.repositories.audit_repository import AuditRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
@@ -81,10 +83,10 @@ def get_resume_repository(
     return ResumeRepository(db)
 
 
-def get_candidate_rejection_repository(
+def get_campaign_candidate_ai_evaluation_repository(
     db: Session = Depends(get_db),
-) -> CandidateRejectionRepository:
-    return CandidateRejectionRepository(db)
+) -> CampaignCandidateAIEvaluationRepository:
+    return CampaignCandidateAIEvaluationRepository(db)
 
 
 def get_allowed_transition_repository(
@@ -169,8 +171,8 @@ def get_campaign_candidate_service(
     resume_repo: ResumeRepository = Depends(
         get_resume_repository
     ),
-    candidate_rejection_repo: CandidateRejectionRepository = Depends(
-        get_candidate_rejection_repository
+    ai_evaluation_repo: CampaignCandidateAIEvaluationRepository = Depends(
+        get_campaign_candidate_ai_evaluation_repository
     ),
     stage_transition_service: StageTransitionService = Depends(
         get_stage_transition_service
@@ -205,7 +207,7 @@ def get_campaign_candidate_service(
         encryption_service=encryption_service,
         candidate_repo=candidate_repo,
         resume_repo=resume_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
+        ai_evaluation_repo=ai_evaluation_repo,
         stage_transition_service=stage_transition_service,
         config_repo=config_repo,
         celery_task_log_service=celery_task_log_service,

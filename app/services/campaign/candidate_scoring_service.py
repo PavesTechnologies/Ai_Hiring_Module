@@ -599,7 +599,7 @@ class CandidateScoringService:
         breakdown["deterministic_score"] = final_score
         breakdown["deterministic_passed"] = final_passed
 
-        campaign_candidate.score_breakdown = breakdown
+        campaign_candidate.deterministic_breakdown = breakdown
         campaign_candidate.deterministic_score = final_score
         campaign_candidate.deterministic_passed = final_passed
         self.campaign_candidate_repository.update(campaign_candidate)

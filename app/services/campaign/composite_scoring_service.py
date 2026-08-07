@@ -19,6 +19,11 @@ _HUNDRED = Decimal("100.00")
 _ZERO = Decimal("0")
 
 
+def _effective_ai_score(campaign_candidate):
+    """effective_ai_score now lives on the related CampaignCandidateAIEvaluation row (1:1)."""
+    return campaign_candidate.ai_evaluation.effective_ai_score if campaign_candidate.ai_evaluation else None
+
+
 class InvalidScoringWeightsError(ValueError):
     """
     A campaign's weight_deterministic + weight_semantic + weight_ai does not
@@ -124,7 +129,7 @@ class CompositeScoringService:
                 float(normalized_scores["semantic_normalized"])
                 if campaign_candidate.semantic_score is not None else None
             ),
-            "effective_ai_score": campaign_candidate.effective_ai_score,
+            "effective_ai_score": _effective_ai_score(campaign_candidate),
             "weight_deterministic": float(weights["deterministic"]),
             "weight_semantic": float(weights["semantic"]),
             "weight_ai": float(weights["ai"]),
@@ -206,7 +211,7 @@ class CompositeScoringService:
         checks = (
             ("deterministic_score", campaign_candidate.deterministic_score, Decimal("0"), Decimal("100")),
             ("semantic_score", campaign_candidate.semantic_score, Decimal("0"), Decimal("1")),
-            ("effective_ai_score", campaign_candidate.effective_ai_score, Decimal("0"), Decimal("100")),
+            ("effective_ai_score", _effective_ai_score(campaign_candidate), Decimal("0"), Decimal("100")),
         )
         for field_name, value, min_value, max_value in checks:
             if value is None:
@@ -241,10 +246,8 @@ class CompositeScoringService:
             Decimal(str(campaign_candidate.semantic_score)) * _HUNDRED
             if campaign_candidate.semantic_score is not None else _ZERO
         )
-        ai = (
-            Decimal(str(campaign_candidate.effective_ai_score))
-            if campaign_candidate.effective_ai_score is not None else _ZERO
-        )
+        ai_score = _effective_ai_score(campaign_candidate)
+        ai = Decimal(str(ai_score)) if ai_score is not None else _ZERO
         return {
             "deterministic": deterministic,
             "semantic_normalized": semantic_normalized,
@@ -301,7 +304,7 @@ class CompositeScoringService:
             normalized_semantic_score=(
                 normalized_scores["semantic_normalized"] if campaign_candidate.semantic_score is not None else None
             ),
-            effective_ai_score=campaign_candidate.effective_ai_score,
+            effective_ai_score=_effective_ai_score(campaign_candidate),
             weight_deterministic=weights["deterministic"],
             weight_semantic=weights["semantic"],
             weight_ai=weights["ai"],

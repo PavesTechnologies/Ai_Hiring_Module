@@ -61,7 +61,7 @@ from app.schemas.campaign.campaign_detail_response import (CampaignDetailRespons
     PipelineLimitsSection,
     HiringManagerSection,
 )
-from app.models.pipeline import CompositeScoreTriggerSource, PipelineStage, RejectionLayer, TransitionSource
+from app.models.pipeline import CompositeScoreTriggerSource, DecisionSource, PipelineStage, TransitionSource
 from app.schemas.campaign.campaign_monitoring_schema import (StalledCandidateItem,
     StalledCandidatesResponse,
     StageOverrideRequest,
@@ -1738,7 +1738,7 @@ class CampaignService:
             for r in raw_reasons
         ]
 
-        det_total = layer_breakdown.get(RejectionLayer.DETERMINISTIC.value, 0)
+        det_total = layer_breakdown.get(DecisionSource.DETERMINISTIC.value, 0)
         missing = [
             MissingSkillItem(canonical_name=name,
                 count=count,
@@ -1759,17 +1759,17 @@ class CampaignService:
         recommendations: list[RejectionRecommendation] = []
         if analytics_ready and total_candidates > 0:
             thresholds = [
-                (RejectionLayer.DETERMINISTIC.value,
+                (DecisionSource.DETERMINISTIC.value,
                     float(configs.get("DETERMINISTIC_HIGH_REJECTION_THRESHOLD", "60.00")),
                     "High deterministic rejection rate — review the JD's mandatory skills or lower the experience requirement.",
                     "REVIEW_JD_SKILLS",
                 ),
-                (RejectionLayer.SEMANTIC.value,
+                (DecisionSource.SEMANTIC.value,
                     float(configs.get("SEMANTIC_HIGH_REJECTION_THRESHOLD", "40.00")),
                     "High semantic rejection rate — consider lowering the campaign's semantic_threshold.",
                     "ADJUST_THRESHOLD",
                 ),
-                (RejectionLayer.AI.value,
+                (DecisionSource.AI.value,
                     float(configs.get("AI_HIGH_REJECTION_THRESHOLD", "40.00")),
                     "High AI rejection rate — consider lowering ai_threshold or reviewing the active prompt version.",
                     "REVIEW_PROMPT",

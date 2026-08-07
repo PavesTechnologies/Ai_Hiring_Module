@@ -9,8 +9,8 @@ from app.models.pipeline import (
     AIEvaluationStatus,
     AIRecommendation,
     CompositeScoreTriggerSource,
+    DecisionSource,
     PipelineStage,
-    RejectionLayer,
     TransitionSource,
 )
 
@@ -446,7 +446,7 @@ class DeterministicScoreBreakdownResponse(BaseModel):
 
 class AiSummaryDetail(BaseModel):
     """
-    Reads CampaignCandidate.ai_recommendation/ai_strengths/ai_weaknesses
+    Reads CampaignCandidateAIEvaluation.ai_recommendation/ai_strengths/ai_weaknesses
     as-is - columns that already exist on the model but are never written
     by anything today (M09 AI Evaluation isn't built), so this is null in
     practice until that epic lands. Never recalculated/derived.
@@ -810,7 +810,7 @@ class DeterministicScoreBreakdownResponse(BaseModel):
 
 class AiSummaryDetail(BaseModel):
     """
-    Reads CampaignCandidate.ai_recommendation/ai_strengths/ai_weaknesses
+    Reads CampaignCandidateAIEvaluation.ai_recommendation/ai_strengths/ai_weaknesses
     as-is - columns that already exist on the model but are never written
     by anything today (M09 AI Evaluation isn't built), so this is null in
     practice until that epic lands. Never recalculated/derived.
@@ -1061,7 +1061,7 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
     a SEMANTIC/AI-layer rejection is a different epic, not surfaced here).
     """
     has_rejection: bool = False
-    rejection_layer: RejectionLayer | None = None
+    rejection_layer: DecisionSource | None = None
     rejection_reason: str | None = None
     rejected_at: datetime | None = None
     score_breakdown: dict | None = None
@@ -1085,7 +1085,7 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
 class CandidateRejectionHistoryEntryResponse(BaseModel):
  
     id: UUID
-    rejection_layer: RejectionLayer
+    rejection_layer: DecisionSource
     rejection_reason: str
     rejected_at: datetime
     hr_override: bool

@@ -22,9 +22,9 @@ from .candidates import (
 
 from .pipeline import (
     CampaignCandidate,
+    CampaignCandidateAIEvaluation,
     AllowedTransition,
     CampaignCandidateStageHistory,
-    CandidateRejection,
 )
 
 from .async_tasks import (

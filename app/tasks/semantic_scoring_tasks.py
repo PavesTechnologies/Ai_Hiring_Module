@@ -11,12 +11,12 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import AIEvaluationStatus, CandidateRejection, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, DecisionSource, DecisionType
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.jd_repository import JDRepository
@@ -91,7 +91,7 @@ def _score_and_persist_semantic(
     campaign,
     resume_repo: ResumeRepository,
     jd_repo: JDRepository,
-    candidate_rejection_repo: CandidateRejectionRepository,
+    ai_evaluation_repo: CampaignCandidateAIEvaluationRepository,
     stage_transition_service: StageTransitionService,
     campaign_candidate_repo: CampaignCandidateRepository,
     audit_service: AuditService,
@@ -112,21 +112,18 @@ def _score_and_persist_semantic(
         _queue_ai_evaluate_if_not_duplicate(campaign_candidate, task_log_service)
     else:
         rejection_reason = breakdown["semantic_explanation"]
-        candidate_rejection_repo.create(CandidateRejection(
-            campaign_candidate_id=campaign_candidate.id,
-            rejection_layer=RejectionLayer.SEMANTIC,
-            rejection_reason=rejection_reason,
-            rejection_detail=breakdown,
-        ))
 
         stage_transition_succeeded = stage_transition_service.transition_to_rejected(
             campaign_candidate,
             change_reason="Semantic similarity filter rejection",
             scores_snapshot=breakdown,
+            decision_source=DecisionSource.SEMANTIC,
+            decision_reason=rejection_reason,
+            decision_details=breakdown,
         )
 
         _cancel_downstream_ai_evaluation(
-            campaign_candidate, task_log_repo, task_log_service, campaign_candidate_repo,
+            campaign_candidate, task_log_repo, task_log_service, ai_evaluation_repo,
         )
 
     summary_payload = {
@@ -187,13 +184,13 @@ def trigger_pending_semantic_scoring_for_resume(db, resume_id) -> None:
     )
     pending_candidates = []
     for cc in all_candidates:
-        if cc.deterministic_passed and cc.semantic_score_breakdown is None:
+        if cc.deterministic_passed and cc.semantic_breakdown is None:
             pending_candidates.append(cc)
         else:
             logger.info(
                 "TRACE: campaign_candidate_id=%s skipped | deterministic_passed=%s "
                 "semantic_score_breakdown_is_none=%s",
-                cc.id, cc.deterministic_passed, cc.semantic_score_breakdown is None,
+                cc.id, cc.deterministic_passed, cc.semantic_breakdown is None,
             )
     logger.info(
         "TRACE: %s pending candidate(s) eligible for semantic scoring | resume_id=%s",
@@ -326,7 +323,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
         campaign_repo = CampaignRepository(db)
         resume_repo = ResumeRepository(db)
         jd_repo = JDRepository(db)
-        candidate_rejection_repo = CandidateRejectionRepository(db)
+        ai_evaluation_repo = CampaignCandidateAIEvaluationRepository(db)
         allowed_transition_repo = AllowedTransitionRepository(db)
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
@@ -404,30 +401,27 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
             # succeeds for this resume). semantic_score is left NULL
             # (already its default - never set to anything here),
             # ai_evaluation_status flags MANUAL_REVIEW so this shows up as
-            # needing attention, and a SEMANTIC-layer candidate_rejections
-            # row records why - but pipeline_stage is deliberately left
-            # untouched (no stage_transition_service call at all): this is
-            # NOT an automatic rejection of the candidate, just a record of
-            # why no semantic score exists yet.
-            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
-            campaign_candidate_repo.update(campaign_candidate)
+            # needing attention, and decision_source/decision_reason record
+            # why - but pipeline_stage is deliberately left untouched (no
+            # stage_transition_service call at all): this is NOT an
+            # automatic rejection of the candidate, just a record of why no
+            # semantic score exists yet.
+            ai_evaluation = ai_evaluation_repo.get_or_create(campaign_candidate.id)
+            ai_evaluation.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            ai_evaluation_repo.update(ai_evaluation)
 
             # Idempotent: if this candidate was already re-queued once
             # before the embedding was ready (e.g. an HR override
-            # re-triggered it) and hit this exact skip again, don't insert
-            # a second identical rejection row.
-            already_recorded = any(
-                rejection.rejection_layer == RejectionLayer.SEMANTIC
-                and rejection.rejection_reason == MISSING_RESUME_EMBEDDING_REASON
-                for rejection in candidate_rejection_repo.get_by_campaign_candidate_id(campaign_candidate.id)
-            )
-            if not already_recorded:
-                candidate_rejection_repo.create(CandidateRejection(
-                    campaign_candidate_id=campaign_candidate.id,
-                    rejection_layer=RejectionLayer.SEMANTIC,
-                    rejection_reason=MISSING_RESUME_EMBEDDING_REASON,
-                    rejection_detail={"reason": MISSING_RESUME_EMBEDDING_REASON},
-                ))
+            # re-triggered it) and hit this exact skip again, don't
+            # re-stamp an identical decision - decision_reason IS the
+            # candidate's current-state snapshot now, so a direct field
+            # check replaces the old rejection-history lookup.
+            if campaign_candidate.decision_reason != MISSING_RESUME_EMBEDDING_REASON:
+                campaign_candidate.decision_source = DecisionSource.SEMANTIC
+                campaign_candidate.decision_reason = MISSING_RESUME_EMBEDDING_REASON
+                campaign_candidate.decision_details = {"reason": MISSING_RESUME_EMBEDDING_REASON}
+                campaign_candidate.decision_at = datetime.now(timezone.utc)
+                campaign_candidate_repo.update(campaign_candidate)
 
             campaign_candidate_repo.commit()
 
@@ -460,8 +454,10 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
                 return
 
             campaign_candidate.semantic_score = None
-            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
             campaign_candidate_repo.update(campaign_candidate)
+            ai_evaluation = ai_evaluation_repo.get_or_create(campaign_candidate.id)
+            ai_evaluation.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            ai_evaluation_repo.update(ai_evaluation)
             campaign_candidate_repo.commit()
 
             summary = json.dumps({
@@ -482,8 +478,10 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
         # silently computing a meaningless similarity score.
         if resume_embedding.embedding_model_version_id != jd_embedding.embedding_model_version_id:
             campaign_candidate.semantic_score = None
-            campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
             campaign_candidate_repo.update(campaign_candidate)
+            ai_evaluation = ai_evaluation_repo.get_or_create(campaign_candidate.id)
+            ai_evaluation.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+            ai_evaluation_repo.update(ai_evaluation)
             campaign_candidate_repo.commit()
 
             summary = json.dumps({
@@ -516,7 +514,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
 
         summary_payload = _score_and_persist_semantic(
             campaign_candidate, campaign, resume_repo, jd_repo,
-            candidate_rejection_repo, stage_transition_service, campaign_candidate_repo,
+            ai_evaluation_repo, stage_transition_service, campaign_candidate_repo,
             audit_service, task_log_repo, task_log_service,
         )
 
