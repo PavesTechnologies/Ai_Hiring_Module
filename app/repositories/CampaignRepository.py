@@ -204,6 +204,34 @@ class CampaignRepository:
             or 0
         )
 
+    def get_selected_count(self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        Positions filled — the count max_candidates is measured against.
+
+        max_candidates is the number of openings, not an intake limit, so a
+        slot is consumed when a candidate reaches SELECTED and not when a
+        resume is uploaded. SELECTED is terminal (no transition out of it is
+        seeded in allowed_transitions), so a plain equality count cannot
+        under-count the way a mid-pipeline stage would.
+        """
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SELECTED,
+            )
+            .scalar()
+            or 0
+        )
+
+    def get_selected_count(self, campaign_id: UUID) -> int:
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SELECTED,
+                )
+                .scalar() or 0
+        )
+
     def get_hm_review_count(self,
         campaign_id: UUID,
     ) -> int:

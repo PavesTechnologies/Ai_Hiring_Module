@@ -5,14 +5,7 @@ class UserRole(str, Enum):
     RECRUITER      = "RECRUITER"
     HIRING_MANAGER = "HIRING_MANAGER"
     SUPER_ADMIN    = "SUPER_ADMIN"
-class PipelineStage(str, Enum):
-    APPLIED       = "APPLIED"
-    SCREENING     = "SCREENING"
-    SHORTLISTED   = "SHORTLISTED"
-    INTERVIEW     = "INTERVIEW"
-    OFFER         = "OFFER"
-    HIRED         = "HIRED"
-    REJECTED      = "REJECTED"
+
 class Jurisdiction(str, Enum):
     GLOBAL = "GLOBAL"
     EU     = "EU"
