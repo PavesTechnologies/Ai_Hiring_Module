@@ -306,18 +306,61 @@ class CampaignService:
         ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
         return self.campaign_repo.get_hiring_manager_names(ids)
 
+    def _close_if_all_positions_filled(self,
+        campaign_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> bool:
+        """
+        max_candidates is an openings count consumed at SELECTED, so the
+        campaign auto-closes once every position is filled. Mirrors
+        PipelineTransitionService._close_if_all_positions_filled — both stage
+        writers must enforce this or the override path bypasses the cap.
+        Does not commit; the caller does.
+        """
+        campaign = self.campaign_repo.get_by_id_for_update(campaign_id)
+        if campaign is None or not campaign.max_candidates:
+            return False
+        if campaign.status == CampaignStatus.CLOSED:
+            return False
+        if self.campaign_repo.get_selected_count(campaign.id) < campaign.max_candidates:
+            return False
+
+        campaign.status = CampaignStatus.CLOSED
+        campaign.updated_at = datetime.now(timezone.utc)
+        self.campaign_repo.update(campaign)
+
+        self.audit_service.log(actor_id=actor_id,
+            actor_role=actor_role,
+            action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
+            entity_type=EntityType.CAMPAIGN,
+            entity_id=campaign.id,
+            campaign_id=campaign.id,
+            details={
+                "title": f"Campaign '{campaign.name}' auto-closed",
+                "reason": "ALL_POSITIONS_FILLED",
+                "max_candidates": campaign.max_candidates,
+                "selected_count": campaign.max_candidates,
+            },
+        )
+        return True
+
     def _is_approaching_cap(self,
-        candidate_count: int,
+        selected_count: int,
         max_candidates: int | None,
         warning_percentage: float = 80.0,
     ) -> bool:
         """
-        Returns True if campaign has reached warning_percentage of its candidate cap.
+        True once warning_percentage of the campaign's openings are filled.
+
+        max_candidates is an openings count, so this must be passed the number
+        of SELECTED candidates - not total intake. Passing the candidate count
+        would flag every campaign that simply received a lot of resumes.
         """
         if not max_candidates:
             return False
 
-        return candidate_count >= (max_candidates * (warning_percentage / 100))
+        return selected_count >= (max_candidates * (warning_percentage / 100))
 
 
     def _is_deadline_soon(self,
@@ -453,7 +496,7 @@ class CampaignService:
                 ai_evaluate_prompt_name=selected_ai_evaluate_prompt.name,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-                approaching_cap=self._is_approaching_cap(candidate_count,
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id),
                     campaign.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -506,7 +549,7 @@ class CampaignService:
             candidate_count=candidate_count,
             shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
             approaching_cap=self._is_approaching_cap(
-                candidate_count,
+                self.campaign_repo.get_selected_count(campaign.id),
                 campaign.max_candidates,
                 cap_warning_percentage,
             ),
@@ -668,7 +711,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -715,7 +758,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -749,7 +792,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -793,7 +836,7 @@ class CampaignService:
                 prompt_name=prompt_names.get(c.prompt_template_id),
                 candidate_count=self.campaign_repo.get_candidate_count(c.id),
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(c.id),
-                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_candidate_count(c.id),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(c.id),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -1212,6 +1255,7 @@ class CampaignService:
             ),
             pipeline_limits=PipelineLimitsSection(max_candidates=campaign.max_candidates,
                 current_candidate_count=self.campaign_repo.get_candidate_count(campaign.id),
+                selected_count=self.campaign_repo.get_selected_count(campaign.id),
                 deadline=campaign.deadline,
             ),
             hiring_manager=(None if is_hiring_manager_only else (HiringManagerSection(full_name=manager.full_name,
@@ -1675,6 +1719,11 @@ class CampaignService:
                 "reason": request.reason,
             },
         )
+        # This is the second stage-writing path (PipelineTransitionService is
+        # the other), and _STAGE_OVERRIDE_NEXT maps INTERVIEW -> SELECTED, so
+        # the openings cap has to be honoured here too or overrides bypass it.
+        if target == PipelineStage.SELECTED:
+            self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
         return StalledActionResponse(campaign_candidate_id=cc.id,
             action="STAGE_OVERRIDDEN",
@@ -2093,10 +2142,11 @@ class CampaignService:
                     changes["max_candidates"] = {"before": campaign.max_candidates, "after": None}
                     campaign.max_candidates = None
             elif request.max_candidates is not None and request.max_candidates != campaign.max_candidates:
-                current_count = self.campaign_repo.get_candidate_count(campaign.id)
-                if request.max_candidates < current_count:
-                    raise CampaignException(f"Cannot set candidate cap to {request.max_candidates}: the campaign "
-                        f"already has {current_count} candidates.",
+                # openings can't be cut below the number already filled
+                selected_count = self.campaign_repo.get_selected_count(campaign.id)
+                if request.max_candidates < selected_count:
+                    raise CampaignException(f"Cannot set openings to {request.max_candidates}: the campaign "
+                        f"has already selected {selected_count} candidate(s).",
                         422,
                     )
                 changes["max_candidates"] = {
@@ -2342,7 +2392,7 @@ class CampaignService:
                 ai_evaluate_prompt_name=updated_ai_evaluate_prompt.name if updated_ai_evaluate_prompt else None,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-                approaching_cap=self._is_approaching_cap(candidate_count, campaign.max_candidates, cap_warning_percentage),
+                approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id), campaign.max_candidates, cap_warning_percentage),
                 deadline_soon=self._is_deadline_soon(campaign.deadline, deadline_warning_days),
             )
 
@@ -2570,23 +2620,23 @@ class CampaignService:
 
     def _reopen_cap_warnings(self, campaign) -> list[JDReadinessIssue]:
         """
-        A campaign sitting at/over its candidate cap is worth flagging on
+        A campaign with every opening already filled is worth flagging on
         reopen, but must NOT block it: closed campaigns are read-only, so
-        raising the cap first is impossible and a blocking check would strand
-        the campaign closed forever. The cap still stops new candidates being
-        added on its own; reopening is for progressing the existing ones.
+        raising the opening count first is impossible and a blocking check
+        would strand the campaign closed forever. Reopening is for progressing
+        the candidates already in the pipeline.
         """
         if campaign.max_candidates is None:
             return []
 
-        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
-        if candidate_count < campaign.max_candidates:
+        selected_count = self.campaign_repo.get_selected_count(campaign.id)
+        if selected_count < campaign.max_candidates:
             return []
 
-        return [JDReadinessIssue(code="CANDIDATE_CAP_REACHED",
-            message=(f"This campaign already has {candidate_count} candidate(s), at or above "
-                f"its cap of {campaign.max_candidates}. It will reopen, but no new "
-                f"candidates can be added until the cap is raised or cleared "
+        return [JDReadinessIssue(code="ALL_POSITIONS_FILLED",
+            message=(f"All {campaign.max_candidates} opening(s) on this campaign are already "
+                f"filled ({selected_count} candidate(s) selected). It will reopen, but no "
+                f"further candidates can be selected until the opening count is raised "
                 f"(editable again once the campaign is ACTIVE)."
             ),
         )]

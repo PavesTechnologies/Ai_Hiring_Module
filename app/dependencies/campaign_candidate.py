@@ -97,11 +97,14 @@ def get_pipeline_transition_service(
     allowed_transition_repo: AllowedTransitionRepository = Depends(get_allowed_transition_repository),
     campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    db: Session = Depends(get_db),
 ) -> PipelineTransitionService:
     return PipelineTransitionService(
         allowed_transition_repo=allowed_transition_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=audit_service,
+        # enables the openings cap / auto-close on SELECTED
+        campaign_repo=CampaignRepository(db),
     )
 
 
