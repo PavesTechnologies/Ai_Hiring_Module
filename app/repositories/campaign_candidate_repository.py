@@ -446,15 +446,15 @@ class CampaignCandidateRepository:
         stmt = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id)
         return list(self.db.execute(stmt).scalars().all())
 
-    # M10-E03 Phase 1: sort_by -> the actual column it maps to. "ai_score"
-    # maps to effective_ai_score (the score CompositeScoringService itself
-    # reads), not the raw ai_ats_score - the same column the composite
-    # formula already treats as authoritative.
+    # M10-E03 Phase 1: sort_by -> the actual column it maps to.
+    # "ai_score" was removed - it mapped to effective_ai_score, a column
+    # that does not exist on the live campaign_candidates table (see
+    # app/models/pipeline.py) - sorting by it was never actually possible
+    # against this database.
     _RANKING_SORT_COLUMNS = {
         "composite_score": CampaignCandidate.composite_score,
         "deterministic_score": CampaignCandidate.deterministic_score,
         "semantic_score": CampaignCandidate.semantic_score,
-        "ai_score": CampaignCandidate.effective_ai_score,
         "created_at": CampaignCandidate.created_at,
     }
 

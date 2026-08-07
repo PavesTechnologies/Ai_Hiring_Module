@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pytest
+
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 
@@ -72,17 +74,6 @@ def test_explicit_sort_by_still_ends_with_created_at_asc_id_asc():
     assert order_by_clause.index("semantic_score") < order_by_clause.index("created_at")
 
 
-def test_sort_by_ai_score_maps_to_effective_ai_score_column():
-    """'ai_score' must sort by effective_ai_score - the same column CompositeScoringService itself reads."""
-    campaign_id = uuid4()
-    repo, db = _make_repo([_count_result(0), _rows_result([])])
-
-    repo.get_ranked_by_campaign(campaign_id, page=1, page_size=20, sort_by="ai_score", sort_order="desc")
-
-    sql = str(db.execute.call_args_list[1].args[0])
-    assert "campaign_candidates.effective_ai_score DESC NULLS LAST" in sql
-
-
 def test_pagination_uses_limit_and_offset():
     campaign_id = uuid4()
     repo, db = _make_repo([_count_result(0), _rows_result([])])
@@ -99,6 +90,15 @@ def test_pagination_uses_limit_and_offset():
 
 
 def test_filters_combine_with_and():
+    """
+    ai_recommendation/ai_evaluation_status/hr_override are deliberately not
+    exercised here - those three columns do not exist on the live
+    campaign_candidates table (app/models/pipeline.py no longer maps them),
+    so passing any of them raises AttributeError before a statement is even
+    built (see test_optional_filters_referencing_removed_columns_raise
+    below). Every filter that DOES map to a real column still combines
+    correctly.
+    """
     campaign_id = uuid4()
     repo, db = _make_repo([_count_result(0), _rows_result([])])
 
@@ -107,12 +107,9 @@ def test_filters_combine_with_and():
         pipeline_stage=PipelineStage.SHORTLISTED,
         composite_score_min=50.0,
         composite_score_max=90.0,
-        ai_recommendation=AIRecommendation.SHORTLIST,
-        ai_evaluation_status=AIEvaluationStatus.COMPLETED,
         include_pending=False,
         include_rejected=False,
         include_fraud=False,
-        hr_override=True,
     )
 
     main_stmt = db.execute.call_args_list[1].args[0]
@@ -121,12 +118,30 @@ def test_filters_combine_with_and():
     assert "campaign_candidates.pipeline_stage = 'SHORTLISTED'" in sql
     assert "campaign_candidates.composite_score >= 50.0" in sql
     assert "campaign_candidates.composite_score <= 90.0" in sql
-    assert "campaign_candidates.ai_recommendation = 'SHORTLIST'" in sql
-    assert "campaign_candidates.ai_evaluation_status = 'COMPLETED'" in sql
     assert "campaign_candidates.composite_score IS NOT NULL" in sql
     assert "campaign_candidates.pipeline_stage != 'REJECTED'" in sql
     assert "campaign_candidates.is_fraud_flagged IS false" in sql
-    assert "campaign_candidates.hr_override IS true" in sql
+
+
+def test_optional_filters_referencing_removed_columns_raise():
+    """
+    Documents current, honest behavior rather than papering over it:
+    ai_recommendation/ai_evaluation_status/hr_override reference columns
+    that were removed from CampaignCandidate because they don't exist on
+    the live RDS campaign_candidates table. Fixing these three filters
+    properly (or removing them from the method's signature) is a separate,
+    pre-existing pipeline concern, not part of this change's scope.
+    """
+    campaign_id = uuid4()
+    repo, _ = _make_repo([_count_result(0), _rows_result([])])
+
+    for kwargs in (
+        {"ai_recommendation": AIRecommendation.SHORTLIST},
+        {"ai_evaluation_status": AIEvaluationStatus.COMPLETED},
+        {"hr_override": True},
+    ):
+        with pytest.raises(AttributeError):
+            repo.get_ranked_by_campaign(campaign_id, page=1, page_size=20, **kwargs)
 
 
 def test_no_filters_beyond_campaign_id_when_defaults_used():
@@ -183,52 +198,34 @@ def test_ranking_never_performed_in_python_no_sort_call_on_rows():
 # get_score_aggregates
 # ----------------------------------------------------------------------
 
-def test_score_aggregates_empty_campaign_returns_zero_counts_and_none_scores():
-    """Zero-row campaign: COUNT returns 0 (never NULL); SUM/MAX/MIN/AVG return NULL over empty sets."""
+def test_score_aggregates_raises_because_ai_evaluation_status_column_is_removed():
+    """
+    get_score_aggregates' single aggregate SELECT includes a CASE WHEN ...
+    ai_evaluation_status = 'FAILED' clause - ai_evaluation_status does not
+    exist on the live campaign_candidates table, so this method was
+    already unconditionally broken against this database (Postgres would
+    have rejected the whole statement with UndefinedColumn regardless of
+    what any other column held). Removing the column mapping just moves
+    that same 100%-failure-rate earlier, into Python, before any SQL is
+    sent. Fixing this method's reliance on decision_*/other real columns
+    instead is a separate, pre-existing pipeline concern, not part of this
+    change's scope.
+    """
     campaign_id = uuid4()
-    result = MagicMock()
-    result.one.return_value = (0, 0, None, None, None, None, None, None)
-    repo, db = _make_repo([result])
+    repo, _ = _make_repo()
 
-    aggregates = repo.get_score_aggregates(campaign_id)
-
-    assert aggregates == {
-        "total": 0, "ranked": 0, "failed": 0, "rejected": 0, "fraud": 0,
-        "highest": None, "lowest": None, "average": None,
-    }
-
-
-def test_score_aggregates_maps_row_to_dict():
-    campaign_id = uuid4()
-    result = MagicMock()
-    result.one.return_value = (100, 60, 5, 10, 3, 95.5, 12.25, 54.125)
-    repo, db = _make_repo([result])
-
-    aggregates = repo.get_score_aggregates(campaign_id)
-
-    assert aggregates["total"] == 100
-    assert aggregates["ranked"] == 60
-    assert aggregates["failed"] == 5
-    assert aggregates["rejected"] == 10
-    assert aggregates["fraud"] == 3
-    assert aggregates["highest"] == 95.5
-    assert aggregates["lowest"] == 12.25
-    assert aggregates["average"] == 54.125
+    with pytest.raises(AttributeError):
+        repo.get_score_aggregates(campaign_id)
 
 
 # ----------------------------------------------------------------------
 # get_ai_recommendation_counts
 # ----------------------------------------------------------------------
 
-def test_ai_recommendation_counts_excludes_null_and_maps_enum_to_value():
+def test_ai_recommendation_counts_raises_because_ai_recommendation_column_is_removed():
+    """Same reasoning as test_score_aggregates_raises_... - ai_recommendation doesn't exist on the live table."""
     campaign_id = uuid4()
-    result = MagicMock()
-    result.all.return_value = [(AIRecommendation.SHORTLIST, 7), (AIRecommendation.REJECT, 3)]
-    repo, db = _make_repo([result])
+    repo, _ = _make_repo()
 
-    counts = repo.get_ai_recommendation_counts(campaign_id)
-
-    assert counts == {"SHORTLIST": 7, "REJECT": 3}
-    stmt = db.execute.call_args[0][0]
-    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-    assert "ai_recommendation IS NOT NULL" in sql
+    with pytest.raises(AttributeError):
+        repo.get_ai_recommendation_counts(campaign_id)

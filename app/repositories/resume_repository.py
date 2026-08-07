@@ -10,7 +10,7 @@ from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Re
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
 from app.models.jd.job_descriptions import JDEmbedding
 from app.models.pipeline import CampaignCandidate, PipelineStage
-from app.models.skills import CandidateSkill
+from app.models.skills import CandidateSkill, SkillOntology
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 
 _SORT_COLUMNS = {
@@ -301,6 +301,25 @@ class ResumeRepository:
         """Read counterpart to create_candidate_skill — monitoring-only, no writes."""
         stmt = select(CandidateSkill).where(CandidateSkill.resume_id == resume_id)
         return list(self.db.execute(stmt).scalars().all())
+
+    def get_top_skills_by_candidate(self, candidate_id: UUID, limit: int = 5) -> list[str]:
+        """
+        Talent Pool (M13-E01 S01 T02) — the candidate's most frequently
+        matched canonical skills across every resume version/campaign
+        submission, most-occurrences-first. Only canonical (matched) skills
+        are counted — CandidateSkill rows with no canonical_skill_id
+        (UNKNOWN tier) have no stable display name to rank them by, so
+        they're excluded rather than shown as raw_extracted_text.
+        """
+        stmt = (
+            select(SkillOntology.canonical_name, func.count(CandidateSkill.id))
+            .join(CandidateSkill, CandidateSkill.canonical_skill_id == SkillOntology.id)
+            .where(CandidateSkill.candidate_id == candidate_id)
+            .group_by(SkillOntology.canonical_name)
+            .order_by(func.count(CandidateSkill.id).desc())
+            .limit(limit)
+        )
+        return [name for name, _ in self.db.execute(stmt).all()]
 
     def get_embedding(self, resume_id: UUID) -> ResumeEmbedding | None:
         """Read counterpart to create_resume_embedding — monitoring-only, no writes."""

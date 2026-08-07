@@ -19,7 +19,7 @@ from app.models.pipeline import (
 # request-shape-only concepts with no persisted representation. FastAPI
 # validates any other value as a 422 automatically.
 CandidateSortField = Literal[
-    "composite_score", "deterministic_score", "semantic_score", "ai_score", "created_at",
+    "composite_score", "deterministic_score", "semantic_score", "created_at",
 ]
 SortOrder = Literal["asc", "desc"]
 
