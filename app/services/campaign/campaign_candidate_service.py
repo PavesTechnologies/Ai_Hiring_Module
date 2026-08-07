@@ -47,6 +47,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
     CampaignRejectionAnalyticsResponse,
+    CandidateAIEvaluationResponse,
     CandidateDeterministicResponse,
     CandidateCampaignHistoryEntryResponse,
     CandidateCampaignHistoryResponse,
@@ -364,19 +365,9 @@ class CampaignCandidateService:
             )
             )
 
-            # Defensive backstop: the cap should already have closed this
-            # campaign (see the post-insert check below) by the time it's
-            # actually at/over the limit, so this should rarely fire in
-            # practice — it exists in case max_candidates was lowered below
-            # the current count after the campaign was already reopened/edited.
-            if (
-                campaign.max_candidates
-                and current_count >= campaign.max_candidates
-            ):
-                raise CampaignException(
-                    "This campaign has reached its maximum candidate limit and is now closed.",
-                    409,
-                )
+            # No cap check on intake: max_candidates counts openings, which are
+            # consumed when a candidate reaches SELECTED (enforced in
+            # PipelineTransitionService), not when a resume is added.
 
             # -----------------------------
             # Create Candidate
@@ -420,32 +411,7 @@ class CampaignCandidateService:
             # read before this insert, so +1 accounts for the row just added.
             # --------------------------------------------------
             bulk_jobs_marked = 0
-            if campaign.max_candidates and (current_count + 1) >= campaign.max_candidates:
-                campaign.status = CampaignStatus.CLOSED
-                campaign.updated_at = datetime.now(timezone.utc)
-                self.campaign_repo.update(campaign)
-
-                bulk_jobs_marked = self.campaign_repo.mark_processing_bulk_jobs_partial_failure(
-                    campaign.id
-                )
-
-                self.audit_service.log(
-                    actor_id=actor_id,
-                    actor_role=actor_role,
-                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
-                    entity_type=EntityType.CAMPAIGN,
-                    entity_id=campaign.id,
-                    campaign_id=campaign.id,
-                    details={
-                        "title": f"Campaign '{campaign.name}' auto-closed",
-                        "reason": "CAP_REACHED",
-                        "max_candidates": campaign.max_candidates,
-                        "final_candidate_count": current_count + 1,
-                        "bulk_jobs_marked_partial_failure": bulk_jobs_marked,
-                    },
-                )
-
-            self.campaign_candidate_repo.commit()
+            
 
             self.audit_service.log(
             actor_id=actor_id,
@@ -1179,6 +1145,37 @@ class CampaignCandidateService:
                 if campaign_candidate.semantic_score is not None else None
             ),
             semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+        )
+
+    def get_candidate_ai_evaluation(self, campaign_candidate_id: UUID) -> CandidateAIEvaluationResponse:
+        """
+        AI-Evaluation-tab-only view: a pure read of the campaign_candidates.
+        ai_* columns written by AIEvaluationService.calculate_and_store_
+        evaluation (Phase 2.4), mirroring get_candidate_deterministic/
+        get_candidate_semantic exactly. Never recalculates anything, never
+        calls Gemini - that lives entirely in calculate_ai_evaluation_task.
+        Never includes summary/resume/deterministic/semantic/final-status
+        data.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if not campaign_candidate:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        return CandidateAIEvaluationResponse(
+            campaign_candidate_id=campaign_candidate.id,
+            ai_evaluation_status=campaign_candidate.ai_evaluation_status,
+            effective_ai_score=(
+                float(campaign_candidate.effective_ai_score)
+                if campaign_candidate.effective_ai_score is not None else None
+            ),
+            ai_confidence=(
+                float(campaign_candidate.ai_confidence)
+                if campaign_candidate.ai_confidence is not None else None
+            ),
+            ai_recommendation=campaign_candidate.ai_recommendation,
+            ai_strengths=campaign_candidate.ai_strengths,
+            ai_weaknesses=campaign_candidate.ai_weaknesses,
+            ai_response_json=campaign_candidate.ai_response_json,
         )
 
     @staticmethod

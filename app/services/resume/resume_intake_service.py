@@ -219,11 +219,8 @@ class ResumeIntakeService:
                 "This campaign is closed and no longer accepting applications.", 403,
             )
 
-        if campaign.max_candidates:
-            current_count = self.campaign_repo.get_candidate_count(campaign_id)
-            if current_count >= campaign.max_candidates:
-                raise CampaignException(
-                    "This campaign has reached its maximum candidate limit.", 409,
-                )
-
+        # Deliberately no max_candidates check here: max_candidates is an
+        # openings count, consumed when a candidate reaches SELECTED, not an
+        # intake limit. Screening many resumes to fill a few positions is the
+        # normal case, so uploads are never capped by it.
         return campaign

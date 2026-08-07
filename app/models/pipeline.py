@@ -114,6 +114,20 @@ class CampaignCandidate(Base):
     # Physical column is `semantic_breakdown` - same aliasing reasoning as
     # score_breakdown above.
     semantic_score_breakdown: Mapped[Optional[dict]] = mapped_column("semantic_breakdown", JSONB, nullable=True)
+    # M08-E02: semantic-layer analog of score_breakdown - overall_similarity/
+    # semantic_passed/semantic_threshold/matching_skills/missing_skills/
+    # matched_keywords/semantic_explanation, written by SemanticScoringService.
+    semantic_score_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_ats_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    ai_confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    effective_ai_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    ai_recommendation: Mapped[Optional[AIRecommendation]] = mapped_column(SAEnum(AIRecommendation, name="ai_recommendation_enum"), nullable=True)
+    ai_strengths: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_weaknesses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_response_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_evaluation_status: Mapped[AIEvaluationStatus] = mapped_column(SAEnum(AIEvaluationStatus, name="ai_evaluation_status_enum"), nullable=False, default=AIEvaluationStatus.PENDING)
+    ai_retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
     composite_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
     # M10-E01: when composite_score was last (re)computed - None until the
     # first successful calculation, overwritten (never appended) on every

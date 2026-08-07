@@ -66,7 +66,7 @@ These four enums drive almost every badge/status pill in the module. Get comfort
 | 4 | `GET /resumes/{resume_id}` | Epic 1 (monitoring) | HR_ADMIN, RECRUITER | Full detail for one resume |
 | 5 | `GET /resumes/{resume_id}/timeline` | Epic 1 (monitoring) | HR_ADMIN, RECRUITER | Per-stage execution timeline |
 | 6 | `GET /resumes/{resume_id}/parse-attempts` | Epic 1 (monitoring) | HR_ADMIN, RECRUITER | Full attempt/failure history |
-| 7 | `GET /resumes/candidate/{candidate_id}/parsed-json` | Epic 1 (monitoring) | HR_ADMIN, RECRUITER | Raw AI-extracted resume JSON |
+| 7 | `GET /resumes/candidate/{campaign_candidate_id}/parsed-json` | Epic 1 (monitoring) | HR_ADMIN, RECRUITER | Raw AI-extracted resume JSON |
 | 8 | `GET /resumes/candidate/{candidate_id}/versions` | Epic 3 (C1) | HR_ADMIN, RECRUITER | Full resume version history |
 | 9 | `POST /resumes/{resume_id}/retry` | Epic 4 (D10) | HR_ADMIN | Re-dispatch a FAILED resume |
 | 10 | `POST /resumes/dead-letter-queue/{dlq_id}/replay` | Epic 4 (D10) | HR_ADMIN | Replay a dead-lettered resume failure |
@@ -225,11 +225,11 @@ These four enums drive almost every badge/status pill in the module. Get comfort
 
 ---
 
-### 4.7 `GET /resumes/candidate/{candidate_id}/parsed-json` — Raw Parsed Resume Data
+### 4.7 `GET /resumes/candidate/{campaign_candidate_id}/parsed-json` — Raw Parsed Resume Data
 **Roles:** HR_ADMIN, RECRUITER
 **Screen:** "View raw extracted data" / debugging panel
 
-**Purpose:** returns the candidate's currently-active resume's raw AI-extracted `parsed_json` blob verbatim — the same structured data (skills, experience, education, etc.) the scoring pipeline consumes downstream. Useful for a "why did this candidate score X" debugging view, or an editable-fields-review screen.
+**Purpose:** returns the campaign candidate's underlying candidate's currently-active resume's raw AI-extracted `parsed_json` blob verbatim — the same structured data (skills, experience, education, etc.) the scoring pipeline consumes downstream. Useful for a "why did this candidate score X" debugging view, or an editable-fields-review screen.
 
 **Response:** `{ resume_id, candidate_id, parse_status, parsed_json: dict | null }` — `parsed_json` is `null` until `parse_status=PARSED`.
 

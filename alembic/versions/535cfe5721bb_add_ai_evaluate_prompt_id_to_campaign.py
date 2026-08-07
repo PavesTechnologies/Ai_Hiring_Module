@@ -10,15 +10,26 @@ d3f7b9c2a1e5's prompt_template_id columns - selecting a value on Campaign
 create/update is a later phase; this migration only gives the task layer
 somewhere to read the value from.
 
-Revision ID: a5f3d8c1b6e4
+Revision ID: 535cfe5721bb
 Revises: d88f97d9d5e0
 Create Date: 2026-08-03
+
+NOTE (2026-08-06): originally authored with revision id "a5f3d8c1b6e4",
+which collided with an unrelated placeholder migration
+(a5f3d8c1b6e4_placeholder_for_missing_revision.py) coincidentally created
+one day later with the same hex string - alembic reported "Revision
+a5f3d8c1b6e4 is present more than once" and could not resolve a single
+head. Renamed to 535cfe5721bb; down_revision/content otherwise unchanged.
+Confirmed via direct DB inspection that this migration's own DDL
+(hiring_campaigns.ai_evaluate_prompt_id, its FK, and its index) was already
+live, so it is folded into e686c750b7b4's merge as a no-op rather than
+re-run.
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "a5f3d8c1b6e4"
+revision = "535cfe5721bb"
 down_revision = "d88f97d9d5e0"
 branch_labels = None
 depends_on = None
