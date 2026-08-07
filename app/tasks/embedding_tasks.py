@@ -12,6 +12,7 @@ from app.db.session import SessionLocal
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.config import CBState
 from app.models.pipeline import AIEvaluationStatus
+from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -89,10 +90,12 @@ def _read_embed_retry_policy(config_repo: ConfigRepository) -> RetryPolicy:
 def _set_manual_review_for_resume_candidates(db, resume_uuid: UUID) -> int:
    
     campaign_candidate_repo = CampaignCandidateRepository(db)
+    ai_evaluation_repo = CampaignCandidateAIEvaluationRepository(db)
     affected = campaign_candidate_repo.get_by_resume_id(resume_uuid)
     for campaign_candidate in affected:
-        campaign_candidate.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
-        campaign_candidate_repo.update(campaign_candidate)
+        ai_evaluation = ai_evaluation_repo.get_or_create(campaign_candidate.id)
+        ai_evaluation.ai_evaluation_status = AIEvaluationStatus.MANUAL_REVIEW
+        ai_evaluation_repo.update(ai_evaluation)
     campaign_candidate_repo.commit()
     return len(affected)
 

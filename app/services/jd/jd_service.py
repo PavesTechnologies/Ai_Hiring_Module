@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from datetime import timezone
 from decimal import Decimal
-from urllib import request
 from uuid import UUID, uuid4
 
 from docx import Document
@@ -18,7 +17,7 @@ from app.services.prompt_template_validation import validate_prompt_template_sel
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 from app.services.skills.skill_normalization_service import SkillMatchResult, verification_status_for_tier
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchRequest
-from app.schemas.jd.response import UpdateJDResponse, JDListItem, PaginatedJDResponse
+from app.schemas.jd.response import UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.hash_service import HashService
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueService, JDEmbeddingQueueError

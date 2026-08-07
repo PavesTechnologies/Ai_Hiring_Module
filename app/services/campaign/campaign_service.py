@@ -1,9 +1,7 @@
 import logging
 import math
-import statistics
 from datetime import datetime, timezone
 from decimal import Decimal
-from urllib import request
 from uuid import UUID, uuid4
 from datetime import timedelta
 from app.middleware.rbac import TokenUser
@@ -13,7 +11,6 @@ from app.tasks.resume_processing_tasks import process_resume_document
 from app.tasks.embedding_tasks import generate_resume_embedding_task, EMBED_RESUME_TASK_TYPE
 from app.repositories.resume_repository import ResumeRepository
 
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.enums.constants import ActionType, COMPOSITE_SCORE_FORMULA_VERSION, EntityType, UserRole
@@ -22,7 +19,6 @@ from app.models.campaign_weight_preset import CampaignWeightPreset
 from app.models.campaigns import CampaignStatus, CampaignWeightConfigurationHistory, HiringCampaign
 from app.models.identity import User
 from app.models.identity import UserRole as LocalUserRole
-from app.models.jd.job_descriptions import JDVerificationStatus
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.campaign_weight_configuration_history_repository import (
     CampaignWeightConfigurationHistoryRepository,
@@ -61,7 +57,7 @@ from app.schemas.campaign.campaign_detail_response import (CampaignDetailRespons
     PipelineLimitsSection,
     HiringManagerSection,
 )
-from app.models.pipeline import CompositeScoreTriggerSource, PipelineStage, RejectionLayer, TransitionSource
+from app.models.pipeline import CompositeScoreTriggerSource, DecisionSource, PipelineStage, TransitionSource
 from app.schemas.campaign.campaign_monitoring_schema import (StalledCandidateItem,
     StalledCandidatesResponse,
     StageOverrideRequest,
@@ -87,7 +83,6 @@ from app.schemas.campaign.campaign_processing_queue_response import (TaskTypeBre
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
-from app.utils.excel_export import ExcelExport
 
 logger = logging.getLogger(__name__)
 
@@ -1787,7 +1782,7 @@ class CampaignService:
             for r in raw_reasons
         ]
 
-        det_total = layer_breakdown.get(RejectionLayer.DETERMINISTIC.value, 0)
+        det_total = layer_breakdown.get(DecisionSource.DETERMINISTIC.value, 0)
         missing = [
             MissingSkillItem(canonical_name=name,
                 count=count,
@@ -1808,17 +1803,17 @@ class CampaignService:
         recommendations: list[RejectionRecommendation] = []
         if analytics_ready and total_candidates > 0:
             thresholds = [
-                (RejectionLayer.DETERMINISTIC.value,
+                (DecisionSource.DETERMINISTIC.value,
                     float(configs.get("DETERMINISTIC_HIGH_REJECTION_THRESHOLD", "60.00")),
                     "High deterministic rejection rate — review the JD's mandatory skills or lower the experience requirement.",
                     "REVIEW_JD_SKILLS",
                 ),
-                (RejectionLayer.SEMANTIC.value,
+                (DecisionSource.SEMANTIC.value,
                     float(configs.get("SEMANTIC_HIGH_REJECTION_THRESHOLD", "40.00")),
                     "High semantic rejection rate — consider lowering the campaign's semantic_threshold.",
                     "ADJUST_THRESHOLD",
                 ),
-                (RejectionLayer.AI.value,
+                (DecisionSource.AI.value,
                     float(configs.get("AI_HIGH_REJECTION_THRESHOLD", "40.00")),
                     "High AI rejection rate — consider lowering ai_threshold or reviewing the active prompt version.",
                     "REVIEW_PROMPT",

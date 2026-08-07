@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable
+from typing import Callable
 
 from fastapi import Request
 from fastapi.responses import JSONResponse

@@ -2,7 +2,6 @@ from fastapi import Depends
 
 from app.dependencies.bulk_upload import get_bulk_upload_job_file_repository, get_bulk_upload_job_repository
 from app.dependencies.campaign import get_campaign_repository, get_config_repository
-from app.dependencies.jd import get_celery_task_log_repository, get_document_processing_repository, get_jd_repository
 from app.dependencies.jd import (
     get_celery_task_log_repository,
     get_document_processing_repository,
@@ -21,7 +20,6 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
-from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.services.embedding_dashboard_service import EmbeddingDashboardService

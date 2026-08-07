@@ -31,7 +31,6 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
-from app.services.jd.hash_service import HashService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline

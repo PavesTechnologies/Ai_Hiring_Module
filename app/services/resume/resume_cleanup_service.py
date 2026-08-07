@@ -4,7 +4,6 @@ from uuid import UUID
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import NotFoundError
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -36,7 +35,6 @@ class ResumeCleanupService:
         self,
         resume_repo: ResumeRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
-        candidate_rejection_repo: CandidateRejectionRepository,
         celery_task_log_repo: CeleryTaskLogRepository,
         dead_letter_queue_repo: DeadLetterQueueRepository,
         storage_service,
@@ -44,7 +42,6 @@ class ResumeCleanupService:
     ):
         self.resume_repo = resume_repo
         self.campaign_candidate_repo = campaign_candidate_repo
-        self.candidate_rejection_repo = candidate_rejection_repo
         self.celery_task_log_repo = celery_task_log_repo
         self.dead_letter_queue_repo = dead_letter_queue_repo
         self.storage_service = storage_service
@@ -65,7 +62,10 @@ class ResumeCleanupService:
             campaign_candidates = self.campaign_candidate_repo.get_by_resume_id(resume_id)
 
             for campaign_candidate in campaign_candidates:
-                self.candidate_rejection_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
+                # candidate_rejections is gone - the AI evaluation row
+                # cascades automatically (cascade="all, delete-orphan" on
+                # CampaignCandidate.ai_evaluation) when the campaign_candidate
+                # itself is deleted below.
                 self.campaign_candidate_repo.delete_stage_history(campaign_candidate.id)
                 # DLQ before celery_task_log — dead_letter_queue.original_task_id
                 # is a NOT NULL FK to celery_task_log.task_id.

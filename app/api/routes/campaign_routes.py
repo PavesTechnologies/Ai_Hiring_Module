@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.campaign import get_campaign_service, get_upload_history_service
 from app.enums.constants import MAX_PAGE_SIZE
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, HiringCampaignResponse, CampaignMinimalResponse, CampaignPageResponse
+from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CampaignMinimalResponse, CampaignPageResponse
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse

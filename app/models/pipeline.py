@@ -5,10 +5,10 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum as SAEnum,
-    ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func,
+    ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
@@ -45,12 +45,23 @@ class AIRecommendation(enum.Enum):
     REJECT = "REJECT"
 
 
-class RejectionLayer(enum.Enum):
+class DecisionType(enum.Enum):
+    REJECTED = "REJECTED"
+    SHORTLISTED = "SHORTLISTED"
+    SELECTED = "SELECTED"
+    HOLD = "HOLD"
+    FRAUD_REVIEW = "FRAUD_REVIEW"
+    RESET = "RESET"
+
+
+class DecisionSource(enum.Enum):
     DETERMINISTIC = "DETERMINISTIC"
     SEMANTIC = "SEMANTIC"
     AI = "AI"
-    MANUAL = "MANUAL"
-    FRAUD = "FRAUD"
+    RECRUITER = "RECRUITER"
+    HIRING_MANAGER = "HIRING_MANAGER"
+    HR_ADMIN = "HR_ADMIN"
+    SYSTEM = "SYSTEM"
 
 
 class TransitionSource(enum.Enum):
@@ -98,36 +109,17 @@ class CampaignCandidate(Base):
     screened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deterministic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     deterministic_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    # Physical column is `deterministic_breakdown`, not `score_breakdown` -
-    # the live RDS schema was never migrated to the name this model used to
-    # assume. Aliased here (Python attribute name kept as score_breakdown)
-    # so every existing caller (CandidateScoringService et al.) keeps
-    # working unchanged and actually persists, instead of silently
-    # target-ing a column that doesn't exist.
-    score_breakdown: Mapped[Optional[dict]] = mapped_column("deterministic_breakdown", JSONB, nullable=True)
+    deterministic_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     semantic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
     semantic_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     # Task 539: set alongside semantic_score/updated_at on every successful
     # computation - when the currently-stored semantic_score was computed,
     # distinct from updated_at (which also moves on unrelated edits).
     semantic_score_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Physical column is `semantic_breakdown` - same aliasing reasoning as
-    # score_breakdown above.
-    semantic_score_breakdown: Mapped[Optional[dict]] = mapped_column("semantic_breakdown", JSONB, nullable=True)
-    # M08-E02: semantic-layer analog of score_breakdown - overall_similarity/
+    # M08-E02: semantic-layer analog of deterministic_breakdown - overall_similarity/
     # semantic_passed/semantic_threshold/matching_skills/missing_skills/
     # matched_keywords/semantic_explanation, written by SemanticScoringService.
-    semantic_score_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    ai_ats_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
-    ai_confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
-    effective_ai_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
-    ai_recommendation: Mapped[Optional[AIRecommendation]] = mapped_column(SAEnum(AIRecommendation, name="ai_recommendation_enum"), nullable=True)
-    ai_strengths: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    ai_weaknesses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    ai_response_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    ai_evaluation_status: Mapped[AIEvaluationStatus] = mapped_column(SAEnum(AIEvaluationStatus, name="ai_evaluation_status_enum"), nullable=False, default=AIEvaluationStatus.PENDING)
-    ai_retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
-    prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
+    semantic_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     composite_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
     # M10-E01: when composite_score was last (re)computed - None until the
     # first successful calculation, overwritten (never appended) on every
@@ -136,17 +128,23 @@ class CampaignCandidate(Base):
     composite_score_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fraud_flags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_fraud_flagged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # decision_type/decision_source/decision_reason/decision_details/
-    # decision_by_user_id/decision_at also exist on the live table but are
-    # deliberately left unmapped here - nothing in this codebase reads or
-    # writes them today (they predate/superseded the ai_*/rejection_*/
-    # hr_override_* design this model used to assume, none of which exist
-    # on the live table at all - see the removed columns below), and
-    # mapping the two USER-DEFINED enum columns correctly requires knowing
-    # their real Postgres enum values, which haven't been verified. Add
-    # them here once something actually needs to read/write them.
+    # Unified decision model: replaces CandidateRejection, rejection_reason/
+    # rejection_layer, and hr_override* alike - every "why is this candidate
+    # in this state" fact (AI/deterministic/semantic rejection, recruiter
+    # shortlist/reject, HM selection, manual hold, fraud review, HR override
+    # reset) is one decision, regardless of who/what made it.
+    decision_type: Mapped[Optional[DecisionType]] = mapped_column(SAEnum(DecisionType, name="decision_type_enum"), nullable=True)
+    decision_source: Mapped[Optional[DecisionSource]] = mapped_column(SAEnum(DecisionSource, name="decision_source_enum"), nullable=True)
+    decision_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decision_details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    decision_by_user_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey(_USERS_FK), nullable=True)
+    decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    ai_evaluation: Mapped[Optional["CampaignCandidateAIEvaluation"]] = relationship(
+        back_populates="campaign_candidate", uselist=False, cascade="all, delete-orphan",
+    )
 
 
 class AllowedTransition(Base):
@@ -175,16 +173,33 @@ class CampaignCandidateStageHistory(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
-class CandidateRejection(Base):
-    __tablename__ = "candidate_rejections"
+class CampaignCandidateAIEvaluation(Base):
+    """
+    1:1 with CampaignCandidate - every AI-provider-specific field, split out
+    of the core workflow row so AI evaluation output (and its own retry/
+    status bookkeeping) doesn't live mixed in with pipeline state.
+    AIEvaluationService is the only writer of the ai_* columns here.
+    """
+    __tablename__ = "campaign_candidate_ai_evaluations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    campaign_candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=False)
-    rejection_layer: Mapped[RejectionLayer] = mapped_column(SAEnum(RejectionLayer, name="rejection_layer_enum"), nullable=False)
-    rejection_reason: Mapped[str] = mapped_column(Text, nullable=False)
-    rejection_detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    rejected_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey(_USERS_FK), nullable=True)
-    rejected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    campaign_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), unique=True, nullable=False,
+    )
+    ai_evaluation_status: Mapped[AIEvaluationStatus] = mapped_column(SAEnum(AIEvaluationStatus, name="ai_evaluation_status_enum"), nullable=False, default=AIEvaluationStatus.PENDING)
+    ai_retry_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    ai_ats_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    effective_ai_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    ai_confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    ai_recommendation: Mapped[Optional[AIRecommendation]] = mapped_column(SAEnum(AIRecommendation, name="ai_recommendation_enum"), nullable=True)
+    ai_strengths: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_weaknesses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    ai_response_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    campaign_candidate: Mapped["CampaignCandidate"] = relationship(back_populates="ai_evaluation")
 
 
 class CandidateCompositeScoreHistory(Base):
