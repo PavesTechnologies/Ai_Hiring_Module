@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload, lazyload
-from app.models.pipeline import CampaignCandidate, PipelineStage
+from app.models.pipeline import PipelineStage
 from datetime import datetime, timezone, timedelta
 
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
@@ -19,7 +19,7 @@ from app.models.pipeline import (CampaignCandidate,
 )
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus, DeadLetterQueue
 from app.models.candidates import Resume, ParseStatus
-from app.models.identity import User, UserRole
+from app.models.identity import User
 
 class CampaignRepository:
 
@@ -199,6 +199,26 @@ class CampaignRepository:
         return (self.db.query(func.count(CampaignCandidate.id))
             .filter(CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.SHORTLISTED,
+            )
+            .scalar()
+            or 0
+        )
+
+    def get_selected_count(self,
+        campaign_id: UUID,
+    ) -> int:
+        """
+        Positions filled — the count max_candidates is measured against.
+
+        max_candidates is the number of openings, not an intake limit, so a
+        slot is consumed when a candidate reaches SELECTED and not when a
+        resume is uploaded. SELECTED is terminal (no transition out of it is
+        seeded in allowed_transitions), so a plain equality count cannot
+        under-count the way a mid-pipeline stage would.
+        """
+        return (self.db.query(func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.pipeline_stage == PipelineStage.SELECTED,
             )
             .scalar()
             or 0
@@ -409,11 +429,6 @@ class CampaignRepository:
             .count()
         )
     
-    def get_candidate_count(self,campaign_id) -> int:
-        return (self.db.query(CampaignCandidate)
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .count()
-        )
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 

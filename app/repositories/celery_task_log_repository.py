@@ -1,9 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import CeleryTaskLog, TaskStatus

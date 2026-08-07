@@ -1,9 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt

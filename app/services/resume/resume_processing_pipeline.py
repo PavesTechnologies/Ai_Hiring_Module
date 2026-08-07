@@ -10,11 +10,9 @@ from app.schemas.ai.resume_extraction_response import ResumeExtractionGeneration
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
-from app.services.jd.hash_service import HashService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.resume import resume_embedding_text_builder
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
 from app.services.resume.resume_text_extraction_service import ResumeTextExtractionService

@@ -2,7 +2,7 @@ import logging
 from uuid import UUID
 
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
-from app.models.async_tasks import DocumentType, ProcessingStage
+from app.models.async_tasks import ProcessingStage
 from app.models.jd.job_descriptions import JDSourceFormat
 from app.repositories.jd_repository import JDRepository
 from app.repositories.skill_repository import SkillRepository

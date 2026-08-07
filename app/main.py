@@ -1,7 +1,3 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes.jd_routes import router as jd_router
-from app.api.routes.campaign_routes import router as campaign_router
 import logging
 import time
 
@@ -9,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -77,16 +72,6 @@ def _recover_stalled_resume_uploads_on_startup() -> None:
         logger.info("Startup resume-upload recovery scan completed | recovered=%s", recovered)
     except Exception:
         logger.exception("Startup resume-upload recovery scan failed")
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"status_code": exc.status_code, "message": exc.detail},
-        headers=getattr(exc, "headers", None),
-    )
-
 
 
 app.add_middleware(JWTMiddleware)

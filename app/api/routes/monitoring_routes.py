@@ -12,7 +12,6 @@ from app.schemas.monitoring import (
     QueueStatusResponse,
     UploadQueueDashboardResponse,
 )
-from app.schemas.embedding_dashboard import EmbeddingDashboardResponse
 from app.schemas.response import APIResponse
 from app.services.embedding_dashboard_service import EmbeddingDashboardService
 from app.services.ops_monitoring_service import OpsMonitoringService

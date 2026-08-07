@@ -10,7 +10,6 @@ import app.models.candidates
 import app.models.pipeline
 import app.models.async_tasks
 import app.models.skills
-import app.models
 
 print(Base.metadata.tables.keys())
 

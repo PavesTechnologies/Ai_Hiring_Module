@@ -8,7 +8,6 @@ from fastapi.responses import StreamingResponse
 
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
-from app.dependencies import campaign
 from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_PAGE_SIZE
 from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
@@ -44,7 +43,6 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
-    AdditionalCandidateSkillItem,
     AiSummaryDetail,
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
@@ -360,28 +358,9 @@ class CampaignCandidateService:
                     403,
                 )
 
-            # -----------------------------
-            # Max Candidate Validation
-            # -----------------------------
-            current_count = (
-            self.campaign_candidate_repo.get_candidate_count(
-                request.campaign_id
-            )
-            )
-
-            # Defensive backstop: the cap should already have closed this
-            # campaign (see the post-insert check below) by the time it's
-            # actually at/over the limit, so this should rarely fire in
-            # practice — it exists in case max_candidates was lowered below
-            # the current count after the campaign was already reopened/edited.
-            if (
-                campaign.max_candidates
-                and current_count >= campaign.max_candidates
-            ):
-                raise CampaignException(
-                    "This campaign has reached its maximum candidate limit and is now closed.",
-                    409,
-                )
+            # No cap check on intake: max_candidates counts openings, which are
+            # consumed when a candidate reaches SELECTED (enforced in
+            # PipelineTransitionService), not when a resume is added.
 
             # -----------------------------
             # Create Candidate
@@ -416,41 +395,6 @@ class CampaignCandidateService:
                 to_stage=PipelineStage.UPLOADED,
                 transition_source=TransitionSource.SYSTEM,
             )
-
-            # --------------------------------------------------
-            # E03-S05-T01: auto-close the moment the cap-reaching candidate
-            # is inserted — still holding this transaction's row lock on
-            # `campaign` (acquired via get_by_id_for_update above), so no
-            # concurrent insert can race past this check. current_count was
-            # read before this insert, so +1 accounts for the row just added.
-            # --------------------------------------------------
-            bulk_jobs_marked = 0
-            if campaign.max_candidates and (current_count + 1) >= campaign.max_candidates:
-                campaign.status = CampaignStatus.CLOSED
-                campaign.updated_at = datetime.now(timezone.utc)
-                self.campaign_repo.update(campaign)
-
-                bulk_jobs_marked = self.campaign_repo.mark_processing_bulk_jobs_partial_failure(
-                    campaign.id
-                )
-
-                self.audit_service.log(
-                    actor_id=actor_id,
-                    actor_role=actor_role,
-                    action_type=ActionType.CAMPAIGN_AUTO_CLOSED,
-                    entity_type=EntityType.CAMPAIGN,
-                    entity_id=campaign.id,
-                    campaign_id=campaign.id,
-                    details={
-                        "title": f"Campaign '{campaign.name}' auto-closed",
-                        "reason": "CAP_REACHED",
-                        "max_candidates": campaign.max_candidates,
-                        "final_candidate_count": current_count + 1,
-                        "bulk_jobs_marked_partial_failure": bulk_jobs_marked,
-                    },
-                )
-
-            self.campaign_candidate_repo.commit()
 
             self.audit_service.log(
             actor_id=actor_id,
@@ -1272,9 +1216,6 @@ class CampaignCandidateService:
             matched_keywords=breakdown.get("matched_keywords") or [],
             semantic_explanation=breakdown.get("semantic_explanation"),
         )
-        timeline = self._build_processing_timeline(campaign_candidate_id)
-
-        return CandidateScorecardResponse(**base.model_dump(), **banner, processing_timeline=timeline)
 
     def _build_processing_timeline(self, campaign_candidate_id: UUID) -> list[ProcessingTimelineEntry]:
         """

@@ -11,7 +11,7 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import AIEvaluationStatus, DecisionSource, DecisionType
+from app.models.pipeline import AIEvaluationStatus, DecisionSource
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
