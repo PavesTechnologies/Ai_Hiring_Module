@@ -33,9 +33,6 @@ class PromptTemplateService:
         actor_role: Optional[str],
     ) -> PromptResponse:
         try:
-            if self.repository.exists_by_task_type(request.task_type):
-                raise ConflictError(f"A prompt template for task_type '{request.task_type}' already exists.")
-
             content_hash = self._compute_hash(request.template_text)
             if self.repository.exists_by_hash(content_hash):
                 raise ConflictError("A prompt template with identical content already exists.")
@@ -199,6 +196,13 @@ class PromptTemplateService:
         return [
             PromptLookupResponse(id=prompt.id, name=prompt.name)
             for prompt in self.repository.get_active_resume_parse_prompts()
+        ]
+
+    def get_ai_evaluate_lookup(self) -> list[PromptLookupResponse]:
+        """ACTIVE AI_EVALUATE prompts, id+name only, sorted by name - for the Campaign create/update ai_evaluate_prompt_id picker."""
+        return [
+            PromptLookupResponse(id=prompt.id, name=prompt.name)
+            for prompt in self.repository.get_active_ai_evaluate_prompts()
         ]
 
     def delete_prompt(self, prompt_id: UUID, *, updated_by: str, actor_role: Optional[str]) -> None:

@@ -20,6 +20,8 @@ class CampaignResponse(BaseModel):
     created_at: datetime
     prompt_template_id: UUID
     prompt_name: str | None = None
+    ai_evaluate_prompt_id: UUID | None = None
+    ai_evaluate_prompt_name: str | None = None
     approaching_cap: bool = False
     deadline_soon: bool = False
     overdue_review: bool = False

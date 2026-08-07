@@ -984,6 +984,55 @@ class CandidateSemanticResponse(BaseModel):
             }
         }
     )
+
+
+class CandidateAIEvaluationResponse(BaseModel):
+    """
+    AI-Evaluation-tab-only view of the candidate scorecard. Mirrors
+    CandidateDeterministicResponse/CandidateSemanticResponse exactly: a pure
+    read of the campaign_candidates.ai_* columns written by
+    AIEvaluationService.calculate_and_store_evaluation (Phase 2.4) - never a
+    second/independent computation. ai_response_json is the complete
+    validated AI response exactly as returned by the LLM (Phase 2.4
+    enhancement), included alongside the individual columns for
+    debugging/auditability/future re-evaluation comparison. Never includes
+    summary/resume/deterministic/semantic/final-status data.
+    """
+
+    campaign_candidate_id: UUID
+    ai_evaluation_status: AIEvaluationStatus
+    effective_ai_score: float | None = None
+    ai_confidence: float | None = None
+    ai_recommendation: AIRecommendation | None = None
+    ai_strengths: list[str] | None = None
+    ai_weaknesses: list[str] | None = None
+    ai_response_json: dict | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "campaign_candidate_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "ai_evaluation_status": "COMPLETED",
+                "effective_ai_score": 96.0,
+                "ai_confidence": 0.95,
+                "ai_recommendation": "SHORTLIST",
+                "ai_strengths": ["Strong Java and Spring Boot experience"],
+                "ai_weaknesses": ["Limited banking domain experience"],
+                "ai_response_json": {
+                    "scores": {
+                        "technical_match": 98, "experience_match": 95,
+                        "education_match": 95, "domain_match": 95, "overall_score": 96,
+                    },
+                    "confidence_score": 95,
+                    "recommendation": "SHORTLIST",
+                    "strengths": ["Strong Java and Spring Boot experience"],
+                    "gaps": ["Limited banking domain experience"],
+                },
+            }
+        }
+    )
+
+
 class ProcessingTimelineEntry(BaseModel):
     """Epic 4 (M05-E04) Phase D2 - one celery_task_log row on the scorecard's Processing Timeline."""
 

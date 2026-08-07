@@ -422,6 +422,13 @@ class CampaignService:
                 exception_factory=lambda msg: CampaignException(msg, 422),
             )
 
+            selected_ai_evaluate_prompt = validate_prompt_template_selection(
+                request.ai_evaluate_prompt_id,
+                expected_task_type="AI_EVALUATE",
+                repository=self.prompt_template_repo,
+                exception_factory=lambda msg: CampaignException(msg, 422),
+            )
+
             campaign = HiringCampaign(org_id=org_id,
                 jd_id=request.jd_id,
                 name=request.name.strip(),
@@ -435,6 +442,7 @@ class CampaignService:
                 max_candidates=request.max_candidates,
                 deadline=request.deadline,
                 prompt_template_id=selected_prompt.id,
+                ai_evaluate_prompt_id=selected_ai_evaluate_prompt.id,
                 hiring_manager_id=request.hiring_manager_id,
                 recruiter_id=request.recruiter_id,
                 created_by=created_by,
@@ -456,6 +464,8 @@ class CampaignService:
                     "jd_id": str(campaign.jd_id),
                     "previous_prompt_template_id": None,
                     "new_prompt_template_id": str(campaign.prompt_template_id),
+                    "previous_ai_evaluate_prompt_id": None,
+                    "new_ai_evaluate_prompt_id": str(campaign.ai_evaluate_prompt_id),
                 },
             )
 
@@ -482,6 +492,8 @@ class CampaignService:
                 created_at=campaign.created_at,
                 prompt_template_id=campaign.prompt_template_id,
                 prompt_name=selected_prompt.name,
+                ai_evaluate_prompt_id=campaign.ai_evaluate_prompt_id,
+                ai_evaluate_prompt_name=selected_ai_evaluate_prompt.name,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id),
@@ -2181,6 +2193,26 @@ class CampaignService:
                 campaign.prompt_template_id = new_prompt.id
                 updated_prompt = new_prompt
 
+            # ── AI Evaluation Prompt Template reassignment ───────────────
+            # Same optional-reassignment shape as prompt_template_id above -
+            # ai_evaluate_prompt_id is nullable on HiringCampaign, so a PATCH
+            # that omits it (or resends the current value) is a no-op here.
+            updated_ai_evaluate_prompt = None
+            if (request.ai_evaluate_prompt_id is not None
+                    and request.ai_evaluate_prompt_id != campaign.ai_evaluate_prompt_id):
+                new_ai_evaluate_prompt = validate_prompt_template_selection(
+                    request.ai_evaluate_prompt_id,
+                    expected_task_type="AI_EVALUATE",
+                    repository=self.prompt_template_repo,
+                    exception_factory=lambda msg: CampaignException(msg, 422),
+                )
+                changes["ai_evaluate_prompt_id"] = {
+                    "before": str(campaign.ai_evaluate_prompt_id) if campaign.ai_evaluate_prompt_id else None,
+                    "after": str(new_ai_evaluate_prompt.id),
+                }
+                campaign.ai_evaluate_prompt_id = new_ai_evaluate_prompt.id
+                updated_ai_evaluate_prompt = new_ai_evaluate_prompt
+
             # ── reassign hiring manager ─────────────────────
             previous_hiring_manager_id = None
             hm_review_pending_count = 0
@@ -2356,6 +2388,8 @@ class CampaignService:
                 created_at=campaign.created_at,
                 prompt_template_id=campaign.prompt_template_id,
                 prompt_name=updated_prompt.name if updated_prompt else None,
+                ai_evaluate_prompt_id=campaign.ai_evaluate_prompt_id,
+                ai_evaluate_prompt_name=updated_ai_evaluate_prompt.name if updated_ai_evaluate_prompt else None,
                 candidate_count=candidate_count,
                 shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
                 approaching_cap=self._is_approaching_cap(self.campaign_repo.get_selected_count(campaign.id), campaign.max_candidates, cap_warning_percentage),
