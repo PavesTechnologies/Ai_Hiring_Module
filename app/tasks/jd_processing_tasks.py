@@ -89,7 +89,6 @@ def process_jd_document(
             prompt_template_repository=PromptTemplateRepository(db),
         )
 
-        embedding_service = EmbeddingService()
         # One EmbeddingService instance shared by the pipeline's own JD-level
         # embedding stage and by skill-level semantic matching — the
         # underlying sentence-transformer model is a class-level singleton

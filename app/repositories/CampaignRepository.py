@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload, lazyload
-from app.models.pipeline import CampaignCandidate, PipelineStage
+from app.models.pipeline import PipelineStage
 from datetime import datetime, timezone, timedelta
 
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
@@ -13,13 +13,13 @@ from app.models.compliance import AuditLog
 from app.models.skills import JDSkill, JDSkillVerificationStatus, JDUnknownSkill, JDUnknownSkillStatus
 from app.models.pipeline import (CampaignCandidate,
     CampaignCandidateStageHistory,
-    CandidateRejection,
-    RejectionLayer,
+    DecisionSource,
+    DecisionType,
     TransitionSource,
 )
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus, CeleryTaskLog, TaskStatus, DeadLetterQueue
 from app.models.candidates import Resume, ParseStatus
-from app.models.identity import User, UserRole
+from app.models.identity import User
 
 class CampaignRepository:
 
@@ -222,14 +222,6 @@ class CampaignRepository:
             )
             .scalar()
             or 0
-        )
-
-    def get_selected_count(self, campaign_id: UUID) -> int:
-        return (self.db.query(func.count(CampaignCandidate.id))
-            .filter(CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.pipeline_stage == PipelineStage.SELECTED,
-                )
-                .scalar() or 0
         )
 
     def get_hm_review_count(self,
@@ -437,11 +429,6 @@ class CampaignRepository:
             .count()
         )
     
-    def get_candidate_count(self,campaign_id) -> int:
-        return (self.db.query(CampaignCandidate)
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .count()
-        )
     def get_user(self, user_id: str) -> User | None:
         return self.db.get(User, user_id)
 
@@ -923,6 +910,7 @@ class CampaignRepository:
         cc.pipeline_stage = to_stage
         if set_fraud_flag:
             cc.is_fraud_flagged = True
+        ai_evaluation = cc.ai_evaluation
         self.db.add(CampaignCandidateStageHistory(campaign_candidate_id=cc.id,
             from_stage=from_stage,
             to_stage=to_stage,
@@ -933,7 +921,14 @@ class CampaignRepository:
                 "composite_score": float(cc.composite_score) if cc.composite_score is not None else None,
                 "deterministic_score": float(cc.deterministic_score) if cc.deterministic_score is not None else None,
                 "semantic_score": float(cc.semantic_score) if cc.semantic_score is not None else None,
-                "ai_ats_score": float(cc.ai_ats_score) if cc.ai_ats_score is not None else None,
+                "ai_ats_score": (
+                    float(ai_evaluation.ai_ats_score)
+                    if ai_evaluation is not None and ai_evaluation.ai_ats_score is not None else None
+                ),
+                "decision_type": cc.decision_type.value if cc.decision_type else None,
+                "decision_source": cc.decision_source.value if cc.decision_source else None,
+                "decision_reason": cc.decision_reason,
+                "decision_details": cc.decision_details,
             },
         ))
         self.db.flush()
@@ -949,56 +944,74 @@ class CampaignRepository:
 
     # ── Rejection analytics ────────────────────────────────────────
 
+    # Every rejection-analytics method below reads campaign_candidate_
+    # stage_history rows (to_stage='REJECTED') instead of the removed
+    # candidate_rejections table - scores_snapshot was enriched with
+    # decision_type/decision_source/decision_reason/decision_details at
+    # write time (StageTransitionService), preserving full per-event
+    # history (a candidate can be rejected, HR-overridden, then rejected
+    # again) rather than collapsing to campaign_candidates' latest decision.
+
     def get_rejection_layer_breakdown(self, campaign_id: UUID) -> dict[str, int]:
-        rows = (self.db.query(CandidateRejection.rejection_layer, func.count(CandidateRejection.id))
-            .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .group_by(CandidateRejection.rejection_layer)
-            .all()
-        )
-        return {layer.value: count for layer, count in rows}
+        rows = self.db.execute(text("""
+            SELECT sh.scores_snapshot->>'decision_source' AS decision_source, COUNT(*) AS cnt
+            FROM campaign_candidate_stage_history sh
+            JOIN campaign_candidates cc ON cc.id = sh.campaign_candidate_id
+            WHERE cc.campaign_id = :campaign_id
+              AND sh.to_stage = 'REJECTED'
+              AND sh.scores_snapshot->>'decision_source' IS NOT NULL
+            GROUP BY decision_source
+        """), {"campaign_id": str(campaign_id)}).all()
+        return {row.decision_source: row.cnt for row in rows}
 
     def get_top_rejection_reasons(self, campaign_id: UUID, limit: int = 10) -> list[dict]:
-        rows = (self.db.query(CandidateRejection.rejection_reason, func.count(CandidateRejection.id))
-            .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .group_by(CandidateRejection.rejection_reason)
-            .order_by(func.count(CandidateRejection.id).desc())
-            .limit(limit)
-            .all()
-        )
+        rows = self.db.execute(text("""
+            SELECT sh.scores_snapshot->>'decision_reason' AS reason, COUNT(*) AS cnt
+            FROM campaign_candidate_stage_history sh
+            JOIN campaign_candidates cc ON cc.id = sh.campaign_candidate_id
+            WHERE cc.campaign_id = :campaign_id
+              AND sh.to_stage = 'REJECTED'
+              AND sh.scores_snapshot->>'decision_reason' IS NOT NULL
+            GROUP BY reason
+            ORDER BY cnt DESC
+            LIMIT :limit
+        """), {"campaign_id": str(campaign_id), "limit": limit}).all()
+
         result = []
-        for reason, count in rows:
-            sample = (self.db.query(CandidateRejection.rejection_detail)
-                .join(CampaignCandidate, CandidateRejection.campaign_candidate_id == CampaignCandidate.id)
-                .filter(CampaignCandidate.campaign_id == campaign_id,
-                    CandidateRejection.rejection_reason == reason,
-                    CandidateRejection.rejection_detail.isnot(None),
-                )
-                .first()
-            )
+        for row in rows:
+            sample = self.db.execute(text("""
+                SELECT sh.scores_snapshot->'decision_details' AS detail
+                FROM campaign_candidate_stage_history sh
+                JOIN campaign_candidates cc ON cc.id = sh.campaign_candidate_id
+                WHERE cc.campaign_id = :campaign_id
+                  AND sh.to_stage = 'REJECTED'
+                  AND sh.scores_snapshot->>'decision_reason' = :reason
+                  AND sh.scores_snapshot->'decision_details' IS NOT NULL
+                LIMIT 1
+            """), {"campaign_id": str(campaign_id), "reason": row.reason}).first()
             result.append({
-                "reason": reason,
-                "count": count,
-                "sample_detail": sample[0] if sample else None,
+                "reason": row.reason,
+                "count": row.cnt,
+                "sample_detail": sample.detail if sample else None,
             })
         return result
 
     def get_missing_mandatory_skill_counts(self, campaign_id: UUID) -> list[tuple[str, int]]:
         """
-        per-skill counts from rejection_detail->'missing_skills'
-        (a JSONB array of canonical skill NAMES — the shape the deterministic
-        scoring task actually writes). Raw SQL because jsonb_array_elements_text
-        has no clean ORM equivalent.
+        per-skill counts from decision_details->'missing_skills' (a JSONB
+        array of canonical skill NAMES — the shape the deterministic
+        scoring task actually writes). Raw SQL because
+        jsonb_array_elements_text has no clean ORM equivalent.
         """
         rows = self.db.execute(text("""
             SELECT skill, COUNT(*) AS cnt
-            FROM candidate_rejections cr
-            JOIN campaign_candidates cc ON cc.id = cr.campaign_candidate_id,
-            LATERAL jsonb_array_elements_text(cr.rejection_detail->'missing_skills') AS skill
+            FROM campaign_candidate_stage_history sh
+            JOIN campaign_candidates cc ON cc.id = sh.campaign_candidate_id,
+            LATERAL jsonb_array_elements_text(sh.scores_snapshot->'decision_details'->'missing_skills') AS skill
             WHERE cc.campaign_id = :campaign_id
-              AND cr.rejection_layer = 'DETERMINISTIC'
-              AND cr.rejection_detail ? 'missing_skills'
+              AND sh.to_stage = 'REJECTED'
+              AND sh.scores_snapshot->>'decision_source' = 'DETERMINISTIC'
+              AND sh.scores_snapshot->'decision_details' ? 'missing_skills'
             GROUP BY skill
             ORDER BY cnt DESC
         """), {"campaign_id": str(campaign_id)}).all()
@@ -1016,12 +1029,48 @@ class CampaignRepository:
 
         rejected = (self.db.query(func.count(CampaignCandidate.id))
             .filter(CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.rejection_layer == RejectionLayer.DETERMINISTIC,
+                CampaignCandidate.decision_type == DecisionType.REJECTED,
+                CampaignCandidate.decision_source == DecisionSource.DETERMINISTIC,
             )
             .scalar()
             or 0
         )
         return (rejected / total) * 100
+
+    def get_deterministic_rejection_details(
+        self,
+        campaign_id: UUID | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> list[tuple[dict, UUID]]:
+        """
+        (decision_details, campaign_id) pairs for every DETERMINISTIC
+        rejection stage-history transition, optionally scoped to one
+        campaign and/or a changed_at date range - campaign_id=None means
+        platform-wide, mirroring the old CandidateRejectionRepository.
+        get_by_campaign's exact call shape/semantics, now read from
+        campaign_candidate_stage_history's scores_snapshot instead of the
+        removed candidate_rejections table.
+        """
+        filters = ["sh.to_stage = 'REJECTED'", "sh.scores_snapshot->>'decision_source' = 'DETERMINISTIC'"]
+        params: dict = {}
+        if campaign_id is not None:
+            filters.append("cc.campaign_id = :campaign_id")
+            params["campaign_id"] = str(campaign_id)
+        if date_from is not None:
+            filters.append("sh.changed_at >= :date_from")
+            params["date_from"] = date_from
+        if date_to is not None:
+            filters.append("sh.changed_at <= :date_to")
+            params["date_to"] = date_to
+
+        rows = self.db.execute(text(f"""
+            SELECT sh.scores_snapshot->'decision_details' AS detail, cc.campaign_id AS campaign_id
+            FROM campaign_candidate_stage_history sh
+            JOIN campaign_candidates cc ON cc.id = sh.campaign_candidate_id
+            WHERE {' AND '.join(filters)}
+        """), params).all()
+        return [(row.detail or {}, row.campaign_id) for row in rows]
 
     def get_average_screening_hours(self, campaign_id: UUID) -> float | None:
         """

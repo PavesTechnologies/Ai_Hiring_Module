@@ -21,7 +21,6 @@ from app.dependencies.jd import (
     get_prompt_template_repository,
     get_stage_tracker,
 )
-from app.enums.constants import UserRole
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.async_tasks import DocumentType, ProcessingStage
@@ -37,7 +36,6 @@ from app.schemas.jd.response import (
     JDProcessingStatusResponse,
     JDUploadSummary,
     PaginatedJDResponse,
-    UpdateJDResponse,
 )
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.stage_execution_service import StageExecutionService
@@ -46,10 +44,7 @@ from app.services.jd.jd_processing_status_service import JDProcessingStatusServi
 from app.services.jd.jd_service import JDReprocessRequired, JDService
 from app.tasks.jd_processing_tasks import process_jd_document
 from app.schemas.response import APIResponse
-from fastapi import Query
-from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
-from fastapi.responses import StreamingResponse
 
 router = APIRouter(
     prefix="/job-descriptions",

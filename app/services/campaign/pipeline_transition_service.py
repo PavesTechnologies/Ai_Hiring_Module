@@ -6,7 +6,13 @@ from app.exceptions.pipeline_transition_exceptions import (
     PipelineTransitionReasonRequiredException,
 )
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import CampaignCandidate, PipelineStage, TransitionSource
+from app.models.pipeline import (
+    CampaignCandidate,
+    DecisionSource,
+    DecisionType,
+    PipelineStage,
+    TransitionSource,
+)
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.CampaignRepository import CampaignRepository
@@ -19,6 +25,13 @@ class PipelineTransitionService:
     campaign_candidate between pipeline stages. Nothing in the codebase
     calls this yet (no existing code path transitions pipeline_stage at
     all today); this is the foundation later phases (C5, C7) build on.
+
+    Decision-model-aware for consistency with StageTransitionService (the
+    service actually wired into the 3 scoring Celery tasks today) - when a
+    decision_type is supplied, the same decision_*/scores_snapshot fields
+    get written, so a future caller of this generic engine (e.g. a
+    recruiter shortlist/reject action) doesn't need its own copy of that
+    logic. Still zero call sites of its own.
     """
 
     def __init__(
@@ -43,6 +56,9 @@ class PipelineTransitionService:
         actor_role: str | None = None,
         reason: str | None = None,
         source: TransitionSource = TransitionSource.SYSTEM,
+        decision_type: DecisionType | None = None,
+        decision_source: DecisionSource | None = None,
+        decision_details: dict | None = None,
     ) -> CampaignCandidate:
         """
         Does NOT commit — the caller commits, same convention as every
@@ -53,6 +69,12 @@ class PipelineTransitionService:
         when it's present, since AuditLog.actor_id is a required FK — an
         unattributed SYSTEM transition still gets its history row, just
         not an audit entry.
+
+        decision_type/decision_source/decision_details are optional -
+        when supplied, the unified decision model is written onto
+        campaign_candidate (decision_reason/decision_by_user_id/decision_at
+        derive from reason/changed_by/now) and folded into the
+        stage-history scores_snapshot alongside the transition itself.
         """
         from_stage = campaign_candidate.pipeline_stage
 
@@ -69,6 +91,23 @@ class PipelineTransitionService:
 
         self.campaign_candidate_repo.update_pipeline_stage(campaign_candidate, to_stage)
 
+        scores_snapshot = None
+        if decision_type is not None:
+            now = datetime.now(timezone.utc)
+            campaign_candidate.decision_type = decision_type
+            campaign_candidate.decision_source = decision_source
+            campaign_candidate.decision_reason = reason
+            campaign_candidate.decision_details = decision_details
+            campaign_candidate.decision_by_user_id = changed_by
+            campaign_candidate.decision_at = now
+            self.campaign_candidate_repo.update(campaign_candidate)
+            scores_snapshot = {
+                "decision_type": decision_type.value,
+                "decision_source": decision_source.value if decision_source else None,
+                "decision_reason": reason,
+                "decision_details": decision_details,
+            }
+
         if to_stage == PipelineStage.SELECTED:
             self._close_if_all_positions_filled(
                 campaign_candidate, changed_by=changed_by, actor_role=actor_role,
@@ -81,6 +120,7 @@ class PipelineTransitionService:
             changed_by=changed_by,
             change_reason=reason,
             transition_source=source,
+            scores_snapshot=scores_snapshot,
         )
 
         if changed_by is not None:

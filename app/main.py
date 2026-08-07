@@ -1,7 +1,3 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes.jd_routes import router as jd_router
-from app.api.routes.campaign_routes import router as campaign_router
 import logging
 import time
 
@@ -9,7 +5,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -28,6 +23,7 @@ from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
 from app.api.routes.dead_letter_routes import router as dead_letter_router
+from app.api.routes.talent_pool_routes import router as talent_pool_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -77,16 +73,6 @@ def _recover_stalled_resume_uploads_on_startup() -> None:
         logger.info("Startup resume-upload recovery scan completed | recovered=%s", recovered)
     except Exception:
         logger.exception("Startup resume-upload recovery scan failed")
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"status_code": exc.status_code, "message": exc.detail},
-        headers=getattr(exc, "headers", None),
-    )
-
 
 
 app.add_middleware(JWTMiddleware)
@@ -190,6 +176,7 @@ app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PRE
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
+app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

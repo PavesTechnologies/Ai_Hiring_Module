@@ -266,7 +266,7 @@ def get_campaign_rejection_analytics(
     response_model=APIResponse[list[CandidateRejectionHistoryEntryResponse]],
     status_code=status.HTTP_200_OK,
     summary="Get Candidate Rejection History",
-    description="Every candidate_rejections record for this candidate, newest first. Read-only.",
+    description="Every rejection event for this candidate, newest first. Read-only.",
 )
 def get_rejection_history(
     campaign_candidate_id: UUID,

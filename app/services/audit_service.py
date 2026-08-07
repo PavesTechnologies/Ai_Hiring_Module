@@ -1,10 +1,5 @@
 from uuid import UUID
 
-from app.enums.constants import (
-    ActionType,
-    EntityType,
-)
-
 from app.models.compliance import AuditLog
 from app.repositories.audit_repository import AuditRepository
 

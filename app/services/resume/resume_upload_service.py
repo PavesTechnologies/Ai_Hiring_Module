@@ -7,7 +7,6 @@ from app.core.encryption_service import EncryptionService
 from app.core.storage_service import StorageService
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import NotFoundError
-from app.exceptions.campaign_exceptions import CampaignException
 from app.exceptions.resume_exceptions import (
     DeadLetterEntryNotReplayableException,
     DuplicateResumeFileException,

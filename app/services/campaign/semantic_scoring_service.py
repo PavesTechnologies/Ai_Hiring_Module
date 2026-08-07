@@ -143,7 +143,8 @@ class SemanticScoringService:
         # single update()/commit() - one row, one transaction, so this is
         # already atomic without any extra locking.
         campaign_candidate.semantic_score = similarity
-        campaign_candidate.semantic_score_breakdown = breakdown
+        campaign_candidate.semantic_passed = passed
+        campaign_candidate.semantic_breakdown = breakdown
         campaign_candidate.semantic_score_computed_at = computed_at
         campaign_candidate.updated_at = computed_at
         self.campaign_candidate_repository.update(campaign_candidate)
@@ -157,7 +158,7 @@ class SemanticScoringService:
         layer already computed and stored on score_breakdown - never
         re-runs skill-ontology matching here.
         """
-        breakdown = campaign_candidate.score_breakdown or {}
+        breakdown = campaign_candidate.deterministic_breakdown or {}
         entries = (breakdown.get("mandatory_skills") or []) + (breakdown.get("preferred_skills") or [])
 
         matching: list[str] = []

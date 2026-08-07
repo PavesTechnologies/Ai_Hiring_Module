@@ -8,12 +8,12 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import CandidateRejection, PipelineStage, RejectionLayer
+from app.models.pipeline import DecisionSource, PipelineStage
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.jd_repository import JDRepository
@@ -107,10 +107,10 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
     DeadLetterQueue retry/dead-letter handling, task-owns-the-transaction
     persistence pattern) exactly.
 
-    Phase 2.4: persists campaign_candidate.ai_* columns (via
-    AIEvaluationService.calculate_and_store_evaluation), creates a
-    CandidateRejection(rejection_layer=AI) and transitions pipeline_stage
-    via StageTransitionService on a REJECT recommendation, and writes an
+    Phase 2.4: persists the related CampaignCandidateAIEvaluation row (via
+    AIEvaluationService.calculate_and_store_evaluation), sets the unified
+    decision fields (decision_source=AI) and transitions pipeline_stage via
+    StageTransitionService on a REJECT recommendation, and writes an
     AI_EVALUATION_COMPUTED audit log entry - same division of
     responsibility as calculate_deterministic_score_task/
     calculate_semantic_score_task: the service mutates+flushes, this task
@@ -128,7 +128,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         resume_repo = ResumeRepository(db)
         jd_repo = JDRepository(db)
         prompt_template_repo = PromptTemplateRepository(db)
-        candidate_rejection_repo = CandidateRejectionRepository(db)
+        ai_evaluation_repo = CampaignCandidateAIEvaluationRepository(db)
         allowed_transition_repo = AllowedTransitionRepository(db)
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
@@ -199,7 +199,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             )
             return
 
-        semantic_breakdown = campaign_candidate.semantic_score_breakdown or {}
+        semantic_breakdown = campaign_candidate.semantic_breakdown or {}
         if not semantic_breakdown.get("semantic_passed"):
             summary = json.dumps({
                 "skipped": True,
@@ -231,7 +231,9 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             exception_factory=ValueError,
         )
 
-        evaluation_service = AIEvaluationService(GeminiExtractionService(), campaign_candidate_repo)
+        evaluation_service = AIEvaluationService(
+            GeminiExtractionService(), campaign_candidate_repo, ai_evaluation_repo,
+        )
         ai_response = evaluation_service.calculate_and_store_evaluation(
             campaign_candidate_id=campaign_candidate.id,
             resume_json=resume.parsed_json,
@@ -243,17 +245,14 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         stage_transition_succeeded = False
         if recommendation == "REJECT":
             rejection_reason = AIEvaluationService.build_rejection_reason(ai_response)
-            candidate_rejection_repo.create(CandidateRejection(
-                campaign_candidate_id=campaign_candidate.id,
-                rejection_layer=RejectionLayer.AI,
-                rejection_reason=rejection_reason,
-                rejection_detail=ai_response,
-            ))
 
             stage_transition_succeeded = stage_transition_service.transition_to_rejected(
                 campaign_candidate,
                 change_reason="AI evaluation rejection",
                 scores_snapshot=ai_response,
+                decision_source=DecisionSource.AI,
+                decision_reason=rejection_reason,
+                decision_details=ai_response,
             )
 
         summary_payload = {

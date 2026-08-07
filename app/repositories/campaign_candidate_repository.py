@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, case, delete, func, nullslast, select
+from sqlalchemy import and_, case, delete, func, nullslast, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
@@ -13,7 +13,9 @@ from app.models.pipeline import (
     AIEvaluationStatus,
     AIRecommendation,
     CampaignCandidate,
+    CampaignCandidateAIEvaluation,
     CampaignCandidateStageHistory,
+    DecisionType,
     PipelineStage,
     TransitionSource,
 )
@@ -141,10 +143,16 @@ class CampaignCandidateRepository:
         campaign_candidate_id: UUID,
     ) -> CampaignCandidate | None:
         """
-        Get campaign candidate by ID.
+        Get campaign candidate by ID. Eager-loads ai_evaluation (one cheap
+        join on an indexed unique FK) since nearly every caller that fetches
+        a single candidate by id also needs its AI evaluation fields
+        (composite scoring, scorecard/summary responses, HR override) -
+        centralizing the eager load here avoids scattering .options() calls
+        and avoids an implicit per-call lazy load.
         """
         return (
             self.db.query(CampaignCandidate)
+            .options(joinedload(CampaignCandidate.ai_evaluation))
             .filter(CampaignCandidate.id == campaign_candidate_id)
             .first()
         )
@@ -315,36 +323,36 @@ class CampaignCandidateRepository:
         """
         Epic 3 (M05-E03) Phase C5 — points the campaign_candidate at the
         newly-uploaded resume and clears every evaluation-derived field
-        (scoring, AI, fraud, rejection, HR override) so the candidate is
-        scored from scratch. Identity/relationship fields (campaign_id,
-        candidate_id, idempotency_key), created_at, and recruiter_notes are
-        left untouched. Does not touch pipeline_stage — the caller is
-        expected to have already moved that via PipelineTransitionService.
+        (scoring, fraud, decision) so the candidate is scored from
+        scratch. Identity/relationship fields (campaign_id, candidate_id,
+        idempotency_key) and created_at are left untouched. Does not touch
+        pipeline_stage — the caller is expected to have already moved that
+        via PipelineTransitionService. AI evaluation fields live on the
+        related CampaignCandidateAIEvaluation row now — reset separately by
+        the caller via CampaignCandidateAIEvaluationRepository.reset().
+
+        Preserves the pre-existing asymmetry where semantic_breakdown is
+        NOT reset even though semantic_score is (score_breakdown/
+        deterministic_breakdown IS reset alongside deterministic_score) —
+        not fixed here, out of scope for this refactor.
         """
         campaign_candidate.resume_id = new_resume_id
         campaign_candidate.screened_at = None
         campaign_candidate.deterministic_score = None
         campaign_candidate.deterministic_passed = None
-        campaign_candidate.score_breakdown = None
+        campaign_candidate.deterministic_breakdown = None
         campaign_candidate.semantic_score = None
-        campaign_candidate.ai_ats_score = None
-        campaign_candidate.ai_confidence = None
-        campaign_candidate.effective_ai_score = None
-        campaign_candidate.ai_recommendation = None
-        campaign_candidate.ai_strengths = None
-        campaign_candidate.ai_weaknesses = None
-        campaign_candidate.ai_evaluation_status = AIEvaluationStatus.PENDING
-        campaign_candidate.ai_retry_count = 0
+        campaign_candidate.semantic_passed = None
         campaign_candidate.composite_score = None
         campaign_candidate.composite_score_computed_at = None
         campaign_candidate.fraud_flags = None
         campaign_candidate.is_fraud_flagged = False
-        campaign_candidate.rejection_reason = None
-        campaign_candidate.rejection_layer = None
-        campaign_candidate.hr_override = False
-        campaign_candidate.hr_override_by = None
-        campaign_candidate.hr_override_reason = None
-        campaign_candidate.hr_override_at = None
+        campaign_candidate.decision_type = None
+        campaign_candidate.decision_source = None
+        campaign_candidate.decision_reason = None
+        campaign_candidate.decision_details = None
+        campaign_candidate.decision_by_user_id = None
+        campaign_candidate.decision_at = None
 
         self.db.flush()
         self.db.refresh(campaign_candidate)
@@ -390,20 +398,21 @@ class CampaignCandidateRepository:
         date_to=None,
     ) -> list[CampaignCandidate]:
         """
-        M07-E03 S04 T03: every campaign_candidate with hr_override=True,
-        optionally scoped to one campaign and/or an hr_override_at date
-        range - backs the Override Report's rows, weekly trend and
-        per-campaign alert, all of which call this with different filter
-        combinations rather than each running their own query.
+        M07-E03 S04 T03: every campaign_candidate currently in the RESET
+        (HR override) decision state, optionally scoped to one campaign
+        and/or a decision_at date range - backs the Override Report's
+        rows, weekly trend and per-campaign alert, all of which call this
+        with different filter combinations rather than each running their
+        own query.
         """
-        stmt = select(CampaignCandidate).where(CampaignCandidate.hr_override.is_(True))
+        stmt = select(CampaignCandidate).where(CampaignCandidate.decision_type == DecisionType.RESET)
         if campaign_id is not None:
             stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
         if date_from is not None:
-            stmt = stmt.where(CampaignCandidate.hr_override_at >= date_from)
+            stmt = stmt.where(CampaignCandidate.decision_at >= date_from)
         if date_to is not None:
-            stmt = stmt.where(CampaignCandidate.hr_override_at <= date_to)
-        stmt = stmt.order_by(CampaignCandidate.hr_override_at.desc())
+            stmt = stmt.where(CampaignCandidate.decision_at <= date_to)
+        stmt = stmt.order_by(CampaignCandidate.decision_at.desc())
         return self.db.execute(stmt).scalars().all()
 
     def get_all_by_campaign(
@@ -416,21 +425,22 @@ class CampaignCandidateRepository:
         name, parsed designation/experience) - LEFT JOINed so a row is never
         dropped even if a candidate/resume were ever missing (both FKs are
         NOT NULL today; this is defensive, not expected to matter). No
-        scores are computed here - deterministic_score/ai_ats_score/
-        semantic_score/composite_score are read directly off
-        CampaignCandidate exactly as already stored by the scoring
-        pipeline. Returns a list of (CampaignCandidate, Candidate, Resume)
-        rows.
+        scores are computed here - deterministic_score/semantic_score/
+        composite_score/ai_evaluation are read directly off CampaignCandidate
+        exactly as already stored by the scoring pipeline. ai_evaluation is
+        eager-loaded to avoid N+1 across the page. Returns a list of
+        (CampaignCandidate, Candidate, Resume) rows.
         """
         stmt = (
             select(CampaignCandidate, Candidate, Resume)
             .outerjoin(Candidate, CampaignCandidate.candidate_id == Candidate.id)
             .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
+            .options(joinedload(CampaignCandidate.ai_evaluation))
             .where(CampaignCandidate.campaign_id == campaign_id)
             .order_by(CampaignCandidate.created_at.desc())
         )
 
-        return self.db.execute(stmt).all()
+        return self.db.execute(stmt).unique().all()
 
     def get_ids_by_campaign(
         self,
@@ -448,13 +458,14 @@ class CampaignCandidateRepository:
 
     # M10-E03 Phase 1: sort_by -> the actual column it maps to. "ai_score"
     # maps to effective_ai_score (the score CompositeScoringService itself
-    # reads), not the raw ai_ats_score - the same column the composite
-    # formula already treats as authoritative.
+    # reads), now on the related CampaignCandidateAIEvaluation row rather
+    # than a raw column here - the same column the composite formula
+    # already treats as authoritative.
     _RANKING_SORT_COLUMNS = {
         "composite_score": CampaignCandidate.composite_score,
         "deterministic_score": CampaignCandidate.deterministic_score,
         "semantic_score": CampaignCandidate.semantic_score,
-        "ai_score": CampaignCandidate.effective_ai_score,
+        "ai_score": CampaignCandidateAIEvaluation.effective_ai_score,
         "created_at": CampaignCandidate.created_at,
     }
 
@@ -477,13 +488,13 @@ class CampaignCandidateRepository:
     ) -> tuple[list, int]:
         """
         M10-E03 Phase 1: the ranked candidate list's core query - one
-        filtered/sorted/paginated SELECT (joined with Candidate/Resume,
-        same LEFT JOIN shape as get_all_by_campaign) plus one COUNT(*) with
-        the identical filter set, so the caller can build page metadata
-        without a second round trip through Python. All filters combine
-        with AND. Ranking is always performed by PostgreSQL - ORDER BY is
-        built here and nowhere does this method (or any caller) re-sort in
-        Python.
+        filtered/sorted/paginated SELECT (joined with Candidate/Resume/
+        CampaignCandidateAIEvaluation, same LEFT JOIN shape as
+        get_all_by_campaign) plus one COUNT(*) with the identical filter
+        set, so the caller can build page metadata without a second round
+        trip through Python. All filters combine with AND. Ranking is
+        always performed by PostgreSQL - ORDER BY is built here and nowhere
+        does this method (or any caller) re-sort in Python.
 
         Default ordering (sort_by=None): composite_score DESC NULLS LAST,
         deterministic_score DESC, created_at ASC, id ASC - so unscored
@@ -499,6 +510,14 @@ class CampaignCandidateRepository:
         ranking_status, since both only exist when composite_score is
         NULL) - see CampaignCandidateService._derive_ranking_status for how
         those two are distinguished for display.
+
+        AI filters (ai_recommendation/ai_evaluation_status) are evaluated
+        against the outer-joined CampaignCandidateAIEvaluation row - a
+        candidate with no AI evaluation row yet has every ai_* column NULL
+        via the join, which correctly never matches ai_recommendation
+        (never a valid filter value) and is treated as PENDING for
+        ai_evaluation_status (matching the pre-split default), not excluded
+        outright.
         """
         filters = [CampaignCandidate.campaign_id == campaign_id]
         if pipeline_stage is not None:
@@ -508,9 +527,15 @@ class CampaignCandidateRepository:
         if composite_score_max is not None:
             filters.append(CampaignCandidate.composite_score <= composite_score_max)
         if ai_recommendation is not None:
-            filters.append(CampaignCandidate.ai_recommendation == ai_recommendation)
+            filters.append(CampaignCandidateAIEvaluation.ai_recommendation == ai_recommendation)
         if ai_evaluation_status is not None:
-            filters.append(CampaignCandidate.ai_evaluation_status == ai_evaluation_status)
+            if ai_evaluation_status == AIEvaluationStatus.PENDING:
+                filters.append(or_(
+                    CampaignCandidateAIEvaluation.id.is_(None),
+                    CampaignCandidateAIEvaluation.ai_evaluation_status == AIEvaluationStatus.PENDING,
+                ))
+            else:
+                filters.append(CampaignCandidateAIEvaluation.ai_evaluation_status == ai_evaluation_status)
         if not include_pending:
             filters.append(CampaignCandidate.composite_score.is_not(None))
         if not include_rejected:
@@ -518,16 +543,24 @@ class CampaignCandidateRepository:
         if not include_fraud:
             filters.append(CampaignCandidate.is_fraud_flagged.is_(False))
         if hr_override is not None:
-            filters.append(CampaignCandidate.hr_override.is_(hr_override))
+            if hr_override:
+                filters.append(CampaignCandidate.decision_type == DecisionType.RESET)
+            else:
+                filters.append(CampaignCandidate.decision_type.is_distinct_from(DecisionType.RESET))
 
         total = self.db.execute(
-            select(func.count()).select_from(CampaignCandidate).where(*filters)
+            select(func.count())
+            .select_from(CampaignCandidate)
+            .outerjoin(CampaignCandidateAIEvaluation, CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id)
+            .where(*filters)
         ).scalar() or 0
 
         stmt = (
             select(CampaignCandidate, Candidate, Resume)
             .outerjoin(Candidate, CampaignCandidate.candidate_id == Candidate.id)
             .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
+            .outerjoin(CampaignCandidateAIEvaluation, CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id)
+            .options(contains_eager(CampaignCandidate.ai_evaluation))
             .where(*filters)
         )
 
@@ -549,7 +582,7 @@ class CampaignCandidateRepository:
 
         stmt = stmt.limit(page_size).offset((page - 1) * page_size)
 
-        return self.db.execute(stmt).all(), total
+        return self.db.execute(stmt).unique().all(), total
 
     def get_score_aggregates(self, campaign_id: UUID) -> dict:
         """
@@ -571,7 +604,7 @@ class CampaignCandidateRepository:
             func.sum(case(
                 (and_(
                     CampaignCandidate.composite_score.is_(None),
-                    CampaignCandidate.ai_evaluation_status == AIEvaluationStatus.FAILED,
+                    CampaignCandidateAIEvaluation.ai_evaluation_status == AIEvaluationStatus.FAILED,
                 ), 1),
                 else_=0,
             )),
@@ -580,6 +613,8 @@ class CampaignCandidateRepository:
             func.max(CampaignCandidate.composite_score),
             func.min(CampaignCandidate.composite_score),
             func.avg(CampaignCandidate.composite_score),
+        ).outerjoin(
+            CampaignCandidateAIEvaluation, CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id,
         ).where(CampaignCandidate.campaign_id == campaign_id)
 
         total, ranked, failed, rejected, fraud, highest, lowest, average = self.db.execute(stmt).one()
@@ -605,12 +640,13 @@ class CampaignCandidateRepository:
         pending_candidates already account for those rows.
         """
         stmt = (
-            select(CampaignCandidate.ai_recommendation, func.count())
+            select(CampaignCandidateAIEvaluation.ai_recommendation, func.count())
+            .join(CampaignCandidate, CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id)
             .where(
                 CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.ai_recommendation.is_not(None),
+                CampaignCandidateAIEvaluation.ai_recommendation.is_not(None),
             )
-            .group_by(CampaignCandidate.ai_recommendation)
+            .group_by(CampaignCandidateAIEvaluation.ai_recommendation)
         )
         return {recommendation.value: count for recommendation, count in self.db.execute(stmt).all()}
 
@@ -681,11 +717,18 @@ class CampaignCandidateRepository:
         )
         affected_count = (
             self.db.query(func.count(CampaignCandidate.id))
+            .outerjoin(
+                CampaignCandidateAIEvaluation,
+                CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id,
+            )
             .filter(
                 CampaignCandidate.campaign_id == campaign_id,
                 CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
                 CampaignCandidate.semantic_score.is_(None),
-                CampaignCandidate.ai_evaluation_status != AIEvaluationStatus.MANUAL_REVIEW,
+                or_(
+                    CampaignCandidateAIEvaluation.id.is_(None),
+                    CampaignCandidateAIEvaluation.ai_evaluation_status != AIEvaluationStatus.MANUAL_REVIEW,
+                ),
             )
             .scalar()
         )

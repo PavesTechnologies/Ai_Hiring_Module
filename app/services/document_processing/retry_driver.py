@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.models.async_tasks import FailureClassification, ProcessingStage
+from app.models.async_tasks import FailureClassification
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import DEFAULT_POLICY, STAGE_POLICIES, compute_backoff_seconds
 

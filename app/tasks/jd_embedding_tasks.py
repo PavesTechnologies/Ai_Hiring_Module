@@ -136,7 +136,7 @@ def generate_jd_embedding(self, task_id: str, jd_id: str, force_regenerate: bool
             logger.info("EMBED_JD skipped | jd_id=%s reason=jd_not_active_version", jd_id)
             return
 
-        embedding_service = JDEmbeddingService(jd_repo, skill_repo, config_repo, EmbeddingService())
+        embedding_service = JDEmbeddingService(jd_repo, skill_repo, config_repo, EmbeddingService(db))
         jd_embedding = embedding_service.generate_and_store_embedding(jd_uuid, force_regenerate=force_regenerate)
         db.commit()
 

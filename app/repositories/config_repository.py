@@ -1,11 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi.params import Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.config import PlatformConfig
-from app.db.session import get_db
 
 
 class ConfigRepository:
