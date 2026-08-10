@@ -12,6 +12,9 @@ from app.repositories.dead_letter_queue_repository import DeadLetterQueueReposit
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
+from app.repositories.candidate_composite_score_history_repository import (
+    CandidateCompositeScoreHistoryRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,7 @@ class CandidateErasureService:
         dead_letter_queue_repo: DeadLetterQueueRepository,
         storage_service,
         audit_service: AuditService,
+        composite_score_history_repo: CandidateCompositeScoreHistoryRepository,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -60,6 +64,7 @@ class CandidateErasureService:
         self.dead_letter_queue_repo = dead_letter_queue_repo
         self.storage_service = storage_service
         self.audit_service = audit_service
+        self.composite_score_history_repo = composite_score_history_repo
 
     def erase_candidate(
         self,
@@ -86,6 +91,7 @@ class CandidateErasureService:
                 # CampaignCandidate.ai_evaluation) when the campaign_candidate
                 # itself is deleted below.
                 self.campaign_candidate_repo.delete_stage_history(campaign_candidate.id)
+                self.composite_score_history_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 # DLQ before celery_task_log — dead_letter_queue.original_task_id
                 # is a NOT NULL FK to celery_task_log.task_id.
                 self.dead_letter_queue_repo.delete_by_campaign_candidate_id(campaign_candidate.id)

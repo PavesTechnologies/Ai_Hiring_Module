@@ -1,11 +1,38 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import UUID
 
-from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
+from app.enums.constants import ActionType, EntityType
+from app.exception_handler.exceptions import NotFoundError
+from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
+    InvalidPipelineTransitionException,
+    PipelineStageConflictException,
+    PipelineTransitionReasonRequiredException,
+)
+from app.models.pipeline import CampaignCandidate, DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Actor:
+    """
+    E02: who/what is requesting a pipeline_stage transition. No existing
+    abstraction fit this - TokenUser (app/middleware/rbac.py) carries
+    `roles: list[str]` off a real auth token and has no SYSTEM-sentinel
+    concept, since it only ever represents an authenticated human request.
+    """
+    role: str
+    id: str | None = None
+
+    @classmethod
+    def system(cls) -> "Actor":
+        return cls(role="SYSTEM", id=None)
 
 
 class StageTransitionService:
@@ -37,9 +64,11 @@ class StageTransitionService:
         self,
         allowed_transition_repo: AllowedTransitionRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
+        audit_service: AuditService,
     ):
         self.allowed_transition_repo = allowed_transition_repo
         self.campaign_candidate_repo = campaign_candidate_repo
+        self.audit_service = audit_service
 
     def transition_to_screening(self, campaign_candidate) -> bool:
         """
@@ -294,3 +323,110 @@ class StageTransitionService:
             },
         )
         return True
+
+    def transition(
+        self,
+        campaign_candidate_id: UUID,
+        to_stage: PipelineStage,
+        actor: Actor,
+        reason: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> tuple[CampaignCandidate, bool]:
+        """
+        E02: single validated entry point for a pipeline_stage move. Checked
+        in this exact order - existence, then role, then reason, then a
+        concurrency re-check, then an idempotent write - so a caller always
+        gets back the error that actually matches what went wrong (an
+        invalid transition is never reported as a role problem just
+        because role happened to be checked first).
+
+        Does NOT commit until the very end, after the audit_log write
+        succeeds - same convention as every other method in this class
+        (apply_hr_override/transition_to_rejected above), except here it
+        matters for more than style: nothing before the final commit() is
+        persisted, so a failed audit write leaves the stage-history insert
+        and the pipeline_stage change uncommitted too, not half-applied.
+
+        Separate from transition_to_rejected/apply_hr_override - neither of
+        those two is touched or refactored to call this.
+        """
+        candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if candidate is None:
+            raise NotFoundError("Campaign candidate not found.")
+
+        from_stage = candidate.pipeline_stage
+
+        # 1. Existence check. AllowedTransitionRepository.get() (not
+        # is_transition_allowed()) - the role/reason checks below need
+        # allowed_roles/requires_reason off this same row.
+        transition_row = self.allowed_transition_repo.get(from_stage, to_stage)
+        if transition_row is None:
+            raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
+
+        # 2. Actor/role check. A single membership test covers both cases
+        # the ticket describes separately (SYSTEM must be listed; a human
+        # role must be listed) - they're the same check, since "SYSTEM" is
+        # just another string in allowed_roles, not a special case at the
+        # DB level. Deliberately an `if`/raise, not a bare `assert` - `python
+        # -O` strips asserts, which would silently turn this into no check
+        # at all in an optimized build.
+        if actor.role not in transition_row.allowed_roles:
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, actor.role)
+
+        # 3. Reason check.
+        if transition_row.requires_reason and not (reason and reason.strip()):
+            raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)
+
+        # 4. State check. The FOR UPDATE lock is acquired first, and the
+        # pipeline_stage comparison reads off that locked row - not the
+        # unlocked `candidate` fetched above - otherwise this would just be
+        # comparing two stale reads and would never actually catch a race.
+        locked_candidate = self.campaign_candidate_repo.get_by_id_for_update(campaign_candidate_id)
+        if locked_candidate.pipeline_stage != from_stage:
+            raise PipelineStageConflictException(from_stage.value)
+
+        is_system = actor.role == "SYSTEM"
+        changed_by = None if is_system else actor.id
+        transition_source = TransitionSource.SYSTEM if is_system else TransitionSource.MANUAL
+
+        # 5. Idempotent write - same SAVEPOINT + IntegrityError-catch shape
+        # as campaign_candidate_repository.create_idempotent().
+        history, was_created = self.campaign_candidate_repo.create_stage_history_idempotent(
+            campaign_candidate_id=campaign_candidate_id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            changed_by=changed_by,
+            change_reason=reason,
+            transition_source=transition_source,
+            idempotency_key=idempotency_key,
+        )
+
+        if not was_created:
+            # A retried request under the same idempotency key - return the
+            # existing history/candidate state. Do not re-apply the stage
+            # move, do not write a second audit entry.
+            self.campaign_candidate_repo.commit()
+            return locked_candidate, False
+
+        # 6. Apply the stage move + audit log, same uncommitted transaction
+        # as the history insert above.
+        locked_candidate.pipeline_stage = to_stage
+        self.campaign_candidate_repo.update(locked_candidate)
+
+        self.audit_service.log(
+            actor_id=changed_by,
+            actor_role=actor.role,
+            action_type=ActionType.PIPELINE_STAGE_TRANSITIONED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=locked_candidate.id,
+            campaign_id=locked_candidate.campaign_id,
+            details={
+                "from_stage": from_stage.value,
+                "to_stage": to_stage.value,
+                "reason": reason,
+                "stage_history_id": str(history.id),
+            },
+        )
+
+        self.campaign_candidate_repo.commit()
+        return locked_candidate, True

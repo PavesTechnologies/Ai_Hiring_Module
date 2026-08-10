@@ -9,15 +9,12 @@ db = SessionLocal()
 # rejection-handling edges - StageTransitionService.transition_to_rejected
 # checks this table before ever moving a candidate to REJECTED, so without
 # those rows every deterministic/semantic/AI rejection would hit the
-# "abort" branch. UPLOADED->SCREENING is seeded too -
-# StageTransitionService.transition_to_screening checks it before
-# deterministic scoring starts, so a rejection immediately afterwards has
-# a real SCREENING->REJECTED edge to use. SCREENING->SHORTLISTED/HOLD back
-# StageTransitionService.transition_on_ai_success - AI evaluation's own
-# SHORTLIST/HOLD recommendations, the non-REJECT counterpart to the
-# rejection edges above. Both also allow HR_ADMIN/RECRUITER/HIRING_MANAGER
-# for the manual "advance/override stage" action alongside the automated
-# SYSTEM move.
+# "abort" branch.
+#
+# M12 addition: the rest of the "normal" pipeline graph
+# (UPLOADED->SCREENING->SHORTLISTED->HM_REVIEW->INTERVIEW->SELECTED/REJECTED)
+# plus fraud-review edges from the later stages (SHORTLISTED/HM_REVIEW/
+# INTERVIEW -> FRAUD_REVIEW, and their "cleared" edges back).
 _TRANSITIONS = [
     {
         "from_stage": PipelineStage.UPLOADED,
@@ -121,6 +118,107 @@ _TRANSITIONS = [
         "allowed_roles": ["HR_ADMIN"],
         "requires_reason": True,
         "notes": "Resume update once in INTERVIEW — requires HR_ADMIN confirmation (M05-E03 S03).",
+    },
+    # M12 — normal pipeline progression.
+    {
+        "from_stage": PipelineStage.UPLOADED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
+        "requires_reason": False,
+        "notes": "Initial resume screening kickoff after upload; SYSTEM-driven in the normal flow, HR_ADMIN/RECRUITER can force it manually (M12).",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Composite scoring (M10) shortlists a candidate; HR_ADMIN/RECRUITER/HIRING_MANAGER can force it manually (M12).",
+    },
+    {
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Candidate handed to hiring manager for review; HR_ADMIN/RECRUITER/HIRING_MANAGER can force it manually (M12).",
+    },
+    {
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER", "HR_ADMIN"],
+        "requires_reason": False,
+        "notes": "Hiring manager approves candidate to move to interview (M12); HR_ADMIN retains stalled-candidate override capability.",
+    },
+    {
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Hiring manager rejects candidate after review (M12) — terminal human decision, reason required.",
+    },
+    {
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER", "HR_ADMIN"],
+        "requires_reason": False,
+        "notes": "Hiring manager selects candidate after interview (M12); HR_ADMIN retains stalled-candidate override capability.",
+    },
+    {
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Hiring manager rejects candidate after interview (M12) — terminal human decision, reason required.",
+    },
+    # M12 — extend automated fraud detection to later stages, matching
+    # the existing UPLOADED/SCREENING -> FRAUD_REVIEW pattern (M05-E03 S06).
+    {
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06).",
+    },
+    {
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to SHORTLISTED (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+    },
+    {
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to HM_REVIEW (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+    },
+    {
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to INTERVIEW (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+    },
+    {
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN override of a deterministic/semantic/AI rejection, re-entering the candidate directly at SHORTLISTED (Epic 2 pre-work).",
     },
 ]
 

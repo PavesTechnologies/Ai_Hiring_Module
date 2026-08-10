@@ -18,6 +18,9 @@ from app.dependencies.jd import (
 from app.dependencies.storage import get_storage_service
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_composite_score_history_repository import (
+    CandidateCompositeScoreHistoryRepository,
+)
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -196,6 +199,12 @@ def get_email_notification_repository(
     return EmailNotificationRepository(db)
 
 
+def get_candidate_composite_score_history_repository(
+    db: Session = Depends(get_db),
+) -> CandidateCompositeScoreHistoryRepository:
+    return CandidateCompositeScoreHistoryRepository(db)
+
+
 def get_candidate_erasure_service(
     candidate_repo: CandidateRepository = Depends(get_candidate_repository),
     resume_repo: ResumeRepository = Depends(get_resume_repository),
@@ -206,6 +215,9 @@ def get_candidate_erasure_service(
     dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     storage_service: StorageService = Depends(get_storage_service),
     audit_service: AuditService = Depends(get_audit_service),
+    composite_score_history_repo: CandidateCompositeScoreHistoryRepository = Depends(
+        get_candidate_composite_score_history_repository
+    ),
 ) -> CandidateErasureService:
     return CandidateErasureService(
         candidate_repo=candidate_repo,
@@ -217,6 +229,7 @@ def get_candidate_erasure_service(
         dead_letter_queue_repo=dead_letter_queue_repo,
         storage_service=storage_service,
         audit_service=audit_service,
+        composite_score_history_repo=composite_score_history_repo,
     )
 
 

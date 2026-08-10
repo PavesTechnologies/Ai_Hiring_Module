@@ -134,7 +134,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
+        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 

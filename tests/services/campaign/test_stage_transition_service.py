@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-from app.models.pipeline import PipelineStage, TransitionSource
+from app.models.pipeline import DecisionSource, PipelineStage, TransitionSource
 from app.services.campaign.stage_transition_service import StageTransitionService
 
 """
@@ -14,14 +14,27 @@ clean no-op, never a partial write.
 
 
 def _make_candidate(pipeline_stage=PipelineStage.SCREENING):
-    return SimpleNamespace(id=uuid4(), pipeline_stage=pipeline_stage)
+    # decision_* fields default to None here, matching a real CampaignCandidate
+    # row that has never had a decision recorded yet - transition_to_rejected/
+    # apply_hr_override both read these (apply_hr_override reads them before
+    # this fixture existed, to snapshot the decision being overridden).
+    return SimpleNamespace(
+        id=uuid4(),
+        pipeline_stage=pipeline_stage,
+        decision_type=None,
+        decision_source=None,
+        decision_reason=None,
+        decision_details=None,
+        decision_by_user_id=None,
+        decision_at=None,
+    )
 
 
 def make_service(is_allowed: bool):
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = is_allowed
     campaign_candidate_repo = MagicMock()
-    service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
+    service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock())
     return service, allowed_transition_repo, campaign_candidate_repo
 
 
@@ -31,7 +44,10 @@ def test_transition_applies_when_allowed():
     snapshot = {"deterministic_score": 40.0}
 
     result = service.transition_to_rejected(
-        candidate, change_reason="Deterministic filter rejection", scores_snapshot=snapshot,
+        candidate,
+        change_reason="Deterministic filter rejection",
+        scores_snapshot=snapshot,
+        decision_source=DecisionSource.DETERMINISTIC,
     )
 
     assert result is True
@@ -47,7 +63,13 @@ def test_transition_applies_when_allowed():
         changed_by=None,
         change_reason="Deterministic filter rejection",
         transition_source=TransitionSource.SYSTEM,
-        scores_snapshot=snapshot,
+        scores_snapshot={
+            **snapshot,
+            "decision_type": "REJECTED",
+            "decision_source": "DETERMINISTIC",
+            "decision_reason": "Deterministic filter rejection",
+            "decision_details": None,
+        },
     )
 
 
@@ -56,7 +78,10 @@ def test_transition_is_a_no_op_when_blocked():
     service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=False)
 
     result = service.transition_to_rejected(
-        candidate, change_reason="Deterministic filter rejection", scores_snapshot={},
+        candidate,
+        change_reason="Deterministic filter rejection",
+        scores_snapshot={},
+        decision_source=DecisionSource.DETERMINISTIC,
     )
 
     assert result is False
@@ -150,7 +175,17 @@ def test_apply_hr_override_applies_when_allowed():
         changed_by="hr-admin-1",
         change_reason="HR_ADMIN override of deterministic rejection",
         transition_source=TransitionSource.MANUAL,
-        scores_snapshot=None,
+        scores_snapshot={
+            "decision_type": "RESET",
+            "decision_source": "HR_ADMIN",
+            "decision_reason": "HR_ADMIN override of deterministic rejection",
+            "decision_details": {
+                "overridden_decision_type": None,
+                "overridden_decision_source": None,
+                "overridden_decision_reason": None,
+                "overridden_decision_at": None,
+            },
+        },
     )
 
 

@@ -47,6 +47,80 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
+    # M12 (Workflow & Interview Scheduling): placeholder copy only - subject
+    # and name are [SEED]-tagged so these are easy to find and replace with
+    # real copy once M12's actual notification content is finalized.
+    # {candidate_name}/{job_title}/{interview_date}/{interview_time}/
+    # {interview_mode}/{interviewer_name} placeholders only, matching this
+    # file's existing no-internal-detail-leakage convention.
+    #
+    # NOTE: no interview_schedules table exists yet (M12 follow-up work).
+    # These placeholder names are a reasonable guess at what that table will
+    # expose, but whoever wires up the actual render/send call needs to pass
+    # a dict with exactly these keys - expect to revisit/rename one or two
+    # once that table and the send-email code path are actually built.
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_SCHEDULED,
+        "name": "[SEED] Interview Scheduled",
+        "subject": "[SEED] Your interview for {job_title} has been scheduled",
+        "body_template": (
+            "Dear {candidate_name},\n\n"
+            "Your interview for the {job_title} position has been scheduled.\n\n"
+            "Date: {interview_date}\n"
+            "Time: {interview_time}\n"
+            "Mode: {interview_mode}\n"
+            "Interviewer: {interviewer_name}\n\n"
+            "Please let us know as soon as possible if this time does not work for you.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_RESCHEDULED,
+        "name": "[SEED] Interview Rescheduled",
+        "subject": "[SEED] Your interview for {job_title} has been rescheduled",
+        "body_template": (
+            "Dear {candidate_name},\n\n"
+            "Your interview for the {job_title} position has been rescheduled.\n\n"
+            "New date: {interview_date}\n"
+            "New time: {interview_time}\n"
+            "Mode: {interview_mode}\n"
+            "Interviewer: {interviewer_name}\n\n"
+            "We apologize for any inconvenience and look forward to speaking with you.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_CANCELLED,
+        "name": "[SEED] Interview Cancelled",
+        "subject": "[SEED] Your interview for {job_title} has been cancelled",
+        "body_template": (
+            "Dear {candidate_name},\n\n"
+            "Your interview for the {job_title} position, previously scheduled for "
+            "{interview_date} at {interview_time}, has been cancelled.\n\n"
+            "We will reach out if the interview needs to be rescheduled.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    {
+        "trigger_event": EmailTriggerEvent.CANDIDATE_SELECTED,
+        "name": "[SEED] Candidate Selected",
+        "subject": "[SEED] Congratulations - you have been selected for {job_title}",
+        "body_template": (
+            "Dear {candidate_name},\n\n"
+            "Congratulations! We are pleased to inform you that you have been selected "
+            "for the {job_title} position.\n\n"
+            "A member of our team will be in touch shortly with next steps.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
 ]
 
 try:
