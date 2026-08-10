@@ -15,7 +15,6 @@ from app.exceptions.pipeline_transition_exceptions import (
     InvalidPipelineTransitionException,
     PipelineTransitionReasonRequiredException,
 )
-from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
@@ -90,6 +89,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
@@ -113,16 +113,10 @@ _RESUBMISSION_FORMAT_TO_EXTENSION = {
     FileFormat.DOCX: "docx",
 }
 
-# M07-E03 S04 T02: task_type strings this service queues after an override.
-# Neither has a real Celery task implementation anywhere in this codebase
-# yet (M09 AI Evaluation / semantic scoring aren't built) - mirrors the
-# exact same forward-compatible placeholder already established by
-# deterministic_scoring_tasks.py's AI_EVALUATE_TASK_TYPE/
-# _cancel_downstream_ai_evaluation (M07-E03 S01 T03): "queuing" is recorded
-# as a QUEUED celery_task_log row, which the real tasks will activate
-# against once built, without requiring any further change here. Must
-# match deterministic_scoring_tasks.AI_EVALUATE_TASK_TYPE exactly.
-AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
+# M07-E03 S04 T02: task_type string this service queues after an override,
+# when re-enqueuing semantic scoring rather than AI evaluation (the latter
+# now goes through ai_evaluation_tasks._enqueue_ai_evaluation directly,
+# which owns its own AI_EVALUATE_TASK_TYPE constant).
 SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 
 _HR_OVERRIDE_CHANGE_REASON = "HR_ADMIN override of deterministic rejection"
@@ -2031,7 +2025,7 @@ class CampaignCandidateService:
             return
         try:
             if campaign_candidate.semantic_score is not None:
-                self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
+                _enqueue_ai_evaluation(campaign_candidate, self.celery_task_log_service)
                 return
 
             # M08-E02: reuses the exact same enqueue/idempotency helper
@@ -2061,19 +2055,6 @@ class CampaignCandidateService:
                 campaign_candidate.id,
             )
 
-    def _queue_task_log_if_not_duplicate(self, campaign_candidate: CampaignCandidate, task_type: str):
-        task_log_repo = self.celery_task_log_service.repository
-        already_queued = any(
-            log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
-            for log in task_log_repo.get_by_campaign_candidate_and_task_type(campaign_candidate.id, task_type)
-        )
-        if already_queued:
-            return None
-        return self.celery_task_log_service.create_log(
-            task_id=str(uuid4()),
-            task_type=task_type,
-            campaign_candidate_id=campaign_candidate.id,
-        )
 
     # ------------------------------------------------------------------
     # M07-E03 S04 T03: Override Report

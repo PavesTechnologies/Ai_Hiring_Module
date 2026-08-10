@@ -30,7 +30,6 @@ from app.services.document_processing.retry_policy import RetryPolicy, compute_b
 from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import (
-    AI_EVALUATE_TASK_TYPE,
     _cancel_downstream_ai_evaluation,
     _queue_rejection_email,
 )
