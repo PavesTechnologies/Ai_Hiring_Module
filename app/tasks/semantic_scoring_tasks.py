@@ -28,7 +28,6 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.tasks.deterministic_scoring_tasks import (
-    AI_EVALUATE_TASK_TYPE,
     _cancel_downstream_ai_evaluation,
     _queue_rejection_email,
 )
@@ -59,33 +58,6 @@ JD_EMBEDDING_NOT_FOUND_REASON = "JD_EMBEDDING_NOT_FOUND"
 MODEL_VERSION_MISMATCH_REASON = "MODEL_VERSION_MISMATCH"
 
 
-def _queue_ai_evaluate_if_not_duplicate(
-    campaign_candidate, task_log_service: CeleryTaskLogService,
-) -> None:
-    """
-    Story 541: on a semantic PASS, queue AI_EVALUATE - the identical
-    bookkeeping-only placeholder pattern already established by
-    CampaignCandidateService._queue_task_log_if_not_duplicate (M09 AI
-    Evaluation itself isn't built yet, so this only records a QUEUED
-    celery_task_log row for the real task to pick up once it exists; it
-    never dispatches anything).
-    """
-    task_log_repo = task_log_service.repository
-    already_queued = any(
-        log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
-        for log in task_log_repo.get_by_campaign_candidate_and_task_type(
-            campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
-        )
-    )
-    if already_queued:
-        return
-    task_log_service.create_log(
-        task_id=str(uuid4()),
-        task_type=AI_EVALUATE_TASK_TYPE,
-        campaign_candidate_id=campaign_candidate.id,
-    )
-
-
 def _score_and_persist_semantic(
     campaign_candidate,
     campaign,
@@ -109,7 +81,12 @@ def _score_and_persist_semantic(
     stage_transition_succeeded = False
     if breakdown["semantic_passed"]:
         # Story 541: PASS -> queue AI_EVALUATE (never for a rejected candidate).
-        _queue_ai_evaluate_if_not_duplicate(campaign_candidate, task_log_service)
+        # Lazy import mirrors deterministic_scoring_tasks._enqueue_semantic_scoring's
+        # own cross-task chaining convention - avoids a circular import
+        # (ai_evaluation_tasks imports deterministic_scoring_tasks at module load).
+        from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
+
+        _enqueue_ai_evaluation(campaign_candidate, task_log_service)
     else:
         rejection_reason = breakdown["semantic_explanation"]
 
