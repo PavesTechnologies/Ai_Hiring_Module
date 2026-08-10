@@ -27,9 +27,10 @@ from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.campaigns import HiringCampaign
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat, JDVerificationStatus
 from app.models.pipeline import (
-    AIRecommendation,
     CampaignCandidate,
     CampaignCandidateStageHistory,
+    DecisionSource,
+    DecisionType,
     PipelineStage,
     TransitionSource,
 )
@@ -84,17 +85,83 @@ JD_RAW_TEXT = (
     "Education\nBachelor's Degree in Computer Science or related field"
 )
 
-# (pipeline_stage, composite_score, ai_recommendation, is_fraud_flagged)
+# (pipeline_stage, composite_score, decision_type, decision_source,
+#  decision_by_user_id, decision_reason, is_fraud_flagged)
+#
+# decision_type/decision_source model the single most recent decision made
+# about a candidate (replaces the old ai_recommendation/hr_override_*/
+# rejection_* fields). None of our 8 have reached SELECTED/REJECTED, so the
+# last real decision for every non-UPLOADED candidate is still the shortlist
+# itself - HM_REVIEW candidates are just sitting in the queue (HM hasn't
+# decided anything new yet), and INTERVIEW candidates additionally record
+# that the hiring manager was the one who approved moving them forward
+# (decision_source flips to HIRING_MANAGER, decision_by_user_id set).
+_SHORTLIST_REASON = "AI evaluation recommended shortlisting."
+_HM_APPROVED_REASON = "Approved for interview after review."
 CANDIDATE_PLAN = [
-    (PipelineStage.UPLOADED, None, None, False),
-    (PipelineStage.SHORTLISTED, 58, AIRecommendation.HOLD, False),
-    (PipelineStage.SHORTLISTED, 91, AIRecommendation.SHORTLIST, True),
-    (PipelineStage.HM_REVIEW, 65, AIRecommendation.HOLD, False),
-    (PipelineStage.HM_REVIEW, 74, AIRecommendation.SHORTLIST, False),
-    (PipelineStage.HM_REVIEW, 83, AIRecommendation.SHORTLIST, False),
-    (PipelineStage.INTERVIEW, 88, AIRecommendation.SHORTLIST, False),
-    (PipelineStage.INTERVIEW, 92, AIRecommendation.SHORTLIST, False),
+    (PipelineStage.UPLOADED, None, None, None, None, None, False),
+    (PipelineStage.SHORTLISTED, 58, DecisionType.SHORTLISTED, DecisionSource.AI, None, _SHORTLIST_REASON, False),
+    (PipelineStage.SHORTLISTED, 91, DecisionType.SHORTLISTED, DecisionSource.AI, None, _SHORTLIST_REASON, True),
+    (PipelineStage.HM_REVIEW, 65, DecisionType.SHORTLISTED, DecisionSource.AI, None, _SHORTLIST_REASON, False),
+    (PipelineStage.HM_REVIEW, 74, DecisionType.SHORTLISTED, DecisionSource.AI, None, _SHORTLIST_REASON, False),
+    (PipelineStage.HM_REVIEW, 83, DecisionType.SHORTLISTED, DecisionSource.AI, None, _SHORTLIST_REASON, False),
+    (PipelineStage.INTERVIEW, 88, DecisionType.SHORTLISTED, DecisionSource.HIRING_MANAGER, HIRING_MANAGER_ID, _HM_APPROVED_REASON, False),
+    (PipelineStage.INTERVIEW, 92, DecisionType.SHORTLISTED, DecisionSource.HIRING_MANAGER, HIRING_MANAGER_ID, _HM_APPROVED_REASON, False),
 ]
+
+# Roughly correlated with composite_score, for realism only - not read by
+# anything downstream.
+TOTAL_EXPERIENCE_YEARS = [2.0, 3.0, 5.5, 3.5, 4.0, 4.5, 5.0, 5.5]
+
+
+def _parsed_json_for_candidate(i: int, total_experience_years: float) -> dict:
+    """
+    A resume with parse_status=PARSED but parsed_json=NULL is internally
+    inconsistent (found the hard way - looks like a parse failure to
+    anything downstream that expects PARSED to mean "has content"). Shape
+    matches a real parsed resume's actual JSON exactly (compared directly
+    against a real ResumeParsingPipeline output), just with placeholder
+    values everywhere the real thing would have candidate-specific data.
+    """
+    all_skills = [s.lower() for s in REQUIRED_SKILLS + PREFERRED_SKILLS]
+    return {
+        "full_name": f"[SEED] Candidate {i}",
+        "skills": all_skills,
+        "soft_skills": [],
+        "work_experience": [{
+            "title": "Backend Engineer",
+            "company": "[SEED] Data Co.",
+            "start_date": "January 2022",
+            "end_date": "Present",
+            "is_current": True,
+            "is_internship": False,
+            "is_volunteer": False,
+            "description": (
+                f"Developed backend services using {', '.join(all_skills[:5])} "
+                "and related technologies."
+            ),
+        }],
+        "education": [{
+            "degree": "Bachelor of Technology (B.Tech)",
+            "institution": None,
+            "field": "computer science and engineering",
+            "graduation_year": None,
+        }],
+        "projects": [{
+            "name": "[SEED] Backend Platform",
+            "description": "Placeholder seed project - not a real candidate submission.",
+            "tech": all_skills[:6],
+        }],
+        "certifications": [],
+        "total_experience_years": total_experience_years,
+        "department": None,
+        "location": None,
+        "summary": (
+            f"Backend developer with {total_experience_years} years of experience "
+            f"using {', '.join(all_skills[:5])}. Placeholder seed summary."
+        ),
+        "metadata": {},
+    }
 
 # Ordered path every candidate walks through, up to its target stage.
 STAGE_PATH = [PipelineStage.UPLOADED, PipelineStage.SCREENING, PipelineStage.SHORTLISTED, PipelineStage.HM_REVIEW, PipelineStage.INTERVIEW]
@@ -195,7 +262,7 @@ try:
 
         # --- 3. Candidates / resumes / campaign_candidates / stage history ------
         now = datetime.now(timezone.utc)
-        for i, (target_stage, composite_score, ai_recommendation, is_fraud_flagged) in enumerate(CANDIDATE_PLAN, start=1):
+        for i, (target_stage, composite_score, decision_type, decision_source, decision_by_user_id, decision_reason, is_fraud_flagged) in enumerate(CANDIDATE_PLAN, start=1):
             full_name = f"[SEED] Candidate {i}"
             email = f"seed.candidate{i}.m12@example.test"
             full_name_ct, key_id_1 = encryption_service.encrypt(full_name, purpose="CANDIDATE_PII")
@@ -217,6 +284,7 @@ try:
             db.add(candidate)
             db.flush()
 
+            total_experience_years = TOTAL_EXPERIENCE_YEARS[i - 1]
             resume = Resume(
                 id=uuid.uuid4(),
                 candidate_id=candidate.id,
@@ -224,6 +292,9 @@ try:
                 file_format=FileFormat.PDF,
                 file_hash=hashlib.sha256(f"seed-m12-resume-{i}".encode("utf-8")).hexdigest(),
                 original_filename=f"seed_candidate_{i}_resume.pdf",
+                file_size_bytes=2800 + (i * 37),
+                page_count=1,
+                parsed_json=_parsed_json_for_candidate(i, total_experience_years),
                 parse_status=ParseStatus.PARSED,
                 uploaded_by=HR_ADMIN_ID,
             )
@@ -240,7 +311,11 @@ try:
                 pipeline_stage=target_stage,
                 composite_score=composite_score,
                 composite_score_computed_at=now if composite_score is not None else None,
-                ai_recommendation=ai_recommendation,
+                decision_type=decision_type,
+                decision_source=decision_source,
+                decision_reason=decision_reason,
+                decision_by_user_id=decision_by_user_id,
+                decision_at=now if decision_type is not None else None,
                 is_fraud_flagged=is_fraud_flagged,
                 fraud_flags=(
                     {

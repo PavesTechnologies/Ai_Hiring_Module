@@ -12,6 +12,9 @@ from app.repositories.dead_letter_queue_repository import DeadLetterQueueReposit
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
+from app.repositories.candidate_composite_score_history_repository import (
+    CandidateCompositeScoreHistoryRepository,
+)
 
 logger = logging.getLogger(__name__)
 

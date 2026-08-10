@@ -24,21 +24,25 @@ which closes this migration's transaction before the ALTER TYPE statements
 run, so a later migration/seed step in the same `alembic upgrade` invocation
 never tries to use one of these values before it's committed.
 
-Alembic head note: this repo currently has 5 unmerged migration heads (see
-docs/known_issues.md). This migration branches off `d2a7c9e4f1b6`, which
-`alembic current` confirms is the actual revision the target RDS database is
-stamped at - not an arbitrary/assumed head. Apply with an explicit revision
-id (`alembic upgrade e686c750b7b4`), not bare `head`, since bare `head` is
-ambiguous while the 5-head situation is unresolved.
+Alembic head note: this repo previously had 5+ unmerged migration heads (see
+docs/known_issues.md). This migration originally branched off `d2a7c9e4f1b6`,
+verified live via `alembic current` at the time. A subsequent merge (PR #88)
+squashed the migration history down to a single `7043b9ed5abe_initial_schema`
+root and deleted `d2a7c9e4f1b6` along with everything else that predated it -
+re-parented onto that new root 2026-08-07. Unlike the sibling `09f831e39061`
+re-parent, this migration's 4 values are NOT present in the squashed initial
+schema's email_trigger_event_enum (verified: it only has CANDIDATE_REJECTED/
+UPLOAD_PERMANENTLY_FAILED), so this migration is still functionally required,
+not a no-op.
 
 Revision ID: e686c750b7b4
-Revises: d2a7c9e4f1b6
+Revises: 7043b9ed5abe
 Create Date: 2026-08-05
 """
 from alembic import op
 
 revision = "e686c750b7b4"
-down_revision = "d2a7c9e4f1b6"
+down_revision = "7043b9ed5abe"
 branch_labels = None
 depends_on = None
 

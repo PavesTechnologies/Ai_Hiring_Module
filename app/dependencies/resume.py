@@ -18,13 +18,9 @@ from app.dependencies.jd import (
 from app.dependencies.storage import get_storage_service
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-<<<<<<< HEAD
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
-from app.repositories.candidate_rejection_repository import CandidateRejectionRepository
-=======
->>>>>>> c954728846fc74dc662ce9b1ee2d11055ec7cacf
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository

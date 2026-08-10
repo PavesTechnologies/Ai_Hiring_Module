@@ -11,14 +11,19 @@ transactional_ddl = False precedent as every other audit-enum migration in
 this project (see 5439e70a5a8e, d88f97d9d5e0, f7c1a4d8b3e6).
 
 Revision ID: 09f831e39061
-Revises: 5439e70a5a8e
+Revises: 7043b9ed5abe
 Create Date: 2026-08-06
 
+Re-parented 2026-08-07 onto the squashed initial schema (7043b9ed5abe) after
+its original parent (5439e70a5a8e) was removed in that squash - both values
+this migration adds are already present in the squashed initial schema's
+audit_entity_type_enum definition, so this is now a harmless no-op kept for
+historical record rather than deleted outright.
 """
 from alembic import op
 
 revision = "09f831e39061"
-down_revision = "5439e70a5a8e"
+down_revision = "7043b9ed5abe"
 branch_labels = None
 depends_on = None
 
