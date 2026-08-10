@@ -209,6 +209,26 @@ class CandidateRankingDetailsResponse(BaseModel):
     hr_override_at: datetime | None = None
 
 
+class CandidateCompositeResponse(BaseModel):
+    """
+    Composite-tab-only view of the candidate scorecard: current composite
+    score, score inputs, campaign weights, and formula metadata. Read-only;
+    never recalculates anything.
+    """
+
+    campaign_candidate_id: UUID
+    composite_score: float | None = None
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    ai_evaluation_score: float | None = None
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    formula_version: str | None = None
+    ranking_status: RankingStatus
+    composite_score_computed_at: datetime | None = None
+
+
 class DeterministicScoreSummary(BaseModel):
     """UI summary-card fields - all read straight from score_breakdown/CampaignCandidate, never recalculated."""
 

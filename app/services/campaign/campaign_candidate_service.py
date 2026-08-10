@@ -75,6 +75,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateSummaryResponse,
     CandidateCompositeScoreHistoryEntryResponse,
     CandidateCompositeScoreHistoryResponse,
+    CandidateCompositeResponse,
     CandidateRankingDetailsResponse,
     CandidateSemanticResponse,
     CandidateTimelineEventResponse,
@@ -760,7 +761,10 @@ class CampaignCandidateService:
         # CampaignCandidateAIEvaluation row (1:1) - a candidate with no
         # such row yet has no status, same as its pre-split PENDING default.
         ai_evaluation = getattr(campaign_candidate, "ai_evaluation", None)
-        ai_evaluation_status = getattr(ai_evaluation, "ai_evaluation_status", None) if ai_evaluation else None
+        ai_evaluation_status = (
+            getattr(ai_evaluation, "ai_evaluation_status", None)
+            if ai_evaluation else getattr(campaign_candidate, "ai_evaluation_status", None)
+        )
         if ai_evaluation_status == AIEvaluationStatus.FAILED:
             return "FAILED"
         return "PENDING"
@@ -880,7 +884,10 @@ class CampaignCandidateService:
         history_rows = self.composite_score_history_repo.get_by_campaign_candidate_id(campaign_candidate_id)
         formula_version = history_rows[0].formula_version if history_rows else None
         ai_evaluation = self._ai_evaluation(campaign_candidate)
-        is_overridden = campaign_candidate.decision_type == DecisionType.RESET
+        is_overridden = (
+            getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET
+            or getattr(campaign_candidate, "hr_override", False)
+        )
 
         return CandidateRankingDetailsResponse(
             campaign_candidate_id=campaign_candidate.id,
@@ -896,7 +903,11 @@ class CampaignCandidateService:
             ),
             ai_evaluation_score=(
                 float(ai_evaluation.effective_ai_score)
-                if ai_evaluation and ai_evaluation.effective_ai_score is not None else None
+                if ai_evaluation and ai_evaluation.effective_ai_score is not None
+                else (
+                    float(campaign_candidate.effective_ai_score)
+                    if getattr(campaign_candidate, "effective_ai_score", None) is not None else None
+                )
             ),
             weight_deterministic=float(campaign.weight_deterministic),
             weight_semantic=float(campaign.weight_semantic),
@@ -905,9 +916,42 @@ class CampaignCandidateService:
             ranking_status=self._derive_ranking_status(campaign_candidate),
             composite_score_computed_at=getattr(campaign_candidate, "composite_score_computed_at", None),
             hr_override=is_overridden,
-            hr_override_by=campaign_candidate.decision_by_user_id if is_overridden else None,
-            hr_override_reason=campaign_candidate.decision_reason if is_overridden else None,
-            hr_override_at=campaign_candidate.decision_at if is_overridden else None,
+            hr_override_by=(
+                getattr(campaign_candidate, "decision_by_user_id", None)
+                or getattr(campaign_candidate, "hr_override_by", None)
+                if is_overridden else None
+            ),
+            hr_override_reason=(
+                getattr(campaign_candidate, "decision_reason", None)
+                or getattr(campaign_candidate, "hr_override_reason", None)
+                if is_overridden else None
+            ),
+            hr_override_at=(
+                getattr(campaign_candidate, "decision_at", None)
+                or getattr(campaign_candidate, "hr_override_at", None)
+                if is_overridden else None
+            ),
+        )
+
+    def get_candidate_composite(self, campaign_candidate_id: UUID) -> CandidateCompositeResponse:
+        """
+        Composite-tab-only view: same stored score inputs and current campaign
+        weights used by ranking-details, without HR override/final-status data.
+        Never recalculates composite_score.
+        """
+        details = self.get_candidate_ranking_details(campaign_candidate_id)
+        return CandidateCompositeResponse(
+            campaign_candidate_id=details.campaign_candidate_id,
+            composite_score=details.composite_score,
+            deterministic_score=details.deterministic_score,
+            semantic_score=details.semantic_score,
+            ai_evaluation_score=details.ai_evaluation_score,
+            weight_deterministic=details.weight_deterministic,
+            weight_semantic=details.weight_semantic,
+            weight_ai=details.weight_ai,
+            formula_version=details.formula_version,
+            ranking_status=details.ranking_status,
+            composite_score_computed_at=details.composite_score_computed_at,
         )
 
     def _to_campaign_candidate_response(
