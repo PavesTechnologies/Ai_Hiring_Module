@@ -192,6 +192,13 @@ _TRANSITIONS = [
         "requires_reason": True,
         "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to INTERVIEW (M12, mirrors FRAUD_REVIEW -> SCREENING).",
     },
+    {
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HR_ADMIN"],
+        "requires_reason": True,
+        "notes": "HR_ADMIN override of a deterministic/semantic/AI rejection, re-entering the candidate directly at SHORTLISTED (Epic 2 pre-work).",
+    },
 ]
 
 try:
