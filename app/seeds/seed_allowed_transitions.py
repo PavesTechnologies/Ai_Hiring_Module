@@ -9,10 +9,37 @@ db = SessionLocal()
 # rejection-handling edges - StageTransitionService.transition_to_rejected
 # checks this table before ever moving a candidate to REJECTED, so without
 # those rows every deterministic/semantic/AI rejection would hit the
-# "abort" branch. The rest of the "normal" pipeline graph
-# (UPLOADED->SCREENING etc.) is deliberately not seeded: nothing drives
-# those transitions today either.
+# "abort" branch. UPLOADED->SCREENING is seeded too -
+# StageTransitionService.transition_to_screening checks it before
+# deterministic scoring starts, so a rejection immediately afterwards has
+# a real SCREENING->REJECTED edge to use. SCREENING->SHORTLISTED/HOLD back
+# StageTransitionService.transition_on_ai_success - AI evaluation's own
+# SHORTLIST/HOLD recommendations, the non-REJECT counterpart to the
+# rejection edges above. Both also allow HR_ADMIN/RECRUITER/HIRING_MANAGER
+# for the manual "advance/override stage" action alongside the automated
+# SYSTEM move.
 _TRANSITIONS = [
+    {
+        "from_stage": PipelineStage.UPLOADED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated: deterministic scoring starting moves the candidate into screening (StageTransitionService.transition_to_screening).",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Automated: AI evaluation SHORTLIST recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Automated: AI evaluation HOLD recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+    },
     {
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.FRAUD_REVIEW,

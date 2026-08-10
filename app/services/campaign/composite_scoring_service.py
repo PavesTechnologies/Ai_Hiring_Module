@@ -62,13 +62,14 @@ class CompositeScoringService:
     into this service (via the Celery task) rather than computing or
     writing a composite score itself.
 
-    Composite Score has exactly two valid triggers (see
-    CompositeScoreTriggerSource): AI Evaluation completing, and a
-    campaign's scoring weights changing. Never resume upload/parsing/
-    reprocessing/reset, a deterministic/semantic completion, or an HR
+    Composite Score has 3 valid triggers (see CompositeScoreTriggerSource):
+    AI Evaluation completing with a non-REJECT recommendation, a rejection
+    at any automated screening layer, and a campaign's scoring weights
+    changing. Never resume upload/parsing/reprocessing/reset or an HR
     override - an HR override only restarts the remaining scoring pipeline
     (deterministic re-pass -> semantic -> AI evaluation); it is that
-    eventual AI evaluation completing which (re)triggers Composite Score.
+    pipeline's own eventual success/rejection which (re)triggers Composite
+    Score.
 
     Mirrors SemanticScoringService's overall shape (injected repositories,
     no commit of its own - that belongs to the caller), extended per this
@@ -122,14 +123,29 @@ class CompositeScoringService:
         composite_score = self.round_score(composite_score_precise)
 
         now = datetime.now(timezone.utc)
+        ai_score = _effective_ai_score(campaign_candidate)
         breakdown = {
-            "deterministic_score": campaign_candidate.deterministic_score,
-            "semantic_score": campaign_candidate.semantic_score,
+            # Numeric columns read back as Decimal - floated here (like
+            # weight_*/normalized_semantic_score already are) so this dict
+            # is JSON-serializable for write_audit()'s audit_log insert;
+            # an unfloated Decimal here previously raised TypeError from
+            # that insert, rolling back the whole transaction (including
+            # persist()/create_history() below) and silently leaving
+            # composite_score null despite the calculation having
+            # succeeded in memory.
+            "deterministic_score": (
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            "semantic_score": (
+                float(campaign_candidate.semantic_score)
+                if campaign_candidate.semantic_score is not None else None
+            ),
             "normalized_semantic_score": (
                 float(normalized_scores["semantic_normalized"])
                 if campaign_candidate.semantic_score is not None else None
             ),
-            "effective_ai_score": _effective_ai_score(campaign_candidate),
+            "effective_ai_score": float(ai_score) if ai_score is not None else None,
             "weight_deterministic": float(weights["deterministic"]),
             "weight_semantic": float(weights["semantic"]),
             "weight_ai": float(weights["ai"]),

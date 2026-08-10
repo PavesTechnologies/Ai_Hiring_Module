@@ -73,16 +73,18 @@ class TransitionSource(enum.Enum):
 
 class CompositeScoreTriggerSource(enum.Enum):
     """
-    M10-E01: what caused a composite_score (re)calculation. Composite Score
-    has exactly two valid triggers - AI Evaluation completing, and a
-    campaign's scoring weights changing. Never resume upload/parsing/
-    reprocessing/reset, a deterministic/semantic completion, or an HR
-    override - an HR override only restarts the remaining scoring pipeline
-    (deterministic re-pass -> semantic -> AI evaluation), and it is that
-    eventual AI evaluation completing which (re)triggers Composite Score,
-    not the override itself.
+    M10-E01: what caused a composite_score (re)calculation. Three valid
+    triggers - AI Evaluation completing with a non-REJECT recommendation, a
+    candidate being rejected at any of the 3 automated screening layers
+    (DETERMINISTIC/SEMANTIC/AI), and a campaign's scoring weights changing.
+    Never resume upload/parsing/reprocessing/reset or an HR override - an
+    HR override only restarts the remaining scoring pipeline (deterministic
+    re-pass -> semantic -> AI evaluation); it is that pipeline's own eventual
+    success/rejection which (re)triggers Composite Score, not the override
+    itself.
     """
     AI_EVALUATION = "AI_EVALUATION"
+    REJECTION = "REJECTION"
     CAMPAIGN_WEIGHT_CHANGE = "CAMPAIGN_WEIGHT_CHANGE"
 
 

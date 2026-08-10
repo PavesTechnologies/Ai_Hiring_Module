@@ -41,6 +41,114 @@ class StageTransitionService:
         self.allowed_transition_repo = allowed_transition_repo
         self.campaign_candidate_repo = campaign_candidate_repo
 
+    def transition_to_screening(self, campaign_candidate) -> bool:
+        """
+        Moves campaign_candidate.pipeline_stage from UPLOADED to SCREENING -
+        called once, right before deterministic scoring runs, so
+        pipeline_stage reflects reality by the time transition_to_rejected's
+        own (SCREENING -> REJECTED) check runs for this same candidate.
+
+        A no-op (returns False, pipeline_stage left untouched) whenever the
+        candidate isn't currently at UPLOADED - e.g. a retried/redelivered
+        scoring task hitting a candidate that already moved on - so this
+        never regresses a candidate that has progressed further, and never
+        overwrites a HOLD/REJECTED/FRAUD_REVIEW stage.
+        """
+        from_stage = campaign_candidate.pipeline_stage
+        to_stage = PipelineStage.SCREENING
+
+        if from_stage != PipelineStage.UPLOADED:
+            return False
+
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+            logger.error(
+                "Stage transition blocked - no allowed_transitions entry | "
+                "campaign_candidate_id=%s from_stage=%s to_stage=%s",
+                campaign_candidate.id, from_stage.value, to_stage.value,
+            )
+            return False
+
+        now = datetime.now(timezone.utc)
+        campaign_candidate.pipeline_stage = to_stage
+        campaign_candidate.updated_at = now
+        self.campaign_candidate_repo.update(campaign_candidate)
+
+        self.campaign_candidate_repo.create_stage_history(
+            campaign_candidate_id=campaign_candidate.id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            changed_by=None,
+            change_reason="Automated screening started",
+            transition_source=TransitionSource.SYSTEM,
+            scores_snapshot=None,
+        )
+        return True
+
+    def transition_on_ai_success(
+        self,
+        campaign_candidate,
+        to_stage: PipelineStage,
+        decision_type: DecisionType,
+        change_reason: str,
+        scores_snapshot: dict | None,
+        decision_reason: str | None = None,
+        decision_details: dict | None = None,
+    ) -> bool:
+        """
+        AI evaluation's 2 non-REJECT outcomes: a SHORTLIST recommendation
+        moves pipeline_stage to SHORTLISTED, a HOLD recommendation moves it
+        to HOLD - same validate-then-apply shape as transition_to_rejected,
+        always decision_source=AI, always from SCREENING (the only stage
+        AI evaluation ever runs from). A no-op (returns False, nothing
+        written) if that (SCREENING, to_stage) edge isn't in
+        allowed_transitions - never overwrites a candidate that isn't
+        actually at SCREENING (e.g. a retried/redelivered evaluation task).
+
+        Trusts the AI's own categorical recommendation exactly the way its
+        REJECT outcome already does - not a separate numeric comparison
+        against campaign.ai_threshold (deterministic_score/semantic_score
+        are already guaranteed above their own thresholds by the time AI
+        evaluation runs at all - rejected at an earlier layer otherwise).
+        """
+        from_stage = campaign_candidate.pipeline_stage
+
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+            logger.error(
+                "Stage transition blocked - no allowed_transitions entry | "
+                "campaign_candidate_id=%s from_stage=%s to_stage=%s",
+                campaign_candidate.id, from_stage.value, to_stage.value,
+            )
+            return False
+
+        effective_decision_reason = decision_reason if decision_reason is not None else change_reason
+
+        now = datetime.now(timezone.utc)
+        campaign_candidate.pipeline_stage = to_stage
+        campaign_candidate.decision_type = decision_type
+        campaign_candidate.decision_source = DecisionSource.AI
+        campaign_candidate.decision_reason = effective_decision_reason
+        campaign_candidate.decision_details = decision_details
+        campaign_candidate.decision_by_user_id = None
+        campaign_candidate.decision_at = now
+        self.campaign_candidate_repo.update(campaign_candidate)
+
+        self.campaign_candidate_repo.create_stage_history(
+            campaign_candidate_id=campaign_candidate.id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            changed_by=None,
+            change_reason=change_reason,
+            transition_source=TransitionSource.SYSTEM,
+            scores_snapshot={
+                **(scores_snapshot or {}),
+                "decision_type": decision_type.value,
+                "decision_source": DecisionSource.AI.value,
+                "decision_reason": effective_decision_reason,
+                "decision_details": decision_details,
+            },
+        )
+        return True
+
     def transition_to_rejected(
         self,
         campaign_candidate,

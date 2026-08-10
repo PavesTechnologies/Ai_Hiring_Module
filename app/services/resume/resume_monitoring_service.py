@@ -23,7 +23,9 @@ from app.schemas.resume.monitoring import (
     ProcessingSummary,
     ResumeDetailResponse,
     ResumeListItem,
+    ResumeListItemWithPipeline,
     ResumeListResponse,
+    ResumeListWithPipelineResponse,
     ResumeParsedJsonResponse,
     ResumeSummary,
     ResumeTimelineResponse,
@@ -217,20 +219,29 @@ class ResumeMonitoringService:
             failure=failure,
         )
 
-    def list_resumes(
+    def _fetch_resume_page(
         self,
         *,
-        campaign_id: UUID | None = None,
-        parse_status: ParseStatus | None = None,
-        source: str | None = None,
-        email_hash: str | None = None,
-        uploaded_from: datetime | None = None,
-        uploaded_to: datetime | None = None,
-        page: int = 1,
-        size: int = 20,
-        sort_by: str = "created_at",
-        sort_dir: str = "desc",
-    ) -> ResumeListResponse:
+        campaign_id: UUID | None,
+        parse_status: ParseStatus | None,
+        source: str | None,
+        email_hash: str | None,
+        uploaded_from: datetime | None,
+        uploaded_to: datetime | None,
+        page: int,
+        size: int,
+        sort_by: str,
+        sort_dir: str,
+    ):
+        """
+        Shared page-fetch for list_resumes/list_resumes_with_pipeline_status -
+        same filters/pagination/batched lookups, so the two response shapes
+        never drift out of sync on what counts as "the page". Returns
+        (resumes, total, candidates_by_id, campaign_candidates_by_resume_id)
+        where campaign_candidates_by_resume_id holds the full
+        CampaignCandidate row (not just its id) so a caller can read
+        pipeline_stage/decision_* off it without a second query.
+        """
         filters = dict(
             campaign_id=campaign_id,
             parse_status=parse_status,
@@ -257,33 +268,55 @@ class ResumeMonitoringService:
         # the most recently created link is shown as a best-effort pick —
         # there's no single "correct" one to prefer without a campaign in
         # scope.
-        campaign_candidates_by_resume_id: dict[UUID, UUID] = {}
+        campaign_candidates_by_resume_id = {}
         for cc in sorted(
             self.campaign_candidate_repository.get_by_resume_ids(
                 [r.id for r in resumes], campaign_id=campaign_id,
             ),
             key=lambda cc: cc.created_at,
         ):
-            campaign_candidates_by_resume_id[cc.resume_id] = cc.id
+            campaign_candidates_by_resume_id[cc.resume_id] = cc
+
+        return resumes, total, candidates_by_id, campaign_candidates_by_resume_id
+
+    def _decrypt_candidate_identity(self, candidate) -> tuple[str, str]:
+        if candidate is None:
+            return "Unknown", "Unknown"
+        full_name = self._safe_decrypt(candidate.full_name_encrypted, candidate.encryption_key_id, candidate.id)
+        email = self._safe_decrypt(candidate.email_encrypted, candidate.encryption_key_id, candidate.id)
+        return full_name, email
+
+    def list_resumes(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> ResumeListResponse:
+        resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
+            campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+            uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
 
         items = []
         for resume in resumes:
-            candidate = candidates_by_id.get(resume.candidate_id)
-            full_name = (
-                self._safe_decrypt(candidate.full_name_encrypted, candidate.encryption_key_id, candidate.id)
-                if candidate else "Unknown"
-            )
-            email = (
-                self._safe_decrypt(candidate.email_encrypted, candidate.encryption_key_id, candidate.id)
-                if candidate else "Unknown"
-            )
+            full_name, email = self._decrypt_candidate_identity(candidates_by_id.get(resume.candidate_id))
+            cc = campaign_candidates_by_resume_id.get(resume.id)
             items.append(
                 ResumeListItem(
                     id=resume.id,
                     resume_id=resume.id,
                     task_id=resume.task_id,
                     candidate_id=resume.candidate_id,
-                    campaign_candidate_id=campaign_candidates_by_resume_id.get(resume.id),
+                    campaign_candidate_id=cc.id if cc else None,
                     candidate_full_name=full_name,
                     candidate_email=email,
                     file_format=resume.file_format.value,
@@ -297,6 +330,64 @@ class ResumeMonitoringService:
             )
 
         return ResumeListResponse(items=items, total=total, page=page, size=size)
+
+    def list_resumes_with_pipeline_status(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> ResumeListWithPipelineResponse:
+        """
+        Same rows as list_resumes, plus each resume's linked
+        campaign_candidate pipeline_stage/decision_* fields - lets the
+        frontend show, for each resume, which stage the candidate is on
+        and whether they succeeded/failed there, without a second
+        per-candidate call.
+        """
+        resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
+            campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+            uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
+
+        items = []
+        for resume in resumes:
+            full_name, email = self._decrypt_candidate_identity(candidates_by_id.get(resume.candidate_id))
+            cc = campaign_candidates_by_resume_id.get(resume.id)
+            items.append(
+                ResumeListItemWithPipeline(
+                    id=resume.id,
+                    resume_id=resume.id,
+                    task_id=resume.task_id,
+                    candidate_id=resume.candidate_id,
+                    campaign_id=cc.campaign_id if cc else None,
+                    campaign_candidate_id=cc.id if cc else None,
+                    candidate_full_name=full_name,
+                    candidate_email=email,
+                    file_format=resume.file_format.value,
+                    parse_status=resume.parse_status.value,
+                    version_number=resume.version_number,
+                    is_active_version=resume.is_active_version,
+                    source="bulk" if resume.bulk_upload_job_id else "individual",
+                    bulk_upload_job_id=resume.bulk_upload_job_id,
+                    created_at=resume.created_at,
+                    pipeline_stage=cc.pipeline_stage.value if cc else None,
+                    decision_type=cc.decision_type.value if cc and cc.decision_type else None,
+                    decision_source=cc.decision_source.value if cc and cc.decision_source else None,
+                    decision_reason=cc.decision_reason if cc else None,
+                    decision_at=cc.decision_at if cc else None,
+                )
+            )
+
+        return ResumeListWithPipelineResponse(items=items, total=total, page=page, size=size)
 
     def get_parsed_json_by_campaign_candidate(self, campaign_candidate_id: UUID) -> ResumeParsedJsonResponse:
         campaign_candidate = self.campaign_candidate_repository.get_by_id(campaign_candidate_id)

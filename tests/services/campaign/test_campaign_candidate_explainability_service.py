@@ -10,6 +10,7 @@ from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource,
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
+from app.schemas.campaign.campaign_candidate_schema import CandidateCompositeResponse
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 
 
@@ -466,3 +467,46 @@ def test_ranking_details_does_not_recompute_composite_score():
     result = service.get_candidate_ranking_details(cc.id)
 
     assert result.composite_score == 42.42
+
+
+# ----------------------------------------------------------------------
+# get_candidate_composite
+# ----------------------------------------------------------------------
+
+def test_composite_returns_tab_response_without_override_fields():
+    computed_at = datetime.now(timezone.utc)
+    cc = _make_campaign_candidate(
+        composite_score=86.25,
+        deterministic_score=80.0,
+        semantic_score=0.9,
+        composite_score_computed_at=computed_at,
+    )
+    cc.ai_evaluation = SimpleNamespace(effective_ai_score=95.0)
+    campaign = _make_campaign(cc.campaign_id, weight_deterministic=40.0, weight_semantic=35.0, weight_ai=25.0)
+    history_row = _make_composite_history_row(formula_version="v2")
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_id.return_value = cc
+    campaign_repo = MagicMock()
+    campaign_repo.get_by_id.return_value = campaign
+    history_repo = MagicMock()
+    history_repo.get_by_campaign_candidate_id.return_value = [history_row]
+    service = make_service(
+        campaign_candidate_repo=campaign_candidate_repo, campaign_repo=campaign_repo,
+        composite_score_history_repo=history_repo,
+    )
+
+    result = service.get_candidate_composite(cc.id)
+
+    assert isinstance(result, CandidateCompositeResponse)
+    assert result.campaign_candidate_id == cc.id
+    assert result.composite_score == 86.25
+    assert result.deterministic_score == 80.0
+    assert result.semantic_score == 0.9
+    assert result.ai_evaluation_score == 95.0
+    assert result.weight_deterministic == 40.0
+    assert result.weight_semantic == 35.0
+    assert result.weight_ai == 25.0
+    assert result.formula_version == "v2"
+    assert result.ranking_status == "RANKED"
+    assert result.composite_score_computed_at == computed_at
+    assert not hasattr(result, "hr_override")
