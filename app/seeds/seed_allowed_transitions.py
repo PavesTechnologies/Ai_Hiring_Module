@@ -18,6 +18,27 @@ db = SessionLocal()
 _TRANSITIONS = [
     {
         "from_stage": PipelineStage.UPLOADED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": False,
+        "notes": "Automated: deterministic scoring starting moves the candidate into screening (StageTransitionService.transition_to_screening).",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Automated: AI evaluation SHORTLIST recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+    },
+    {
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Automated: AI evaluation HOLD recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+    },
+    {
+        "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.FRAUD_REVIEW,
         "allowed_roles": ["SYSTEM"],
         "requires_reason": False,

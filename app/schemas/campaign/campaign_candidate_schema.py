@@ -10,6 +10,7 @@ from app.models.pipeline import (
     AIRecommendation,
     CompositeScoreTriggerSource,
     DecisionSource,
+    DecisionType,
     PipelineStage,
     TransitionSource,
 )
@@ -71,6 +72,15 @@ class CampaignCandidateResponse(BaseModel):
     is_fraud_flagged: bool = False
     hr_override: bool = False
     ai_recommendation: AIRecommendation | None = None
+
+    # Where this candidate's pipeline decision currently stands - read
+    # straight off the CampaignCandidate row, never a new query. All null
+    # until a decision has actually been made (i.e. the candidate hasn't
+    # been rejected or HR-overridden yet).
+    decision_type: DecisionType | None = None
+    decision_source: DecisionSource | None = None
+    decision_reason: str | None = None
+    decision_at: datetime | None = None
 
     # M10-E03 Phase 1: derived per-request, never stored (see
     # CampaignCandidateService._derive_ranking_status). rank is only
@@ -207,6 +217,26 @@ class CandidateRankingDetailsResponse(BaseModel):
     hr_override_by: str | None = None
     hr_override_reason: str | None = None
     hr_override_at: datetime | None = None
+
+
+class CandidateCompositeResponse(BaseModel):
+    """
+    Composite-tab-only view of the candidate scorecard: current composite
+    score, score inputs, campaign weights, and formula metadata. Read-only;
+    never recalculates anything.
+    """
+
+    campaign_candidate_id: UUID
+    composite_score: float | None = None
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    ai_evaluation_score: float | None = None
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    formula_version: str | None = None
+    ranking_status: RankingStatus
+    composite_score_computed_at: datetime | None = None
 
 
 class DeterministicScoreSummary(BaseModel):

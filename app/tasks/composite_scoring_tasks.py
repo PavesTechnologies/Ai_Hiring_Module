@@ -40,20 +40,6 @@ _SCOREABLE_CAMPAIGN_STATUSES = {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}
 # policy shape as semantic scoring's.
 _COMPOSITE_SCORE_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
 
-# ----------------------------------------------------------------------
-# M09 AI Evaluation integration point (placeholder)
-# ----------------------------------------------------------------------
-# TODO(M09): AI Evaluation does not exist in this codebase yet. Once its
-# Celery task is built, it must call _enqueue_composite_scoring(...) with
-# trigger_source=CompositeScoreTriggerSource.AI_EVALUATION immediately after
-# its own transaction commits successfully (same "best-effort, after commit,
-# never crashes the already-successful outcome" convention
-# calculate_deterministic_score_task already uses for its own auto-trigger
-# of semantic scoring). No further change to this module should be required
-# when that happens - only a new call site in the AI evaluation task itself.
-# ----------------------------------------------------------------------
-
-
 def _enqueue_composite_scoring(
     campaign_candidate_id: UUID,
     task_log_service: CeleryTaskLogService,
@@ -61,12 +47,15 @@ def _enqueue_composite_scoring(
 ) -> None:
     """
     Shared composite-scoring enqueue helper - the single place this is
-    done, reused by both valid trigger sites: eventually AI evaluation
-    completing (see the placeholder above) and campaign weight changes
+    done, reused by every valid trigger site: AI evaluation completing with
+    a non-REJECT recommendation, a rejection at any of the 3 automated
+    screening layers (deterministic_scoring_tasks.py/semantic_scoring_tasks.py/
+    ai_evaluation_tasks.py, each passing CompositeScoreTriggerSource.REJECTION),
+    and campaign weight changes
     (CampaignService._enqueue_composite_recalculation_for_campaign). An HR
     override is deliberately NOT a trigger site - it only restarts the
     remaining scoring pipeline (deterministic re-pass -> semantic -> AI
-    evaluation); it is that eventual AI evaluation completing which
+    evaluation); it is that pipeline's own eventual success/rejection which
     (re)triggers this. Idempotency: a QUEUED/RUNNING celery_task_log row for
     this campaign_candidate_id + COMPOSITE_SCORE already means a
     calculation is in flight - never a second/parallel idempotency
@@ -112,12 +101,12 @@ def calculate_composite_score_task(self, campaign_candidate_id: str, trigger_sou
     (COALESCEd to 0 wherever missing - see CompositeScoringService),
     weighted by the owning campaign's scoring weights exactly as
     configured (no redistribution), never recomputing any of those three
-    inputs itself. Only ever enqueued for one of exactly two reasons: AI
-    evaluation completing, or a campaign's scoring weights changing - never
-    on resume upload/parsing/reprocessing/reset, a deterministic/semantic
-    completion, or an HR override (an override only restarts the remaining
-    scoring pipeline; it is that eventual AI evaluation completing which
-    (re)triggers this).
+    inputs itself. Only ever enqueued for one of 3 reasons: AI evaluation
+    completing with a non-REJECT recommendation, a rejection at any
+    automated screening layer, or a campaign's scoring weights changing -
+    never on resume upload/parsing/reprocessing/reset or an HR override
+    (an override only restarts the remaining scoring pipeline; it is that
+    pipeline's own eventual success/rejection which (re)triggers this).
 
     Mirrors calculate_semantic_score_task's overall shape: existence
     checks, campaign status gate, retry/dead-letter machinery (RetryPolicy +

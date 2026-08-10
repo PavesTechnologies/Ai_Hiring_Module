@@ -18,6 +18,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateSummaryResponse,
     CampaignRejectionAnalyticsResponse,
     CandidateAIEvaluationResponse,
+    CandidateCompositeResponse,
     CandidateCompositeScoreHistoryResponse,
     CandidateDeterministicResponse,
     CandidateRankingDetailsResponse,
@@ -535,6 +536,32 @@ def get_candidate_ai_evaluation(
     return APIResponse.ok(
         data=ai_evaluation,
         message="Candidate AI evaluation result retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/composite",
+    response_model=APIResponse[CandidateCompositeResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Composite Score Details (Composite tab)",
+    description=(
+        "Composite-tab-only view: composite_score, component scores, current campaign "
+        "weights, formula version, ranking status, and computed timestamp. Read-only - "
+        "never recalculates composite_score."
+    ),
+)
+def get_candidate_composite(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    composite = service.get_candidate_composite(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=composite,
+        message="Candidate composite score details retrieved successfully.",
     )
 
 
