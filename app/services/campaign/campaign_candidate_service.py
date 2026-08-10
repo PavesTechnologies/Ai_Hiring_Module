@@ -12,7 +12,9 @@ from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_P
 from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
 from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
     InvalidPipelineTransitionException,
+    PipelineStageConflictException,
     PipelineTransitionReasonRequiredException,
 )
 from app.models.campaigns import CampaignStatus, HiringCampaign
@@ -485,6 +487,12 @@ class CampaignCandidateService:
         except PipelineTransitionReasonRequiredException as exc:
             self.campaign_candidate_repo.rollback()
             raise CampaignException(str(exc), 400) from exc
+        except ForbiddenPipelineRoleException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 403) from exc
+        except PipelineStageConflictException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
 
         try:
             validation_result = self.file_validation_service.validate(file_bytes, filename)

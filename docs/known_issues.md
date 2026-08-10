@@ -7,6 +7,47 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Test suite: widespread staleness from the `decision_*` model redesign
+
+**Status:** open, discovered 2026-08-10, not fixed. Scope is large enough that
+it needs its own pass, not a fold-in to whatever change happens to trip over it.
+
+At some point before 2026-08-07, a merge (the same one that introduced the
+`decision_type`/`decision_source`/`decision_reason`/`decision_details`/
+`decision_by_user_id`/`decision_at` fields on `CampaignCandidate`, replacing
+the older `ai_recommendation`/`hr_override_*`/`rejection_*` fields and the
+standalone `RejectionLayer` enum/`CandidateRejectionRepository` module) was
+never followed up with a pass over the test suite. Running
+`tests/services/campaign/` + `tests/tasks/test_deterministic_scoring_tasks.py`
++ `tests/tasks/test_semantic_scoring_tasks.py` today: **97 failed, 6 collection
+errors, 177 passed.**
+
+Confirmed via representative sampling across 3 different files that this is
+one root cause wearing different symptoms, not several unrelated problems:
+- 6 files fail to even collect: `ImportError: cannot import name
+  'RejectionLayer' from 'app.models.pipeline'` (the enum no longer exists).
+- `test_deterministic_scoring_tasks.py` (32 of the 97 failures):
+  `mock.patch("...CandidateRejectionRepository")` against a module that was
+  deleted in the same redesign.
+- `test_semantic_scoring_service.py` (12 of the 97): `SimpleNamespace`
+  fixtures missing `deterministic_breakdown` and similar new fields — same
+  "stale bare fixture" shape as the 3 fixtures fixed in
+  `test_stage_transition_service.py` for E02 (see that file's git history),
+  just not yet applied to every other file using the same fixture pattern.
+
+**Not fixed here:** discovered while verifying E02's own fixture fixes
+didn't leave anything else broken (they didn't — confirmed via `git status`
+that none of the affected files were touched by E02's changes). Fixing this
+properly means going through every stale fixture/mock across roughly 10
+files and deciding, file by file, what the new correct fixture shape is —
+a real, separate body of work, not a quick fix. Given how many files it
+touches, whoever picks this up should probably do it as one dedicated pass
+rather than patching files one at a time as they happen to get touched by
+unrelated work (that's how the E02 test fixes ended up being only 3 of the
+~15+ stale fixtures that actually exist).
+
+---
+
 ## Alembic: multiple unmerged migration heads
 
 **Status:** open, pre-existing, recurring. Not fixed by any of the entries below.
@@ -90,3 +131,31 @@ parent, multiple children, all independently verified live), **every**
 branch tip needs including in the stamp — including one but not its
 sibling produces a `current` set that looks successful but silently drops a
 branch.
+
+**2026-08-10 recurrence:** while building the E02 (Stage Transition Rules &
+Enforcement) migration adding `campaign_candidate_stage_history.
+idempotency_key` (`08655d0b0117`), `alembic current` failed again:
+`alembic_version` was stamped at `9a1c2f3e6b7d`, a revision that doesn't
+exist anywhere — not in local `alembic/versions/`, not in `origin/main`
+(fetched and checked directly), not in any teammate branch. Verified before
+doing anything: table-level schema on the target campaign_candidate_stage_history
+table was completely unaffected (same 9 columns, same single PK index as
+the last audit), and both of this repo's then-current heads' schema effects
+(`09f831e39061`'s `audit_entity_type_enum` values, `e686c750b7b4`'s
+`email_trigger_event_enum` values) were confirmed still live.
+
+**Root cause: unconfirmed.** Unlike the 2026-08-07 recurrence, no plausible
+mechanism was identified this time (no relevant upstream merge, no dangling
+down_revision from a squash) — this entry documents that the phantom stamp
+existed and was worked around, not why it existed. Do not read this as
+"understood," only as "papered over safely."
+
+**How it was fixed this time:** authored a no-op placeholder migration
+(`9a1c2f3e6b7d_placeholder_for_missing_revision.py`) merging the 2
+then-current heads (`09f831e39061`, `e686c750b7b4`) into the exact stamped
+revision id, matching the same pattern as the prior two recurrences, then
+chained the real `idempotency_key` migration on top. Confirmed clean
+afterward: `alembic current` and `alembic heads` both resolve to the single
+new head (`08655d0b0117`), and the migration itself was purely additive —
+`allowed_transitions` (26 rows) and `campaign_candidate_stage_history` (41
+rows, all with `idempotency_key IS NULL`) were unchanged before/after.

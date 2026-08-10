@@ -117,8 +117,9 @@ def get_stage_transition_service(
     campaign_candidate_repo: CampaignCandidateRepository = Depends(
         get_campaign_candidate_repository
     ),
+    audit_service: AuditService = Depends(get_audit_service),
 ) -> StageTransitionService:
-    return StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
+    return StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
 
 
 def get_config_repository(
