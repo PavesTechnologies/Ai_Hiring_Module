@@ -9,7 +9,7 @@ from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import AIEvaluationStatus, DecisionSource
+from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
@@ -34,6 +34,7 @@ from app.services.campaign.experience_education_validation_service import (
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
+from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,9 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         if job_description is None:
             raise ValueError(f"Job description '{campaign.jd_id}' not found.")
 
-       
+        stage_transition_service.transition_to_screening(campaign_candidate)
+
+
         parsed_json = resume.parsed_json or {}
         candidate_total_years = parsed_json.get("total_experience_years")
         candidate_education_entries = parsed_json.get("education")
@@ -299,6 +302,15 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
 
         if not breakdown["deterministic_passed"] and stage_transition_succeeded:
             _queue_rejection_email(db, campaign_candidate)
+            try:
+                _enqueue_composite_scoring(
+                    campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.REJECTION,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue composite scoring after deterministic rejection for campaign_candidate_id=%s",
+                    campaign_candidate.id,
+                )
 
         if breakdown["deterministic_passed"]:
             try:

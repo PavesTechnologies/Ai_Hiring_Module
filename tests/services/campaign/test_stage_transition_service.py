@@ -67,6 +67,62 @@ def test_transition_is_a_no_op_when_blocked():
 
 
 """
+StageTransitionService.transition_to_screening - moves UPLOADED ->
+SCREENING right before deterministic scoring runs, so a rejection
+immediately afterwards has a real SCREENING -> REJECTED edge to use.
+"""
+
+
+def test_transition_to_screening_applies_when_uploaded_and_allowed():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.UPLOADED)
+    service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=True)
+
+    result = service.transition_to_screening(candidate)
+
+    assert result is True
+    assert candidate.pipeline_stage == PipelineStage.SCREENING
+    allowed_transition_repo.is_transition_allowed.assert_called_once_with(
+        PipelineStage.UPLOADED, PipelineStage.SCREENING,
+    )
+    campaign_candidate_repo.update.assert_called_once_with(candidate)
+    campaign_candidate_repo.create_stage_history.assert_called_once_with(
+        campaign_candidate_id=candidate.id,
+        from_stage=PipelineStage.UPLOADED,
+        to_stage=PipelineStage.SCREENING,
+        changed_by=None,
+        change_reason="Automated screening started",
+        transition_source=TransitionSource.SYSTEM,
+        scores_snapshot=None,
+    )
+
+
+def test_transition_to_screening_is_a_no_op_when_blocked():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.UPLOADED)
+    service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=False)
+
+    result = service.transition_to_screening(candidate)
+
+    assert result is False
+    assert candidate.pipeline_stage == PipelineStage.UPLOADED
+    campaign_candidate_repo.update.assert_not_called()
+    campaign_candidate_repo.create_stage_history.assert_not_called()
+
+
+def test_transition_to_screening_is_a_no_op_when_not_uploaded():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SCREENING)
+    service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=True)
+
+    result = service.transition_to_screening(candidate)
+
+    assert result is False
+    # Never re-enters SCREENING or writes a second history row for a
+    # candidate that's already there (e.g. a retried scoring task).
+    allowed_transition_repo.is_transition_allowed.assert_not_called()
+    campaign_candidate_repo.update.assert_not_called()
+    campaign_candidate_repo.create_stage_history.assert_not_called()
+
+
+"""
 M07-E03 S04 T02: StageTransitionService.apply_hr_override - same
 validate-then-apply shape as transition_to_rejected, but REJECTED ->
 SCREENING, MANUAL/HR_ADMIN-attributed instead of SYSTEM/anonymous.

@@ -922,8 +922,8 @@ class CampaignRepository:
                 "deterministic_score": float(cc.deterministic_score) if cc.deterministic_score is not None else None,
                 "semantic_score": float(cc.semantic_score) if cc.semantic_score is not None else None,
                 "ai_ats_score": (
-                    float(ai_evaluation.ai_ats_score)
-                    if ai_evaluation is not None and ai_evaluation.ai_ats_score is not None else None
+                    float(ai_evaluation.effective_ai_score)
+                    if ai_evaluation is not None and ai_evaluation.effective_ai_score is not None else None
                 ),
                 "decision_type": cc.decision_type.value if cc.decision_type else None,
                 "decision_source": cc.decision_source.value if cc.decision_source else None,

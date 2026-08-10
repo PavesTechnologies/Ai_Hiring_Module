@@ -979,9 +979,14 @@ class CampaignCandidateService:
                 float(campaign_candidate.deterministic_score)
                 if campaign_candidate.deterministic_score is not None else None
             ),
+            # ai_ats_score reads from effective_ai_score - the AI evaluation's
+            # own ai_ats_score column is never written by any code path
+            # (AIEvaluationService only ever sets effective_ai_score), so
+            # reading it directly here always returned null regardless of
+            # whether AI evaluation actually ran.
             ai_ats_score=(
-                float(ai_evaluation.ai_ats_score)
-                if ai_evaluation and ai_evaluation.ai_ats_score is not None else None
+                float(ai_evaluation.effective_ai_score)
+                if ai_evaluation and ai_evaluation.effective_ai_score is not None else None
             ),
             semantic_score=(
                 float(campaign_candidate.semantic_score)
@@ -998,6 +1003,10 @@ class CampaignCandidateService:
             is_fraud_flagged=getattr(campaign_candidate, "is_fraud_flagged", False),
             hr_override=getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET,
             ai_recommendation=ai_evaluation.ai_recommendation if ai_evaluation else None,
+            decision_type=getattr(campaign_candidate, "decision_type", None),
+            decision_source=getattr(campaign_candidate, "decision_source", None),
+            decision_reason=getattr(campaign_candidate, "decision_reason", None),
+            decision_at=getattr(campaign_candidate, "decision_at", None),
             rank=rank,
             ranking_status=self._derive_ranking_status(campaign_candidate),
             location=None,
@@ -2002,7 +2011,13 @@ class CampaignCandidateService:
         never queues AI_EVALUATE ahead of semantic scoring, mirroring the
         same PASS-gates-AI_EVALUATE ordering
         calculate_semantic_score_task's own auto-trigger enforces
-        (app.tasks.semantic_scoring_tasks._queue_ai_evaluate_if_not_duplicate).
+        (app.tasks.semantic_scoring_tasks._score_and_persist_semantic's
+        post-commit call to app.tasks.ai_evaluation_tasks._enqueue_ai_evaluation).
+        Deferred/HR-override path only: unlike that call, the
+        "semantic_score already set" branch below still only writes a
+        bookkeeping celery_task_log row via _queue_task_log_if_not_duplicate
+        rather than actually dispatching calculate_ai_evaluation_task -
+        the override flow itself is out of scope for now.
         - semantic_score already set (candidate was rejected AT the
           semantic layer, or was re-scored since) -> AI_EVALUATE is queued
           immediately, since semantic has already run.

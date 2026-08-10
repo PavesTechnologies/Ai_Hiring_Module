@@ -11,7 +11,7 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import AIEvaluationStatus, DecisionSource
+from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
@@ -27,6 +27,8 @@ from app.services.campaign.stage_transition_service import StageTransitionServic
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
+from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
+from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import (
     AI_EVALUATE_TASK_TYPE,
     _cancel_downstream_ai_evaluation,
@@ -59,33 +61,6 @@ JD_EMBEDDING_NOT_FOUND_REASON = "JD_EMBEDDING_NOT_FOUND"
 MODEL_VERSION_MISMATCH_REASON = "MODEL_VERSION_MISMATCH"
 
 
-def _queue_ai_evaluate_if_not_duplicate(
-    campaign_candidate, task_log_service: CeleryTaskLogService,
-) -> None:
-    """
-    Story 541: on a semantic PASS, queue AI_EVALUATE - the identical
-    bookkeeping-only placeholder pattern already established by
-    CampaignCandidateService._queue_task_log_if_not_duplicate (M09 AI
-    Evaluation itself isn't built yet, so this only records a QUEUED
-    celery_task_log row for the real task to pick up once it exists; it
-    never dispatches anything).
-    """
-    task_log_repo = task_log_service.repository
-    already_queued = any(
-        log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
-        for log in task_log_repo.get_by_campaign_candidate_and_task_type(
-            campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
-        )
-    )
-    if already_queued:
-        return
-    task_log_service.create_log(
-        task_id=str(uuid4()),
-        task_type=AI_EVALUATE_TASK_TYPE,
-        campaign_candidate_id=campaign_candidate.id,
-    )
-
-
 def _score_and_persist_semantic(
     campaign_candidate,
     campaign,
@@ -107,10 +82,7 @@ def _score_and_persist_semantic(
 
     rejection_reason = None
     stage_transition_succeeded = False
-    if breakdown["semantic_passed"]:
-        # Story 541: PASS -> queue AI_EVALUATE (never for a rejected candidate).
-        _queue_ai_evaluate_if_not_duplicate(campaign_candidate, task_log_service)
-    else:
+    if not breakdown["semantic_passed"]:
         rejection_reason = breakdown["semantic_explanation"]
 
         stage_transition_succeeded = stage_transition_service.transition_to_rejected(
@@ -162,6 +134,30 @@ def _score_and_persist_semantic(
     # the already-successful scoring outcome or blocks this task.
     if not breakdown["semantic_passed"] and stage_transition_succeeded:
         _queue_rejection_email(campaign_candidate_repo.db, campaign_candidate)
+        try:
+            _enqueue_composite_scoring(
+                campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.REJECTION,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue composite scoring after semantic rejection for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
+
+    if breakdown["semantic_passed"]:
+        # Only after the transaction above has committed - same "commit
+        # first, dispatch after" ordering calculate_deterministic_score_task
+        # uses for its own auto-trigger of semantic scoring, so a worker
+        # that immediately picks up AI_EVALUATE always sees this candidate's
+        # just-written semantic_score/semantic_breakdown, never a stale read
+        # against an uncommitted transaction.
+        try:
+            _enqueue_ai_evaluation(campaign_candidate, task_log_service)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue AI evaluation after semantic pass for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
     return summary_payload
 
