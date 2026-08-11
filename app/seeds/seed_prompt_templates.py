@@ -179,8 +179,25 @@ For each education record extract:
 - institution
 - field
 - graduation_year
+- degree_level
+- field_normalized
 
-If any field is unavailable, return null.
+degree_level: classify the entry's degree into EXACTLY one of:
+
+CERTIFICATE, DIPLOMA, ASSOCIATE, BACHELOR, POSTGRADUATE_DIPLOMA, MASTER, DOCTORATE, PROFESSIONAL, OTHER, UNKNOWN
+
+Normalize common abbreviations, for example:
+
+- "B.Tech", "B.E.", "B.Sc.", "BCA", "BA", "B.Com" → BACHELOR
+- "M.Tech", "M.E.", "MCA", "MBA", "M.Sc." → MASTER
+- "PhD", "Doctor of Philosophy" → DOCTORATE
+- "Diploma" → DIPLOMA
+
+If the degree level cannot be confidently determined, return "UNKNOWN". Do not guess.
+
+field_normalized: classify the entry's field of study into a single controlled category such as COMPUTER_SCIENCE, INFORMATION_TECHNOLOGY, ELECTRONICS_ENGINEERING, ELECTRICAL_ENGINEERING, MECHANICAL_ENGINEERING, CIVIL_ENGINEERING, DATA_SCIENCE, MATHEMATICS, STATISTICS, BUSINESS_ADMINISTRATION, COMMERCE, ECONOMICS, OTHER, UNKNOWN. If it cannot be confidently classified, return "UNKNOWN" — never invent a category. Keep the raw `field` value unchanged regardless of what field_normalized resolves to.
+
+If any field is unavailable, return null for it — degree_level/field_normalized still default to "UNKNOWN" rather than null.
 
 PROJECTS
 --------
@@ -254,7 +271,9 @@ Return ONLY the following JSON.
             "degree": null,
             "institution": null,
             "field": null,
-            "graduation_year": null
+            "graduation_year": null,
+            "degree_level": "UNKNOWN",
+            "field_normalized": "UNKNOWN"
         }
     ],
     "projects": [
@@ -373,6 +392,19 @@ Extract technical skills explicitly listed or described as:
 
 If a skill appears as both required and preferred, include it only in required_skills.
 
+IMPORTANCE CLASSIFICATION (REQUIRED SKILLS ONLY)
+-------------------------------------------------
+For every skill in required_skills, classify its importance as exactly one of:
+
+- "core" — a skill that is central to the role and directly needed to perform its primary responsibilities (e.g. the main programming language, the primary framework/platform the role is built on).
+- "supporting" — a skill that is useful and expected but secondary to the role's primary capabilities (e.g. build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling).
+
+Infer core vs. supporting from the Job Description's wording, responsibilities, qualifications, technical stack, how often the skill is repeated, and its role in context. Do not ask the recruiter to assign this and do not invent an importance that isn't grounded in the text.
+
+If a required skill's importance is genuinely ambiguous, classify it as "supporting" — the safer default.
+
+preferred_skills never receive an importance classification — they are not part of required-skill qualification.
+
 PREFERRED SKILLS
 ----------------
 Extract technical skills explicitly listed or described as:
@@ -384,6 +416,7 @@ Extract technical skills explicitly listed or described as:
 - Plus
 
 Do not duplicate any skill already present in required_skills.
+Do not classify preferred skills as required, and do not assign them an importance.
 
 SOFT SKILLS
 -----------
@@ -454,10 +487,25 @@ Return:
 
 {
     "degree": "...",
-    "field": "..."
+    "field": "...",
+    "degree_level": "...",
+    "field_normalized": "...",
+    "related_field_allowed": false
 }
 
-If either value is not explicitly mentioned, return null.
+degree/field: the raw text as written (e.g. "Bachelor's degree", "Computer Science or related field"). If either is not explicitly mentioned, return null.
+
+degree_level: classify the minimum required degree into EXACTLY one of:
+
+CERTIFICATE, DIPLOMA, ASSOCIATE, BACHELOR, POSTGRADUATE_DIPLOMA, MASTER, DOCTORATE, PROFESSIONAL, OTHER, UNKNOWN
+
+Normalize common abbreviations the same way as for resumes (e.g. "B.Tech"/"B.E."/"B.Sc." → BACHELOR, "M.Tech"/"MBA"/"M.Sc." → MASTER, "PhD" → DOCTORATE). If the required level is not explicitly stated or cannot be confidently determined, return "UNKNOWN". Do not guess.
+
+field_normalized: classify the required field of study into a single controlled category such as COMPUTER_SCIENCE, INFORMATION_TECHNOLOGY, ELECTRONICS_ENGINEERING, ELECTRICAL_ENGINEERING, MECHANICAL_ENGINEERING, CIVIL_ENGINEERING, DATA_SCIENCE, MATHEMATICS, STATISTICS, BUSINESS_ADMINISTRATION, COMMERCE, ECONOMICS, OTHER, UNKNOWN. If it cannot be confidently classified, return "UNKNOWN" — never invent a category.
+
+related_field_allowed: true only if the Job Description explicitly allows a related/equivalent field of study (e.g. "Computer Science or related field", "or equivalent discipline"). Otherwise false.
+
+If neither degree nor field is explicitly mentioned, return null for both, "UNKNOWN" for degree_level and field_normalized, and false for related_field_allowed.
 
 EMPLOYMENT TYPE
 ---------------
@@ -497,8 +545,12 @@ OUTPUT FORMAT
 Return ONLY the following JSON.
 
 {
-    "required_skills": [],
-    "preferred_skills": [],
+    "required_skills": [
+        {"name": "...", "importance": "core"}
+    ],
+    "preferred_skills": [
+        {"name": "..."}
+    ],
     "soft_skills": [],
     "responsibilities": [],
     "certifications": [],
@@ -508,7 +560,10 @@ Return ONLY the following JSON.
     },
     "education": {
         "degree": null,
-        "field": null
+        "field": null,
+        "degree_level": "UNKNOWN",
+        "field_normalized": "UNKNOWN",
+        "related_field_allowed": false
     },
     "employment_type": null,
     "work_mode": null,

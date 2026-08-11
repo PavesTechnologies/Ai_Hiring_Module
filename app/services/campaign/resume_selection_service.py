@@ -17,6 +17,7 @@ from app.services.campaign.candidate_scoring_service import (
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
+from app.services.resume.work_experience_duration import annotate_work_experience_durations
 
 # Same platform_config keys deterministic_scoring_tasks.py already reads for
 # the real pipeline - reused verbatim, never a second/duplicated key.
@@ -304,12 +305,20 @@ class ResumeSelectionService:
         - there is no campaign_candidates row to write to yet.
         """
         parsed_json = resume.parsed_json or {}
-        candidate_total_years = parsed_json.get("total_experience_years")
+        # Same JSON-computed fallback as deterministic_scoring_tasks.py -
+        # see annotate_work_experience_durations for why the date-computed
+        # total is preferred over the raw (often null) extracted field.
+        candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
         candidate_education_entries = parsed_json.get("education")
 
-        experience_result = validation_service.validate_experience(min_experience_years, candidate_total_years)
+        jd_extracted_education = (job_description.extracted_json or {}).get("education")
+        jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
+        experience_result = validation_service.validate_experience(
+            min_experience_years, candidate_total_years, jd_extracted_experience=jd_extracted_experience,
+        )
         education_result = validation_service.validate_education(
             required_degree_text, candidate_education_entries, candidate_total_years,
+            jd_extracted_education=jd_extracted_education,
         )
 
         breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(job_description.id, resume.id)

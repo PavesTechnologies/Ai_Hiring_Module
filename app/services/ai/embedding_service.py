@@ -58,9 +58,9 @@ class EmbeddingService:
         parts = [title]
 
         if extraction.required_skills:
-            parts.append("Required Skills: " + ", ".join(extraction.required_skills))
+            parts.append("Required Skills: " + ", ".join(item.name for item in extraction.required_skills))
         if extraction.preferred_skills:
-            parts.append("Preferred Skills: " + ", ".join(extraction.preferred_skills))
+            parts.append("Preferred Skills: " + ", ".join(item.name for item in extraction.preferred_skills))
         if extraction.responsibilities:
             parts.append("Responsibilities: " + "; ".join(extraction.responsibilities))
         if extraction.certifications:
