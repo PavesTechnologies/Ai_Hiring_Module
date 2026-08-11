@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -102,6 +102,39 @@ class ResumeRepository:
             select(Resume)
             .where(Resume.candidate_id == candidate_id)
             .order_by(Resume.version_number.desc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def get_by_skill_match(self, canonical_skill_id: UUID | None, raw_text_pattern: str) -> list[Resume]:
+        """
+        M13-E01 S02 (Talent Pool Search) - every resume with a
+        candidate_skills row matching either the resolved canonical skill
+        or the raw extracted text pattern (caller passes an already
+        LIKE-escaped '%...%' pattern). Unfiltered by eligibility -
+        TalentPoolService applies ResumeSelectionService's own eligibility
+        predicate afterward, so this stays a plain data lookup, never a
+        second eligibility implementation. Most recent first, so a
+        candidate matched on more than one resume version consistently
+        surfaces their newest one.
+        """
+        conditions = [CandidateSkill.raw_extracted_text.ilike(raw_text_pattern, escape="\\")]
+        if canonical_skill_id is not None:
+            conditions.append(CandidateSkill.canonical_skill_id == canonical_skill_id)
+        stmt = (
+            select(Resume)
+            .join(CandidateSkill, CandidateSkill.resume_id == Resume.id)
+            .where(or_(*conditions))
+            .order_by(Resume.created_at.desc())
+            .distinct()
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def get_all_parsed(self) -> list[Resume]:
+        """M13-E01 S02 (Talent Pool Search) - every PARSED resume, the base set when the search has no skill filter."""
+        stmt = (
+            select(Resume)
+            .where(Resume.parse_status == ParseStatus.PARSED)
+            .order_by(Resume.created_at.desc())
         )
         return list(self.db.execute(stmt).scalars().all())
 
@@ -319,6 +352,32 @@ class ResumeRepository:
             .limit(limit)
         )
         return [name for name, _ in self.db.execute(stmt).all()]
+
+    def get_canonical_skills_by_resume_ids(self, resume_ids: list[UUID]) -> dict[UUID, list[str]]:
+        """
+        Talent Pool Search (M13-E01 S02 T0x) - every distinct canonical/
+        normalized skill name for a batch of resumes in ONE query, keyed by
+        resume_id. Batched counterpart to get_top_skills_by_candidate: that
+        method is per-candidate, top-N, and frequency-ranked (for the
+        candidate profile page); this is per-resume, unranked, and returns
+        every match (for the Talent Pool list page, so a page of candidates
+        never issues one skills query per row). Only canonical (matched)
+        skills are included - CandidateSkill rows with no canonical_skill_id
+        (UNKNOWN tier) have no stable display name, same exclusion
+        get_top_skills_by_candidate already applies.
+        """
+        if not resume_ids:
+            return {}
+        stmt = (
+            select(CandidateSkill.resume_id, SkillOntology.canonical_name)
+            .join(SkillOntology, CandidateSkill.canonical_skill_id == SkillOntology.id)
+            .where(CandidateSkill.resume_id.in_(resume_ids))
+            .distinct()
+        )
+        skills_by_resume_id: dict[UUID, list[str]] = {}
+        for resume_id, canonical_name in self.db.execute(stmt).all():
+            skills_by_resume_id.setdefault(resume_id, []).append(canonical_name)
+        return skills_by_resume_id
 
     def get_embedding(self, resume_id: UUID) -> ResumeEmbedding | None:
         """Read counterpart to create_resume_embedding — monitoring-only, no writes."""

@@ -25,9 +25,11 @@ from app.schemas.resume.monitoring import (
 )
 from app.schemas.resume.request import ResumeUploadRequest
 from app.schemas.resume.response import (
+    ResumeDownloadUrlResponse,
     ResumeProcessingStatusResponse,
     ResumeRetryResponse,
     ResumeUploadAcceptedResponse,
+    ResumeVersionComparisonResponse,
     ResumeVersionHistoryResponse,
 )
 from app.schemas.response import APIResponse
@@ -212,6 +214,52 @@ def get_resume_version_history(
     return APIResponse.ok(
         data=service.get_version_history(candidate_id),
         message="Resume version history retrieved successfully.",
+    )
+
+
+@router.get(
+    "/compare",
+    response_model=APIResponse[ResumeVersionComparisonResponse],
+    status_code=status.HTTP_200_OK,
+)
+def compare_resume_versions(
+    resume_id_1: UUID = Query(...),
+    resume_id_2: UUID = Query(...),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    S02-T02 — read-only diff of two resume versions belonging to the same
+    candidate: skills added/removed/unchanged, experience added/removed
+    (matched by title+company), education added/removed, and the
+    total_experience_years difference. Computed at query time; nothing is
+    persisted. Registered ahead of /{resume_id} so this literal path isn't
+    shadowed by that catch-all.
+    """
+    return APIResponse.ok(
+        data=service.compare_resume_versions(resume_id_1, resume_id_2),
+        message="Resume versions compared successfully.",
+    )
+
+
+@router.get(
+    "/{resume_id}/download-url",
+    response_model=APIResponse[ResumeDownloadUrlResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_download_url(
+    resume_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    S02-T01 — server-generated, time-limited signed URL to download one
+    specific resume version's stored file. HR_ADMIN only. Expiry is
+    config-driven via RESUME_DOWNLOAD_URL_EXPIRY_SECONDS (default 300s).
+    """
+    return APIResponse.ok(
+        data=service.get_download_url(resume_id),
+        message="Resume download URL generated successfully.",
     )
 
 
