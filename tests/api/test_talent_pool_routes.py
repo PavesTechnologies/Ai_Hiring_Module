@@ -10,7 +10,8 @@ from app.api.routes.talent_pool_routes import router
 from app.models.identity import UserRole
 
 _PROFILE_PATH = "/talent-pool/candidates/{candidate_id}"
-_ADD_TO_CAMPAIGN_PATH = "/talent-pool/candidates/{candidate_id}/add-to-campaign"
+_ADD_TO_CAMPAIGN_PATH = "/talent-pool/candidates/{candidate_id}/campaigns/{campaign_id}"
+_BULK_ADD_TO_CAMPAIGN_PATH = "/talent-pool/candidates/bulk-add-to-campaign"
 
 
 def _get_route(path: str, method: str):
@@ -62,3 +63,20 @@ def test_add_to_campaign_response_model_is_add_candidate_response():
 
     route = _get_route(_ADD_TO_CAMPAIGN_PATH, "POST")
     assert AddCandidateToCampaignResponse.__name__ in str(route.response_model)
+
+
+def test_bulk_add_to_campaign_route_is_registered():
+    route = _get_route(_BULK_ADD_TO_CAMPAIGN_PATH, "POST")
+    assert route.path == _BULK_ADD_TO_CAMPAIGN_PATH
+
+
+def test_bulk_add_to_campaign_route_allows_only_hr_admin():
+    allowed = _allowed_roles(_get_route(_BULK_ADD_TO_CAMPAIGN_PATH, "POST"))
+    assert allowed == frozenset({UserRole.HR_ADMIN.value})
+
+
+def test_bulk_add_to_campaign_response_model_is_bulk_add_response():
+    from app.schemas.talent_pool.talent_pool_schema import BulkAddCandidatesResponse
+
+    route = _get_route(_BULK_ADD_TO_CAMPAIGN_PATH, "POST")
+    assert BulkAddCandidatesResponse.__name__ in str(route.response_model)

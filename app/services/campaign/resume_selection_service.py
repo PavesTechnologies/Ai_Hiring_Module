@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from uuid import UUID
 
@@ -25,8 +26,12 @@ _EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY = "RESUME_FRESHNESS_MAX_AGE_DAYS"
 
 _DEFAULT_EXPERIENCE_TOLERANCE_YEARS = 0.0
+# ~6 months - Talent Pool Eligibility: a resume older than this is never
+# selected for a new campaign, regardless of is_talent_pool_eligible.
+_DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS = 180
 _DEFAULT_DETERMINISTIC_WEIGHT_SKILLS = 0.70
 _DEFAULT_DETERMINISTIC_WEIGHT_EXPERIENCE = 0.15
 _DEFAULT_DETERMINISTIC_WEIGHT_EDUCATION = 0.15
@@ -141,16 +146,26 @@ class ResumeSelectionService:
             return False
         return self._is_fresh(resume)
 
-    @staticmethod
-    def _is_fresh(resume: Resume) -> bool:
+    def _is_fresh(self, resume: Resume) -> bool:
         """
-        Resume freshness placeholder - no platform_config key or model
-        field for this exists anywhere in the codebase yet, so this always
-        passes today. Wired as its own method so a future
-        RESUME_FRESHNESS_ENABLED/RESUME_FRESHNESS_MAX_AGE_DAYS config check
-        can be dropped in here without touching any call site.
+        Talent Pool Eligibility (6-month rule) - a resume version older
+        than RESUME_FRESHNESS_MAX_AGE_DAYS (default 180, ~6 months) is
+        never eligible for campaign selection, independent of
+        embedding.is_talent_pool_eligible (which tracks erasure/fraud
+        state, not age). Computed dynamically from Resume.created_at on
+        every call - never persisted, never cached, so a resume crossing
+        the age threshold is excluded on its very next evaluation without
+        any reconciliation job. created_at is set once at insert and never
+        touched again (mirrors get_max_version_number's docstring on this),
+        so age is naturally reset by any genuine resubmission, which always
+        inserts a brand-new Resume row.
         """
-        return True
+        max_age_days = int(self.config_repo.get_configs_by_keys(
+            [_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY],
+        ).get(_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY) or _DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS)
+
+        age = datetime.now(timezone.utc) - resume.created_at
+        return age <= timedelta(days=max_age_days)
 
     def _compare_and_select(
         self, eligible_resumes: list[Resume], campaign: HiringCampaign,

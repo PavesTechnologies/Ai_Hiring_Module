@@ -222,6 +222,40 @@ _TRANSITIONS = [
     },
 ]
 
+# Pipeline Board drag-and-drop - frictionless (no reason) forward/lateral
+# moves among the board's 7 columns (Uploaded/Screening/Shortlisted/Hold/
+# Interview/Selected/Rejected), for the same roles that can view the board
+# (get_ranked_campaign_candidates' RBAC). REJECTED<->SCREENING is
+# deliberately left as the existing HR_ADMIN-only, reason-required rows
+# above - not duplicated or loosened here.
+_BOARD_ROLES = ["HR_ADMIN", "RECRUITER", "HIRING_MANAGER"]
+_BOARD_TRANSITIONS = [
+    (PipelineStage.UPLOADED, PipelineStage.SCREENING),
+    (PipelineStage.SCREENING, PipelineStage.SHORTLISTED),
+    (PipelineStage.SCREENING, PipelineStage.HOLD),
+    (PipelineStage.SCREENING, PipelineStage.INTERVIEW),
+    (PipelineStage.SHORTLISTED, PipelineStage.SCREENING),
+    (PipelineStage.SHORTLISTED, PipelineStage.INTERVIEW),
+    (PipelineStage.SHORTLISTED, PipelineStage.HOLD),
+    (PipelineStage.SHORTLISTED, PipelineStage.REJECTED),
+    (PipelineStage.HOLD, PipelineStage.SCREENING),
+    (PipelineStage.HOLD, PipelineStage.SHORTLISTED),
+    (PipelineStage.HOLD, PipelineStage.INTERVIEW),
+    (PipelineStage.INTERVIEW, PipelineStage.SHORTLISTED),
+    (PipelineStage.INTERVIEW, PipelineStage.SELECTED),
+    (PipelineStage.INTERVIEW, PipelineStage.HOLD),
+    (PipelineStage.INTERVIEW, PipelineStage.REJECTED),
+    (PipelineStage.SELECTED, PipelineStage.REJECTED),
+]
+for _from_stage, _to_stage in _BOARD_TRANSITIONS:
+    _TRANSITIONS.append({
+        "from_stage": _from_stage,
+        "to_stage": _to_stage,
+        "allowed_roles": _BOARD_ROLES,
+        "requires_reason": False,
+        "notes": f"Pipeline Board drag-and-drop: {_from_stage.value} -> {_to_stage.value}.",
+    })
+
 try:
     for transition in _TRANSITIONS:
         existing = (

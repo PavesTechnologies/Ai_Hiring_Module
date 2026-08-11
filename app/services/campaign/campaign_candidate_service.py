@@ -47,6 +47,8 @@ from app.schemas.campaign.campaign_candidate_schema import (
     AiSummaryDetail,
     CampaignCandidateCreateRequest,
     CampaignOverrideAlert,
+    CampaignBoardColumn,
+    CampaignBoardResponse,
     CampaignRejectionAnalyticsResponse,
     CandidateAIEvaluationResponse,
     CandidateDeterministicResponse,
@@ -553,6 +555,58 @@ class CampaignCandidateService:
             task_id=task_id,
         )
 
+    def move_pipeline_stage(
+        self,
+        campaign_candidate_id: UUID,
+        to_stage: PipelineStage,
+        actor_id: str,
+        actor_role: str | None = None,
+        reason: str | None = None,
+    ) -> CampaignCandidateResponse:
+        """
+        Pipeline Board drag-and-drop - moves one candidate to an arbitrary
+        target stage. Entirely backed by the existing, already-validated
+        PipelineTransitionService (checks allowed_transitions for the
+        from/to pair, actor_role, and requires_reason; writes stage
+        history and the audit entry) - the exact same engine
+        update_resume_for_resubmission already uses above, just with a
+        caller-supplied to_stage instead of a hardcoded one. No new
+        transition logic, no new validation rules.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        try:
+            self.pipeline_transition_service.transition_stage(
+                campaign_candidate,
+                to_stage=to_stage,
+                changed_by=actor_id,
+                actor_role=actor_role,
+                reason=reason,
+                source=TransitionSource.MANUAL,
+            )
+            self.campaign_candidate_repo.commit()
+        except InvalidPipelineTransitionException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
+        except PipelineTransitionReasonRequiredException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 400) from exc
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise
+
+        candidate = (
+            self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
+            if self.candidate_repo is not None else None
+        )
+        resume = (
+            self.resume_repo.get_by_id(campaign_candidate.resume_id)
+            if self.resume_repo is not None else None
+        )
+        return self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
+
     def get_candidate_campaign_history(self, candidate_id: UUID) -> CandidateCampaignHistoryResponse:
         """
         Epic 3 (M05-E03) Phase C6 — HR_ADMIN-only cross-campaign history.
@@ -632,6 +686,47 @@ class CampaignCandidateService:
             self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
             for campaign_candidate, candidate, resume in rows
         ]
+
+    # Pipeline Board's 7 columns - HM_REVIEW/FRAUD_REVIEW aren't part of
+    # this board (a candidate can still be in either; see other_count).
+    _BOARD_STAGES = (
+        PipelineStage.UPLOADED,
+        PipelineStage.SCREENING,
+        PipelineStage.SHORTLISTED,
+        PipelineStage.HOLD,
+        PipelineStage.INTERVIEW,
+        PipelineStage.SELECTED,
+        PipelineStage.REJECTED,
+    )
+
+    def get_campaign_board(self, campaign_id: UUID) -> CampaignBoardResponse:
+        """
+        Pipeline Board - the exact same enriched candidate rows
+        get_campaign_candidates already returns for the Candidate Listing
+        UI, grouped by pipeline_stage into board columns. No new query and
+        no new per-row mapping: this only buckets get_campaign_candidates'
+        own output. A "Parsing" column (parse_status, not a pipeline_stage)
+        is a frontend-only split of the UPLOADED column's items by their
+        parse_status field, already present on each item.
+        """
+        items = self.get_campaign_candidates(campaign_id)
+
+        by_stage: dict[PipelineStage, list[CampaignCandidateResponse]] = {
+            stage: [] for stage in self._BOARD_STAGES
+        }
+        other_count = 0
+        for item in items:
+            if item.pipeline_stage in by_stage:
+                by_stage[item.pipeline_stage].append(item)
+            else:
+                other_count += 1
+
+        columns = [
+            CampaignBoardColumn(stage=stage, count=len(by_stage[stage]), candidates=by_stage[stage])
+            for stage in self._BOARD_STAGES
+        ]
+
+        return CampaignBoardResponse(campaign_id=campaign_id, columns=columns, other_count=other_count)
 
     def get_ranked_campaign_candidates(
         self,

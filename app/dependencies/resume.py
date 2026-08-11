@@ -32,8 +32,10 @@ from app.repositories.email_notification_repository import EmailNotificationRepo
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
+from app.repositories.user_repository import UserRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from app.services.candidates.candidate_directory_service import CandidateDirectoryService
 from app.services.compliance.candidate_erasure_service import CandidateErasureService
 from app.services.compliance.consent_service import ConsentService
 from app.services.resume.candidate_service import CandidateService
@@ -89,6 +91,14 @@ def get_resume_repository(
     db: Session = Depends(get_db),
 ) -> ResumeRepository:
     return ResumeRepository(db)
+
+
+def get_candidate_directory_service(
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    resume_repo: ResumeRepository = Depends(get_resume_repository),
+    encryption_service: EncryptionService = Depends(get_encryption_service),
+) -> CandidateDirectoryService:
+    return CandidateDirectoryService(candidate_repo, resume_repo, encryption_service)
 
 
 def get_file_validation_service(
@@ -169,6 +179,12 @@ def get_stage_failure_log_repository(
     return StageFailureLogRepository(db)
 
 
+def get_user_repository(
+    db: Session = Depends(get_db),
+) -> UserRepository:
+    return UserRepository(db)
+
+
 def get_resume_monitoring_service(
     resume_repository: ResumeRepository = Depends(get_resume_repository),
     candidate_repository: CandidateRepository = Depends(get_candidate_repository),
@@ -179,6 +195,8 @@ def get_resume_monitoring_service(
     dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     storage_service: StorageService = Depends(get_storage_service),
     campaign_candidate_repository: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
+    user_repository: UserRepository = Depends(get_user_repository),
+    config_repository: ConfigRepository = Depends(get_config_repository),
 ) -> ResumeMonitoringService:
     return ResumeMonitoringService(
         resume_repository=resume_repository,
@@ -190,6 +208,8 @@ def get_resume_monitoring_service(
         dead_letter_queue_repository=dead_letter_queue_repository,
         storage_service=storage_service,
         campaign_candidate_repository=campaign_candidate_repository,
+        user_repository=user_repository,
+        config_repository=config_repository,
     )
 
 
