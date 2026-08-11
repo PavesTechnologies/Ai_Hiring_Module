@@ -20,6 +20,7 @@ from app.schemas.resume.monitoring import (
     ParseAttemptItem,
     ResumeDetailResponse,
     ResumeListResponse,
+    ResumeListWithPipelineResponse,
     ResumeParsedJsonResponse,
     ResumeTimelineResponse,
 )
@@ -164,6 +165,48 @@ def list_resumes(
             sort_dir=sort_dir,
         ),
         message="Resume list retrieved successfully.",
+    )
+
+
+@router.get(
+    "/pipeline-status",
+    response_model=APIResponse[ResumeListWithPipelineResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_resumes_with_pipeline_status(
+    campaign_id: UUID | None = Query(default=None),
+    parse_status: ParseStatus | None = Query(default=None),
+    source: Literal["individual", "bulk"] | None = Query(default=None),
+    email_hash: str | None = Query(default=None),
+    uploaded_from: datetime | None = Query(default=None),
+    uploaded_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    sort_by: Literal["created_at", "parse_status"] = Query(default="created_at"),
+    sort_dir: Literal["asc", "desc"] = Query(default="desc"),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Same rows/filters/pagination as GET /resumes, plus each row's linked
+    campaign_candidate pipeline_stage and decision_type/decision_source/
+    decision_reason/decision_at - which stage the candidate is on, and
+    whether they succeeded or failed there.
+    """
+    return APIResponse.ok(
+        data=service.list_resumes_with_pipeline_status(
+            campaign_id=campaign_id,
+            parse_status=parse_status,
+            source=source,
+            email_hash=email_hash,
+            uploaded_from=uploaded_from,
+            uploaded_to=uploaded_to,
+            page=page,
+            size=size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        ),
+        message="Resume list with pipeline status retrieved successfully.",
     )
 
 

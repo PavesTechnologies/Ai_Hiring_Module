@@ -137,6 +137,42 @@ class ResumeListResponse(BaseModel):
     size: int
 
 
+class ResumeListItemWithPipeline(ResumeListItem):
+    """
+    Same row shape as ResumeListItem, plus where this candidate's campaign
+    pipeline currently stands - a separate endpoint/response rather than
+    added fields on the base list, so existing ResumeListItem consumers are
+    unaffected.
+    """
+
+    # Null whenever there's no linked campaign_candidate row (e.g. an
+    # individually-uploaded resume not yet attached to a campaign).
+    campaign_id: UUID | None
+    # PipelineStage enum value (UPLOADED/SCREENING/.../SELECTED/REJECTED/
+    # FRAUD_REVIEW) - what stage they're at right now.
+    pipeline_stage: str | None
+    # DecisionType enum value (REJECTED/SHORTLISTED/SELECTED/HOLD/
+    # FRAUD_REVIEW/RESET) - the outcome of the most recent decision, i.e.
+    # whether they succeeded or failed at their current/last stage. Null
+    # until a decision has actually been made.
+    decision_type: str | None
+    # Which layer made that call - DETERMINISTIC/SEMANTIC/AI (the 3
+    # automated screening layers) or RECRUITER/HIRING_MANAGER/HR_ADMIN/
+    # SYSTEM for a manual one.
+    decision_source: str | None
+    # Human-readable reason - e.g. "Missing mandatory skill: Kubernetes"
+    # for a DETERMINISTIC rejection. Null until a decision has been made.
+    decision_reason: str | None
+    decision_at: datetime | None
+
+
+class ResumeListWithPipelineResponse(BaseModel):
+    items: list[ResumeListItemWithPipeline]
+    total: int
+    page: int
+    size: int
+
+
 class ResumeParsedJsonResponse(BaseModel):
     resume_id: UUID
     candidate_id: UUID

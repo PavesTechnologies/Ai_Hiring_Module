@@ -12,10 +12,11 @@ from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_P
 from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
 from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
     InvalidPipelineTransitionException,
+    PipelineStageConflictException,
     PipelineTransitionReasonRequiredException,
 )
-from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
@@ -77,6 +78,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateSummaryResponse,
     CandidateCompositeScoreHistoryEntryResponse,
     CandidateCompositeScoreHistoryResponse,
+    CandidateCompositeResponse,
     CandidateRankingDetailsResponse,
     CandidateSemanticResponse,
     CandidateTimelineEventResponse,
@@ -91,6 +93,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
@@ -114,16 +117,10 @@ _RESUBMISSION_FORMAT_TO_EXTENSION = {
     FileFormat.DOCX: "docx",
 }
 
-# M07-E03 S04 T02: task_type strings this service queues after an override.
-# Neither has a real Celery task implementation anywhere in this codebase
-# yet (M09 AI Evaluation / semantic scoring aren't built) - mirrors the
-# exact same forward-compatible placeholder already established by
-# deterministic_scoring_tasks.py's AI_EVALUATE_TASK_TYPE/
-# _cancel_downstream_ai_evaluation (M07-E03 S01 T03): "queuing" is recorded
-# as a QUEUED celery_task_log row, which the real tasks will activate
-# against once built, without requiring any further change here. Must
-# match deterministic_scoring_tasks.AI_EVALUATE_TASK_TYPE exactly.
-AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
+# M07-E03 S04 T02: task_type string this service queues after an override,
+# when re-enqueuing semantic scoring rather than AI evaluation (the latter
+# now goes through ai_evaluation_tasks._enqueue_ai_evaluation directly,
+# which owns its own AI_EVALUATE_TASK_TYPE constant).
 SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 
 _HR_OVERRIDE_CHANGE_REASON = "HR_ADMIN override of deterministic rejection"
@@ -493,6 +490,12 @@ class CampaignCandidateService:
         except PipelineTransitionReasonRequiredException as exc:
             self.campaign_candidate_repo.rollback()
             raise CampaignException(str(exc), 400) from exc
+        except ForbiddenPipelineRoleException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 403) from exc
+        except PipelineStageConflictException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
 
         try:
             validation_result = self.file_validation_service.validate(file_bytes, filename)
@@ -855,7 +858,10 @@ class CampaignCandidateService:
         # CampaignCandidateAIEvaluation row (1:1) - a candidate with no
         # such row yet has no status, same as its pre-split PENDING default.
         ai_evaluation = getattr(campaign_candidate, "ai_evaluation", None)
-        ai_evaluation_status = getattr(ai_evaluation, "ai_evaluation_status", None) if ai_evaluation else None
+        ai_evaluation_status = (
+            getattr(ai_evaluation, "ai_evaluation_status", None)
+            if ai_evaluation else getattr(campaign_candidate, "ai_evaluation_status", None)
+        )
         if ai_evaluation_status == AIEvaluationStatus.FAILED:
             return "FAILED"
         return "PENDING"
@@ -975,7 +981,10 @@ class CampaignCandidateService:
         history_rows = self.composite_score_history_repo.get_by_campaign_candidate_id(campaign_candidate_id)
         formula_version = history_rows[0].formula_version if history_rows else None
         ai_evaluation = self._ai_evaluation(campaign_candidate)
-        is_overridden = campaign_candidate.decision_type == DecisionType.RESET
+        is_overridden = (
+            getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET
+            or getattr(campaign_candidate, "hr_override", False)
+        )
 
         return CandidateRankingDetailsResponse(
             campaign_candidate_id=campaign_candidate.id,
@@ -991,7 +1000,11 @@ class CampaignCandidateService:
             ),
             ai_evaluation_score=(
                 float(ai_evaluation.effective_ai_score)
-                if ai_evaluation and ai_evaluation.effective_ai_score is not None else None
+                if ai_evaluation and ai_evaluation.effective_ai_score is not None
+                else (
+                    float(campaign_candidate.effective_ai_score)
+                    if getattr(campaign_candidate, "effective_ai_score", None) is not None else None
+                )
             ),
             weight_deterministic=float(campaign.weight_deterministic),
             weight_semantic=float(campaign.weight_semantic),
@@ -1000,9 +1013,42 @@ class CampaignCandidateService:
             ranking_status=self._derive_ranking_status(campaign_candidate),
             composite_score_computed_at=getattr(campaign_candidate, "composite_score_computed_at", None),
             hr_override=is_overridden,
-            hr_override_by=campaign_candidate.decision_by_user_id if is_overridden else None,
-            hr_override_reason=campaign_candidate.decision_reason if is_overridden else None,
-            hr_override_at=campaign_candidate.decision_at if is_overridden else None,
+            hr_override_by=(
+                getattr(campaign_candidate, "decision_by_user_id", None)
+                or getattr(campaign_candidate, "hr_override_by", None)
+                if is_overridden else None
+            ),
+            hr_override_reason=(
+                getattr(campaign_candidate, "decision_reason", None)
+                or getattr(campaign_candidate, "hr_override_reason", None)
+                if is_overridden else None
+            ),
+            hr_override_at=(
+                getattr(campaign_candidate, "decision_at", None)
+                or getattr(campaign_candidate, "hr_override_at", None)
+                if is_overridden else None
+            ),
+        )
+
+    def get_candidate_composite(self, campaign_candidate_id: UUID) -> CandidateCompositeResponse:
+        """
+        Composite-tab-only view: same stored score inputs and current campaign
+        weights used by ranking-details, without HR override/final-status data.
+        Never recalculates composite_score.
+        """
+        details = self.get_candidate_ranking_details(campaign_candidate_id)
+        return CandidateCompositeResponse(
+            campaign_candidate_id=details.campaign_candidate_id,
+            composite_score=details.composite_score,
+            deterministic_score=details.deterministic_score,
+            semantic_score=details.semantic_score,
+            ai_evaluation_score=details.ai_evaluation_score,
+            weight_deterministic=details.weight_deterministic,
+            weight_semantic=details.weight_semantic,
+            weight_ai=details.weight_ai,
+            formula_version=details.formula_version,
+            ranking_status=details.ranking_status,
+            composite_score_computed_at=details.composite_score_computed_at,
         )
 
     def _to_campaign_candidate_response(
@@ -1030,9 +1076,14 @@ class CampaignCandidateService:
                 float(campaign_candidate.deterministic_score)
                 if campaign_candidate.deterministic_score is not None else None
             ),
+            # ai_ats_score reads from effective_ai_score - the AI evaluation's
+            # own ai_ats_score column is never written by any code path
+            # (AIEvaluationService only ever sets effective_ai_score), so
+            # reading it directly here always returned null regardless of
+            # whether AI evaluation actually ran.
             ai_ats_score=(
-                float(ai_evaluation.ai_ats_score)
-                if ai_evaluation and ai_evaluation.ai_ats_score is not None else None
+                float(ai_evaluation.effective_ai_score)
+                if ai_evaluation and ai_evaluation.effective_ai_score is not None else None
             ),
             semantic_score=(
                 float(campaign_candidate.semantic_score)
@@ -1049,6 +1100,10 @@ class CampaignCandidateService:
             is_fraud_flagged=getattr(campaign_candidate, "is_fraud_flagged", False),
             hr_override=getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET,
             ai_recommendation=ai_evaluation.ai_recommendation if ai_evaluation else None,
+            decision_type=getattr(campaign_candidate, "decision_type", None),
+            decision_source=getattr(campaign_candidate, "decision_source", None),
+            decision_reason=getattr(campaign_candidate, "decision_reason", None),
+            decision_at=getattr(campaign_candidate, "decision_at", None),
             rank=rank,
             ranking_status=self._derive_ranking_status(campaign_candidate),
             location=None,
@@ -2053,7 +2108,13 @@ class CampaignCandidateService:
         never queues AI_EVALUATE ahead of semantic scoring, mirroring the
         same PASS-gates-AI_EVALUATE ordering
         calculate_semantic_score_task's own auto-trigger enforces
-        (app.tasks.semantic_scoring_tasks._queue_ai_evaluate_if_not_duplicate).
+        (app.tasks.semantic_scoring_tasks._score_and_persist_semantic's
+        post-commit call to app.tasks.ai_evaluation_tasks._enqueue_ai_evaluation).
+        Deferred/HR-override path only: unlike that call, the
+        "semantic_score already set" branch below still only writes a
+        bookkeeping celery_task_log row via _queue_task_log_if_not_duplicate
+        rather than actually dispatching calculate_ai_evaluation_task -
+        the override flow itself is out of scope for now.
         - semantic_score already set (candidate was rejected AT the
           semantic layer, or was re-scored since) -> AI_EVALUATE is queued
           immediately, since semantic has already run.
@@ -2067,7 +2128,7 @@ class CampaignCandidateService:
             return
         try:
             if campaign_candidate.semantic_score is not None:
-                self._queue_task_log_if_not_duplicate(campaign_candidate, AI_EVALUATE_TASK_TYPE)
+                _enqueue_ai_evaluation(campaign_candidate, self.celery_task_log_service)
                 return
 
             # M08-E02: reuses the exact same enqueue/idempotency helper
@@ -2097,19 +2158,6 @@ class CampaignCandidateService:
                 campaign_candidate.id,
             )
 
-    def _queue_task_log_if_not_duplicate(self, campaign_candidate: CampaignCandidate, task_type: str):
-        task_log_repo = self.celery_task_log_service.repository
-        already_queued = any(
-            log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
-            for log in task_log_repo.get_by_campaign_candidate_and_task_type(campaign_candidate.id, task_type)
-        )
-        if already_queued:
-            return None
-        return self.celery_task_log_service.create_log(
-            task_id=str(uuid4()),
-            task_type=task_type,
-            campaign_candidate_id=campaign_candidate.id,
-        )
 
     # ------------------------------------------------------------------
     # M07-E03 S04 T03: Override Report

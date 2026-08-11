@@ -57,7 +57,10 @@
       "Bash(git -C /c/Ai_Hiring_Module status --short)",
       "Bash(grep -v \"INFO sqlalchemy\\\\|^Requested Keys\\\\|^DEADLINE_CHECK\\\\|^dict_keys\\\\|^FROM \\\\|^WHERE \\\\|^CREATE TABLE\\\\|^\\\\t\\\\|^\\)\\\\|^$\")",
       "Bash(python app/seeds/seed_allowed_transitions.py)",
-      "Bash(python -m app.seeds.seed_allowed_transitions)"
+      "Bash(python -m app.seeds.seed_allowed_transitions)",
+      "Bash(git fetch *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/tasks/semantic_scoring_tasks.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/services/campaign/campaign_candidate_service.py', encoding='utf-8'\\).read\\(\\)\\)\")"
     ]
   }
 }
