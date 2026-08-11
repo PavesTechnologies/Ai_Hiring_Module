@@ -691,6 +691,153 @@ def test_search_combines_skill_and_designation_filters():
 
 
 """
+location (case-insensitive substring) and experience_min/experience_max
+(numeric range) filters - same pattern as the designation filter: applied
+in Python over _extract_resume_fields' own (designation, experience,
+location) extraction, never a new query or a new source of truth.
+"""
+
+
+def test_search_filters_by_location_substring_case_insensitive():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"location": "Bengaluru, India"})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"location": "Austin, USA"})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(location="bengaluru")
+
+    assert result.total == 1
+    assert result.items[0].candidate.candidate_id == candidate_a.id
+    assert result.items[0].candidate.location == "Bengaluru, India"
+
+
+def test_search_location_filter_excludes_candidates_with_no_location():
+    candidate = _make_candidate()
+    resume = _make_resume(candidate.id, parsed_json={})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(location="bengaluru")
+
+    assert result.total == 0
+
+
+def test_search_filters_by_experience_min():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"total_experience_years": 8})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"total_experience_years": 2})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(experience_min=5)
+
+    assert result.total == 1
+    assert result.items[0].candidate.candidate_id == candidate_a.id
+
+
+def test_search_filters_by_experience_max():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"total_experience_years": 8})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"total_experience_years": 2})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(experience_max=5)
+
+    assert result.total == 1
+    assert result.items[0].candidate.candidate_id == candidate_b.id
+
+
+def test_search_filters_by_experience_range_inclusive_bounds():
+    candidate = _make_candidate()
+    resume = _make_resume(candidate.id, parsed_json={"total_experience_years": 5})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(experience_min=5, experience_max=5)
+
+    assert result.total == 1
+
+
+def test_search_experience_filter_excludes_candidates_with_no_experience_data():
+    candidate = _make_candidate()
+    resume = _make_resume(candidate.id, parsed_json={})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(experience_min=0)
+
+    assert result.total == 0
+
+
+def test_search_combines_location_and_experience_filters():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"location": "Bengaluru", "total_experience_years": 6})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"location": "Bengaluru", "total_experience_years": 1})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(location="Bengaluru", experience_min=5)
+
+    assert result.total == 1
+    assert result.items[0].candidate.candidate_id == candidate_a.id
+
+
+"""
 campaign_id exclusion filter - "who's left to add" view when browsing the
 Talent Pool for one specific campaign. Purely a candidate_id exclusion over
 the already-eligible set; never touches resume selection.
@@ -773,3 +920,77 @@ def test_search_combines_campaign_id_exclusion_with_skill_filter():
 
     assert result.total == 1
     assert result.items[0].candidate.candidate_id == candidate_not_yet_added.id
+
+
+"""
+M13-E01 S02 T0z2 - multiple locations (OR'd together), for the Talent Pool
+UI's multi-location checkbox filter. Mirrors the multi-skill OR tests above
+exactly - `locations` (repeatable) and singular `location` fold into one
+term list, a candidate matches if their location contains ANY term.
+"""
+
+
+def test_search_with_multiple_locations_ors_results_together():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"location": "Bengaluru, India"})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"location": "Austin, USA"})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(locations=["bengaluru", "austin"])
+
+    assert result.total == 2
+    candidate_ids = {item.candidate.candidate_id for item in result.items}
+    assert candidate_ids == {candidate_a.id, candidate_b.id}
+
+
+def test_search_multiple_locations_excludes_candidates_matching_none():
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"location": "Bengaluru, India"})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"location": "Berlin, DE"})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(locations=["bengaluru", "austin"])
+
+    assert result.total == 1
+    assert result.items[0].candidate.candidate_id == candidate_a.id
+
+
+def test_search_singular_location_param_still_works_alongside_locations_list():
+    """Backward compatibility: `location` folds into the same OR'd term list as `locations`."""
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    resume_a = _make_resume(candidate_a.id, parsed_json={"location": "Bengaluru, India"})
+    resume_b = _make_resume(candidate_b.id, parsed_json={"location": "Austin, USA"})
+    resume_repo = MagicMock()
+    resume_repo.get_all_parsed.return_value = [resume_a, resume_b]
+    resume_selection_service = MagicMock()
+    resume_selection_service._is_eligible.return_value = True
+    candidate_repo = MagicMock()
+    candidate_repo.get_by_ids.side_effect = lambda ids: [c for c in [candidate_a, candidate_b] if c.id in ids]
+    service = make_service(
+        resume_repo=resume_repo, resume_selection_service=resume_selection_service, candidate_repo=candidate_repo,
+    )
+
+    result = service.search_candidates(location="bengaluru", locations=["austin"])
+
+    assert result.total == 2
+    candidate_ids = {item.candidate.candidate_id for item in result.items}
+    assert candidate_ids == {candidate_a.id, candidate_b.id}

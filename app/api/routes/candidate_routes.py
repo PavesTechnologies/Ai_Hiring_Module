@@ -3,22 +3,54 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.campaign_candidate import get_campaign_candidate_service
-from app.dependencies.resume import get_candidate_erasure_service
+from app.dependencies.resume import get_candidate_directory_service, get_candidate_erasure_service
+from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_candidate_schema import (
     CandidateCampaignHistoryResponse,
 )
+from app.schemas.candidate.candidate_directory_schema import CandidateDirectoryResponse
 from app.schemas.response import APIResponse
 from app.services.campaign.campaign_candidate_service import (
     CampaignCandidateService,
 )
+from app.services.candidates.candidate_directory_service import CandidateDirectoryService
 from app.services.compliance.candidate_erasure_service import CandidateErasureService
 
 router = APIRouter(
     prefix="/candidates",
     tags=["Candidates"],
 )
+
+
+@router.get(
+    "",
+    response_model=APIResponse[CandidateDirectoryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List All Candidates (Global Directory)",
+    description=(
+        "Every candidate in the system, independent of campaigns or the "
+        "Talent Pool - candidates with campaign history, without any "
+        "campaign history, and Talent-Pool-eligible or not are all "
+        "included. No campaign_id is required or used to filter. "
+        "Read-only: never selects a resume for a campaign, never computes "
+        "a campaign score. Each item's resume/skills reflect the "
+        "candidate's current active resume version. HR_ADMIN only."
+    ),
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def list_candidates(
+    email_hash: str | None = Query(default=None, description="Exact-match search by email hash."),
+    jurisdiction: str | None = Query(default=None, max_length=10),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    service: CandidateDirectoryService = Depends(get_candidate_directory_service),
+):
+    return APIResponse.ok(
+        data=service.list_candidates(email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size),
+        message="Candidates retrieved successfully.",
+    )
 
 
 @router.get(

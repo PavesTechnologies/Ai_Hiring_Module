@@ -259,6 +259,10 @@ class TalentPoolService:
         skill: str | None = None,
         skills: list[str] | None = None,
         designation: str | None = None,
+        location: str | None = None,
+        locations: list[str] | None = None,
+        experience_min: float | None = None,
+        experience_max: float | None = None,
         campaign_id: UUID | None = None,
         page: int = 1,
         size: int = 20,
@@ -277,12 +281,17 @@ class TalentPoolService:
         `skills` (repeatable) and singular `skill` (kept for backward
         compatibility) are folded into one term list and OR'd together — a
         candidate matching ANY term is included, deduped by resume.id so a
-        resume matching more than one term isn't double-counted. designation
-        is a case-insensitive substring filter applied in Python over
-        _build_candidate_info's own designation extraction (parsed_json's
-        current/most-recent work_experience title) — the same field already
-        shown on the card, not a new source of truth, applied to the
-        eligible candidate set already in memory rather than a new query.
+        resume matching more than one term isn't double-counted. `locations`
+        (repeatable) and singular `location` are folded into their own term
+        list the same way — a candidate matches if their location contains
+        ANY listed term (case-insensitive substring, OR'd), for the
+        multi-location checkbox filter. designation is a single
+        case-insensitive substring filter, and experience_min/experience_max
+        a numeric range filter — all applied in Python over
+        _extract_resume_fields' own (designation, experience, location)
+        extraction, the exact same fields already shown on the card, not a
+        new source of truth, applied to the eligible candidate set already
+        in memory rather than a new query.
 
         campaign_id, when given, excludes candidates already added to that
         campaign — the "who's left to add" view when browsing the Talent
@@ -330,6 +339,35 @@ class TalentPoolService:
                 candidate_id: resume
                 for candidate_id, resume in matching_resume_by_candidate.items()
                 if designation_lower in (self._extract_resume_fields(resume)[0] or "").lower()
+            }
+
+        location_terms = list(dict.fromkeys([*(locations or []), *([location] if location else [])]))
+        if location_terms:
+            location_terms_lower = [t.lower() for t in location_terms]
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if any(
+                    term in (self._extract_resume_fields(resume)[2] or "").lower()
+                    for term in location_terms_lower
+                )
+            }
+
+        if experience_min is not None or experience_max is not None:
+            def _experience_in_range(resume: Resume) -> bool:
+                experience = self._extract_resume_fields(resume)[1]
+                if experience is None:
+                    return False
+                if experience_min is not None and experience < experience_min:
+                    return False
+                if experience_max is not None and experience > experience_max:
+                    return False
+                return True
+
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if _experience_in_range(resume)
             }
 
         total = len(matching_resume_by_candidate)

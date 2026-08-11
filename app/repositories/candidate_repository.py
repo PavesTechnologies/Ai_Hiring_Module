@@ -1,11 +1,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.candidates import Candidate
+
+_SORT_COLUMNS = {
+    "created_at": Candidate.created_at,
+}
 
 
 class CandidateRepository:
@@ -25,6 +29,50 @@ class CandidateRepository:
             return []
         stmt = select(Candidate).where(Candidate.id.in_(candidate_ids))
         return list(self.db.execute(stmt).scalars().all())
+
+    def _build_search_conditions(self, email_hash: str | None, jurisdiction: str | None) -> list:
+        """
+        Global Candidates directory (GET /candidates) - full_name_encrypted/
+        email_encrypted are encrypted at rest and can't be searched
+        directly (same constraint ResumeRepository.search's email_hash
+        filter already documents) - email_hash is the one exact-match
+        identity lookup available; jurisdiction is a plain column.
+        """
+        conditions = []
+        if email_hash is not None:
+            conditions.append(Candidate.email_hash == email_hash)
+        if jurisdiction is not None:
+            conditions.append(Candidate.jurisdiction == jurisdiction)
+        return conditions
+
+    def search(
+        self,
+        *,
+        email_hash: str | None = None,
+        jurisdiction: str | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> list[Candidate]:
+        """Global Candidates directory - every candidate regardless of campaign/Talent Pool membership. Read-only."""
+        conditions = self._build_search_conditions(email_hash, jurisdiction)
+        sort_column = _SORT_COLUMNS.get(sort_by, Candidate.created_at)
+        order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+
+        stmt = (
+            select(Candidate)
+            .where(*conditions)
+            .order_by(order)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def count_search(self, *, email_hash: str | None = None, jurisdiction: str | None = None) -> int:
+        conditions = self._build_search_conditions(email_hash, jurisdiction)
+        stmt = select(func.count()).select_from(Candidate).where(*conditions)
+        return self.db.execute(stmt).scalar_one()
 
     def create(self, candidate: Candidate) -> tuple[Candidate, bool]:
         """

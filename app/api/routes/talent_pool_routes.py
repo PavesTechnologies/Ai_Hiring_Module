@@ -46,14 +46,17 @@ def _parse_campaign_id(campaign_id: str) -> UUID:
         "filtered by one or more skills (each matched against canonical "
         "skill name/alias and raw extracted skill text, OR'd together — a "
         "candidate matching ANY listed skill is included), a "
-        "case-insensitive designation substring, and/or a campaign_id (when "
-        "given, excludes candidates already added to that campaign — the "
-        "'who's left to add' view). Only candidates with at least one "
-        "eligible resume (PARSED, has an embedding, is_talent_pool_eligible, "
-        "and fresh per RESUME_FRESHNESS_MAX_AGE_DAYS) are returned. "
-        "Read-only - no resume is selected here; ResumeSelectionService "
-        "independently selects the resume actually used once a candidate "
-        "is added to a campaign. HR_ADMIN only."
+        "case-insensitive designation substring, one or more locations "
+        "(case-insensitive substring, OR'd together the same way as "
+        "skills — for the multi-location checkbox filter), an "
+        "experience_min/experience_max years range, and/or a "
+        "campaign_id (when given, excludes candidates already added to that "
+        "campaign — the 'who's left to add' view). Only candidates with at "
+        "least one eligible resume (PARSED, has an embedding, "
+        "is_talent_pool_eligible, and fresh per RESUME_FRESHNESS_MAX_AGE_DAYS) "
+        "are returned. Read-only - no resume is selected here; "
+        "ResumeSelectionService independently selects the resume actually "
+        "used once a candidate is added to a campaign. HR_ADMIN only."
     ),
     dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
@@ -61,6 +64,12 @@ def search_talent_pool_candidates(
     skill: str | None = Query(default=None, min_length=1, max_length=255),
     skills: list[str] | None = Query(default=None, description="Repeat for multiple — ?skills=Java&skills=AWS"),
     designation: str | None = Query(default=None, min_length=1, max_length=255),
+    location: str | None = Query(default=None, min_length=1, max_length=255),
+    locations: list[str] | None = Query(
+        default=None, description="Repeat for multiple — ?locations=Bengaluru&locations=Austin",
+    ),
+    experience_min: float | None = Query(default=None, ge=0, description="Minimum total years of experience."),
+    experience_max: float | None = Query(default=None, ge=0, description="Maximum total years of experience."),
     campaign_id: UUID | None = Query(
         default=None, description="Exclude candidates already added to this campaign",
     ),
@@ -70,7 +79,9 @@ def search_talent_pool_candidates(
 ):
     return APIResponse.ok(
         data=service.search_candidates(
-            skill=skill, skills=skills, designation=designation, campaign_id=campaign_id, page=page, size=size,
+            skill=skill, skills=skills, designation=designation, location=location, locations=locations,
+            experience_min=experience_min, experience_max=experience_max,
+            campaign_id=campaign_id, page=page, size=size,
         ),
         message="Talent Pool candidates retrieved successfully.",
     )

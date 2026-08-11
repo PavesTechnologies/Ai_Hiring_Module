@@ -35,6 +35,7 @@ from app.repositories.stage_failure_log_repository import StageFailureLogReposit
 from app.repositories.user_repository import UserRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from app.services.candidates.candidate_directory_service import CandidateDirectoryService
 from app.services.compliance.candidate_erasure_service import CandidateErasureService
 from app.services.compliance.consent_service import ConsentService
 from app.services.resume.candidate_service import CandidateService
@@ -90,6 +91,14 @@ def get_resume_repository(
     db: Session = Depends(get_db),
 ) -> ResumeRepository:
     return ResumeRepository(db)
+
+
+def get_candidate_directory_service(
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    resume_repo: ResumeRepository = Depends(get_resume_repository),
+    encryption_service: EncryptionService = Depends(get_encryption_service),
+) -> CandidateDirectoryService:
+    return CandidateDirectoryService(candidate_repo, resume_repo, encryption_service)
 
 
 def get_file_validation_service(

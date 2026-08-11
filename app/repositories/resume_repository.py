@@ -54,6 +54,22 @@ class ResumeRepository:
         )
         return self.db.execute(stmt).scalars().first()
 
+    def get_active_by_candidate_ids(self, candidate_ids: list[UUID]) -> dict[UUID, Resume]:
+        """
+        Global Candidates directory (GET /candidates) - batched counterpart
+        to get_active_by_candidate, one query for a whole page of
+        candidates rather than one per row. Keyed by candidate_id; a
+        candidate with no active resume version is simply absent from the
+        returned dict.
+        """
+        if not candidate_ids:
+            return {}
+        stmt = select(Resume).where(
+            Resume.candidate_id.in_(candidate_ids),
+            Resume.is_active_version.is_(True),
+        )
+        return {resume.candidate_id: resume for resume in self.db.execute(stmt).scalars().all()}
+
     def get_by_file_hash_global(self, file_hash: str) -> Resume | None:
         """
         Epic 3 (M05-E03) Phase C2 — exact-duplicate check. Deliberately
