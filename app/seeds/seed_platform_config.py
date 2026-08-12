@@ -264,6 +264,18 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="DASHBOARD_LOAD_TIMEOUT_SECONDS",
+            value="10",
+            description="Per-section dashboard fetch timeout before that section shows its error state (M11-E01-S05)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_SAVED_VIEWS_PER_USER",
+            value="10",
+            description="Maximum saved filter views one user may keep per campaign (M11-E03-S03-T01)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="DETERMINISTIC_HIGH_REJECTION_THRESHOLD",
             value="60.00",
             description="DETERMINISTIC-layer rejection rate (%, of total rejections) above which the rejection-analytics panel recommends reviewing JD mandatory skills (M04-E04-S05-T02)",
