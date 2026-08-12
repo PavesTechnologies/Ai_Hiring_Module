@@ -10,6 +10,7 @@ from app.models.pipeline import (
     AIRecommendation,
     CompositeScoreTriggerSource,
     DecisionSource,
+    DecisionType,
     PipelineStage,
     TransitionSource,
 )
@@ -72,6 +73,15 @@ class CampaignCandidateResponse(BaseModel):
     hr_override: bool = False
     ai_recommendation: AIRecommendation | None = None
 
+    # Where this candidate's pipeline decision currently stands - read
+    # straight off the CampaignCandidate row, never a new query. All null
+    # until a decision has actually been made (i.e. the candidate hasn't
+    # been rejected or HR-overridden yet).
+    decision_type: DecisionType | None = None
+    decision_source: DecisionSource | None = None
+    decision_reason: str | None = None
+    decision_at: datetime | None = None
+
     # M10-E03 Phase 1: derived per-request, never stored (see
     # CampaignCandidateService._derive_ranking_status). rank is only
     # meaningful within a specific ranked/filtered/sorted query - None
@@ -100,6 +110,36 @@ class RankedCampaignCandidatesResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class CampaignBoardColumn(BaseModel):
+    stage: PipelineStage
+    count: int
+    candidates: list[CampaignCandidateResponse]
+
+
+class CampaignBoardResponse(BaseModel):
+    """
+    Pipeline Board - every candidate in the campaign (the same enriched
+    rows get_campaign_candidates already returns), bucketed by
+    pipeline_stage into columns. HM_REVIEW/FRAUD_REVIEW candidates aren't
+    among this board's columns; other_count accounts for them so the
+    total is never silently short.
+    """
+    campaign_id: UUID
+    columns: list[CampaignBoardColumn]
+    other_count: int = 0
+
+
+class MovePipelineStageRequest(BaseModel):
+    """Pipeline Board drag-and-drop - move one candidate to an arbitrary target stage."""
+    to_stage: PipelineStage
+    # Only required when the specific from->to transition's allowed_transitions
+    # row has requires_reason=True - PipelineTransitionService enforces this,
+    # not this schema.
+    reason: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CampaignCandidateSummaryResponse(BaseModel):
@@ -207,6 +247,26 @@ class CandidateRankingDetailsResponse(BaseModel):
     hr_override_by: str | None = None
     hr_override_reason: str | None = None
     hr_override_at: datetime | None = None
+
+
+class CandidateCompositeResponse(BaseModel):
+    """
+    Composite-tab-only view of the candidate scorecard: current composite
+    score, score inputs, campaign weights, and formula metadata. Read-only;
+    never recalculates anything.
+    """
+
+    campaign_candidate_id: UUID
+    composite_score: float | None = None
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    ai_evaluation_score: float | None = None
+    weight_deterministic: float
+    weight_semantic: float
+    weight_ai: float
+    formula_version: str | None = None
+    ranking_status: RankingStatus
+    composite_score_computed_at: datetime | None = None
 
 
 class DeterministicScoreSummary(BaseModel):

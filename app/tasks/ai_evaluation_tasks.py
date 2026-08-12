@@ -8,7 +8,7 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import DecisionSource, PipelineStage
+from app.models.pipeline import CompositeScoreTriggerSource, DecisionSource, DecisionType, PipelineStage
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
@@ -27,6 +27,7 @@ from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.extractions.gemini_extraction_service import GeminiExtractionService
 from app.services.prompt_template_validation import validate_prompt_template_selection
+from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
 
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo)
+        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 
@@ -254,6 +255,26 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
                 decision_reason=rejection_reason,
                 decision_details=ai_response,
             )
+        elif recommendation == "SHORTLIST":
+            stage_transition_succeeded = stage_transition_service.transition_on_ai_success(
+                campaign_candidate,
+                to_stage=PipelineStage.SHORTLISTED,
+                decision_type=DecisionType.SHORTLISTED,
+                change_reason="AI evaluation shortlist recommendation",
+                scores_snapshot=ai_response,
+                decision_reason="AI evaluation recommended shortlisting this candidate.",
+                decision_details=ai_response,
+            )
+        elif recommendation == "HOLD":
+            stage_transition_succeeded = stage_transition_service.transition_on_ai_success(
+                campaign_candidate,
+                to_stage=PipelineStage.HOLD,
+                decision_type=DecisionType.HOLD,
+                change_reason="AI evaluation hold recommendation",
+                scores_snapshot=ai_response,
+                decision_reason="AI evaluation recommended placing this candidate on hold.",
+                decision_details=ai_response,
+            )
 
         summary_payload = {
             "campaign_candidate_id": str(campaign_candidate.id),
@@ -286,6 +307,27 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
 
         if recommendation == "REJECT" and stage_transition_succeeded:
             _queue_rejection_email(db, campaign_candidate)
+
+        # Composite score's 2 automated-pipeline triggers: AI evaluation
+        # completing with a non-REJECT recommendation (this is the terminal
+        # "success" outcome), or a REJECT recommendation that actually
+        # transitioned pipeline_stage to REJECTED (mirrors the deterministic/
+        # semantic layers' own REJECTION trigger on their own rejections).
+        try:
+            if recommendation == "REJECT":
+                if stage_transition_succeeded:
+                    _enqueue_composite_scoring(
+                        campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.REJECTION,
+                    )
+            else:
+                _enqueue_composite_scoring(
+                    campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.AI_EVALUATION,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue composite scoring after AI evaluation for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
     except Exception as ex:
         db.rollback()

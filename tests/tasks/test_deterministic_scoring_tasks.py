@@ -154,8 +154,15 @@ def _make_campaign_candidate(
     )
 
 
-def _make_campaign(status=CampaignStatus.ACTIVE, jd_id=None, deterministic_threshold=70.0):
-    return SimpleNamespace(id=uuid4(), status=status, jd_id=jd_id or uuid4(), deterministic_threshold=deterministic_threshold)
+def _make_campaign(
+    status=CampaignStatus.ACTIVE, jd_id=None, deterministic_threshold=70.0,
+    required_skill_coverage_threshold=0.0, max_missing_core_skills=3,
+):
+    return SimpleNamespace(
+        id=uuid4(), status=status, jd_id=jd_id or uuid4(), deterministic_threshold=deterministic_threshold,
+        required_skill_coverage_threshold=required_skill_coverage_threshold,
+        max_missing_core_skills=max_missing_core_skills,
+    )
 
 
 def _make_resume(parse_status=ParseStatus.PARSED, parsed_json=None):

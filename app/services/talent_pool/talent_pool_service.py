@@ -15,8 +15,11 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.resume_repository import ResumeRepository
+from app.repositories.skill_repository import SkillRepository
 from app.schemas.talent_pool.talent_pool_schema import (
     AddCandidateToCampaignResponse,
+    BulkAddCandidateResultItem,
+    BulkAddCandidatesResponse,
     CampaignSummaryResponse,
     CandidateInfoResponse,
     ConsentInfoResponse,
@@ -24,6 +27,8 @@ from app.schemas.talent_pool.talent_pool_schema import (
     ResumeInfoResponse,
     TalentPoolCandidateProfileResponse,
     TalentPoolInfoResponse,
+    TalentPoolSearchItem,
+    TalentPoolSearchResponse,
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.resume_selection_service import ResumeSelectionService
@@ -44,6 +49,7 @@ logger = logging.getLogger(__name__)
 SKILL_NORMALIZE_TASK_TYPE = "SKILL_NORMALIZE"
 
 _ALREADY_IN_CAMPAIGN_MESSAGE = "Candidate already exists in this campaign."
+_GENERIC_BULK_FAILURE_REASON = "An unexpected error occurred while adding this candidate."
 
 
 class TalentPoolService:
@@ -65,6 +71,7 @@ class TalentPoolService:
         audit_service: AuditService,
         celery_task_log_service: CeleryTaskLogService,
         resume_selection_service: ResumeSelectionService,
+        skill_repo: SkillRepository | None = None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -75,6 +82,7 @@ class TalentPoolService:
         self.audit_service = audit_service
         self.celery_task_log_service = celery_task_log_service
         self.resume_selection_service = resume_selection_service
+        self.skill_repo = skill_repo
 
     # ------------------------------------------------------------------
     # T01 + T02 — Unified Candidate Profile / Performance Summary
@@ -99,13 +107,24 @@ class TalentPoolService:
                 consent_version=latest_consent.consent_version if latest_consent is not None else None,
             ),
             talent_pool=TalentPoolInfoResponse(
-                is_talent_pool_eligible=bool(embedding.is_talent_pool_eligible) if embedding is not None else False,
+                # Effective eligibility, not the raw stored flag: reuses
+                # ResumeSelectionService._is_eligible (PARSED + embedding
+                # exists + is_talent_pool_eligible + freshness via
+                # RESUME_FRESHNESS_MAX_AGE_DAYS) so this display can never
+                # drift from what actually determines campaign selection.
+                # The stored resume_embeddings.is_talent_pool_eligible value
+                # itself is never modified here.
+                is_talent_pool_eligible=(
+                    self.resume_selection_service._is_eligible(resume) if resume is not None else False
+                ),
                 embedding_updated_at=embedding.created_at if embedding is not None else None,
             ),
             resume=ResumeInfoResponse(
+                resume_id=resume.id if resume is not None else None,
                 active_resume_version=resume.version_number if resume is not None else None,
                 uploaded_at=resume.created_at if resume is not None else None,
                 parse_status=resume.parse_status if resume is not None else None,
+                summary=self._extract_summary(resume),
             ),
             campaign_summary=campaign_summary,
             performance_summary=performance_summary,
@@ -231,6 +250,176 @@ class TalentPoolService:
         return f"{visible}{'*' * max(len(local) - 1, 3)}@{domain}"
 
     # ------------------------------------------------------------------
+    # S02 — Talent Pool Search and Skill-Based Filtering
+    # ------------------------------------------------------------------
+
+    def search_candidates(
+        self,
+        *,
+        skill: str | None = None,
+        skills: list[str] | None = None,
+        designation: str | None = None,
+        location: str | None = None,
+        locations: list[str] | None = None,
+        experience_min: float | None = None,
+        experience_max: float | None = None,
+        campaign_id: UUID | None = None,
+        page: int = 1,
+        size: int = 20,
+    ) -> TalentPoolSearchResponse:
+        """
+        Read-only search/filter over the Talent Pool. Never selects or
+        persists a resume — that stays exclusively add_candidate_to_campaign's
+        job via ResumeSelectionService. Eligibility here reuses
+        ResumeSelectionService's own _is_eligible predicate directly (the
+        exact PARSED + embedding exists + is_talent_pool_eligible + freshness
+        check add_candidate_to_campaign's selection is already built on),
+        called on the same ResumeSelectionService instance this class already
+        depends on — so the two paths can never drift apart, without
+        modifying ResumeSelectionService or re-implementing its logic here.
+
+        `skills` (repeatable) and singular `skill` (kept for backward
+        compatibility) are folded into one term list and OR'd together — a
+        candidate matching ANY term is included, deduped by resume.id so a
+        resume matching more than one term isn't double-counted. `locations`
+        (repeatable) and singular `location` are folded into their own term
+        list the same way — a candidate matches if their location contains
+        ANY listed term (case-insensitive substring, OR'd), for the
+        multi-location checkbox filter. designation is a single
+        case-insensitive substring filter, and experience_min/experience_max
+        a numeric range filter — all applied in Python over
+        _extract_resume_fields' own (designation, experience, location)
+        extraction, the exact same fields already shown on the card, not a
+        new source of truth, applied to the eligible candidate set already
+        in memory rather than a new query.
+
+        campaign_id, when given, excludes candidates already added to that
+        campaign — the "who's left to add" view when browsing the Talent
+        Pool to pick candidates for one specific campaign. Purely a
+        candidate_id exclusion filter; it never touches campaign-specific
+        resume selection (still exclusively ResumeSelectionService's job,
+        run only later when a candidate is actually added).
+        """
+        terms = list(dict.fromkeys([*(skills or []), *([skill] if skill else [])]))
+
+        if terms:
+            candidate_resumes = []
+            seen_resume_ids: set[UUID] = set()
+            for term in terms:
+                resolved_skill = self.skill_repo.find_skill_by_name_or_alias(term)
+                pattern = f"%{self._escape_like(term)}%"
+                for resume in self.resume_repo.get_by_skill_match(
+                    canonical_skill_id=resolved_skill.id if resolved_skill is not None else None,
+                    raw_text_pattern=pattern,
+                ):
+                    if resume.id not in seen_resume_ids:
+                        seen_resume_ids.add(resume.id)
+                        candidate_resumes.append(resume)
+        else:
+            candidate_resumes = self.resume_repo.get_all_parsed()
+
+        matching_resume_by_candidate: dict[UUID, Resume] = {}
+        for resume in candidate_resumes:
+            if resume.candidate_id in matching_resume_by_candidate:
+                continue
+            if self.resume_selection_service._is_eligible(resume):
+                matching_resume_by_candidate[resume.candidate_id] = resume
+
+        if campaign_id is not None:
+            already_in_campaign = self.campaign_candidate_repo.get_candidate_ids_by_campaign(campaign_id)
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if candidate_id not in already_in_campaign
+            }
+
+        if designation:
+            designation_lower = designation.lower()
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if designation_lower in (self._extract_resume_fields(resume)[0] or "").lower()
+            }
+
+        location_terms = list(dict.fromkeys([*(locations or []), *([location] if location else [])]))
+        if location_terms:
+            location_terms_lower = [t.lower() for t in location_terms]
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if any(
+                    term in (self._extract_resume_fields(resume)[2] or "").lower()
+                    for term in location_terms_lower
+                )
+            }
+
+        if experience_min is not None or experience_max is not None:
+            def _experience_in_range(resume: Resume) -> bool:
+                experience = self._extract_resume_fields(resume)[1]
+                if experience is None:
+                    return False
+                if experience_min is not None and experience < experience_min:
+                    return False
+                if experience_max is not None and experience > experience_max:
+                    return False
+                return True
+
+            matching_resume_by_candidate = {
+                candidate_id: resume
+                for candidate_id, resume in matching_resume_by_candidate.items()
+                if _experience_in_range(resume)
+            }
+
+        total = len(matching_resume_by_candidate)
+        candidates = self.candidate_repo.get_by_ids(list(matching_resume_by_candidate.keys()))
+        candidates.sort(key=lambda candidate: candidate.created_at, reverse=True)
+
+        start = (page - 1) * size
+        page_candidates = candidates[start:start + size]
+
+        # Card enrichment - batched over just this page's candidates/resumes,
+        # never one query per candidate. matching_resume_by_candidate already
+        # holds each candidate's own Resume row (with parsed_json loaded), so
+        # the summary needs no extra query at all.
+        page_resume_ids = [matching_resume_by_candidate[candidate.id].id for candidate in page_candidates]
+        page_candidate_ids = [candidate.id for candidate in page_candidates]
+        skills_by_resume_id = self.resume_repo.get_canonical_skills_by_resume_ids(page_resume_ids)
+        best_composite_by_candidate_id = self.campaign_candidate_repo.get_best_composite_scores_by_candidate_ids(
+            page_candidate_ids,
+        )
+
+        items = [
+            TalentPoolSearchItem(
+                candidate=self._build_candidate_info(candidate, matching_resume_by_candidate[candidate.id]),
+                matching_resume_id=matching_resume_by_candidate[candidate.id].id,
+                matching_resume_version=matching_resume_by_candidate[candidate.id].version_number,
+                summary=self._extract_summary(matching_resume_by_candidate[candidate.id]),
+                skills=skills_by_resume_id.get(matching_resume_by_candidate[candidate.id].id, []),
+                best_composite_score=best_composite_by_candidate_id.get(candidate.id),
+            )
+            for candidate in page_candidates
+        ]
+
+        return TalentPoolSearchResponse(items=items, total=total, page=page, size=size)
+
+    @staticmethod
+    def _extract_summary(resume: Resume | None) -> str | None:
+        """
+        Talent Pool card summary - read straight off the matching resume's
+        own parsed_json, exactly like _extract_resume_fields reads
+        designation/experience/location from the same dict. Never
+        generated, never JD-specific: parsed_json is produced once by the
+        resume parsing pipeline from the resume alone, with no JD involved.
+        """
+        if resume is None or not resume.parsed_json:
+            return None
+        return resume.parsed_json.get("summary")
+
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    # ------------------------------------------------------------------
     # T03 — Add Candidate Directly to New Campaign
     # ------------------------------------------------------------------
 
@@ -325,6 +514,100 @@ class TalentPoolService:
         queued_task_types = self._queue_evaluation_tasks(campaign, resume, campaign_candidate)
 
         return self._to_response(campaign_candidate, queued_task_types=queued_task_types)
+
+    # ------------------------------------------------------------------
+    # Bulk Add Candidates to Campaign
+    # ------------------------------------------------------------------
+
+    def bulk_add_candidates_to_campaign(
+        self,
+        candidate_ids: list[UUID],
+        campaign_id: UUID,
+        actor_id: str,
+        actor_role: str | None = None,
+    ) -> BulkAddCandidatesResponse:
+        """
+        Talent Pool Search -> select multiple candidates -> Bulk Add API.
+        For each candidate, this reuses add_candidate_to_campaign UNCHANGED
+        - the exact same campaign-validation/eligibility/duplicate checks,
+        the exact same ResumeSelectionService-backed selection (each
+        candidate is evaluated independently and may therefore select a
+        different resume version), the exact same campaign_candidates
+        insert and CANDIDATE_ADDED audit entry, the exact same idempotency
+        and Celery evaluation-task dispatch - looped, with an independent
+        outcome per candidate. Mirrors SkillCurationService.
+        bulk_approve_unknown_skills' established per-item try/commit/
+        rollback convention: one candidate's failure - expected
+        (not-found/inactive-campaign/already-in-campaign/no-eligible-
+        resume) or not - never blocks, fails, or rolls back any other
+        candidate's independently committed add.
+
+        No separate/duplicate campaign or eligibility validation happens
+        here: add_candidate_to_campaign remains the single source of truth
+        for both, called once per candidate exactly as the single-add
+        endpoint calls it.
+        """
+        # Duplicate candidate_ids in one request must not be added twice
+        # (and would otherwise surface as a confusing self-inflicted
+        # "already in campaign" failure on the repeat) - dict.fromkeys
+        # dedupes while preserving the order candidates were selected in.
+        unique_candidate_ids = list(dict.fromkeys(candidate_ids))
+
+        results = []
+        for candidate_id in unique_candidate_ids:
+            try:
+                response = self.add_candidate_to_campaign(
+                    candidate_id, campaign_id, actor_id=actor_id, actor_role=actor_role,
+                )
+            except Exception as exc:
+                # add_candidate_to_campaign does not roll back on every
+                # early-exit path (e.g. the FOR UPDATE lock it acquires on
+                # the campaign row before its already-in-campaign/no-
+                # eligible-resume checks) - rolling back unconditionally
+                # here keeps one failed candidate's lock/transaction state
+                # from bleeding into the next iteration on this shared,
+                # per-request session. Caught broadly (not just the
+                # expected exception types) so a genuinely unexpected error
+                # for one candidate still can't take down the whole batch.
+                self.campaign_candidate_repo.rollback()
+                results.append(BulkAddCandidateResultItem(
+                    candidate_id=candidate_id, status="FAILED", reason=self._failure_reason(exc),
+                ))
+                continue
+
+            results.append(BulkAddCandidateResultItem(
+                candidate_id=candidate_id,
+                status="ADDED",
+                campaign_candidate_id=response.campaign_candidate_id,
+                resume_id=response.resume_id,
+            ))
+
+        return BulkAddCandidatesResponse(
+            campaign_id=campaign_id,
+            total=len(results),
+            added=sum(1 for item in results if item.status == "ADDED"),
+            failed=sum(1 for item in results if item.status == "FAILED"),
+            results=results,
+        )
+
+    @staticmethod
+    def _failure_reason(exc: Exception) -> str:
+        """
+        Caller-safe failure reason for one bulk-add item - never leaks
+        internal exception details. NotFoundError/UnprocessableError
+        (HTTPException) and CampaignException are exactly the exceptions
+        add_candidate_to_campaign deliberately raises with an
+        already-caller-safe message; their text is reused verbatim.
+        Anything else is unexpected: logged with its full traceback
+        server-side, but only a generic message ever reaches the response.
+        """
+        if isinstance(exc, (NotFoundError, UnprocessableError, CampaignException)):
+            detail = getattr(exc, "detail", None)
+            if isinstance(detail, str):
+                return detail
+            return getattr(exc, "message", None) or str(exc)
+        logger.exception("Unexpected error in bulk-add-to-campaign for one candidate - reported as FAILED, batch continues.")
+        return _GENERIC_BULK_FAILURE_REASON
 
     def _queue_evaluation_tasks(
         self, campaign: HiringCampaign, resume: Resume, campaign_candidate: CampaignCandidate,

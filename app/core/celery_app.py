@@ -29,6 +29,8 @@ celery_app.conf.update(
     # bumping), so a redelivered/re-run task cannot double-create data.
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=3,
 )
 
 # ── Worker pool: Windows dev vs. Linux production ────────────────────────────

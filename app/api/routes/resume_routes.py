@@ -20,14 +20,17 @@ from app.schemas.resume.monitoring import (
     ParseAttemptItem,
     ResumeDetailResponse,
     ResumeListResponse,
+    ResumeListWithPipelineResponse,
     ResumeParsedJsonResponse,
     ResumeTimelineResponse,
 )
 from app.schemas.resume.request import ResumeUploadRequest
 from app.schemas.resume.response import (
+    ResumeDownloadUrlResponse,
     ResumeProcessingStatusResponse,
     ResumeRetryResponse,
     ResumeUploadAcceptedResponse,
+    ResumeVersionComparisonResponse,
     ResumeVersionHistoryResponse,
 )
 from app.schemas.response import APIResponse
@@ -166,6 +169,48 @@ def list_resumes(
 
 
 @router.get(
+    "/pipeline-status",
+    response_model=APIResponse[ResumeListWithPipelineResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_resumes_with_pipeline_status(
+    campaign_id: UUID | None = Query(default=None),
+    parse_status: ParseStatus | None = Query(default=None),
+    source: Literal["individual", "bulk"] | None = Query(default=None),
+    email_hash: str | None = Query(default=None),
+    uploaded_from: datetime | None = Query(default=None),
+    uploaded_to: datetime | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    sort_by: Literal["created_at", "parse_status"] = Query(default="created_at"),
+    sort_dir: Literal["asc", "desc"] = Query(default="desc"),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Same rows/filters/pagination as GET /resumes, plus each row's linked
+    campaign_candidate pipeline_stage and decision_type/decision_source/
+    decision_reason/decision_at - which stage the candidate is on, and
+    whether they succeeded or failed there.
+    """
+    return APIResponse.ok(
+        data=service.list_resumes_with_pipeline_status(
+            campaign_id=campaign_id,
+            parse_status=parse_status,
+            source=source,
+            email_hash=email_hash,
+            uploaded_from=uploaded_from,
+            uploaded_to=uploaded_to,
+            page=page,
+            size=size,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        ),
+        message="Resume list with pipeline status retrieved successfully.",
+    )
+
+
+@router.get(
     "/processing-status/{task_id}",
     response_model=APIResponse[ResumeProcessingStatusResponse],
     status_code=status.HTTP_200_OK,
@@ -212,6 +257,52 @@ def get_resume_version_history(
     return APIResponse.ok(
         data=service.get_version_history(candidate_id),
         message="Resume version history retrieved successfully.",
+    )
+
+
+@router.get(
+    "/compare",
+    response_model=APIResponse[ResumeVersionComparisonResponse],
+    status_code=status.HTTP_200_OK,
+)
+def compare_resume_versions(
+    resume_id_1: UUID = Query(...),
+    resume_id_2: UUID = Query(...),
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    S02-T02 — read-only diff of two resume versions belonging to the same
+    candidate: skills added/removed/unchanged, experience added/removed
+    (matched by title+company), education added/removed, and the
+    total_experience_years difference. Computed at query time; nothing is
+    persisted. Registered ahead of /{resume_id} so this literal path isn't
+    shadowed by that catch-all.
+    """
+    return APIResponse.ok(
+        data=service.compare_resume_versions(resume_id_1, resume_id_2),
+        message="Resume versions compared successfully.",
+    )
+
+
+@router.get(
+    "/{resume_id}/download-url",
+    response_model=APIResponse[ResumeDownloadUrlResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_resume_download_url(
+    resume_id: UUID,
+    service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    S02-T01 — server-generated, time-limited signed URL to download one
+    specific resume version's stored file. HR_ADMIN only. Expiry is
+    config-driven via RESUME_DOWNLOAD_URL_EXPIRY_SECONDS (default 300s).
+    """
+    return APIResponse.ok(
+        data=service.get_download_url(resume_id),
+        message="Resume download URL generated successfully.",
     )
 
 

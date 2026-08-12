@@ -40,17 +40,24 @@ class HiringCampaign(Base):
     deterministic_threshold: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=70.00, server_default=text("70.00")
     )
+    # Skill-stage qualification (core/supporting importance) - see
+    # CandidateScoringService.evaluate_skill_qualification. 0.00 default
+    # means "no coverage gate" (always satisfied) until a campaign
+    # explicitly configures one - existing campaigns keep scoring exactly
+    # as before this feature existed.
+    required_skill_coverage_threshold: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0.00, server_default=text("0.00")
+    )
+    # Fixed business limit (never proportional to required-skill count) -
+    # see DEFAULT_MAX_MISSING_CORE_SKILLS.
+    max_missing_core_skills: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default=text("3")
+    )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     prompt_template_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=False, index=True
     )
-    # AI Evaluation screening stage (app/tasks/ai_evaluation_tasks.py) reads
-    # this to load the campaign's ACTIVE AI_EVALUATE prompt template.
-    # Selected via CampaignCreateRequest/CampaignUpdateRequest.ai_evaluate_prompt_id
-    # (CampaignService.create_campaign/update_campaign), same validate-then-
-    # assign pattern as prompt_template_id. Still nullable/no backfill so
-    # pre-existing rows created before this was wired up are unaffected.
     ai_evaluate_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("prompt_templates.id"), nullable=True, index=True
     )

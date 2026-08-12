@@ -6,15 +6,17 @@ from uuid import UUID
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
 from app.exceptions.storage_exception import StorageException
-from app.exception_handler.exceptions import NotFoundError
+from app.exception_handler.exceptions import BadRequestError, NotFoundError
 from app.models.candidates import ParseStatus
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
+from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.resume.monitoring import (
     CandidateSummary,
     EmbeddingStatus,
@@ -23,14 +25,36 @@ from app.schemas.resume.monitoring import (
     ProcessingSummary,
     ResumeDetailResponse,
     ResumeListItem,
+    ResumeListItemWithPipeline,
     ResumeListResponse,
+    ResumeListWithPipelineResponse,
     ResumeParsedJsonResponse,
     ResumeSummary,
     ResumeTimelineResponse,
     SkillSummary,
 )
-from app.schemas.resume.response import ResumeVersionHistoryResponse, ResumeVersionItem
+from app.schemas.resume.response import (
+    EducationComparison,
+    EducationEntryComparison,
+    ExperienceComparison,
+    ExperienceEntryComparison,
+    ExperienceYearsComparison,
+    ResumeComparisonSummary,
+    ResumeDownloadUrlResponse,
+    ResumeVersionCampaignUsage,
+    ResumeVersionComparisonResponse,
+    ResumeVersionHistoryResponse,
+    ResumeVersionItem,
+    ResumeVersionSnapshot,
+    SkillsComparison,
+)
 from app.services.resume.monitoring_shared import build_failure_info, build_stage_timeline_fields
+from app.services.resume.resume_version_diff import (
+    diff_education,
+    diff_experience,
+    diff_experience_years,
+    diff_skills,
+)
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 
 logger = logging.getLogger(__name__)
@@ -39,6 +63,13 @@ CANDIDATE_PII_PURPOSE = "CANDIDATE_PII"
 UNDECRYPTABLE_PLACEHOLDER = "[undecryptable]"
 RESUME_STORAGE_BUCKET = "airs_resumes"
 DOWNLOAD_URL_EXPIRES_IN_SECONDS = 900
+
+# S02-T01 - config-driven expiry for the per-version resume download URL,
+# distinct from DOWNLOAD_URL_EXPIRES_IN_SECONDS above (which backs the
+# unrelated parsed-json-by-campaign-candidate endpoint and stays a fixed
+# constant per its own story).
+RESUME_DOWNLOAD_URL_EXPIRY_SECONDS_KEY = "RESUME_DOWNLOAD_URL_EXPIRY_SECONDS"
+DEFAULT_RESUME_DOWNLOAD_URL_EXPIRY_SECONDS = 300
 
 
 class ResumeMonitoringService:
@@ -61,6 +92,8 @@ class ResumeMonitoringService:
         dead_letter_queue_repository: DeadLetterQueueRepository,
         storage_service: StorageService,
         campaign_candidate_repository: CampaignCandidateRepository,
+        user_repository: UserRepository | None = None,
+        config_repository: ConfigRepository | None = None,
     ):
         self.resume_repository = resume_repository
         self.candidate_repository = candidate_repository
@@ -71,6 +104,8 @@ class ResumeMonitoringService:
         self.dead_letter_queue_repository = dead_letter_queue_repository
         self.storage_service = storage_service
         self.campaign_candidate_repository = campaign_candidate_repository
+        self.user_repository = user_repository
+        self.config_repository = config_repository
 
     def get_timeline(self, resume_id: UUID, attempt_number: int | None = None) -> ResumeTimelineResponse:
         """
@@ -217,20 +252,29 @@ class ResumeMonitoringService:
             failure=failure,
         )
 
-    def list_resumes(
+    def _fetch_resume_page(
         self,
         *,
-        campaign_id: UUID | None = None,
-        parse_status: ParseStatus | None = None,
-        source: str | None = None,
-        email_hash: str | None = None,
-        uploaded_from: datetime | None = None,
-        uploaded_to: datetime | None = None,
-        page: int = 1,
-        size: int = 20,
-        sort_by: str = "created_at",
-        sort_dir: str = "desc",
-    ) -> ResumeListResponse:
+        campaign_id: UUID | None,
+        parse_status: ParseStatus | None,
+        source: str | None,
+        email_hash: str | None,
+        uploaded_from: datetime | None,
+        uploaded_to: datetime | None,
+        page: int,
+        size: int,
+        sort_by: str,
+        sort_dir: str,
+    ):
+        """
+        Shared page-fetch for list_resumes/list_resumes_with_pipeline_status -
+        same filters/pagination/batched lookups, so the two response shapes
+        never drift out of sync on what counts as "the page". Returns
+        (resumes, total, candidates_by_id, campaign_candidates_by_resume_id)
+        where campaign_candidates_by_resume_id holds the full
+        CampaignCandidate row (not just its id) so a caller can read
+        pipeline_stage/decision_* off it without a second query.
+        """
         filters = dict(
             campaign_id=campaign_id,
             parse_status=parse_status,
@@ -257,33 +301,55 @@ class ResumeMonitoringService:
         # the most recently created link is shown as a best-effort pick —
         # there's no single "correct" one to prefer without a campaign in
         # scope.
-        campaign_candidates_by_resume_id: dict[UUID, UUID] = {}
+        campaign_candidates_by_resume_id = {}
         for cc in sorted(
             self.campaign_candidate_repository.get_by_resume_ids(
                 [r.id for r in resumes], campaign_id=campaign_id,
             ),
             key=lambda cc: cc.created_at,
         ):
-            campaign_candidates_by_resume_id[cc.resume_id] = cc.id
+            campaign_candidates_by_resume_id[cc.resume_id] = cc
+
+        return resumes, total, candidates_by_id, campaign_candidates_by_resume_id
+
+    def _decrypt_candidate_identity(self, candidate) -> tuple[str, str]:
+        if candidate is None:
+            return "Unknown", "Unknown"
+        full_name = self._safe_decrypt(candidate.full_name_encrypted, candidate.encryption_key_id, candidate.id)
+        email = self._safe_decrypt(candidate.email_encrypted, candidate.encryption_key_id, candidate.id)
+        return full_name, email
+
+    def list_resumes(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> ResumeListResponse:
+        resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
+            campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+            uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
 
         items = []
         for resume in resumes:
-            candidate = candidates_by_id.get(resume.candidate_id)
-            full_name = (
-                self._safe_decrypt(candidate.full_name_encrypted, candidate.encryption_key_id, candidate.id)
-                if candidate else "Unknown"
-            )
-            email = (
-                self._safe_decrypt(candidate.email_encrypted, candidate.encryption_key_id, candidate.id)
-                if candidate else "Unknown"
-            )
+            full_name, email = self._decrypt_candidate_identity(candidates_by_id.get(resume.candidate_id))
+            cc = campaign_candidates_by_resume_id.get(resume.id)
             items.append(
                 ResumeListItem(
                     id=resume.id,
                     resume_id=resume.id,
                     task_id=resume.task_id,
                     candidate_id=resume.candidate_id,
-                    campaign_candidate_id=campaign_candidates_by_resume_id.get(resume.id),
+                    campaign_candidate_id=cc.id if cc else None,
                     candidate_full_name=full_name,
                     candidate_email=email,
                     file_format=resume.file_format.value,
@@ -297,6 +363,64 @@ class ResumeMonitoringService:
             )
 
         return ResumeListResponse(items=items, total=total, page=page, size=size)
+
+    def list_resumes_with_pipeline_status(
+        self,
+        *,
+        campaign_id: UUID | None = None,
+        parse_status: ParseStatus | None = None,
+        source: str | None = None,
+        email_hash: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+        page: int = 1,
+        size: int = 20,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+    ) -> ResumeListWithPipelineResponse:
+        """
+        Same rows as list_resumes, plus each resume's linked
+        campaign_candidate pipeline_stage/decision_* fields - lets the
+        frontend show, for each resume, which stage the candidate is on
+        and whether they succeeded/failed there, without a second
+        per-candidate call.
+        """
+        resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
+            campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+            uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
+
+        items = []
+        for resume in resumes:
+            full_name, email = self._decrypt_candidate_identity(candidates_by_id.get(resume.candidate_id))
+            cc = campaign_candidates_by_resume_id.get(resume.id)
+            items.append(
+                ResumeListItemWithPipeline(
+                    id=resume.id,
+                    resume_id=resume.id,
+                    task_id=resume.task_id,
+                    candidate_id=resume.candidate_id,
+                    campaign_id=cc.campaign_id if cc else None,
+                    campaign_candidate_id=cc.id if cc else None,
+                    candidate_full_name=full_name,
+                    candidate_email=email,
+                    file_format=resume.file_format.value,
+                    parse_status=resume.parse_status.value,
+                    version_number=resume.version_number,
+                    is_active_version=resume.is_active_version,
+                    source="bulk" if resume.bulk_upload_job_id else "individual",
+                    bulk_upload_job_id=resume.bulk_upload_job_id,
+                    created_at=resume.created_at,
+                    pipeline_stage=cc.pipeline_stage.value if cc else None,
+                    decision_type=cc.decision_type.value if cc and cc.decision_type else None,
+                    decision_source=cc.decision_source.value if cc and cc.decision_source else None,
+                    decision_reason=cc.decision_reason if cc else None,
+                    decision_at=cc.decision_at if cc else None,
+                )
+            )
+
+        return ResumeListWithPipelineResponse(items=items, total=total, page=page, size=size)
 
     def get_parsed_json_by_campaign_candidate(self, campaign_candidate_id: UUID) -> ResumeParsedJsonResponse:
         campaign_candidate = self.campaign_candidate_repository.get_by_id(campaign_candidate_id)
@@ -335,10 +459,36 @@ class ResumeMonitoringService:
         )
 
     def get_version_history(self, candidate_id: UUID) -> ResumeVersionHistoryResponse:
-        """Epic 3 (M05-E03) Phase C1 — read-only, mirrors get_parsed_json_by_candidate's style of resolving by candidate_id directly rather than a separate existence check."""
+        """
+        Epic 3 (M05-E03) Phase C1 — read-only, mirrors get_parsed_json_by_candidate's
+        style of resolving by candidate_id directly rather than a separate
+        existence check.
+
+        S02-T01 extended this with per-version parse_confidence, uploaded_by,
+        and the campaigns/pipeline-stages each version was used in - all
+        batched (one query each for the whole version list, not per-row).
+        """
         versions = self.resume_repository.get_all_versions_by_candidate(candidate_id)
         if not versions:
             raise NotFoundError(f"No resumes found for candidate {candidate_id}.")
+
+        resume_ids = [resume.id for resume in versions]
+        campaigns_by_resume_id: dict[UUID, list[ResumeVersionCampaignUsage]] = {}
+        for resume_id, campaign_id, campaign_name, pipeline_stage in (
+            self.campaign_candidate_repository.get_campaign_usage_by_resume_ids(resume_ids)
+        ):
+            campaigns_by_resume_id.setdefault(resume_id, []).append(
+                ResumeVersionCampaignUsage(
+                    campaign_id=campaign_id,
+                    campaign_name=campaign_name,
+                    pipeline_stage=pipeline_stage.value,
+                )
+            )
+
+        uploaders_by_id = {
+            user.id: user.full_name
+            for user in self.user_repository.get_by_ids([resume.uploaded_by for resume in versions])
+        }
 
         return ResumeVersionHistoryResponse(
             candidate_id=candidate_id,
@@ -349,11 +499,110 @@ class ResumeMonitoringService:
                     is_active_version=resume.is_active_version,
                     file_format=resume.file_format.value,
                     parse_status=resume.parse_status.value,
+                    parse_confidence=(
+                        float(resume.parse_confidence_score)
+                        if resume.parse_confidence_score is not None else None
+                    ),
+                    uploaded_by=uploaders_by_id.get(resume.uploaded_by, resume.uploaded_by),
                     source="bulk" if resume.bulk_upload_job_id else "individual",
                     created_at=resume.created_at,
+                    campaigns=campaigns_by_resume_id.get(resume.id, []),
                 )
                 for resume in versions
             ],
+        )
+
+    def get_download_url(self, resume_id: UUID) -> ResumeDownloadUrlResponse:
+        """
+        S02-T01 — server-generated MinIO/Supabase signed URL for one
+        specific resume version (not a campaign's "active" resume, and not
+        routed through ResumeSelectionService — a plain resume_id lookup).
+        Expiry is config-driven via RESUME_DOWNLOAD_URL_EXPIRY_SECONDS,
+        defaulting to 300s when unset.
+        """
+        resume = self._get_resume_or_404(resume_id)
+        expires_in = self._get_download_url_expiry_seconds()
+
+        download_url = self.storage_service.generate_signed_url(
+            bucket_name=RESUME_STORAGE_BUCKET,
+            file_path=resume.file_path,
+            expires_in=expires_in,
+        )
+
+        return ResumeDownloadUrlResponse(
+            resume_id=resume.id,
+            version_number=resume.version_number,
+            download_url=download_url,
+            expires_in_seconds=expires_in,
+        )
+
+    def _get_download_url_expiry_seconds(self) -> int:
+        configured = self.config_repository.get_configs_by_keys(
+            [RESUME_DOWNLOAD_URL_EXPIRY_SECONDS_KEY],
+        ).get(RESUME_DOWNLOAD_URL_EXPIRY_SECONDS_KEY)
+        return int(configured) if configured else DEFAULT_RESUME_DOWNLOAD_URL_EXPIRY_SECONDS
+
+    def compare_resume_versions(
+        self, resume_id_1: UUID, resume_id_2: UUID,
+    ) -> ResumeVersionComparisonResponse:
+        """
+        S02-T02 — read-only diff of two resume versions' parsed_json,
+        computed fresh from the two Resume rows on every call. Nothing is
+        stored: no comparison/diff table or column exists, and this method
+        never writes to the database. Diffs the raw stored parsed_json
+        (not annotate_work_experience_durations' response-time-recomputed
+        view used by get_parsed_json_by_campaign_candidate) so a
+        total_experience_years difference always reflects a genuine change
+        between the two stored versions, never a recomputation artifact.
+        """
+        if resume_id_1 == resume_id_2:
+            raise BadRequestError("Select two different resume versions to compare.")
+
+        resume_1 = self._get_resume_or_404(resume_id_1)
+        resume_2 = self._get_resume_or_404(resume_id_2)
+        if resume_1.candidate_id != resume_2.candidate_id:
+            raise BadRequestError("Both resume versions must belong to the same candidate.")
+
+        parsed_1 = resume_1.parsed_json or {}
+        parsed_2 = resume_2.parsed_json or {}
+
+        skills = diff_skills(parsed_1.get("skills") or [], parsed_2.get("skills") or [])
+        experience = diff_experience(parsed_1.get("work_experience") or [], parsed_2.get("work_experience") or [])
+        education = diff_education(parsed_1.get("education") or [], parsed_2.get("education") or [])
+        experience_years = diff_experience_years(
+            parsed_1.get("total_experience_years"), parsed_2.get("total_experience_years"),
+        )
+
+        return ResumeVersionComparisonResponse(
+            candidate_id=resume_1.candidate_id,
+            version_1=self._to_version_snapshot(resume_1),
+            version_2=self._to_version_snapshot(resume_2),
+            skills=SkillsComparison(**skills),
+            experience=ExperienceComparison(
+                added=[ExperienceEntryComparison(**entry) for entry in experience["added"]],
+                removed=[ExperienceEntryComparison(**entry) for entry in experience["removed"]],
+            ),
+            education=EducationComparison(
+                added=[EducationEntryComparison(**entry) for entry in education["added"]],
+                removed=[EducationEntryComparison(**entry) for entry in education["removed"]],
+            ),
+            experience_years=ExperienceYearsComparison(**experience_years),
+            summary=ResumeComparisonSummary(
+                skills_added=len(skills["added"]),
+                skills_removed=len(skills["removed"]),
+                skills_unchanged=len(skills["unchanged"]),
+                experience_years_change=experience_years["difference"],
+            ),
+        )
+
+    @staticmethod
+    def _to_version_snapshot(resume) -> ResumeVersionSnapshot:
+        return ResumeVersionSnapshot(
+            resume_id=resume.id,
+            version_number=resume.version_number,
+            parse_status=resume.parse_status.value,
+            created_at=resume.created_at,
+            parsed_json=resume.parsed_json or {},
         )
 
     def _safe_decrypt(self, ciphertext: bytes, encryption_key_id, candidate_id: UUID) -> str:

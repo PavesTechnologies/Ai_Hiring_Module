@@ -174,6 +174,18 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="CORE_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'core'. 1.0 (neutral, no differentiation from supporting) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'supporting'. 1.0 (neutral, no differentiation from core) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
             value="20",
             description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
@@ -371,6 +383,55 @@ try:
             key="EMBEDDING_REINDEX_THRESHOLD",
             value="50000",
             description="Once resume_embeddings row count exceeds this, the Embedding Storage Dashboard shows a warning and queues REINDEX_IVFFLAT to rebuild idx_resume_embeddings_embedding with better-tuned clustering",
+        ),
+        # M12: Workflow & Interview Scheduling config
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES",
+            value="30",
+            description="Minutes over which SHORTLISTED notifications are batched into a single email/digest before sending (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="FRAUD_HIGH_RISK_SLA_DAYS",
+            value="2",
+            description="Days a high-risk FRAUD_REVIEW candidate may sit before an SLA breach alert is raised (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SINGLE_HIRE_PER_CAMPAIGN",
+            value="true",
+            description="Boolean (\"true\"/\"false\" string - parse via raw.lower() == \"true\", NOT bool(raw)) - whether a campaign auto-closes/blocks further SELECTED candidates once one hire is made (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="INTERVIEW_MIN_NOTICE_HOURS",
+            value="24",
+            description="Minimum hours of advance notice required when scheduling an interview (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="OAUTH_TOKEN_REFRESH_BUFFER_SECONDS",
+            value="300",
+            description="Seconds before an OAuth token's actual expiry at which it is proactively refreshed (M12 calendar/interview integrations)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_EMAIL_RETRY_COUNT",
+            value="4",
+            description="Max attempts for a transient interview/notification email send failure before dead-lettering (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_DOWNLOAD_URL_EXPIRY_SECONDS",
+            value="300",
+            description="Validity (seconds) of a server-generated signed URL for downloading a specific resume version (M07-E0x S02-T01)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_FRESHNESS_MAX_AGE_DAYS",
+            value="180",
+            description="Max age (days, ~6 months) of a resume version's created_at before ResumeSelectionService excludes it from Talent Pool campaign selection, regardless of is_talent_pool_eligible (M13-E01 Talent Pool Eligibility)",
         ),
     ]
 

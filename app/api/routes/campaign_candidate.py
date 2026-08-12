@@ -13,11 +13,13 @@ from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
 from app.schemas.campaign.campaign_candidate_schema import (
+    CampaignBoardResponse,
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
     CampaignCandidateSummaryResponse,
     CampaignRejectionAnalyticsResponse,
     CandidateAIEvaluationResponse,
+    CandidateCompositeResponse,
     CandidateCompositeScoreHistoryResponse,
     CandidateDeterministicResponse,
     CandidateRankingDetailsResponse,
@@ -28,6 +30,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
     CandidateTimelineResponse,
     HrOverrideRequest,
+    MovePipelineStageRequest,
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
     SortOrder,
@@ -132,6 +135,35 @@ def get_campaign_candidates(
     return APIResponse.ok(
         data=result,
         message="Campaign candidates retrieved successfully.",
+    )
+
+
+@router.get(
+    "/campaign/{campaign_id}/board",
+    response_model=APIResponse[CampaignBoardResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Pipeline Board",
+    description=(
+        "Every candidate in the campaign, bucketed by pipeline_stage into "
+        "Kanban board columns (Uploaded, Screening, Shortlisted, Hold, "
+        "Interview, Selected, Rejected). Reuses the exact same enriched "
+        "candidate data the Candidate Listing endpoint returns - no "
+        "separate scoring or ranking. HM_REVIEW/FRAUD_REVIEW candidates "
+        "aren't part of this board; other_count accounts for them."
+    ),
+)
+def get_campaign_board(
+    campaign_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    result = service.get_campaign_board(campaign_id)
+
+    return APIResponse.ok(
+        data=result,
+        message="Pipeline board retrieved successfully.",
     )
 
 
@@ -369,6 +401,42 @@ def apply_hr_override(
 
 
 @router.post(
+    "/{campaign_candidate_id}/stage",
+    response_model=APIResponse[CampaignCandidateResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Move Pipeline Stage (Pipeline Board drag-and-drop)",
+    description=(
+        "Moves one candidate to an arbitrary target pipeline_stage - the "
+        "Pipeline Board's drag-and-drop action. Backed entirely by "
+        "PipelineTransitionService: whether the move is allowed at all, "
+        "which roles may perform it, and whether a reason is required all "
+        "depend on the allowed_transitions row for this exact from/to "
+        "pair, not on role alone."
+    ),
+)
+def move_campaign_candidate_stage(
+    campaign_candidate_id: UUID,
+    request: MovePipelineStageRequest,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    result = service.move_pipeline_stage(
+        campaign_candidate_id,
+        to_stage=request.to_stage,
+        actor_id=user.user_id,
+        actor_role=user.roles[0] if user.roles else None,
+        reason=request.reason,
+    )
+
+    return APIResponse.ok(
+        data=result,
+        message="Candidate moved successfully.",
+    )
+
+
+@router.post(
     "/{campaign_candidate_id}/update-resume",
     response_model=APIResponse[UpdateResumeResubmissionResponse],
     status_code=status.HTTP_200_OK,
@@ -535,6 +603,32 @@ def get_candidate_ai_evaluation(
     return APIResponse.ok(
         data=ai_evaluation,
         message="Candidate AI evaluation result retrieved successfully.",
+    )
+
+
+@router.get(
+    "/{campaign_candidate_id}/composite",
+    response_model=APIResponse[CandidateCompositeResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Candidate Composite Score Details (Composite tab)",
+    description=(
+        "Composite-tab-only view: composite_score, component scores, current campaign "
+        "weights, formula version, ranking status, and computed timestamp. Read-only - "
+        "never recalculates composite_score."
+    ),
+)
+def get_candidate_composite(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    composite = service.get_candidate_composite(campaign_candidate_id)
+
+    return APIResponse.ok(
+        data=composite,
+        message="Candidate composite score details retrieved successfully.",
     )
 
 

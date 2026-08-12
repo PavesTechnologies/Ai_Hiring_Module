@@ -9,6 +9,7 @@ from app.api.routes.campaign_candidate import router
 from app.models.identity import UserRole
 
 _TIMELINE_PATH = "/campaign-candidates/{campaign_candidate_id}/timeline"
+_COMPOSITE_PATH = "/campaign-candidates/{campaign_candidate_id}/composite"
 _COMPOSITE_HISTORY_PATH = "/campaign-candidates/{campaign_candidate_id}/composite-history"
 _RANKING_DETAILS_PATH = "/campaign-candidates/{campaign_candidate_id}/ranking-details"
 
@@ -34,7 +35,7 @@ def _allowed_roles(route) -> frozenset:
 
 
 def test_all_three_explainability_routes_are_registered_at_the_documented_paths():
-    for path in (_TIMELINE_PATH, _COMPOSITE_HISTORY_PATH, _RANKING_DETAILS_PATH):
+    for path in (_TIMELINE_PATH, _COMPOSITE_PATH, _COMPOSITE_HISTORY_PATH, _RANKING_DETAILS_PATH):
         assert _get_route(path).path == path
 
 
@@ -46,18 +47,24 @@ def test_composite_history_route_allows_hr_admin_recruiter_hiring_manager():
     assert _allowed_roles(_get_route(_COMPOSITE_HISTORY_PATH)) == _EXPECTED_ROLES
 
 
+def test_composite_route_allows_hr_admin_recruiter_hiring_manager():
+    assert _allowed_roles(_get_route(_COMPOSITE_PATH)) == _EXPECTED_ROLES
+
+
 def test_ranking_details_route_allows_hr_admin_recruiter_hiring_manager():
     assert _allowed_roles(_get_route(_RANKING_DETAILS_PATH)) == _EXPECTED_ROLES
 
 
 def test_response_models_are_the_new_dedicated_schemas_not_duplicates_of_existing_ones():
     from app.schemas.campaign.campaign_candidate_schema import (
+        CandidateCompositeResponse,
         CandidateCompositeScoreHistoryResponse,
         CandidateRankingDetailsResponse,
         CandidateTimelineResponse,
     )
 
     assert CandidateTimelineResponse.__name__ in str(_get_route(_TIMELINE_PATH).response_model)
+    assert CandidateCompositeResponse.__name__ in str(_get_route(_COMPOSITE_PATH).response_model)
     assert CandidateCompositeScoreHistoryResponse.__name__ in str(_get_route(_COMPOSITE_HISTORY_PATH).response_model)
     assert CandidateRankingDetailsResponse.__name__ in str(_get_route(_RANKING_DETAILS_PATH).response_model)
 

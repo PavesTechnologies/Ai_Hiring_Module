@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, case, delete, func, nullslast, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, contains_eager, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload, lazyload
 
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
@@ -70,6 +70,85 @@ class CampaignCandidateRepository:
             return campaign_candidate, True
         except IntegrityError:
             existing = self.get_by_idempotency_key(campaign_candidate.idempotency_key)
+            return existing, False
+
+    def get_by_id_for_update(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> CampaignCandidate | None:
+        """
+        E02: locking read (SELECT ... FOR UPDATE) so a concurrent transition
+        on the same candidate is serialized instead of racing - the lock is
+        released when the caller commits/rolls back (same convention as
+        CampaignRepository.get_by_id_for_update).
+
+        Explicitly overrides ai_evaluation off its default joinedload
+        (see get_by_id above) with lazyload - ai_evaluation is a nullable
+        1:1, so leaving the eager join in place here would hit the exact
+        same Postgres rejection CampaignRepository.get_by_id_for_update
+        already had to work around: "FOR UPDATE cannot be applied to the
+        nullable side of an outer join".
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .options(lazyload(CampaignCandidate.ai_evaluation))
+            .filter(CampaignCandidate.id == campaign_candidate_id)
+            .with_for_update()
+            .first()
+        )
+
+    def get_stage_history_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> CampaignCandidateStageHistory | None:
+        return (
+            self.db.query(CampaignCandidateStageHistory)
+            .filter(CampaignCandidateStageHistory.idempotency_key == idempotency_key)
+            .first()
+        )
+
+    def create_stage_history_idempotent(
+        self,
+        campaign_candidate_id: UUID,
+        to_stage: PipelineStage,
+        from_stage: PipelineStage | None = None,
+        changed_by: str | None = None,
+        change_reason: str | None = None,
+        transition_source: TransitionSource = TransitionSource.SYSTEM,
+        scores_snapshot: dict | None = None,
+        idempotency_key: str | None = None,
+    ) -> tuple[CampaignCandidateStageHistory, bool]:
+        """
+        E02: idempotency_key counterpart to create_stage_history - same
+        SAVEPOINT + IntegrityError-catch shape as create_idempotent above.
+        Does NOT touch create_stage_history itself or either of its two
+        live callers (transition_to_rejected/apply_hr_override) - this is a
+        separate method for StageTransitionService.transition() only.
+
+        idempotency_key is nullable and only uniquely indexed WHERE NOT
+        NULL (see migration 08655d0b0117) - passing None here means "no
+        replay protection for this call", not an error; every NULL-keyed
+        insert always succeeds since NULLs never collide against each other
+        in that partial index.
+        """
+        history = CampaignCandidateStageHistory(
+            campaign_candidate_id=campaign_candidate_id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            changed_by=changed_by,
+            change_reason=change_reason,
+            transition_source=transition_source,
+            scores_snapshot=scores_snapshot,
+            idempotency_key=idempotency_key,
+        )
+        try:
+            with self.db.begin_nested():
+                self.db.add(history)
+                self.db.flush()
+            self.db.refresh(history)
+            return history, True
+        except IntegrityError:
+            existing = self.get_stage_history_by_idempotency_key(idempotency_key)
             return existing, False
 
     def create_stage_history(
@@ -217,6 +296,33 @@ class CampaignCandidateRepository:
         if campaign_id is not None:
             stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
         return list(self.db.execute(stmt).scalars().all())
+
+    def get_campaign_usage_by_resume_ids(
+        self,
+        resume_ids: list[UUID],
+    ) -> list[tuple[UUID, UUID, str, PipelineStage]]:
+        """
+        S02-T01 - (resume_id, campaign_id, campaign_name, pipeline_stage) rows
+        for a batch of resume versions, backing "which campaigns was this
+        resume version used in". Mirrors get_campaign_context_for_candidate's
+        join but keyed by resume_id (a resume can be linked to more than one
+        campaign via "use existing" duplicate resolution) and batched like
+        get_by_resume_ids.
+        """
+        if not resume_ids:
+            return []
+        stmt = (
+            select(
+                CampaignCandidate.resume_id,
+                HiringCampaign.id,
+                HiringCampaign.name,
+                CampaignCandidate.pipeline_stage,
+            )
+            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+            .where(CampaignCandidate.resume_id.in_(resume_ids))
+            .order_by(CampaignCandidate.created_at.desc())
+        )
+        return list(self.db.execute(stmt).all())
 
     def get_by_campaign_and_candidate(
         self,
@@ -442,6 +548,17 @@ class CampaignCandidateRepository:
 
         return self.db.execute(stmt).unique().all()
 
+    def get_candidate_ids_by_campaign(self, campaign_id: UUID) -> set[UUID]:
+        """
+        Bare candidate_ids already added to a campaign - used by Talent
+        Pool search to exclude already-added candidates when an HR_ADMIN is
+        browsing to add people to a specific campaign. Deliberately not
+        get_all_by_campaign's full Candidate/Resume/ai_evaluation join -
+        only the id set is needed here.
+        """
+        stmt = select(CampaignCandidate.candidate_id).where(CampaignCandidate.campaign_id == campaign_id)
+        return set(self.db.execute(stmt).scalars().all())
+
     def get_ids_by_campaign(
         self,
         campaign_id: UUID,
@@ -628,6 +745,35 @@ class CampaignCandidateRepository:
             "highest": float(highest) if highest is not None else None,
             "lowest": float(lowest) if lowest is not None else None,
             "average": float(average) if average is not None else None,
+        }
+
+    def get_best_composite_scores_by_candidate_ids(self, candidate_ids: list[UUID]) -> dict[UUID, float]:
+        """
+        Talent Pool Search (M13-E01 S02 T0x) - MAX(composite_score) per
+        candidate for a batch of candidates in ONE query, so the Talent
+        Pool list page's "best historical composite score" card field never
+        issues one aggregate query per candidate. Mirrors
+        get_score_aggregates' MAX(composite_score), generalized across every
+        campaign a candidate has ever been submitted to (not one campaign)
+        and grouped per candidate instead of scalar for one campaign.
+
+        A candidate with campaign_candidates rows but every composite_score
+        NULL (not yet scored) groups to a NULL MAX and is filtered out below
+        - simply absent from the returned dict, exactly like a candidate
+        with no campaign_candidates rows at all. Callers must treat a
+        missing key as "no score", never as 0.
+        """
+        if not candidate_ids:
+            return {}
+        stmt = (
+            select(CampaignCandidate.candidate_id, func.max(CampaignCandidate.composite_score))
+            .where(CampaignCandidate.candidate_id.in_(candidate_ids))
+            .group_by(CampaignCandidate.candidate_id)
+        )
+        return {
+            candidate_id: float(best_score)
+            for candidate_id, best_score in self.db.execute(stmt).all()
+            if best_score is not None
         }
 
     def get_ai_recommendation_counts(self, campaign_id: UUID) -> dict[str, int]:

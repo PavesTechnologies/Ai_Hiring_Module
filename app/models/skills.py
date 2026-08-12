@@ -28,6 +28,15 @@ class JDSkillVerificationStatus(enum.Enum):
     PENDING_REVIEW = "PENDING_REVIEW"
 
 
+class JDSkillImportance(enum.Enum):
+    # AI-classified at JD extraction time, mandatory (required) skills only.
+    # NULL (no value) means "not classified" — legacy rows, or rows created
+    # before this feature existed — and must be treated as a 1.0 (neutral)
+    # importance multiplier by scoring, never guessed.
+    CORE = "CORE"
+    SUPPORTING = "SUPPORTING"
+
+
 class UnknownSkillStatus(enum.Enum):
     PENDING = "PENDING"
     UNDER_REVIEW = "UNDER_REVIEW"
@@ -119,6 +128,14 @@ class JDSkill(Base):
     canonical_skill_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=False)
     mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     weight: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
+    # AI-classified core/supporting importance, required (mandatory=True)
+    # skills only — always NULL for preferred skills. NULL on required rows
+    # means "not classified" (legacy data): scoring must treat it as a
+    # neutral 1.0 multiplier, never as an implicit "supporting".
+    importance: Mapped[Optional["JDSkillImportance"]] = mapped_column(
+        SAEnum(JDSkillImportance, name="jd_skill_importance_enum"),
+        nullable=True,
+    )
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)
     verification_status: Mapped[JDSkillVerificationStatus] = mapped_column(
