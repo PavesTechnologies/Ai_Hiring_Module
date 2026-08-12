@@ -409,6 +409,18 @@ try:
             value="4",
             description="Max attempts for a transient interview/notification email send failure before dead-lettering (M12)",
         ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_DOWNLOAD_URL_EXPIRY_SECONDS",
+            value="300",
+            description="Validity (seconds) of a server-generated signed URL for downloading a specific resume version (M07-E0x S02-T01)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_FRESHNESS_MAX_AGE_DAYS",
+            value="180",
+            description="Max age (days, ~6 months) of a resume version's created_at before ResumeSelectionService excludes it from Talent Pool campaign selection, regardless of is_talent_pool_eligible (M13-E01 Talent Pool Eligibility)",
+        ),
     ]
 
     for config in configs:

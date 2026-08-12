@@ -73,6 +73,7 @@ def get_talent_pool_service(
     audit_service: AuditService = Depends(get_audit_service),
     celery_task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     resume_selection_service: ResumeSelectionService = Depends(get_resume_selection_service),
+    skill_repo: SkillRepository = Depends(get_skill_repository),
 ) -> TalentPoolService:
     return TalentPoolService(
         candidate_repo=candidate_repo,
@@ -84,4 +85,5 @@ def get_talent_pool_service(
         audit_service=audit_service,
         celery_task_log_service=celery_task_log_service,
         resume_selection_service=resume_selection_service,
+        skill_repo=skill_repo,
     )
