@@ -174,6 +174,18 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="CORE_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'core'. 1.0 (neutral, no differentiation from supporting) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'supporting'. 1.0 (neutral, no differentiation from core) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
             value="20",
             description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",

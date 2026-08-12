@@ -81,6 +81,11 @@ class SkillMatchResult:
     # Cleaned form used for matching (unicode/whitespace-normalized) — also
     # what gets stored as UnknownSkill.normalized_key when unmatched.
     normalized_text: str = ""
+    # AI-classified "core"/"supporting" importance, required skills only —
+    # always None for preferred skills and for resume-side matches (resumes
+    # have no importance concept at all). See _skill_importance() below for
+    # how this is derived from the raw input item.
+    importance: str | None = None
 
 
 class SkillNormalizationService:
@@ -100,48 +105,83 @@ class SkillNormalizationService:
         self.skill_repository = skill_repository
         self.embedding_service = embedding_service
 
-    def normalize_skills(self, required_skills: list[str], preferred_skills: list[str]) -> list[SkillMatchResult]:
+    def normalize_skills(self, required_skills: list, preferred_skills: list) -> list[SkillMatchResult]:
+        """
+        required_skills/preferred_skills accept either plain strings (the
+        resume-side call, which has no importance concept — see
+        resume_processing_pipeline.py) or objects/dicts with a `.name` (and,
+        for required skills only, `.importance`) attribute — the JD-side
+        call, post RequiredSkillItem/PreferredSkillItem. _skill_name/
+        _skill_importance below duck-type on either shape, so this method's
+        signature and this file's only caller-facing contract never needs
+        to know which schema class the JD pipeline uses.
+        """
         catalog = self.skill_repository.list_active_skills()
-        results = [self._match_skill(raw, catalog, mandatory=True) for raw in required_skills]
-        results.extend(self._match_skill(raw, catalog, mandatory=False) for raw in preferred_skills)
+        results = [
+            self._match_skill(
+                self._skill_name(item), catalog, mandatory=True, importance=self._skill_importance(item),
+            )
+            for item in required_skills
+        ]
+        results.extend(
+            self._match_skill(self._skill_name(item), catalog, mandatory=False, importance=None)
+            for item in preferred_skills
+        )
         return results
 
-    def _match_skill(self, raw_text: str, catalog: list[SkillOntology], mandatory: bool) -> SkillMatchResult:
+    @staticmethod
+    def _skill_name(item) -> str:
+        return item if isinstance(item, str) else item.name
+
+    @staticmethod
+    def _skill_importance(item) -> str | None:
+        return None if isinstance(item, str) else getattr(item, "importance", None)
+
+    def _match_skill(
+        self, raw_text: str, catalog: list[SkillOntology], mandatory: bool, importance: str | None = None,
+    ) -> SkillMatchResult:
         normalized_text = self._normalize(raw_text)
 
         exact = self._match_exact(normalized_text, catalog)
         if exact:
-            return SkillMatchResult(raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0, normalized_text)
+            return SkillMatchResult(
+                raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0, normalized_text, importance,
+            )
 
         alias = self._match_alias(normalized_text, catalog)
         if alias:
-            return SkillMatchResult(raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0, normalized_text)
+            return SkillMatchResult(
+                raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0, normalized_text, importance,
+            )
 
         case_insensitive = self._match_case_insensitive(normalized_text, catalog)
         if case_insensitive:
             return SkillMatchResult(
-                raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0, normalized_text
+                raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0,
+                normalized_text, importance,
             )
 
         rule_based = self._match_rule_based(normalized_text, catalog)
         if rule_based:
             return SkillMatchResult(
-                raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0, normalized_text
+                raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0, normalized_text, importance,
             )
 
         fuzzy_skill, fuzzy_score = self._match_fuzzy(normalized_text, catalog)
         if fuzzy_skill and fuzzy_score >= self.FUZZY_SCORE_THRESHOLD:
             return SkillMatchResult(
-                raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100, normalized_text
+                raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100,
+                normalized_text, importance,
             )
 
         semantic_skill, similarity = self._match_semantic(normalized_text)
         if semantic_skill and similarity >= SEMANTIC_SIMILARITY_THRESHOLD:
             return SkillMatchResult(
-                raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity, normalized_text
+                raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity,
+                normalized_text, importance,
             )
 
-        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None, normalized_text)
+        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None, normalized_text, importance)
 
     @staticmethod
     def _normalize(raw_text: str) -> str:

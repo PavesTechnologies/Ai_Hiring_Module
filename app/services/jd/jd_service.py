@@ -10,6 +10,7 @@ from docx import Document
 from fastapi import HTTPException, UploadFile
 
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat, JDVerificationStatus
+from app.models.skills import JDSkillImportance
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
@@ -242,8 +243,8 @@ class JDService:
                 # the larger blob.
                 extracted_json=extraction.model_dump(mode="json"),
                 required_skills={
-                    "required": extraction.required_skills,
-                    "preferred": extraction.preferred_skills,
+                    "required": [item.model_dump() for item in extraction.required_skills],
+                    "preferred": [item.model_dump() for item in extraction.preferred_skills],
                 },
                 is_verified=is_verified,
             )
@@ -266,7 +267,13 @@ class JDService:
 
             # Every matched skill (mandatory or preferred) gets the same
             # flat weight (see _DEFAULT_JD_SKILL_WEIGHT above for why).
+            # importance is AI-classified per required skill (None for
+            # preferred skills, and for resume-side matches, which never
+            # reach this JD-only persistence path at all).
             for match in matched_by_skill.values():
+                importance = (
+                    JDSkillImportance(match.importance.upper()) if match.importance else None
+                )
                 skill_repository.create_jd_skill(
                     jd_id=job_description.id,
                     canonical_skill_id=match.canonical_skill_id,
@@ -275,6 +282,7 @@ class JDService:
                     verification_status=verification_status_for_tier(match.match_tier),
                     confidence=match.confidence,
                     weight=_DEFAULT_JD_SKILL_WEIGHT,
+                    importance=importance,
                 )
                 skill_repository.bump_occurrence_count(match.canonical_skill_id)
 

@@ -1612,11 +1612,19 @@ class CampaignCandidateService:
                 status=self._detailed_validation_status(experience),
             ),
             education_validation=EducationValidationDetail(
+                # Prefers the raw JD/resume-extracted degree text (populated
+                # for any breakdown scored after the education-matching
+                # wiring) over the abstract level-name placeholder - a
+                # breakdown persisted before that change simply won't have
+                # required_degree_text/candidate_degree_text, so this falls
+                # back to the old level-display behavior unchanged.
                 required_degree=(
-                    _degree_level_display(education.get("required_level")) if education else None
+                    (education.get("required_degree_text") or _degree_level_display(education.get("required_level")))
+                    if education else None
                 ),
                 candidate_degree=(
-                    _degree_level_display(education.get("candidate_level")) if education else None
+                    (education.get("candidate_degree_text") or _degree_level_display(education.get("candidate_level")))
+                    if education else None
                 ),
                 equivalent_experience_applied=(
                     education.get("equivalent_experience_applied") if education else None

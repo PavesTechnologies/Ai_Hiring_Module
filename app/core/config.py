@@ -18,7 +18,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = 2
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_host: str = "localhost"
+    redis_port: str = "6379"
+    redis_username: str = ""
+    redis_password: str = ""
+    redis_db: int = 3
 
     # AWS S3
     aws_access_key_id: str = ""
@@ -61,9 +65,6 @@ class Settings(BaseSettings):
     # absolute URL.
     frontend_base_url: str = ""
 
-
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -108,6 +109,21 @@ class Settings(BaseSettings):
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
             f"?sslmode={self.db_sslmode}"
         )
+
+    @property
+    def redis_url(self) -> str:
+        auth = ""
+        if self.redis_username or self.redis_password:
+            auth = f"{self.redis_username}:{self.redis_password}@"
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def CELERY_BROKER_URL(self) -> str:
+        return self.redis_url
+
+    @property
+    def CELERY_RESULT_BACKEND(self) -> str:
+        return self.redis_url
 
     model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
 

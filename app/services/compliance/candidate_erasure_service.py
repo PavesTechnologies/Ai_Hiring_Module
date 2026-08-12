@@ -85,6 +85,12 @@ class CandidateErasureService:
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
 
+            # Must run before the campaign_candidates loop below —
+            # email_notifications.campaign_candidate_id is a FK to
+            # campaign_candidates.id, so deleting a campaign_candidate first
+            # violates that constraint on any notification still pointing at it.
+            self.email_notification_repo.delete_by_candidate(candidate_id)
+
             for campaign_candidate in campaign_candidates:
                 # candidate_rejections is gone - the AI evaluation row
                 # cascades automatically (cascade="all, delete-orphan" on
@@ -97,8 +103,6 @@ class CandidateErasureService:
                 self.dead_letter_queue_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 self.celery_task_log_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 self.campaign_candidate_repo.delete(campaign_candidate)
-
-            self.email_notification_repo.delete_by_candidate(candidate_id)
 
             for resume in resumes:
                 self.resume_repo.delete_parse_attempts(resume.id)

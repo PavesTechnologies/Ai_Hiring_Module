@@ -43,11 +43,12 @@ def _campaign(weight_deterministic=30.0, weight_semantic=40.0, deterministic_thr
     )
 
 
-def _job_description(jd_id=None, min_experience_years=None, education_criteria=None):
+def _job_description(jd_id=None, min_experience_years=None, education_criteria=None, extracted_json=None):
     return SimpleNamespace(
         id=jd_id or uuid4(),
         min_experience_years=min_experience_years,
         education_criteria=education_criteria,
+        extracted_json=extracted_json,
     )
 
 

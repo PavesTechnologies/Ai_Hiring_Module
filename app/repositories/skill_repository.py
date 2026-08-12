@@ -12,6 +12,7 @@ from app.models.jd.job_descriptions import JDVerificationStatus, JobDescription
 from app.models.skills import (
     CandidateSkill,
     JDSkill,
+    JDSkillImportance,
     JDSkillVerificationStatus,
     JDUnknownSkill,
     JDUnknownSkillStatus,
@@ -152,12 +153,14 @@ class SkillRepository:
         verification_status: JDSkillVerificationStatus,
         confidence: float | None = None,
         weight: float | None = None,
+        importance: JDSkillImportance | None = None,
     ) -> JDSkill:
         jd_skill = JDSkill(
             jd_id=jd_id,
             canonical_skill_id=canonical_skill_id,
             mandatory=mandatory,
             weight=weight,
+            importance=importance,
             confidence=confidence,
             match_tier=match_tier,
             verification_status=verification_status,
@@ -723,6 +726,7 @@ class SkillRepository:
                 JDSkill.canonical_skill_id.label("canonical_skill_id"),
                 JDSkill.weight.label("weight"),
                 JDSkill.mandatory.label("mandatory"),
+                JDSkill.importance.label("importance"),
                 CandidateSkill.scoring_weight.label("candidate_scoring_weight"),
                 CandidateSkill.match_tier.label("match_tier"),
                 CandidateSkill.confidence.label("confidence"),

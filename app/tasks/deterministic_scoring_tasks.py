@@ -34,6 +34,7 @@ from app.services.campaign.experience_education_validation_service import (
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
+from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
 
@@ -191,9 +192,19 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
 
 
         parsed_json = resume.parsed_json or {}
-        candidate_total_years = parsed_json.get("total_experience_years")
+        # Same "JSON is the single source of truth" preference as
+        # education/JD-experience above: prefer total_experience_years
+        # computed from work_experience's own start_date/end_date (the same
+        # computation the resume-parsed-json display endpoint already
+        # applies, per annotate_work_experience_durations' own docstring -
+        # it doesn't trust the AI-extracted figure verbatim since that can
+        # drift from what the listed dates actually add up to) over the raw
+        # extracted field, which is null whenever the resume never states an
+        # explicit "X years" figure even though its dates make one computable.
+        candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
         candidate_education_entries = parsed_json.get("education")
         required_degree_text = (job_description.education_criteria or {}).get("degree")
+        jd_extracted_education = (job_description.extracted_json or {}).get("education")
 
         weight_configs = config_repo.get_configs_by_keys([
             _EXPERIENCE_TOLERANCE_YEARS_KEY,
@@ -212,11 +223,14 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             float(job_description.min_experience_years)
             if job_description.min_experience_years is not None else None
         )
+        jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
         experience_result = validation_service.validate_experience(
             min_experience_years, candidate_total_years,
+            jd_extracted_experience=jd_extracted_experience,
         )
         education_result = validation_service.validate_education(
             required_degree_text, candidate_education_entries, candidate_total_years,
+            jd_extracted_education=jd_extracted_education,
         )
         score_weights = {
             "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
@@ -233,6 +247,8 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             experience_result=experience_result,
             education_result=education_result,
             score_weights=score_weights,
+            required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
+            max_missing_core_skills=int(campaign.max_missing_core_skills),
         )
 
         now = datetime.now(timezone.utc)
@@ -272,7 +288,10 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             "mandatory_skills_checked": len(breakdown["mandatory_skills"]),
             "matched": matched_count,
             "missing": len(missing_entries),
-          
+            "mandatory_coverage_pct": breakdown["mandatory_coverage_pct"],
+            "missing_core_skill_count": breakdown.get("missing_core_skill_count"),
+            "max_missing_core_skills": breakdown.get("max_missing_core_skills"),
+            "skill_qualification_passed": breakdown.get("skill_qualification_passed"),
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
             "rejection_reason": rejection_reason,
