@@ -45,6 +45,8 @@ from app.services.resume.resume_intake_service import ResumeIntakeService
 from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
 from app.services.resume.resume_upload_service import ResumeUploadService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 
 
 def get_encryption_key_repository(
@@ -97,8 +99,9 @@ def get_candidate_directory_service(
     candidate_repo: CandidateRepository = Depends(get_candidate_repository),
     resume_repo: ResumeRepository = Depends(get_resume_repository),
     encryption_service: EncryptionService = Depends(get_encryption_service),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> CandidateDirectoryService:
-    return CandidateDirectoryService(candidate_repo, resume_repo, encryption_service)
+    return CandidateDirectoryService(candidate_repo, resume_repo, encryption_service, cache_service)
 
 
 def get_file_validation_service(
@@ -131,6 +134,7 @@ def get_resume_service(
     encryption_service: EncryptionService = Depends(get_encryption_service),
     dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> ResumeUploadService:
     return ResumeUploadService(
         resume_repo=resume_repo,
@@ -144,6 +148,7 @@ def get_resume_service(
         encryption_service=encryption_service,
         dead_letter_queue_repo=dead_letter_queue_repo,
         campaign_repo=campaign_repo,
+        cache_service=cache_service,
     )
 
 
@@ -197,6 +202,7 @@ def get_resume_monitoring_service(
     campaign_candidate_repository: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
     user_repository: UserRepository = Depends(get_user_repository),
     config_repository: ConfigRepository = Depends(get_config_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> ResumeMonitoringService:
     return ResumeMonitoringService(
         resume_repository=resume_repository,
@@ -210,6 +216,7 @@ def get_resume_monitoring_service(
         campaign_candidate_repository=campaign_candidate_repository,
         user_repository=user_repository,
         config_repository=config_repository,
+        cache_service=cache_service,
     )
 
 
@@ -260,6 +267,7 @@ def get_resume_cleanup_service(
     dead_letter_queue_repo: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
     storage_service: StorageService = Depends(get_storage_service),
     audit_service: AuditService = Depends(get_audit_service),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> ResumeCleanupService:
     return ResumeCleanupService(
         resume_repo=resume_repo,
@@ -268,4 +276,5 @@ def get_resume_cleanup_service(
         dead_letter_queue_repo=dead_letter_queue_repo,
         storage_service=storage_service,
         audit_service=audit_service,
+        cache_service=cache_service,
     )

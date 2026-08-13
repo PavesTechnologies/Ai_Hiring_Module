@@ -11,6 +11,9 @@ from app.schemas.candidate.candidate_directory_schema import (
     CandidateResumeSummary,
 )
 from app.services.talent_pool.talent_pool_service import TalentPoolService
+from app.core.config import settings
+from app.core.cache_keys import candidate_list_key
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +37,12 @@ class CandidateDirectoryService:
         candidate_repo: CandidateRepository,
         resume_repo: ResumeRepository,
         encryption_service: EncryptionService,
+        cache_service: CacheService | None = None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
         self.encryption_service = encryption_service
+        self.cache_service = cache_service
 
     def list_candidates(
         self,
@@ -46,6 +51,24 @@ class CandidateDirectoryService:
         jurisdiction: str | None = None,
         page: int = 1,
         size: int = 20,
+    ) -> CandidateDirectoryResponse:
+        params = dict(email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size)
+        if not self.cache_service:
+            return self._load_candidates(**params)
+        raw = self.cache_service.get_or_set(
+            candidate_list_key(params),
+            loader=lambda: self._load_candidates(**params).model_dump_json(),
+            ttl=settings.cache_default_ttl_seconds,
+        )
+        return CandidateDirectoryResponse.model_validate_json(raw)
+
+    def _load_candidates(
+        self,
+        *,
+        email_hash: str | None,
+        jurisdiction: str | None,
+        page: int,
+        size: int,
     ) -> CandidateDirectoryResponse:
         candidates = self.candidate_repo.search(
             email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size,

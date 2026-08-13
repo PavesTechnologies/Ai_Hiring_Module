@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.enums.constants import ActionType, EntityType
 from app.models.candidates import ParseAttemptStatus, ParseStatus, Resume
+from app.models.skills import CandidateSkill
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.resume_extraction_response import ResumeExtractionResponse
@@ -100,8 +101,13 @@ class ResumeService:
                 if match.canonical_skill_id not in matched_by_skill:
                     matched_by_skill[match.canonical_skill_id] = match
 
-            for match in matched_by_skill.values():
-                self.repository.create_candidate_skill(
+            # Built and inserted as one batch (bulk_create_candidate_skills)
+            # and occurrence-bumped as one batched UPDATE
+            # (bump_occurrence_counts) instead of two round trips per
+            # matched skill - matched_by_skill is already fully known
+            # before this point.
+            candidate_skills = [
+                CandidateSkill(
                     candidate_id=resume.candidate_id,
                     resume_id=resume.id,
                     canonical_skill_id=match.canonical_skill_id,
@@ -111,7 +117,10 @@ class ResumeService:
                     status=verification_status_for_tier(match.match_tier).value,
                     scoring_weight=scoring_weight_for_tier(match.match_tier),
                 )
-                skill_repository.bump_occurrence_count(match.canonical_skill_id)
+                for match in matched_by_skill.values()
+            ]
+            self.repository.bulk_create_candidate_skills(candidate_skills)
+            skill_repository.bump_occurrence_counts(list(matched_by_skill.keys()))
             logger.warning(
                 "=== persist_processed_resume: matched candidate_skills persisted === "
                 "resume_id=%s count=%s", resume.id, len(matched_by_skill),

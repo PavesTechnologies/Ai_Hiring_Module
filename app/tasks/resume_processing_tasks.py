@@ -37,6 +37,8 @@ from app.services.resume.resume_processing_pipeline import ResumeProcessingPipel
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
+from app.core.redis_client import get_redis_client
+from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
 
 logger = logging.getLogger(__name__)
@@ -189,7 +191,9 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             preprocessing_service=PreprocessingService(),
             extraction_service=GeminiExtractionService(),
             storage_service=StorageService(),
-            skill_normalization_service=SkillNormalizationService(skill_repo, embedding_service),
+            skill_normalization_service=SkillNormalizationService(
+                skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
+            ),
             resume_service=resume_service,
             resume_repository=resume_repo,
             skill_repository=skill_repo,

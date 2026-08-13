@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -20,6 +21,9 @@ from app.schemas.monitoring import (
     QueueStatusResponse,
     UploadQueueDashboardResponse,
 )
+from app.core.config import settings
+from app.core.cache_keys import dashboard_key
+from app.services.cache_service import CacheService
 
 # Mirrors the literal task_type strings each task logs itself with —
 # app/tasks/resume_processing_tasks.py's RESUME_DOCUMENT_PROCESSING_TASK_TYPE
@@ -60,6 +64,7 @@ class OpsMonitoringService:
         bulk_upload_job_repository: BulkUploadJobRepository | None = None,
         campaign_repository: CampaignRepository | None = None,
         circuit_breaker_repository: CircuitBreakerRepository | None = None,
+        cache_service: CacheService | None = None,
     ):
         self.celery_task_log_repository = celery_task_log_repository
         self.bulk_upload_job_file_repository = bulk_upload_job_file_repository
@@ -72,6 +77,7 @@ class OpsMonitoringService:
         self.bulk_upload_job_repository = bulk_upload_job_repository
         self.campaign_repository = campaign_repository
         self.circuit_breaker_repository = circuit_breaker_repository
+        self.cache_service = cache_service
 
     def get_queue_status(self, campaign_id: UUID | None = None) -> QueueStatusResponse:
         # RETRY is counted alongside RUNNING: a task in RETRY status is
@@ -98,6 +104,16 @@ class OpsMonitoringService:
         )
 
     def get_processing_metrics(self, window: str = "24h") -> ProcessingMetricsResponse:
+        if not self.cache_service:
+            return self._load_processing_metrics(window)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("processing-metrics", {"window": window}),
+            loader=lambda: self._load_processing_metrics(window).model_dump_json(),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return ProcessingMetricsResponse.model_validate_json(raw)
+
+    def _load_processing_metrics(self, window: str) -> ProcessingMetricsResponse:
         window_hours = _WINDOW_HOURS[window]
         since = datetime.now(timezone.utc) - timedelta(hours=window_hours)
 
@@ -123,6 +139,16 @@ class OpsMonitoringService:
         )
 
     def get_upload_queue_dashboard(self) -> UploadQueueDashboardResponse:
+        if not self.cache_service:
+            return self._load_upload_queue_dashboard()
+        raw = self.cache_service.get_or_set(
+            dashboard_key("upload-queue", {}),
+            loader=lambda: self._load_upload_queue_dashboard().model_dump_json(),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return UploadQueueDashboardResponse.model_validate_json(raw)
+
+    def _load_upload_queue_dashboard(self) -> UploadQueueDashboardResponse:
         """
         Epic 4 (M05-E04) Phase D12 — platform-wide upload queue dashboard.
         Composes existing platform-wide metrics (queue status, PENDING

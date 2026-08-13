@@ -182,11 +182,17 @@ class ResumeSelectionService:
             self._experience_education_context(job_description)
         )
 
+        # The mandatory-skill hierarchy (CHILD/GRANDCHILD/SIBLING tiers) is
+        # JD-only data - identical for every resume version being compared
+        # here - so it's loaded once and reused, instead of every
+        # _score_deterministic call reloading it from scratch.
+        hierarchy = self.candidate_scoring_service.load_mandatory_skill_hierarchy_for_jd(job_description.id)
+
         evaluated = [
             self._evaluate_one(
                 resume, campaign, job_description, jd_has_embedding,
                 validation_service, min_experience_years, required_degree_text, score_weights,
-                weight_deterministic, weight_semantic,
+                weight_deterministic, weight_semantic, hierarchy,
             )
             for resume in eligible_resumes
         ]
@@ -271,10 +277,11 @@ class ResumeSelectionService:
         score_weights: dict,
         weight_deterministic: float,
         weight_semantic: float,
+        hierarchy: dict,
     ) -> EvaluatedResume:
         deterministic_score, deterministic_passed = self._score_deterministic(
             resume, campaign, job_description, validation_service,
-            min_experience_years, required_degree_text, score_weights,
+            min_experience_years, required_degree_text, score_weights, hierarchy,
         )
 
         semantic_score, semantic_passed = (
@@ -312,6 +319,7 @@ class ResumeSelectionService:
         min_experience_years: float | None,
         required_degree_text: str | None,
         score_weights: dict,
+        hierarchy: dict,
     ) -> tuple[float, bool]:
         """
         Mirrors CandidateScoringService.calculate_and_store_score_breakdown's
@@ -336,7 +344,9 @@ class ResumeSelectionService:
             jd_extracted_education=jd_extracted_education,
         )
 
-        breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(job_description.id, resume.id)
+        breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(
+            job_description.id, resume.id, hierarchy=hierarchy,
+        )
         skill_score = breakdown["deterministic_score"]
         mandatory_skills_passed = not any(
             skill["match_type"] == MandatorySkillMatchType.MISSING.value

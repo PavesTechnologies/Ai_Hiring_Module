@@ -342,6 +342,59 @@ class CampaignCandidateRepository:
             .first()
         )
 
+    def get_existing_candidate_ids(
+        self,
+        campaign_id: UUID,
+        candidate_ids: list[UUID],
+    ) -> set[UUID]:
+        """
+        Batch dedup check for bulk candidate addition - which of
+        candidate_ids already have a campaign_candidates row for this
+        campaign, in one query instead of one get_by_campaign_and_candidate
+        call per candidate.
+        """
+        if not candidate_ids:
+            return set()
+        rows = (
+            self.db.query(CampaignCandidate.candidate_id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.candidate_id.in_(candidate_ids),
+            )
+            .all()
+        )
+        return {row.candidate_id for row in rows}
+
+    def bulk_create(
+        self,
+        campaign_candidates: list[CampaignCandidate],
+    ) -> list[CampaignCandidate]:
+        """
+        Inserts many new campaign_candidates rows in one flush instead of
+        one create_idempotent (each its own SAVEPOINT) per row - for bulk
+        candidate addition, where dedup against existing rows already
+        happened via get_existing_candidate_ids, so no per-row conflict
+        handling is needed here.
+        """
+        if not campaign_candidates:
+            return []
+        self.db.add_all(campaign_candidates)
+        self.db.flush()
+        for campaign_candidate in campaign_candidates:
+            self.db.refresh(campaign_candidate)
+        return campaign_candidates
+
+    def bulk_create_stage_history(
+        self,
+        histories: list[CampaignCandidateStageHistory],
+    ) -> list[CampaignCandidateStageHistory]:
+        """Bulk counterpart to create_stage_history - one flush for the whole batch."""
+        if not histories:
+            return []
+        self.db.add_all(histories)
+        self.db.flush()
+        return histories
+
     def get_campaign_context_for_candidate(
         self,
         candidate_id: UUID,
