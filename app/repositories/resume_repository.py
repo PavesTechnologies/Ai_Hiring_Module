@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select, text, update
+from sqlalchemy import Numeric, String, and_, bindparam, cast, delete, func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -153,6 +154,460 @@ class ResumeRepository:
             .order_by(Resume.created_at.desc())
         )
         return list(self.db.execute(stmt).scalars().all())
+
+    # ------------------------------------------------------------------
+    # Talent Pool Normal Search — fully database-level filtering
+    # ------------------------------------------------------------------
+
+    def _eligible_picked_resume_ids(self, freshness_max_age_days: int):
+        """
+        Shared by search_talent_pool (Normal Search) and
+        semantic_search_talent_pool (M14 Semantic Search) — both searches
+        must draw from exactly the same Talent Pool eligibility set, so this
+        is expressed once rather than as two independently-maintained
+        subqueries that could drift apart.
+
+        Eligibility (PARSED + has an is_talent_pool_eligible embedding +
+        fresher than freshness_max_age_days) mirrors
+        ResumeSelectionService._is_eligible exactly, translated to SQL —
+        that method itself is never modified or re-implemented here, only
+        its predicate is expressed as a WHERE clause so it can run inside
+        the same query instead of once per resume in Python. Per candidate,
+        their single most-recently-created eligible resume is picked via
+        ROW_NUMBER() - the exact "first eligible resume in created_at-desc
+        order" selection search_candidates previously performed in Python -
+        so neither search ever returns more than one resume/row per
+        candidate for different resume versions.
+        """
+        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=freshness_max_age_days)
+
+        row_number = func.row_number().over(
+            partition_by=Resume.candidate_id, order_by=Resume.created_at.desc(),
+        )
+        eligible = (
+            select(Resume.id, row_number.label("rn"))
+            .join(ResumeEmbedding, ResumeEmbedding.resume_id == Resume.id)
+            .where(
+                Resume.parse_status == ParseStatus.PARSED,
+                ResumeEmbedding.is_talent_pool_eligible.is_(True),
+                Resume.created_at >= freshness_cutoff,
+            )
+            .subquery()
+        )
+        return select(eligible.c.id).where(eligible.c.rn == 1).scalar_subquery()
+
+    def search_talent_pool(
+        self,
+        *,
+        search: str | None = None,
+        or_skill_terms: list[str] | None = None,
+        designation_terms: list[str] | None = None,
+        location_terms: list[str] | None = None,
+        degree_levels: list[str] | None = None,
+        education_fields: list[str] | None = None,
+        campaign_ids: list[UUID] | None = None,
+        exclude_campaign_id: UUID | None = None,
+        pipeline_stages: list[PipelineStage] | None = None,
+        experience_min: float | None = None,
+        experience_max: float | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
+        resolved_skill_ids_by_term: dict[str, UUID | None] | None = None,
+        freshness_max_age_days: int = 180,
+        page: int = 1,
+        size: int = 6,
+    ) -> tuple[list[Resume], int]:
+        """
+        Talent Pool Normal Search — every filter (skill AND/OR, name,
+        designation, location, education, campaign, pipeline stage,
+        experience range, composite-score range) is applied as a SQL WHERE
+        condition against Postgres; COUNT and the LIMIT/OFFSET page are the
+        exact same filtered query, never two separately-maintained
+        implementations. Nothing here ever loads the full Talent Pool into
+        Python — the candidate set is narrowed entirely in the database
+        before a single row is fetched.
+
+        resolved_skill_ids_by_term maps each raw skill term (from `search`'s
+        AND-tokens and/or the legacy OR'd `or_skill_terms`) to the
+        canonical SkillOntology id already resolved via
+        SkillRepository.find_skill_by_name_or_alias (that resolution talks
+        to the small skill_ontology table only, never candidate data, so it
+        stays a cheap per-term lookup in the caller rather than being
+        duplicated here) - None means the term matched no canonical skill
+        and only the raw-text match applies.
+        """
+        resolved_skill_ids_by_term = resolved_skill_ids_by_term or {}
+        picked_resume_ids = self._eligible_picked_resume_ids(freshness_max_age_days)
+
+        conditions = [Resume.id.in_(picked_resume_ids)]
+        conditions.extend(self._talent_pool_filter_conditions(
+            search=search,
+            or_skill_terms=or_skill_terms,
+            designation_terms=designation_terms,
+            location_terms=location_terms,
+            degree_levels=degree_levels,
+            education_fields=education_fields,
+            campaign_ids=campaign_ids,
+            exclude_campaign_id=exclude_campaign_id,
+            pipeline_stages=pipeline_stages,
+            experience_min=experience_min,
+            experience_max=experience_max,
+            score_min=score_min,
+            score_max=score_max,
+            resolved_skill_ids_by_term=resolved_skill_ids_by_term,
+        ))
+
+        total = self.db.execute(
+            select(func.count()).select_from(Resume).where(*conditions)
+        ).scalar_one()
+
+        stmt = (
+            select(Resume)
+            .join(Candidate, Candidate.id == Resume.candidate_id)
+            .where(*conditions)
+            .order_by(Candidate.created_at.desc(), Candidate.id.desc())
+            .limit(size)
+            .offset((page - 1) * size)
+        )
+        items = list(self.db.execute(stmt).scalars().all())
+
+        return items, total
+
+    # ------------------------------------------------------------------
+    # M14 — Talent Pool Semantic Search
+    # ------------------------------------------------------------------
+
+    def semantic_search_talent_pool(
+        self,
+        *,
+        query_embedding: list[float],
+        embedding_model_version_id: UUID,
+        designation_terms: list[str] | None = None,
+        location_terms: list[str] | None = None,
+        degree_levels: list[str] | None = None,
+        education_fields: list[str] | None = None,
+        campaign_ids: list[UUID] | None = None,
+        pipeline_stages: list[PipelineStage] | None = None,
+        experience_min: float | None = None,
+        experience_max: float | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
+        freshness_max_age_days: int = 180,
+        page: int = 1,
+        size: int = 6,
+    ) -> tuple[list[tuple[Resume, float]], int]:
+        """
+        M14 Semantic Candidate Search — FILTER FIRST, SEMANTIC SECOND. The
+        exact same eligibility set (_eligible_picked_resume_ids) and the
+        exact same structured-filter condition builder
+        (_talent_pool_filter_conditions) that back Normal Search's
+        search_talent_pool are reused unchanged here — `search`/
+        `or_skill_terms`/`exclude_campaign_id` are deliberately left at their
+        defaults (None) since Semantic Search never does skill-token/name
+        matching, only structured filters plus the query embedding.
+
+        The structured WHERE conditions narrow the candidate set BEFORE the
+        query embedding is ever compared to anything: COUNT (the filtered-
+        and-eligible total, independent of ranking) and the ranked page
+        query both filter on the exact same `conditions` list, and the page
+        query's ORDER BY (cosine distance) only ever runs across rows that
+        already passed every WHERE condition — Postgres never ranks, then
+        filters. No vector, row, or similarity score is ever computed,
+        sorted, or paginated in Python.
+
+        Ranks by pgvector cosine distance (<=>) against `query_embedding` -
+        one query embedding for the whole call, compared to every already-
+        persisted resume_embeddings row for the active embedding model
+        version only (never regenerated per candidate, never compared
+        across mismatched model versions). LIMIT/OFFSET does the pagination
+        in SQL, never by slicing a Python list.
+        """
+        picked_resume_ids = self._eligible_picked_resume_ids(freshness_max_age_days)
+
+        conditions = [Resume.id.in_(picked_resume_ids)]
+        conditions.extend(self._talent_pool_filter_conditions(
+            search=None,
+            or_skill_terms=None,
+            designation_terms=designation_terms,
+            location_terms=location_terms,
+            degree_levels=degree_levels,
+            education_fields=education_fields,
+            campaign_ids=campaign_ids,
+            exclude_campaign_id=None,
+            pipeline_stages=pipeline_stages,
+            experience_min=experience_min,
+            experience_max=experience_max,
+            score_min=score_min,
+            score_max=score_max,
+            resolved_skill_ids_by_term={},
+        ))
+
+        total = self.db.execute(
+            select(func.count()).select_from(Resume).where(*conditions)
+        ).scalar_one()
+
+        distance = ResumeEmbedding.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(Resume, distance)
+            .join(
+                ResumeEmbedding,
+                and_(
+                    ResumeEmbedding.resume_id == Resume.id,
+                    ResumeEmbedding.embedding_model_version_id == embedding_model_version_id,
+                ),
+            )
+            .where(*conditions)
+            .order_by(distance.asc())
+            .limit(size)
+            .offset((page - 1) * size)
+        )
+        rows = self.db.execute(stmt).all()
+        items = [(resume, 1.0 - float(cosine_distance)) for resume, cosine_distance in rows]
+
+        return items, total
+
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        """Mirrors TalentPoolService._escape_like — same escaping, now also needed for the SQL built in this repository."""
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def _talent_pool_filter_conditions(
+        self,
+        *,
+        search: str | None,
+        or_skill_terms: list[str] | None,
+        designation_terms: list[str] | None,
+        location_terms: list[str] | None,
+        degree_levels: list[str] | None,
+        education_fields: list[str] | None,
+        campaign_ids: list[UUID] | None,
+        exclude_campaign_id: UUID | None,
+        pipeline_stages: list[PipelineStage] | None,
+        experience_min: float | None,
+        experience_max: float | None,
+        score_min: float | None,
+        score_max: float | None,
+        resolved_skill_ids_by_term: dict[str, UUID | None],
+    ) -> list:
+        """
+        Shared by search_talent_pool's COUNT and page queries — the exact
+        same list of SQL conditions backs both, so total and items can never
+        drift apart from two independently-maintained filter implementations.
+        Every condition here is deliberately expressed against the bare
+        `resumes`/`candidate_skills`/`campaign_candidates` tables (not a
+        loaded Python object) so Postgres evaluates every one of them.
+        """
+        conditions = []
+
+        def skill_exists(term: str):
+            pattern = f"%{self._escape_like(term)}%"
+            match = [CandidateSkill.raw_extracted_text.ilike(pattern, escape="\\")]
+            resolved_id = resolved_skill_ids_by_term.get(term)
+            if resolved_id is not None:
+                match.append(CandidateSkill.canonical_skill_id == resolved_id)
+            return (
+                select(CandidateSkill.id)
+                .where(CandidateSkill.resume_id == Resume.id, or_(*match))
+                .exists()
+            )
+
+        if search:
+            tokens = search.split()
+            name_pattern = f"%{self._escape_like(search)}%"
+            name_match = Resume.parsed_json.op("->>")("full_name").ilike(name_pattern, escape="\\")
+            skills_and_match = and_(*(skill_exists(token) for token in tokens))
+            conditions.append(or_(name_match, skills_and_match))
+
+        if or_skill_terms:
+            conditions.append(or_(*(skill_exists(term) for term in or_skill_terms)))
+
+        if designation_terms:
+            patterns = [f"%{self._escape_like(term)}%" for term in designation_terms]
+            conditions.append(
+                text(
+                    """
+                    EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(
+                            coalesce(resumes.parsed_json -> 'work_experience', '[]'::jsonb)
+                        ) we
+                        WHERE we ->> 'title' ILIKE ANY(:designation_patterns)
+                    )
+                    """
+                ).bindparams(bindparam("designation_patterns", patterns, type_=ARRAY(String))),
+            )
+
+        if location_terms:
+            patterns = [f"%{self._escape_like(term)}%" for term in location_terms]
+            conditions.append(
+                or_(*(
+                    Resume.parsed_json.op("->>")("location").ilike(pattern, escape="\\")
+                    for pattern in patterns
+                )),
+            )
+
+        if degree_levels:
+            conditions.append(
+                text(
+                    """
+                    EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(
+                            coalesce(resumes.parsed_json -> 'education', '[]'::jsonb)
+                        ) edu
+                        WHERE edu ->> 'degree_level' = ANY(:degree_levels)
+                    )
+                    """
+                ).bindparams(bindparam("degree_levels", degree_levels, type_=ARRAY(String))),
+            )
+
+        if education_fields:
+            conditions.append(
+                text(
+                    """
+                    EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(
+                            coalesce(resumes.parsed_json -> 'education', '[]'::jsonb)
+                        ) edu
+                        WHERE edu ->> 'field_normalized' = ANY(:education_fields)
+                    )
+                    """
+                ).bindparams(bindparam("education_fields", education_fields, type_=ARRAY(String))),
+            )
+
+        if campaign_ids:
+            conditions.append(
+                select(CampaignCandidate.id)
+                .where(
+                    CampaignCandidate.candidate_id == Resume.candidate_id,
+                    CampaignCandidate.campaign_id.in_(campaign_ids),
+                )
+                .exists(),
+            )
+
+        if exclude_campaign_id is not None:
+            conditions.append(
+                ~select(CampaignCandidate.id)
+                .where(
+                    CampaignCandidate.candidate_id == Resume.candidate_id,
+                    CampaignCandidate.campaign_id == exclude_campaign_id,
+                )
+                .exists(),
+            )
+
+        if pipeline_stages:
+            conditions.append(
+                select(CampaignCandidate.id)
+                .where(
+                    CampaignCandidate.candidate_id == Resume.candidate_id,
+                    CampaignCandidate.pipeline_stage.in_(pipeline_stages),
+                )
+                .exists(),
+            )
+
+        experience_years = cast(Resume.parsed_json.op("->>")("total_experience_years"), Numeric)
+        if experience_min is not None:
+            conditions.append(experience_years >= experience_min)
+        if experience_max is not None:
+            conditions.append(experience_years <= experience_max)
+
+        if score_min is not None or score_max is not None:
+            best_score = (
+                select(func.max(CampaignCandidate.composite_score))
+                .where(CampaignCandidate.candidate_id == Resume.candidate_id)
+                .correlate(Resume)
+                .scalar_subquery()
+            )
+            if score_min is not None:
+                conditions.append(best_score >= score_min)
+            if score_max is not None:
+                conditions.append(best_score <= score_max)
+
+        return conditions
+
+    def get_distinct_locations(self) -> list[tuple[str, int]]:
+        """
+        Talent Pool Search filter options - every distinct (trimmed) raw
+        location value already sitting on a PARSED resume's
+        parsed_json.location (the exact same field _extract_resume_fields
+        reads for search/card display - no new source of truth), with its
+        occurrence count so the caller can pick the most common casing as
+        the canonical display form. NULL/blank values are excluded at the
+        DB level, and grouping is pushed to Postgres rather than loading
+        every resume into Python to compute distinct values.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT trim(parsed_json ->> 'location') AS value, COUNT(*) AS cnt
+                FROM resumes
+                WHERE parse_status = 'PARSED'
+                  AND trim(coalesce(parsed_json ->> 'location', '')) <> ''
+                GROUP BY trim(parsed_json ->> 'location')
+                """
+            )
+        ).all()
+        return [(row.value, row.cnt) for row in rows]
+
+    def get_distinct_designations(self) -> list[tuple[str, int]]:
+        """
+        Talent Pool Search filter options - every distinct (trimmed)
+        work_experience title across ALL entries (not just each resume's
+        current/first one) of every PARSED resume - a broader set of
+        filter options than _extract_resume_fields' single current/first
+        title. LATERAL jsonb_array_elements unnests the work_experience
+        array in Postgres, the same JSONB-array-unnesting convention
+        CampaignRepository.get_missing_mandatory_skill_counts already uses
+        elsewhere in this codebase, rather than iterating resumes in Python.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT trim(we ->> 'title') AS value, COUNT(*) AS cnt
+                FROM resumes,
+                    LATERAL jsonb_array_elements(coalesce(parsed_json -> 'work_experience', '[]'::jsonb)) AS we
+                WHERE parse_status = 'PARSED'
+                  AND trim(coalesce(we ->> 'title', '')) <> ''
+                GROUP BY trim(we ->> 'title')
+                """
+            )
+        ).all()
+        return [(row.value, row.cnt) for row in rows]
+
+    def get_distinct_education_degree_levels(self) -> list[str]:
+        """
+        Talent Pool Search filter options - every distinct degree_level
+        already classified onto a PARSED resume's parsed_json.education
+        entries (EducationEntry.degree_level, the AI-extraction pipeline's
+        own controlled vocabulary - see app/enums/education.py). Already a
+        fixed enum string set, so unlike location/designation this needs no
+        case-insensitive dedup - just DISTINCT non-blank values.
+        """
+        rows = self.db.execute(
+            text(
+                """
+                SELECT DISTINCT trim(edu ->> 'degree_level') AS value
+                FROM resumes,
+                    LATERAL jsonb_array_elements(coalesce(parsed_json -> 'education', '[]'::jsonb)) AS edu
+                WHERE parse_status = 'PARSED'
+                  AND trim(coalesce(edu ->> 'degree_level', '')) <> ''
+                """
+            )
+        ).all()
+        return [row.value for row in rows]
+
+    def get_distinct_education_fields(self) -> list[str]:
+        """Same as get_distinct_education_degree_levels, for EducationEntry.field_normalized."""
+        rows = self.db.execute(
+            text(
+                """
+                SELECT DISTINCT trim(edu ->> 'field_normalized') AS value
+                FROM resumes,
+                    LATERAL jsonb_array_elements(coalesce(parsed_json -> 'education', '[]'::jsonb)) AS edu
+                WHERE parse_status = 'PARSED'
+                  AND trim(coalesce(edu ->> 'field_normalized', '')) <> ''
+                """
+            )
+        ).all()
+        return [row.value for row in rows]
 
     def delete(self, resume: Resume) -> None:
         """Candidate erasure — hard-deletes a single resume version's row (caller has already removed its file from storage and its child rows)."""
