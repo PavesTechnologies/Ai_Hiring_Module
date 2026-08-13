@@ -23,7 +23,7 @@ DEFAULT_MAX_SAVED_VIEWS = 10
 
 
 class SavedViewService:
-    """M11-E03-S03 saved views + S01 skill search."""
+    """Saved views + S01 skill search."""
 
     def __init__(
         self,
@@ -145,7 +145,7 @@ class SavedViewService:
             self.saved_view_repo.rollback()
             raise
 
-    # ── skill search (S01) ────────────────────────────────────────────
+    # ── skill search ────────────────────────────────────────────
 
     def suggest_skills(
         self, campaign_id: UUID, query: str, limit: int = 10
@@ -196,7 +196,7 @@ class SavedViewService:
         )
         return ids, tiers
 
-    # ── cross-campaign search (S04) ───────────────────────────────────
+    # ── cross-campaign search ───────────────────────────────────
 
     def cross_campaign_search(
         self,
@@ -271,7 +271,7 @@ class SavedViewService:
         )
         return CrossCampaignSearchResponse(results=results, result_count=len(results))
 
-    # ── resume-derived filters (S02-T02/T03) ──────────────────────────
+    # ── resume-derived filters ──────────────────────────
 
     def filter_candidates(self, campaign_id: UUID, **filters) -> list[UUID] | None:
         if self.candidate_filter_repo is None:

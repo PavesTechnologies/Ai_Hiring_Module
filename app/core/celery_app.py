@@ -61,6 +61,7 @@ celery_app.conf.imports = (
     "app.tasks.embedding_health_tasks",
     "app.tasks.reindex_tasks",
     "app.tasks.talent_pool_tasks",
+    "app.tasks.export_tasks",
 )
 
 
@@ -147,5 +148,13 @@ celery_app.conf.beat_schedule = {
         # upload leaves a candidate's resume unprocessed for as long as
         # this interval.
         "schedule": crontab(minute="*/5"),
+    },
+    "run-scheduled-exports": {
+        "task": "export.run_scheduled_exports",
+        # M11-E05-S03: schedules are configured to the minute, but firing every
+        # minute would scan every campaign 1,440 times a day. Every 15 minutes
+        # is the coarsest interval that still honours a quarter-hour slot, and
+        # the service's own last_sent_at guard makes a double-fire impossible.
+        "schedule": crontab(minute="*/15"),
     },
 }

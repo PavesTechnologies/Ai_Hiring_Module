@@ -7,7 +7,7 @@ from app.models.saved_views import UserSavedView
 
 
 class SavedViewRepository:
-    """M11-E03-S03 persistence. Every read is scoped by user_id — a saved view
+    """Persistence. Every read is scoped by user_id — a saved view
     is private to its owner, so campaign access alone never grants sight of
     someone else's views."""
 

@@ -8,7 +8,7 @@ class SavedViewCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     # Whole filter + sort state, stored verbatim. Kept schemaless because the
-    # E03 filter set is still growing (M11-E03-S02/S03).
+    # E03 filter set is still growing.
     filters: dict = Field(default_factory=dict)
 
 

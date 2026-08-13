@@ -6,7 +6,7 @@ from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
     Index, Integer, Numeric, String, UniqueConstraint, func, text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 from app.models.jd.job_descriptions import JobDescription  # adjust import path to wherever JobDescription actually lives
@@ -64,6 +64,10 @@ class HiringCampaign(Base):
     hiring_manager_id: Mapped[str] = mapped_column(String(36), nullable=False)
     recruiter_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    # M11-E05-S03: {enabled, frequency, day_of_week, time, top_n, format,
+    # recipients[], paused, last_sent_at}. One blob because it is always read
+    # and written whole and never filtered on a single field.
+    scheduled_export_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     report_scheduled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

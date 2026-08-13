@@ -38,7 +38,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
     response_model=APIResponse[HrAdminDashboardSummaryResponse],
     status_code=status.HTTP_200_OK,
     summary="Platform-wide activity summary (HR_ADMIN)",
-    description="M11-E01-S01-T02 — org-wide hiring activity plus external-dependency health.",
+    description="Org-wide hiring activity plus external-dependency health.",
 )
 def get_hr_admin_summary(
     service: DashboardService = Depends(get_dashboard_service),
@@ -55,7 +55,7 @@ def get_hr_admin_summary(
     response_model=APIResponse[RecruiterDashboardSummaryResponse],
     status_code=status.HTTP_200_OK,
     summary="Own-activity summary (RECRUITER)",
-    description="M11-E01-S01-T03 — scoped to the caller's own uploads and campaigns.",
+    description="Scoped to the caller's own uploads and campaigns.",
 )
 def get_recruiter_summary(
     service: DashboardService = Depends(get_dashboard_service),
@@ -73,7 +73,7 @@ def get_recruiter_summary(
     status_code=status.HTTP_200_OK,
     summary="Campaign summary cards",
     description=(
-        "M11-E01-S02-T01 / S03-T01 — campaign cards with per-stage counts and health "
+        "T01 — campaign cards with per-stage counts and health "
         "indicators. HR_ADMIN sees every campaign; RECRUITER is scoped to campaigns they "
         "uploaded to or created."
     ),
@@ -106,7 +106,7 @@ def get_dashboard_campaigns(
     status_code=status.HTTP_200_OK,
     summary="Live nav badge counts",
     description=(
-        "M11-E01-S03-T03 — cross-campaign pending reviews, fraud-review queue and AI "
+        "Cross-campaign pending reviews, fraud-review queue and AI "
         "failures. RECRUITER counts are scoped to their accessible campaigns."
     ),
 )
@@ -127,7 +127,7 @@ def get_nav_badges(
     status_code=status.HTTP_200_OK,
     summary="Skill autocomplete within a campaign",
     description=(
-        "M11-E03-S01-T01 — canonical skills matching the query by name or alias, "
+        "Canonical skills matching the query by name or alias, "
         "restricted to skills candidates in this campaign actually hold."
     ),
 )
@@ -150,7 +150,7 @@ def suggest_skills(
     status_code=status.HTTP_200_OK,
     summary="Candidates holding ALL of the given skills",
     description=(
-        "M11-E03-S01-T02 — AND logic: a candidate must hold every requested skill. "
+        "AND logic: a candidate must hold every requested skill. "
         "Returns campaign_candidate ids plus how each skill matched, and logs the "
         "search to search_queries (T03), including zero-result searches."
     ),
@@ -184,7 +184,7 @@ def filter_candidates_by_skill(
     status_code=status.HTTP_200_OK,
     summary="Filter candidates by resume-derived criteria",
     description=(
-        "M11-E03-S02-T02/T03 — experience years, education level and upload source. "
+        "Experience years, education level and upload source. "
         "These live in resumes.parsed_json rather than on campaign_candidates, so "
         "they are resolved here and intersected with the other active filters. "
         "NOTE: the parser emits education as free-text `degree` with no normalised "
@@ -234,7 +234,7 @@ def filter_candidates(
     response_model=APIResponse[list[CampaignUploaderResponse]],
     status_code=status.HTTP_200_OK,
     summary="Distinct uploaders for a campaign",
-    description="M11-E03-S02-T03 — populates the 'Uploaded By' filter dropdown.",
+    description="Populates the 'Uploaded By' filter dropdown.",
 )
 def get_campaign_uploaders(
     campaign_id: UUID,
@@ -259,7 +259,7 @@ def get_campaign_uploaders(
     status_code=status.HTTP_200_OK,
     summary="Search candidates across all accessible campaigns",
     description=(
-        "M11-E03-S04-T01/T02 — candidates holding ALL the given skills anywhere the "
+        "Candidates holding ALL the given skills anywhere the "
         "caller can see, deduplicated per candidate with their stage and score in each "
         "campaign. RECRUITER is scoped to campaigns they uploaded to or created; "
         "HR_ADMIN sees the whole organisation. No PII — candidate UUID only."
@@ -313,7 +313,7 @@ def cross_campaign_search(
     )
 
 
-# ── Saved views (M11-E03-S03) ─────────────────────────────────────────
+# ── Saved views ─────────────────────────────────────────
 
 @router.get(
     "/campaigns/{campaign_id}/saved-views",
@@ -337,7 +337,7 @@ def list_saved_views(
     response_model=APIResponse[SavedViewResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Save the current filter configuration",
-    description="M11-E03-S03-T01. Enforces MAX_SAVED_VIEWS_PER_USER server-side.",
+    description="Enforces MAX_SAVED_VIEWS_PER_USER server-side.",
 )
 def create_saved_view(
     campaign_id: UUID,
@@ -356,7 +356,7 @@ def create_saved_view(
     response_model=APIResponse[SavedViewResponse],
     status_code=status.HTTP_200_OK,
     summary="Rename or update a saved view",
-    description="M11-E03-S03-T02. Only the view's owner can modify it.",
+    description="Only the view's owner can modify it.",
 )
 def update_saved_view(
     view_id: UUID,
@@ -392,7 +392,7 @@ def mark_saved_view_applied(
     "/saved-views/{view_id}",
     status_code=status.HTTP_200_OK,
     summary="Delete a saved view",
-    description="M11-E03-S03-T02. Only the view's owner can delete it.",
+    description="Only the view's owner can delete it.",
 )
 def delete_saved_view(
     view_id: UUID,
@@ -409,7 +409,7 @@ def delete_saved_view(
     status_code=status.HTTP_200_OK,
     summary="Stage dwell times (HR_ADMIN)",
     description=(
-        "M11-E01-S04-T02 — average and maximum days candidates have spent in their "
+        "Average and maximum days candidates have spent in their "
         "current stage, with the configured SLA and breach flag per stage."
     ),
 )

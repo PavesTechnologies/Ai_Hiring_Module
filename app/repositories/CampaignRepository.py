@@ -291,6 +291,16 @@ class CampaignRepository:
     def rollback(self) -> None:
         self.db.rollback()
 
+    def get_with_scheduled_exports(self) -> list[HiringCampaign]:
+        return (
+            self.db.query(HiringCampaign)
+            .filter(
+                HiringCampaign.scheduled_export_config.isnot(None),
+                HiringCampaign.scheduled_export_config["enabled"].astext == "true",
+            )
+            .all()
+        )
+
 
     def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
         """
