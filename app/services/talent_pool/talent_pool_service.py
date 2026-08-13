@@ -1,10 +1,12 @@
 import hashlib
 import logging
+import time
 from uuid import UUID, uuid4
 
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.enums.constants import ActionType, EntityType
-from app.exception_handler.exceptions import NotFoundError, UnprocessableError
+from app.enums.education import DegreeLevel, EducationField
+from app.exception_handler.exceptions import BadRequestError, NotFoundError, UnprocessableError
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
@@ -13,6 +15,7 @@ from app.models.pipeline import CampaignCandidate, PipelineStage, TransitionSour
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
+from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
@@ -20,16 +23,23 @@ from app.schemas.talent_pool.talent_pool_schema import (
     AddCandidateToCampaignResponse,
     BulkAddCandidateResultItem,
     BulkAddCandidatesResponse,
+    CampaignFilterOption,
     CampaignSummaryResponse,
     CandidateInfoResponse,
     ConsentInfoResponse,
+    EducationFilterOptions,
     PerformanceSummaryResponse,
     ResumeInfoResponse,
     TalentPoolCandidateProfileResponse,
+    TalentPoolFiltersResponse,
     TalentPoolInfoResponse,
     TalentPoolSearchItem,
     TalentPoolSearchResponse,
+    TalentPoolSemanticSearchFilters,
+    TalentPoolSemanticSearchItem,
+    TalentPoolSemanticSearchResponse,
 )
+from app.services.ai.embedding_service import EmbeddingService
 from app.services.audit_service import AuditService
 from app.services.campaign.resume_selection_service import ResumeSelectionService
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -50,6 +60,18 @@ SKILL_NORMALIZE_TASK_TYPE = "SKILL_NORMALIZE"
 
 _ALREADY_IN_CAMPAIGN_MESSAGE = "Candidate already exists in this campaign."
 _GENERIC_BULK_FAILURE_REASON = "An unexpected error occurred while adding this candidate."
+
+# Talent Pool Normal Search - maximum candidates returned per page,
+# enforced server-side regardless of what a caller requests.
+TALENT_POOL_MAX_PAGE_SIZE = 6
+
+# Mirrors ResumeSelectionService's own private config key/default exactly
+# (see resume_selection_service.py's _RESUME_FRESHNESS_MAX_AGE_DAYS_KEY /
+# _DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS) - duplicated as a literal only so
+# the same freshness rule can be pushed into a SQL WHERE clause here,
+# without modifying or re-implementing ResumeSelectionService.
+_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY = "RESUME_FRESHNESS_MAX_AGE_DAYS"
+_DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS = 180
 
 
 class TalentPoolService:
@@ -72,6 +94,8 @@ class TalentPoolService:
         celery_task_log_service: CeleryTaskLogService,
         resume_selection_service: ResumeSelectionService,
         skill_repo: SkillRepository | None = None,
+        config_repo: ConfigRepository | None = None,
+        embedding_service: EmbeddingService | None = None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -83,6 +107,8 @@ class TalentPoolService:
         self.celery_task_log_service = celery_task_log_service
         self.resume_selection_service = resume_selection_service
         self.skill_repo = skill_repo
+        self.config_repo = config_repo
+        self.embedding_service = embedding_service
 
     # ------------------------------------------------------------------
     # T01 + T02 — Unified Candidate Profile / Performance Summary
@@ -256,133 +282,109 @@ class TalentPoolService:
     def search_candidates(
         self,
         *,
+        search: str | None = None,
         skill: str | None = None,
         skills: list[str] | None = None,
         designation: str | None = None,
+        designations: list[str] | None = None,
         location: str | None = None,
         locations: list[str] | None = None,
+        degree_levels: list[str] | None = None,
+        education_fields: list[str] | None = None,
+        campaign_ids: list[UUID] | None = None,
+        pipeline_stages: list[PipelineStage] | None = None,
         experience_min: float | None = None,
         experience_max: float | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
         campaign_id: UUID | None = None,
         page: int = 1,
         size: int = 20,
     ) -> TalentPoolSearchResponse:
         """
-        Read-only search/filter over the Talent Pool. Never selects or
-        persists a resume — that stays exclusively add_candidate_to_campaign's
-        job via ResumeSelectionService. Eligibility here reuses
-        ResumeSelectionService's own _is_eligible predicate directly (the
-        exact PARSED + embedding exists + is_talent_pool_eligible + freshness
-        check add_candidate_to_campaign's selection is already built on),
-        called on the same ResumeSelectionService instance this class already
-        depends on — so the two paths can never drift apart, without
-        modifying ResumeSelectionService or re-implementing its logic here.
+        Read-only search/filter over the Talent Pool — every filter is
+        applied as a SQL WHERE condition by
+        ResumeRepository.search_talent_pool (COUNT and the LIMIT/OFFSET page
+        are the exact same filtered query), never by loading the Talent Pool
+        into Python and filtering here. Never selects or persists a resume —
+        that stays exclusively add_candidate_to_campaign's job via
+        ResumeSelectionService. Eligibility (PARSED + has an
+        is_talent_pool_eligible embedding + fresher than the
+        RESUME_FRESHNESS_MAX_AGE_DAYS platform config) mirrors
+        ResumeSelectionService._is_eligible's own predicate, expressed as
+        SQL by the repository rather than re-implemented here — only the
+        platform-config lookup itself is duplicated (a single small read),
+        never ResumeSelectionService's logic.
 
-        `skills` (repeatable) and singular `skill` (kept for backward
-        compatibility) are folded into one term list and OR'd together — a
-        candidate matching ANY term is included, deduped by resume.id so a
-        resume matching more than one term isn't double-counted. `locations`
-        (repeatable) and singular `location` are folded into their own term
-        list the same way — a candidate matches if their location contains
-        ANY listed term (case-insensitive substring, OR'd), for the
-        multi-location checkbox filter. designation is a single
-        case-insensitive substring filter, and experience_min/experience_max
-        a numeric range filter — all applied in Python over
-        _extract_resume_fields' own (designation, experience, location)
-        extraction, the exact same fields already shown on the card, not a
-        new source of truth, applied to the eligible candidate set already
-        in memory rather than a new query.
+        `search` is the Normal Search box: a candidate matches if EITHER
+        their name contains the whole search string, OR every
+        whitespace-separated token matches a distinct skill (AND) - e.g.
+        "Python AWS" requires both skills, "Ajay" matches on name. `skills`
+        (repeatable) and singular `skill` (kept for backward compatibility)
+        remain an independent OR'd-together skill filter. `designation`/
+        `designations` and `location`/`locations` fold into one OR'd,
+        case-insensitive substring term list each (multi-select checkbox
+        filters). `degree_levels`/`education_fields`/`campaign_ids`/
+        `pipeline_stages` are each OR'd within their own category; every
+        distinct filter category combines with AND. `campaign_id` (singular,
+        exclusion) is the pre-existing "who's left to add for this specific
+        campaign" filter and stays independent of the new inclusion-based
+        `campaign_ids`. `score_min`/`score_max` filter on the same
+        best_composite_score already shown on the card (MAX across every
+        campaign the candidate has ever been submitted to) - never a
+        semantic/AI score.
 
-        campaign_id, when given, excludes candidates already added to that
-        campaign — the "who's left to add" view when browsing the Talent
-        Pool to pick candidates for one specific campaign. Purely a
-        candidate_id exclusion filter; it never touches campaign-specific
-        resume selection (still exclusively ResumeSelectionService's job,
-        run only later when a candidate is actually added).
+        Page size is capped at TALENT_POOL_MAX_PAGE_SIZE regardless of what
+        the caller requests.
         """
-        terms = list(dict.fromkeys([*(skills or []), *([skill] if skill else [])]))
+        capped_size = max(1, min(size, TALENT_POOL_MAX_PAGE_SIZE))
 
-        if terms:
-            candidate_resumes = []
-            seen_resume_ids: set[UUID] = set()
-            for term in terms:
-                resolved_skill = self.skill_repo.find_skill_by_name_or_alias(term)
-                pattern = f"%{self._escape_like(term)}%"
-                for resume in self.resume_repo.get_by_skill_match(
-                    canonical_skill_id=resolved_skill.id if resolved_skill is not None else None,
-                    raw_text_pattern=pattern,
-                ):
-                    if resume.id not in seen_resume_ids:
-                        seen_resume_ids.add(resume.id)
-                        candidate_resumes.append(resume)
-        else:
-            candidate_resumes = self.resume_repo.get_all_parsed()
-
-        matching_resume_by_candidate: dict[UUID, Resume] = {}
-        for resume in candidate_resumes:
-            if resume.candidate_id in matching_resume_by_candidate:
-                continue
-            if self.resume_selection_service._is_eligible(resume):
-                matching_resume_by_candidate[resume.candidate_id] = resume
-
-        if campaign_id is not None:
-            already_in_campaign = self.campaign_candidate_repo.get_candidate_ids_by_campaign(campaign_id)
-            matching_resume_by_candidate = {
-                candidate_id: resume
-                for candidate_id, resume in matching_resume_by_candidate.items()
-                if candidate_id not in already_in_campaign
-            }
-
-        if designation:
-            designation_lower = designation.lower()
-            matching_resume_by_candidate = {
-                candidate_id: resume
-                for candidate_id, resume in matching_resume_by_candidate.items()
-                if designation_lower in (self._extract_resume_fields(resume)[0] or "").lower()
-            }
-
+        or_skill_terms = list(dict.fromkeys([*(skills or []), *([skill] if skill else [])]))
+        designation_terms = list(dict.fromkeys([*(designations or []), *([designation] if designation else [])]))
         location_terms = list(dict.fromkeys([*(locations or []), *([location] if location else [])]))
-        if location_terms:
-            location_terms_lower = [t.lower() for t in location_terms]
-            matching_resume_by_candidate = {
-                candidate_id: resume
-                for candidate_id, resume in matching_resume_by_candidate.items()
-                if any(
-                    term in (self._extract_resume_fields(resume)[2] or "").lower()
-                    for term in location_terms_lower
-                )
-            }
 
-        if experience_min is not None or experience_max is not None:
-            def _experience_in_range(resume: Resume) -> bool:
-                experience = self._extract_resume_fields(resume)[1]
-                if experience is None:
-                    return False
-                if experience_min is not None and experience < experience_min:
-                    return False
-                if experience_max is not None and experience > experience_max:
-                    return False
-                return True
+        search_tokens = search.split() if search else []
+        all_skill_terms = list(dict.fromkeys([*or_skill_terms, *search_tokens]))
+        resolved_skill_ids_by_term = {}
+        if self.skill_repo is not None:
+            for term in all_skill_terms:
+                resolved_skill = self.skill_repo.find_skill_by_name_or_alias(term)
+                resolved_skill_ids_by_term[term] = resolved_skill.id if resolved_skill is not None else None
 
-            matching_resume_by_candidate = {
-                candidate_id: resume
-                for candidate_id, resume in matching_resume_by_candidate.items()
-                if _experience_in_range(resume)
-            }
+        page_resumes, total = self.resume_repo.search_talent_pool(
+            search=search,
+            or_skill_terms=or_skill_terms or None,
+            designation_terms=designation_terms or None,
+            location_terms=location_terms or None,
+            degree_levels=degree_levels or None,
+            education_fields=education_fields or None,
+            campaign_ids=campaign_ids or None,
+            exclude_campaign_id=campaign_id,
+            pipeline_stages=pipeline_stages or None,
+            experience_min=experience_min,
+            experience_max=experience_max,
+            score_min=score_min,
+            score_max=score_max,
+            resolved_skill_ids_by_term=resolved_skill_ids_by_term,
+            freshness_max_age_days=self._resume_freshness_max_age_days(),
+            page=page,
+            size=capped_size,
+        )
 
-        total = len(matching_resume_by_candidate)
-        candidates = self.candidate_repo.get_by_ids(list(matching_resume_by_candidate.keys()))
-        candidates.sort(key=lambda candidate: candidate.created_at, reverse=True)
-
-        start = (page - 1) * size
-        page_candidates = candidates[start:start + size]
+        candidates_by_id = {
+            candidate.id: candidate
+            for candidate in self.candidate_repo.get_by_ids([resume.candidate_id for resume in page_resumes])
+        }
+        page_candidates_and_resumes = [
+            (candidates_by_id[resume.candidate_id], resume)
+            for resume in page_resumes
+            if resume.candidate_id in candidates_by_id
+        ]
 
         # Card enrichment - batched over just this page's candidates/resumes,
-        # never one query per candidate. matching_resume_by_candidate already
-        # holds each candidate's own Resume row (with parsed_json loaded), so
-        # the summary needs no extra query at all.
-        page_resume_ids = [matching_resume_by_candidate[candidate.id].id for candidate in page_candidates]
-        page_candidate_ids = [candidate.id for candidate in page_candidates]
+        # never one query per candidate.
+        page_resume_ids = [resume.id for _, resume in page_candidates_and_resumes]
+        page_candidate_ids = [candidate.id for candidate, _ in page_candidates_and_resumes]
         skills_by_resume_id = self.resume_repo.get_canonical_skills_by_resume_ids(page_resume_ids)
         best_composite_by_candidate_id = self.campaign_candidate_repo.get_best_composite_scores_by_candidate_ids(
             page_candidate_ids,
@@ -390,17 +392,158 @@ class TalentPoolService:
 
         items = [
             TalentPoolSearchItem(
-                candidate=self._build_candidate_info(candidate, matching_resume_by_candidate[candidate.id]),
-                matching_resume_id=matching_resume_by_candidate[candidate.id].id,
-                matching_resume_version=matching_resume_by_candidate[candidate.id].version_number,
-                summary=self._extract_summary(matching_resume_by_candidate[candidate.id]),
-                skills=skills_by_resume_id.get(matching_resume_by_candidate[candidate.id].id, []),
+                candidate=self._build_candidate_info(candidate, resume),
+                matching_resume_id=resume.id,
+                matching_resume_version=resume.version_number,
+                summary=self._extract_summary(resume),
+                skills=skills_by_resume_id.get(resume.id, []),
                 best_composite_score=best_composite_by_candidate_id.get(candidate.id),
             )
-            for candidate in page_candidates
+            for candidate, resume in page_candidates_and_resumes
         ]
 
-        return TalentPoolSearchResponse(items=items, total=total, page=page, size=size)
+        return TalentPoolSearchResponse(items=items, total=total, page=page, size=capped_size)
+
+    def _resume_freshness_max_age_days(self) -> int:
+        """
+        Reads the same RESUME_FRESHNESS_MAX_AGE_DAYS platform config
+        ResumeSelectionService._is_fresh reads, so search_talent_pool's SQL
+        eligibility window can never drift from add-to-campaign's own
+        freshness rule. Falls back to the same default
+        ResumeSelectionService itself falls back to if config_repo wasn't
+        wired in (e.g. older callers/tests constructing this service
+        without it).
+        """
+        if self.config_repo is None:
+            return _DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS
+        value = self.config_repo.get_configs_by_keys(
+            [_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY],
+        ).get(_RESUME_FRESHNESS_MAX_AGE_DAYS_KEY)
+        return int(value) if value else _DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS
+
+    # ------------------------------------------------------------------
+    # M14 — Talent Pool Semantic Search
+    # ------------------------------------------------------------------
+
+    def semantic_search_candidates(
+        self,
+        *,
+        query: str,
+        filters: TalentPoolSemanticSearchFilters | None = None,
+        page: int = 1,
+        size: int = 6,
+    ) -> TalentPoolSemanticSearchResponse:
+        """
+        M14 — free-text semantic search over the Talent Pool. Pipeline order
+        is fixed and non-negotiable: validate query -> apply structured
+        filters (reusing ResumeRepository.search_talent_pool's own shared
+        filter-condition builder, via semantic_search_talent_pool) to get
+        the eligible/filtered candidate set FIRST -> embed the query exactly
+        once -> rank ONLY that filtered set by pgvector cosine similarity ->
+        paginate. Never the reverse (rank the whole Talent Pool, then
+        filter) - semantic_search_talent_pool's WHERE conditions are applied
+        before its ORDER BY, entirely in SQL.
+
+        `query` may be a full resume, a JD, a role description, or any other
+        free-text passage - it is embedded as one whole meaning-bearing
+        text, never split into skill tokens or matched against Normal
+        Search's `search`-box rules. Uses the same active embedding model
+        (EmbeddingService, reading embedding_model_versions.is_active) that
+        already produces every resume_embeddings row - candidate embeddings
+        are read as-is, never regenerated here.
+
+        Page size is capped at TALENT_POOL_MAX_PAGE_SIZE, exactly like
+        Normal Search. `total` reflects the structured-filtered, eligible
+        candidate count - independent of the current page - never merely
+        the number of items returned on this page.
+        """
+        started_at = time.perf_counter()
+        trimmed_query = (query or "").strip()
+        if not trimmed_query:
+            raise BadRequestError("query must not be empty or whitespace-only.")
+        if self.embedding_service is None:
+            raise UnprocessableError("Semantic search is not available - no embedding service configured.")
+
+        capped_size = max(1, min(size, TALENT_POOL_MAX_PAGE_SIZE))
+        filters = filters or TalentPoolSemanticSearchFilters()
+        filter_count = sum(
+            1 for value in (
+                filters.locations, filters.designations, filters.degree_levels, filters.education_fields,
+                filters.campaign_ids, filters.pipeline_stages, filters.experience_min, filters.experience_max,
+                filters.score_min, filters.score_max,
+            ) if value
+        )
+
+        try:
+            embedding_started_at = time.perf_counter()
+            query_embedding = self.embedding_service.generate_embedding(trimmed_query)
+            embedding_duration_ms = round((time.perf_counter() - embedding_started_at) * 1000)
+        except Exception as exc:
+            logger.exception("Talent Pool Semantic Search - embedding generation failed.")
+            raise UnprocessableError("Failed to generate an embedding for the search query.") from exc
+
+        active_model_version = self.resume_repo.get_active_embedding_model_version()
+
+        vector_search_started_at = time.perf_counter()
+        page_results, total = self.resume_repo.semantic_search_talent_pool(
+            query_embedding=query_embedding,
+            embedding_model_version_id=active_model_version.id,
+            designation_terms=filters.designations or None,
+            location_terms=filters.locations or None,
+            degree_levels=filters.degree_levels or None,
+            education_fields=filters.education_fields or None,
+            campaign_ids=filters.campaign_ids or None,
+            pipeline_stages=filters.pipeline_stages or None,
+            experience_min=filters.experience_min,
+            experience_max=filters.experience_max,
+            score_min=filters.score_min,
+            score_max=filters.score_max,
+            freshness_max_age_days=self._resume_freshness_max_age_days(),
+            page=page,
+            size=capped_size,
+        )
+        vector_search_duration_ms = round((time.perf_counter() - vector_search_started_at) * 1000)
+
+        candidates_by_id = {
+            candidate.id: candidate
+            for candidate in self.candidate_repo.get_by_ids([resume.candidate_id for resume, _ in page_results])
+        }
+        page_rows = [
+            (candidates_by_id[resume.candidate_id], resume, similarity)
+            for resume, similarity in page_results
+            if resume.candidate_id in candidates_by_id
+        ]
+
+        # Card enrichment - batched over just this page's candidates/resumes,
+        # never one query per candidate. Mirrors search_candidates exactly.
+        page_resume_ids = [resume.id for _, resume, _ in page_rows]
+        page_candidate_ids = [candidate.id for candidate, _, _ in page_rows]
+        skills_by_resume_id = self.resume_repo.get_canonical_skills_by_resume_ids(page_resume_ids)
+        best_composite_by_candidate_id = self.campaign_candidate_repo.get_best_composite_scores_by_candidate_ids(
+            page_candidate_ids,
+        )
+
+        items = [
+            TalentPoolSemanticSearchItem(
+                candidate=self._build_candidate_info(candidate, resume),
+                matching_resume_id=resume.id,
+                matching_resume_version=resume.version_number,
+                summary=self._extract_summary(resume),
+                skills=skills_by_resume_id.get(resume.id, []),
+                best_composite_score=best_composite_by_candidate_id.get(candidate.id),
+                semantic_similarity_score=round(similarity, 4),
+            )
+            for candidate, resume, similarity in page_rows
+        ]
+
+        total_duration_ms = round((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            "Talent Pool Semantic Search - mode=SEMANTIC filter_count=%d candidate_count=%d "
+            "embedding_duration_ms=%d vector_search_duration_ms=%d total_duration_ms=%d",
+            filter_count, total, embedding_duration_ms, vector_search_duration_ms, total_duration_ms,
+        )
+
+        return TalentPoolSemanticSearchResponse(items=items, total=total, page=page, size=capped_size)
 
     @staticmethod
     def _extract_summary(resume: Resume | None) -> str | None:
@@ -418,6 +561,73 @@ class TalentPoolService:
     @staticmethod
     def _escape_like(value: str) -> str:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    # ------------------------------------------------------------------
+    # Talent Pool Normal Search — filter option metadata
+    # ------------------------------------------------------------------
+
+    def get_search_filters(self) -> TalentPoolFiltersResponse:
+        """
+        Filter option metadata for the Talent Pool Normal Search UI - never
+        a candidate search itself. Every list is derived from
+        already-persisted data, never hardcoded: locations/designations are
+        case-insensitive-deduped from parsed_json (the same fields
+        _extract_resume_fields already reads for search/card display),
+        education options reuse the resume-extraction pipeline's own
+        degree_level/field_normalized controlled vocabulary as-is (no new
+        classification logic), campaigns reuse CampaignRepository's
+        existing active-campaigns dropdown query, and pipeline stages are
+        read straight off the existing PipelineStage enum.
+        """
+        locations = self._dedupe_case_insensitive(self.resume_repo.get_distinct_locations())
+        designations = self._dedupe_case_insensitive(self.resume_repo.get_distinct_designations())
+
+        # UNKNOWN is the AI-extraction pipeline's "not confidently
+        # classified" sentinel (see app/enums/education.py) - not a real,
+        # filterable category, so it's excluded the same way a blank/NULL
+        # value would be.
+        degree_levels = sorted({
+            value for value in self.resume_repo.get_distinct_education_degree_levels()
+            if value and value != DegreeLevel.UNKNOWN.value
+        })
+        fields = sorted({
+            value for value in self.resume_repo.get_distinct_education_fields()
+            if value and value != EducationField.UNKNOWN.value
+        })
+
+        campaigns = [
+            CampaignFilterOption(id=campaign_id, name=name)
+            for campaign_id, name in self.campaign_repo.get_active_campaigns_minimal()
+        ]
+
+        return TalentPoolFiltersResponse(
+            locations=locations,
+            designations=designations,
+            education=EducationFilterOptions(degree_levels=degree_levels, fields=fields),
+            campaigns=campaigns,
+            pipeline_stages=[stage.value for stage in PipelineStage],
+        )
+
+    @staticmethod
+    def _dedupe_case_insensitive(rows: list[tuple[str, int]]) -> list[str]:
+        """
+        Collapses case-only duplicates (e.g. "Hyderabad" / "hyderabad" /
+        "HYDERABAD" -> one option), keeping whichever exact casing occurred
+        most often across resumes as the canonical display form (ties
+        broken alphabetically for determinism) - never mutates the
+        underlying resume data, only how these filter options are
+        presented. Returned sorted alphabetically.
+        """
+        best_by_key: dict[str, tuple[str, int]] = {}
+        for value, count in rows:
+            cleaned = (value or "").strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            current = best_by_key.get(key)
+            if current is None or count > current[1] or (count == current[1] and cleaned < current[0]):
+                best_by_key[key] = (cleaned, count)
+        return sorted(display for display, _ in best_by_key.values())
 
     # ------------------------------------------------------------------
     # T03 — Add Candidate Directly to New Campaign
