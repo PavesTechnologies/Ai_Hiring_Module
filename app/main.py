@@ -9,6 +9,8 @@ from fastapi.openapi.utils import get_openapi
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
+from app.api.routes import candidate_actions_routes
+from app.api.routes import dashboard_routes
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
@@ -179,6 +181,8 @@ app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prom
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=talent_pool_filters_router, prefix=API_PREFIX, tags=["Talent Pool"])
+app.include_router(router=dashboard_routes.router, prefix=API_PREFIX, tags=["Dashboard"])
+app.include_router(router=candidate_actions_routes.router, prefix=API_PREFIX, tags=["Candidate Actions"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)
