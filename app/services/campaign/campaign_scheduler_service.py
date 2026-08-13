@@ -46,10 +46,14 @@ class CampaignSchedulerService:
 
                     self.campaign_repo.close_campaign(campaign)
 
-                    # Audit log — attributed to the HR_ADMIN who created the campaign,
-                    # since the closure is triggered by the scheduler on their behalf.
-                    self.audit_service.log(actor_id=campaign.created_by,
-                        actor_role="HR_ADMIN",
+                    # Epic 3 Fix 2: this is a scheduler-triggered closure, not
+                    # something the campaign's creator did - AuditLog.actor_id
+                    # is nullable (both model and live schema; 24+ existing
+                    # rows already use actor_id=None/actor_role=SYSTEM, e.g.
+                    # StageTransitionService.transition()'s SYSTEM actor),
+                    # so there's no need to misattribute this to a human.
+                    self.audit_service.log(actor_id=None,
+                        actor_role="SYSTEM",
                         action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
                         entity_type=EntityType.CAMPAIGN.value,
                         entity_id=campaign.id,
@@ -211,8 +215,13 @@ class CampaignSchedulerService:
                     by_stage[row["pipeline_stage"]] = by_stage.get(row["pipeline_stage"], 0) + 1
                     by_reason[row["stall_reason"]] = by_reason.get(row["stall_reason"], 0) + 1
 
-                self.audit_service.log(actor_id=campaign.created_by,
-                    actor_role="HR_ADMIN",
+                # Epic 3 Fix 2: scheduler-triggered detection, not the
+                # campaign creator's action - see auto_close_expired_campaigns
+                # above for why actor_id=None/actor_role=SYSTEM is correct
+                # here (actor_id is nullable, matching StageTransitionService's
+                # SYSTEM actor convention).
+                self.audit_service.log(actor_id=None,
+                    actor_role="SYSTEM",
                     action_type=ActionType.STALLED_CANDIDATES_ALERT.value,
                     entity_type=EntityType.CAMPAIGN.value,
                     entity_id=campaign.id,
@@ -242,8 +251,11 @@ class CampaignSchedulerService:
         # Email notification
         # TODO:
         # Notify HR Admin
-        self.audit_service.log(actor_id=campaign.created_by,
-            actor_role="HR_ADMIN",
+        # Epic 3 Fix 2: scheduler-triggered health check, not the campaign
+        # creator's action - see auto_close_expired_campaigns above for why
+        # actor_id=None/actor_role=SYSTEM is correct here.
+        self.audit_service.log(actor_id=None,
+            actor_role="SYSTEM",
             action_type=ActionType.CAMPAIGN_HEALTH_ALERT.value,
             entity_type=EntityType.CAMPAIGN.value,
             entity_id=campaign.id,

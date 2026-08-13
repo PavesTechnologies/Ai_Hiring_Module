@@ -15,14 +15,14 @@ class ResubmissionAlertService:
     (the same gap already present in CampaignSchedulerService's health-alert
     feature, which this mirrors).
 
-    Known technical debt, called out deliberately rather than silently
-    absorbed: actor_id is attributed to the candidate's most recent
-    campaign's created_by (mirroring CampaignSchedulerService._raise_health_alert's
-    exact convention), since AuditLog.actor_id is a required, non-null FK
-    and no synthetic SYSTEM actor exists yet. A future enhancement should
-    introduce a real SYSTEM actor (or a nullable actor + system source) and
-    migrate every scheduled-task audit event — this one and the health-alert
-    one — to use it consistently.
+    Epic 3 Fix 2 (2026-08-11): previously attributed actor_id to the
+    candidate's most recent campaign's created_by, on the premise that
+    AuditLog.actor_id was a required, non-null FK with no synthetic SYSTEM
+    actor available. That premise was false - actor_id is nullable in both
+    the model and the live schema, and StageTransitionService.transition()
+    already logs SYSTEM-triggered writes with actor_id=None/actor_role=
+    SYSTEM correctly. Fixed to do the same here - this is a scheduled
+    sweep, not an action the campaign's creator took.
     """
 
     def __init__(
@@ -53,8 +53,8 @@ class ResubmissionAlertService:
                 continue
 
             self.audit_service.log(
-                actor_id=campaign.created_by,
-                actor_role="HR_ADMIN",
+                actor_id=None,
+                actor_role="SYSTEM",
                 action_type=ActionType.CAMPAIGN_RESUBMISSION_DETECTED,
                 entity_type=EntityType.CANDIDATE,
                 entity_id=candidate_id,

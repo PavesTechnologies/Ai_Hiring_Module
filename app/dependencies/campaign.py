@@ -59,8 +59,9 @@ def get_audit_repository(
 
 def get_audit_service(
     repository: AuditRepository = Depends(get_audit_repository),
+    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
 ) -> AuditService:
-    return AuditService(repository=repository)
+    return AuditService(repository=repository, campaign_repo=campaign_repo)
 
 
 def get_campaign_service(

@@ -781,6 +781,27 @@ class HrOverrideRequest(BaseModel):
         return value
 
 
+class RejectAtInterviewRequest(BaseModel):
+    """
+    Epic 1: HIRING_MANAGER rejects a candidate at INTERVIEW. decision_reason
+    is required and word-capped (not character-capped, unlike every other
+    reason field in this codebase - StageOverrideRequest/FlagReviewRequest/
+    HrOverrideRequest.override_reason all use Field(max_length=...)) since
+    this is candidate-facing rejection rationale, not an internal note.
+    """
+    decision_reason: str
+
+    @field_validator("decision_reason")
+    @classmethod
+    def _max_500_words(cls, value: str) -> str:
+        word_count = len(value.split())
+        if word_count == 0:
+            raise ValueError("decision_reason must not be empty.")
+        if word_count > 500:
+            raise ValueError(f"decision_reason must be 500 words or fewer (got {word_count}).")
+        return value
+
+
 class OverrideReportRow(BaseModel):
     """T03: one HR override event - never includes candidate name/email/phone/resume."""
 

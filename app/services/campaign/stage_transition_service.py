@@ -22,17 +22,19 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Actor:
     """
-    E02: who/what is requesting a pipeline_stage transition. No existing
-    abstraction fit this - TokenUser (app/middleware/rbac.py) carries
-    `roles: list[str]` off a real auth token and has no SYSTEM-sentinel
-    concept, since it only ever represents an authenticated human request.
+    E02: who/what is requesting a pipeline_stage transition. Mirrors
+    TokenUser's `roles: list[str]` shape (app/middleware/rbac.py) rather
+    than a single role - Epic 1 needs `transition()` to pass for a caller
+    holding ANY of an edge's allowed_roles, same any-of-list semantics
+    require_roles already uses at the route-gate level, not just the
+    caller's first/preferred role.
     """
-    role: str
+    roles: list[str]
     id: str | None = None
 
     @classmethod
     def system(cls) -> "Actor":
-        return cls(role="SYSTEM", id=None)
+        return cls(roles=["SYSTEM"], id=None)
 
 
 class StageTransitionService:
@@ -370,8 +372,8 @@ class StageTransitionService:
         # DB level. Deliberately an `if`/raise, not a bare `assert` - `python
         # -O` strips asserts, which would silently turn this into no check
         # at all in an optimized build.
-        if actor.role not in transition_row.allowed_roles:
-            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, actor.role)
+        if not any(r in transition_row.allowed_roles for r in actor.roles):
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, actor.roles)
 
         # 3. Reason check.
         if transition_row.requires_reason and not (reason and reason.strip()):
@@ -385,7 +387,7 @@ class StageTransitionService:
         if locked_candidate.pipeline_stage != from_stage:
             raise PipelineStageConflictException(from_stage.value)
 
-        is_system = actor.role == "SYSTEM"
+        is_system = "SYSTEM" in actor.roles
         changed_by = None if is_system else actor.id
         transition_source = TransitionSource.SYSTEM if is_system else TransitionSource.MANUAL
 
@@ -413,9 +415,15 @@ class StageTransitionService:
         locked_candidate.pipeline_stage = to_stage
         self.campaign_candidate_repo.update(locked_candidate)
 
+        # Logs the role that actually permitted this transition, not an
+        # arbitrary one - matters once actor.roles can hold roles the edge
+        # doesn't list at all (e.g. a HIRING_MANAGER+HR_ADMIN actor on an
+        # edge only HIRING_MANAGER can use).
+        resolved_role = next(r for r in actor.roles if r in transition_row.allowed_roles)
+
         self.audit_service.log(
             actor_id=changed_by,
-            actor_role=actor.role,
+            actor_role=resolved_role,
             action_type=ActionType.PIPELINE_STAGE_TRANSITIONED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=locked_candidate.id,

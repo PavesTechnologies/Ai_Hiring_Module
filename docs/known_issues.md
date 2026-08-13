@@ -144,18 +144,121 @@ the last audit), and both of this repo's then-current heads' schema effects
 (`09f831e39061`'s `audit_entity_type_enum` values, `e686c750b7b4`'s
 `email_trigger_event_enum` values) were confirmed still live.
 
-**Root cause: unconfirmed.** Unlike the 2026-08-07 recurrence, no plausible
-mechanism was identified this time (no relevant upstream merge, no dangling
-down_revision from a squash) — this entry documents that the phantom stamp
-existed and was worked around, not why it existed. Do not read this as
-"understood," only as "papered over safely."
+**Root cause: confirmed 2026-08-11 (was previously logged as unconfirmed).**
+This was never a phantom/corrupted stamp — it was a **coincidental
+revision-id collision** with a teammate's real, legitimately-applied
+migration. `9a1c2f3e6b7d_add_rejection_composite_trigger.py` (adds
+`REJECTION` to `composite_score_trigger_source_enum`, `down_revision =
+7043b9ed5abe`) genuinely existed and had genuinely been run via `alembic
+upgrade` against the shared dev DB — which is exactly what produced the
+`9a1c2f3e6b7d` stamp this entry originally called unexplained. At the time
+this was investigated (2026-08-10), that file was checked for and not
+found anywhere (local, `origin/main`, every fetched teammate branch) — an
+accurate result at that moment, since the file had not yet been merged
+into this checkout. It arrived in a later merge, and because
+alembic-generated revision ids are short random hex strings with no
+collision detection across parallel branches, it happened to land on the
+exact same 12-hex-char id (`9a1c2f3e6b7d`) that the placeholder file below
+had already claimed. `alembic heads` then started emitting `Revision
+9a1c2f3e6b7d is present more than once`, and `alembic history`/`alembic
+current` failed outright once both files coexisted in the same checkout.
 
-**How it was fixed this time:** authored a no-op placeholder migration
-(`9a1c2f3e6b7d_placeholder_for_missing_revision.py`) merging the 2
-then-current heads (`09f831e39061`, `e686c750b7b4`) into the exact stamped
-revision id, matching the same pattern as the prior two recurrences, then
-chained the real `idempotency_key` migration on top. Confirmed clean
-afterward: `alembic current` and `alembic heads` both resolve to the single
-new head (`08655d0b0117`), and the migration itself was purely additive —
+**How it was fixed the first time (2026-08-10):** authored a no-op
+placeholder migration (originally `9a1c2f3e6b7d_placeholder_for_missing_revision.py`)
+merging the 2 then-current heads (`09f831e39061`, `e686c750b7b4`) into the
+exact stamped revision id, matching the same pattern as the prior
+recurrence, then chained the real `idempotency_key` migration on top.
+Confirmed clean at the time — but the teammate's colliding file had not
+yet been pulled into this checkout, so the collision wasn't visible yet.
+
+**How the collision was fixed (2026-08-11):** the placeholder file was
+renamed to a freshly-generated, verified-unique id (`b6dda6ad1824`) — the
+teammate's real migration keeps its original id `9a1c2f3e6b7d` untouched,
+since it's already-merged work with its own `down_revision` chain
+(`7043b9ed5abe`) that others may depend on; renaming a real migration
+after the fact is the more dangerous direction. The renamed placeholder's
+`down_revision` was extended from a 2-way merge to a 3-way merge —
+`('09f831e39061', 'e686c750b7b4', '9a1c2f3e6b7d')` — since the teammate's
+migration is a third independent sibling fork off the same
+`7043b9ed5abe` root, and its schema effect (`REJECTION` in
+`composite_score_trigger_source_enum`) was re-confirmed live before adding
+it as a merge parent, same "verify every branch tip" methodology as every
+prior recurrence. `08655d0b0117`'s `down_revision` was updated to point at
+the renamed id. Confirmed clean afterward: `alembic heads` resolves to
+exactly one head (`08655d0b0117`) with zero warnings, and `git diff` on
+the teammate's file shows zero changes — only the placeholder (renamed)
+and `08655d0b0117` (one line, `down_revision`) were touched.
+
 `allowed_transitions` (26 rows) and `campaign_candidate_stage_history` (41
-rows, all with `idempotency_key IS NULL`) were unchanged before/after.
+rows, all with `idempotency_key IS NULL`) were unchanged before/after the
+original 2026-08-10 fix.
+
+**Note for whoever reads this next:** `alembic current` still fails today,
+but with a *different*, unrelated error — see the new entry below
+(`alembic_version` phantom-stamped at `d3a86f21c9e4`). Do not conflate the
+two: the `9a1c2f3e6b7d` collision above is fully resolved at the file
+level; `d3a86f21c9e4` is a fresh, separate, still-open incident.
+
+---
+
+## Alembic: `alembic_version` stamped at a phantom revision `d3a86f21c9e4` (2026-08-11)
+
+**Status:** open, discovered 2026-08-11, not fixed. Discovered as a side
+effect of verifying the `9a1c2f3e6b7d` collision fix above (`alembic
+current` was expected to succeed once the collision was resolved; instead
+it failed with a different, unrelated error).
+
+`alembic_version` is currently stamped at `d3a86f21c9e4` — a revision id
+that does not exist anywhere in this repo's `alembic/versions/` directory
+(confirmed: only 6 migration files exist in this checkout right now,
+`7043b9ed5abe`, `09f831e39061`, `e686c750b7b4`, `9a1c2f3e6b7d`,
+`b6dda6ad1824`, `08655d0b0117` — `d3a86f21c9e4` is not one of them). This
+is the same recurring pattern as every entry above: something applied a
+schema change directly against the shared dev DB and hand-stamped
+`alembic_version` without ever committing the migration file — except this
+time it happened *after* this session's own `9a1c2f3e6b7d` stamp (which
+was itself resolved via the placeholder fix above), meaning the DB has
+moved again since.
+
+**Not investigated further yet** — this needs the same "verify every
+current head's schema effects against live DB state before touching
+anything" methodology as every prior recurrence, which is real work
+(comparing live schema/enum state against every migration's effects) and
+wasn't in scope for the collision fix that surfaced it. Flagging it here
+so it isn't lost, rather than guessing at a fix.
+
+---
+
+## `StageTransitionService.transition_on_ai_success` has zero test coverage
+
+**Status:** open, discovered 2026-08-11, not fixed. Worth its own ticket —
+out of scope for E02.
+
+`transition_on_ai_success` (`app/services/campaign/stage_transition_service.py:
+116-179`) is real, live, and correctly wired — called from 2 sites in
+`app/tasks/ai_evaluation_tasks.py` (the `SHORTLIST` and `HOLD` recommendation
+branches of AI evaluation), and correctly backs the `SCREENING -> HOLD` and
+`SCREENING -> SHORTLISTED` `allowed_transitions` rows. **Confirmed not
+orphaned** — an earlier internal investigation note (during E02's Step 0
+audit) concluded this method didn't exist anywhere in the codebase and that
+the `SCREENING -> HOLD` row was orphaned; that conclusion was based on an
+incomplete grep run before this method (and its caller in
+`ai_evaluation_tasks.py`) landed via a later teammate merge (PR #90, "RMe"
+branch). That note was never written to this file, only stated in chat, so
+there's nothing to retract here beyond this correction.
+
+**The actual gap:** zero test coverage, anywhere. Confirmed via a
+file-reference grep for `transition_on_ai_success` across the whole repo —
+exactly 3 files reference it: `app/tasks/ai_evaluation_tasks.py` (the 2 call
+sites), `app/services/campaign/stage_transition_service.py` (the method
+itself), and `app/seeds/seed_allowed_transitions.py` (descriptive `notes`
+text on the 2 rows it backs). No test file references it at all — not
+`tests/services/campaign/test_stage_transition_service.py` (which does test
+its sibling `transition_to_screening`), not anywhere else. This method
+moves real candidates into `HOLD`/`SHORTLISTED` pipeline stages in
+production, with nothing catching a regression.
+
+**Not fixed here:** out of scope for E02, which only added the new
+`transition()` method — `transition_to_rejected`/`apply_hr_override`/
+`transition_to_screening`/`transition_on_ai_success` are all pre-existing
+and untouched by E02's changes.

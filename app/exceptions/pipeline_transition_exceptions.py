@@ -32,15 +32,20 @@ class PipelineTransitionReasonRequiredException(Exception):
 
 class ForbiddenPipelineRoleException(Exception):
     """
-    E02: raised when the actor's role is not in allowed_transitions.
-    allowed_roles for the requested (from_stage, to_stage).
+    E02: raised when none of the actor's roles are in allowed_transitions.
+    allowed_roles for the requested (from_stage, to_stage). Takes the
+    actor's full role list (not a single role) so the message shows
+    everything the caller held, not one possibly-misleading role.
     """
 
-    def __init__(self, from_stage: str, to_stage: str, role: str):
+    def __init__(self, from_stage: str, to_stage: str, roles: list[str]):
         self.from_stage = from_stage
         self.to_stage = to_stage
-        self.role = role
-        message = f"FORBIDDEN_ROLE: {role} is not permitted to perform this transition from {from_stage} to {to_stage}."
+        self.roles = roles
+        message = (
+            f"FORBIDDEN_ROLE: none of {roles} is permitted to perform this "
+            f"transition from {from_stage} to {to_stage}."
+        )
         super().__init__(message)
 
 

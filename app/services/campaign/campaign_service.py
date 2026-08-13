@@ -1044,25 +1044,29 @@ class CampaignService:
             created_by=created_by,
         )
 
-        preset = self.preset_repo.create(preset)
+        try:
+            preset = self.preset_repo.create(preset)
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=created_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_CREATED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Created campaign weight preset '{preset.name}'"
+                },
+                campaign_id=None,
+                jurisdiction=None,
+                ip_address=None,
+                session_id=None,
+                request_id=None,
+            )
 
-        self.audit_service.log(actor_id=created_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_CREATED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Created campaign weight preset '{preset.name}'"
-            },
-            campaign_id=None,
-            jurisdiction=None,
-            ip_address=None,
-            session_id=None,
-            request_id=None,
-        )
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+        except Exception:
+            self.preset_repo.rollback()
+            raise
+
         return CampaignWeightPresetResponse.model_validate(preset
         )
     
@@ -1129,22 +1133,24 @@ class CampaignService:
         preset.semantic_threshold = request.semantic_threshold
         preset.ai_threshold = request.ai_threshold
 
-        preset = self.preset_repo.update(preset
-        )
+        try:
+            preset = self.preset_repo.update(preset
+            )
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_UPDATED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Updated preset '{preset.name}'"
+                },
+            )
 
-        self.audit_service.log(actor_id=updated_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_UPDATED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Updated preset '{preset.name}'"
-            },
-        )
-
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+        except Exception:
+            self.preset_repo.rollback()
+            raise
 
         return CampaignWeightPresetResponse.model_validate(preset
         )
@@ -1176,22 +1182,24 @@ class CampaignService:
                 None,
             )
 
-        self.preset_repo.delete(preset
-        )
+        try:
+            self.preset_repo.delete(preset
+            )
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=deleted_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_DELETED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Deleted preset '{preset.name}'"
+                },
+            )
 
-        self.audit_service.log(actor_id=deleted_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_DELETED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Deleted preset '{preset.name}'"
-            },
-        )
-
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+        except Exception:
+            self.preset_repo.rollback()
+            raise
 
     def get_campaign_details(self,campaign_id: UUID, user:TokenUser) -> CampaignDetailResponse:
         campaign = self.campaign_repo.get_by_id(campaign_id)

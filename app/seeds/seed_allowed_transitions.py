@@ -124,6 +124,7 @@ _TRANSITIONS = [
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.SCREENING,
         "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
+
         "requires_reason": False,
         "notes": "Initial resume screening kickoff after upload; SYSTEM-driven in the normal flow, HR_ADMIN/RECRUITER can force it manually (M12).",
     },
