@@ -1,7 +1,9 @@
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
+from types import SimpleNamespace
 from uuid import UUID
 
 from rapidfuzz import fuzz, process
@@ -9,6 +11,9 @@ from rapidfuzz import fuzz, process
 from app.models.skills import JDSkillVerificationStatus, SkillOntology
 from app.repositories.skill_repository import SEMANTIC_SIMILARITY_THRESHOLD, SkillRepository
 from app.services.ai.embedding_service import EmbeddingService
+from app.core.config import settings
+from app.core.cache_keys import skill_catalog_key
+from app.services.cache_service import CacheService
 
 
 class SkillMatchTier(str, Enum):
@@ -88,6 +93,33 @@ class SkillMatchResult:
     importance: str | None = None
 
 
+def load_cached_active_skills(skill_repository: SkillRepository, cache_service: CacheService | None) -> list:
+    """
+    The active-skill catalog (id/canonical_name/aliases only) behind
+    SkillNormalizationService's own matching tiers - factored out as a
+    module-level function so any other caller that only needs a cheap,
+    already-cached list of active skills (e.g. the RapidFuzz-based
+    unknown-skill suggestion methods, which otherwise reload the whole
+    table on every call) can reuse the exact same cache entry instead of
+    hitting PostgreSQL again.
+    """
+    if not cache_service:
+        return skill_repository.list_active_skills()
+
+    raw = cache_service.get_or_set(
+        skill_catalog_key(),
+        loader=lambda: json.dumps([
+            {"id": str(skill.id), "canonical_name": skill.canonical_name, "aliases": skill.aliases or []}
+            for skill in skill_repository.list_active_skills()
+        ]),
+        ttl=settings.cache_skill_catalog_ttl_seconds,
+    )
+    return [
+        SimpleNamespace(id=UUID(item["id"]), canonical_name=item["canonical_name"], aliases=item["aliases"])
+        for item in json.loads(raw)
+    ]
+
+
 class SkillNormalizationService:
     """
     Matches raw JD skill strings against the skill ontology, in order:
@@ -101,9 +133,28 @@ class SkillNormalizationService:
 
     FUZZY_SCORE_THRESHOLD = 85.0
 
-    def __init__(self, skill_repository: SkillRepository, embedding_service: EmbeddingService):
+    def __init__(
+        self,
+        skill_repository: SkillRepository,
+        embedding_service: EmbeddingService,
+        cache_service: CacheService | None = None,
+    ):
         self.skill_repository = skill_repository
         self.embedding_service = embedding_service
+        self.cache_service = cache_service
+
+    def _load_catalog(self) -> list:
+        """
+        The active-skill catalog is reloaded from PostgreSQL on every single
+        normalize_skills() call (once per JD/resume processed) — cached
+        (see load_cached_active_skills) since only .id/.canonical_name/
+        .aliases are ever read off it (see _match_* below), so a
+        lightweight SimpleNamespace round-trips through JSON without
+        needing the full SkillOntology ORM object (embeddings are matched
+        separately via SkillRepository.find_by_embedding, not against this
+        in-memory list).
+        """
+        return load_cached_active_skills(self.skill_repository, self.cache_service)
 
     def normalize_skills(self, required_skills: list, preferred_skills: list) -> list[SkillMatchResult]:
         """
@@ -116,7 +167,7 @@ class SkillNormalizationService:
         signature and this file's only caller-facing contract never needs
         to know which schema class the JD pipeline uses.
         """
-        catalog = self.skill_repository.list_active_skills()
+        catalog = self._load_catalog()
         results = [
             self._match_skill(
                 self._skill_name(item), catalog, mandatory=True, importance=self._skill_importance(item),

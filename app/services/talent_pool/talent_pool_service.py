@@ -11,7 +11,8 @@ from app.exceptions.campaign_exceptions import CampaignException
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, Resume
-from app.models.pipeline import CampaignCandidate, PipelineStage, TransitionSource
+from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, PipelineStage, TransitionSource
+from sqlalchemy.exc import IntegrityError
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
@@ -19,6 +20,9 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
+from app.core.config import settings
+from app.core.cache_keys import reference_key
+from app.services.cache_service import CacheService
 from app.schemas.talent_pool.talent_pool_schema import (
     AddCandidateToCampaignResponse,
     BulkAddCandidateResultItem,
@@ -41,8 +45,9 @@ from app.schemas.talent_pool.talent_pool_schema import (
 )
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.audit_service import AuditService
-from app.services.campaign.resume_selection_service import ResumeSelectionService
+from app.services.campaign.resume_selection_service import ResumeSelectionResult, ResumeSelectionService
 from app.services.celery_task_log_service import CeleryTaskLogService
+from app.services.skills.skill_normalization_service import load_cached_active_skills
 from app.services.resume.resume_service import ResumeService
 from app.tasks.embedding_tasks import EMBED_RESUME_TASK_TYPE, _enqueue_resume_embedding
 from app.tasks.resume_processing_tasks import RESUME_DOCUMENT_PROCESSING_TASK_TYPE, process_resume_document
@@ -96,7 +101,9 @@ class TalentPoolService:
         skill_repo: SkillRepository | None = None,
         config_repo: ConfigRepository | None = None,
         embedding_service: EmbeddingService | None = None,
+        cache_service: CacheService | None = None,
     ):
+        self.cache_service = cache_service
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
         self.campaign_repo = campaign_repo
@@ -345,11 +352,7 @@ class TalentPoolService:
 
         search_tokens = search.split() if search else []
         all_skill_terms = list(dict.fromkeys([*or_skill_terms, *search_tokens]))
-        resolved_skill_ids_by_term = {}
-        if self.skill_repo is not None:
-            for term in all_skill_terms:
-                resolved_skill = self.skill_repo.find_skill_by_name_or_alias(term)
-                resolved_skill_ids_by_term[term] = resolved_skill.id if resolved_skill is not None else None
+        resolved_skill_ids_by_term = self._resolve_skill_terms(all_skill_terms)
 
         page_resumes, total = self.resume_repo.search_talent_pool(
             search=search,
@@ -567,6 +570,16 @@ class TalentPoolService:
     # ------------------------------------------------------------------
 
     def get_search_filters(self) -> TalentPoolFiltersResponse:
+        if not self.cache_service:
+            return self._load_search_filters()
+        raw = self.cache_service.get_or_set(
+            reference_key("talent_pool_filters"),
+            loader=lambda: self._load_search_filters().model_dump_json(),
+            ttl=settings.cache_reference_ttl_seconds,
+        )
+        return TalentPoolFiltersResponse.model_validate_json(raw)
+
+    def _load_search_filters(self) -> TalentPoolFiltersResponse:
         """
         Filter option metadata for the Talent Pool Normal Search UI - never
         a candidate search itself. Every list is derived from
@@ -607,6 +620,32 @@ class TalentPoolService:
             campaigns=campaigns,
             pipeline_stages=[stage.value for stage in PipelineStage],
         )
+
+    def _resolve_skill_terms(self, terms: list[str]) -> dict[str, UUID | None]:
+        """
+        Resolves every skill/search-box term to a canonical_skill_id in one
+        pass over the Redis-cached active-skill catalog, instead of one
+        find_skill_by_name_or_alias call per term - that method loaded the
+        entire skill_ontology table on every single call, so this was a
+        full-table scan multiplied by the number of distinct terms in the
+        request. Canonical-name matches take priority over alias matches,
+        same as find_skill_by_name_or_alias's own check order.
+        """
+        if not terms or self.skill_repo is None:
+            return {}
+
+        catalog = load_cached_active_skills(self.skill_repo, self.cache_service)
+        id_by_lower_name: dict[str, UUID] = {}
+        id_by_lower_alias: dict[str, UUID] = {}
+        for skill in catalog:
+            id_by_lower_name.setdefault(skill.canonical_name.lower(), skill.id)
+            for alias in (skill.aliases or []):
+                id_by_lower_alias.setdefault(alias.lower(), skill.id)
+
+        return {
+            term: id_by_lower_name.get(term.lower()) or id_by_lower_alias.get(term.lower())
+            for term in terms
+        }
 
     @staticmethod
     def _dedupe_case_insensitive(rows: list[tuple[str, int]]) -> list[str]:
@@ -738,24 +777,30 @@ class TalentPoolService:
     ) -> BulkAddCandidatesResponse:
         """
         Talent Pool Search -> select multiple candidates -> Bulk Add API.
-        For each candidate, this reuses add_candidate_to_campaign UNCHANGED
-        - the exact same campaign-validation/eligibility/duplicate checks,
-        the exact same ResumeSelectionService-backed selection (each
-        candidate is evaluated independently and may therefore select a
-        different resume version), the exact same campaign_candidates
-        insert and CANDIDATE_ADDED audit entry, the exact same idempotency
-        and Celery evaluation-task dispatch - looped, with an independent
-        outcome per candidate. Mirrors SkillCurationService.
-        bulk_approve_unknown_skills' established per-item try/commit/
-        rollback convention: one candidate's failure - expected
-        (not-found/inactive-campaign/already-in-campaign/no-eligible-
-        resume) or not - never blocks, fails, or rolls back any other
-        candidate's independently committed add.
 
-        No separate/duplicate campaign or eligibility validation happens
-        here: add_candidate_to_campaign remains the single source of truth
-        for both, called once per candidate exactly as the single-add
-        endpoint calls it.
+        True bulk implementation - one campaign fetch/lock and one batched
+        duplicate check for the whole request (not once per candidate),
+        one bulk insert of the new campaign_candidates rows and one bulk
+        insert of their stage-history rows (not one create_idempotent/
+        create_stage_history round trip per candidate), and a single
+        commit for the whole batch. Resume selection stays a per-candidate
+        step - each candidate has independently-versioned resumes/
+        embeddings and, when comparing versions, genuine per-resume
+        scoring against the JD - this cannot be collapsed into the
+        batched steps around it. Audit logging and Celery task enqueueing
+        also stay a bounded per-candidate loop (each is one row/one task
+        per candidate by nature, not a count/lookup query), matching
+        add_candidate_to_campaign's own per-candidate audit/enqueue shape.
+
+        Falls back to the original per-candidate add_candidate_to_campaign
+        path (with its own create_idempotent conflict handling) only if
+        the bulk insert itself hits a unique-constraint conflict - i.e. a
+        genuine race with a concurrent request between the batched
+        duplicate check and this insert, which should be rare.
+
+        One candidate's failure (not-found/no-eligible-resume/anything
+        else) never blocks or fails any other candidate's outcome, mirroring
+        the previous per-item try/except convention.
         """
         # Duplicate candidate_ids in one request must not be added twice
         # (and would otherwise surface as a confusing self-inflicted
@@ -763,34 +808,90 @@ class TalentPoolService:
         # dedupes while preserving the order candidates were selected in.
         unique_candidate_ids = list(dict.fromkeys(candidate_ids))
 
-        results = []
+        campaign = self.campaign_repo.get_by_id_for_update(campaign_id)
+        if campaign is None:
+            raise CampaignException("Campaign not found.", 404)
+        if campaign.status == CampaignStatus.PAUSED:
+            raise CampaignException(
+                "This campaign is currently paused — uploads are not accepted.", 409,
+            )
+        if campaign.status != CampaignStatus.ACTIVE:
+            raise CampaignException(
+                "This campaign is closed and no longer accepting applications.", 403,
+            )
+
+        existing_ids = self.campaign_candidate_repo.get_existing_candidate_ids(
+            campaign_id, unique_candidate_ids,
+        )
+
+        results: list[BulkAddCandidateResultItem] = []
+        to_insert: list[tuple[UUID, CampaignCandidate, Resume, ResumeSelectionResult]] = []
+
         for candidate_id in unique_candidate_ids:
+            if candidate_id in existing_ids:
+                results.append(BulkAddCandidateResultItem(
+                    candidate_id=candidate_id, status="FAILED", reason=_ALREADY_IN_CAMPAIGN_MESSAGE,
+                ))
+                continue
+
             try:
-                response = self.add_candidate_to_campaign(
-                    candidate_id, campaign_id, actor_id=actor_id, actor_role=actor_role,
+                candidate = self.candidate_repo.get_by_id(candidate_id)
+                if candidate is None:
+                    raise NotFoundError(f"Candidate {candidate_id} not found.")
+
+                selection_result = self.resume_selection_service.select_resume_for_campaign(
+                    candidate_id, campaign,
                 )
+                resume = selection_result.selected_resume
             except Exception as exc:
-                # add_candidate_to_campaign does not roll back on every
-                # early-exit path (e.g. the FOR UPDATE lock it acquires on
-                # the campaign row before its already-in-campaign/no-
-                # eligible-resume checks) - rolling back unconditionally
-                # here keeps one failed candidate's lock/transaction state
-                # from bleeding into the next iteration on this shared,
-                # per-request session. Caught broadly (not just the
-                # expected exception types) so a genuinely unexpected error
-                # for one candidate still can't take down the whole batch.
-                self.campaign_candidate_repo.rollback()
                 results.append(BulkAddCandidateResultItem(
                     candidate_id=candidate_id, status="FAILED", reason=self._failure_reason(exc),
                 ))
                 continue
 
-            results.append(BulkAddCandidateResultItem(
+            campaign_candidate = CampaignCandidate(
+                id=uuid4(),
+                campaign_id=campaign_id,
                 candidate_id=candidate_id,
-                status="ADDED",
-                campaign_candidate_id=response.campaign_candidate_id,
-                resume_id=response.resume_id,
+                resume_id=resume.id,
+                idempotency_key=self._build_idempotency_key(campaign_id, candidate_id, resume.id),
+                pipeline_stage=PipelineStage.UPLOADED,
+            )
+            to_insert.append((candidate_id, campaign_candidate, resume, selection_result))
+
+        if to_insert:
+            try:
+                self._bulk_insert_campaign_candidates(to_insert, campaign, actor_id, actor_role)
+            except IntegrityError:
+                self.campaign_candidate_repo.rollback()
+                fallback_items = to_insert
+                to_insert = []
+                for candidate_id, _, _, _ in fallback_items:
+                    try:
+                        response = self.add_candidate_to_campaign(
+                            candidate_id, campaign_id, actor_id=actor_id, actor_role=actor_role,
+                        )
+                    except Exception as exc:
+                        self.campaign_candidate_repo.rollback()
+                        results.append(BulkAddCandidateResultItem(
+                            candidate_id=candidate_id, status="FAILED", reason=self._failure_reason(exc),
+                        ))
+                        continue
+                    results.append(BulkAddCandidateResultItem(
+                        candidate_id=candidate_id, status="ADDED",
+                        campaign_candidate_id=response.campaign_candidate_id, resume_id=response.resume_id,
+                    ))
+
+        for candidate_id, campaign_candidate, resume, _ in to_insert:
+            results.append(BulkAddCandidateResultItem(
+                candidate_id=candidate_id, status="ADDED",
+                campaign_candidate_id=campaign_candidate.id, resume_id=resume.id,
             ))
+            # Celery enqueue is inherently one call per campaign_candidate
+            # row - bounded by request size, and not a DB query, so
+            # looping here doesn't reintroduce the N+1 cost the insert/
+            # history/dedup batching above removed.
+            self._queue_evaluation_tasks(campaign, resume, campaign_candidate)
 
         return BulkAddCandidatesResponse(
             campaign_id=campaign_id,
@@ -799,6 +900,60 @@ class TalentPoolService:
             failed=sum(1 for item in results if item.status == "FAILED"),
             results=results,
         )
+
+    def _bulk_insert_campaign_candidates(
+        self,
+        to_insert: list[tuple[UUID, CampaignCandidate, Resume, ResumeSelectionResult]],
+        campaign: HiringCampaign,
+        actor_id: str,
+        actor_role: str | None,
+    ) -> None:
+        """
+        One flush for every new campaign_candidates row, one flush for
+        every new stage-history row, one audit-log insert per candidate
+        (bounded, see bulk_add_candidates_to_campaign's docstring), then a
+        single commit for the whole batch. Raises IntegrityError
+        untouched on a unique-constraint conflict so the caller can fall
+        back to the per-candidate path for this batch.
+        """
+        try:
+            campaign_candidates = [campaign_candidate for _, campaign_candidate, _, _ in to_insert]
+            self.campaign_candidate_repo.bulk_create(campaign_candidates)
+
+            histories = [
+                CampaignCandidateStageHistory(
+                    campaign_candidate_id=campaign_candidate.id,
+                    from_stage=None,
+                    to_stage=PipelineStage.UPLOADED,
+                    transition_source=TransitionSource.SYSTEM,
+                )
+                for campaign_candidate in campaign_candidates
+            ]
+            self.campaign_candidate_repo.bulk_create_stage_history(histories)
+
+            for candidate_id, campaign_candidate, resume, selection_result in to_insert:
+                self.audit_service.log(
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    action_type=ActionType.CANDIDATE_ADDED,
+                    entity_type=EntityType.CAMPAIGN_CANDIDATE,
+                    entity_id=campaign_candidate.id,
+                    campaign_id=campaign.id,
+                    details={
+                        "candidate_id": str(candidate_id),
+                        "resume_id": str(resume.id),
+                        "pipeline_stage": campaign_candidate.pipeline_stage.value,
+                        "source": "TALENT_POOL",
+                        "selection_method": selection_result.selection_method.value,
+                        "selected_resume_id": str(resume.id),
+                        "eligible_resume_count": len(selection_result.evaluated_resumes),
+                    },
+                )
+
+            self.campaign_candidate_repo.commit()
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise
 
     @staticmethod
     def _failure_reason(exc: Exception) -> str:

@@ -144,6 +144,27 @@ class SkillRepository:
                      SkillOntology.last_seen_at: datetime.now(timezone.utc)})
         )
 
+    def bump_occurrence_counts(self, skill_ids: list[UUID]) -> None:
+        """Batched bump_occurrence_count - one UPDATE for every matched skill in a JD/resume instead of one per skill."""
+        if not skill_ids:
+            return
+        (
+            self.db.query(SkillOntology)
+            .filter(SkillOntology.id.in_(set(skill_ids)))
+            .update(
+                {SkillOntology.occurrence_count: SkillOntology.occurrence_count + 1,
+                 SkillOntology.last_seen_at: datetime.now(timezone.utc)},
+                synchronize_session=False,
+            )
+        )
+
+    def bulk_create_jd_skills(self, jd_skills: list[JDSkill]) -> None:
+        """One flush for every matched JD skill instead of one create_jd_skill round trip each."""
+        if not jd_skills:
+            return
+        self.db.add_all(jd_skills)
+        self.db.flush()
+
     def create_jd_skill(
         self,
         jd_id: UUID,

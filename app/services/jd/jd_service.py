@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from docx import Document
 from fastapi import HTTPException, UploadFile
 
 from app.models.jd.job_descriptions import JobDescription, JDSourceFormat, JDVerificationStatus
-from app.models.skills import JDSkillImportance
+from app.models.skills import JDSkill, JDSkillImportance
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.skill_repository import SkillRepository
@@ -32,6 +33,9 @@ from app.core.storage_service import StorageService
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 from app.utils.excel_export import ExcelExport
+from app.core.config import settings
+from app.core.cache_keys import jd_key, jd_list_key, jd_list_prefix, jd_search_key, jd_search_prefix
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +112,14 @@ class JDService:
         storage_service: StorageService,
         prompt_template_repository: PromptTemplateRepository,
         embedding_queue_service: EmbeddingQueueService | None = None,
+        cache_service: CacheService | None = None,
     ):
         self.repository = repository
         self.hash_service = hash_service
         self.audit_service = audit_service
         self.storage_service = storage_service
         self.prompt_template_repository = prompt_template_repository
+        self.cache_service = cache_service
         # Optional, defaulted (like SkillSeedService's own
         # embedding_queue_service) rather than a new required constructor
         # arg, so every existing JDService(...) call site keeps working
@@ -270,21 +276,28 @@ class JDService:
             # importance is AI-classified per required skill (None for
             # preferred skills, and for resume-side matches, which never
             # reach this JD-only persistence path at all).
-            for match in matched_by_skill.values():
-                importance = (
-                    JDSkillImportance(match.importance.upper()) if match.importance else None
-                )
-                skill_repository.create_jd_skill(
+            #
+            # Built and inserted as one batch (bulk_create_jd_skills) and
+            # occurrence-bumped as one batched UPDATE
+            # (bump_occurrence_counts) instead of two round trips per
+            # matched skill - matched_by_skill is already fully known
+            # before this point, so there's no per-row dependency between
+            # iterations.
+            jd_skills = [
+                JDSkill(
                     jd_id=job_description.id,
                     canonical_skill_id=match.canonical_skill_id,
                     mandatory=match.mandatory,
+                    weight=_DEFAULT_JD_SKILL_WEIGHT,
+                    importance=(JDSkillImportance(match.importance.upper()) if match.importance else None),
+                    confidence=match.confidence,
                     match_tier=match.match_tier.value,
                     verification_status=verification_status_for_tier(match.match_tier),
-                    confidence=match.confidence,
-                    weight=_DEFAULT_JD_SKILL_WEIGHT,
-                    importance=importance,
                 )
-                skill_repository.bump_occurrence_count(match.canonical_skill_id)
+                for match in matched_by_skill.values()
+            ]
+            skill_repository.bulk_create_jd_skills(jd_skills)
+            skill_repository.bump_occurrence_counts(list(matched_by_skill.keys()))
 
             for match in skill_matches:
                 if match.canonical_skill_id:
@@ -331,6 +344,7 @@ class JDService:
             )
 
             self.repository.commit()
+            self._invalidate_jd_caches(existing_jd_id if is_reprocess else None)
             return job_description.id
 
         except Exception:
@@ -431,7 +445,7 @@ class JDService:
 
 
 
-    def get_by_id(self, jd_id: str) -> JobDescription | None:
+    def _load_jd_response(self, jd_id: str) -> GetJDResponse:
         job_description = self.repository.get_by_id(jd_id=jd_id)
 
         if not job_description:
@@ -466,7 +480,18 @@ class JDService:
             prompt_name=prompt.name if prompt else None,
         )
 
-    def get_all_jds(self, is_active_version: bool) -> list[GetJDResponse]:
+    def get_by_id(self, jd_id: str) -> GetJDResponse:
+        if not self.cache_service:
+            return self._load_jd_response(jd_id)
+
+        raw = self.cache_service.get_or_set(
+            jd_key(jd_id),
+            loader=lambda: self._load_jd_response(jd_id).model_dump_json(),
+            ttl=settings.cache_jd_ttl_seconds,
+        )
+        return GetJDResponse.model_validate_json(raw)
+
+    def _load_all_jds(self, is_active_version: bool) -> list[GetJDResponse]:
         records = self.repository.get_all_jds(is_active_version=is_active_version)
         prompt_names = self.prompt_template_repository.get_names_by_ids(
             [jd.prompt_template_id for jd in records]
@@ -497,6 +522,27 @@ class JDService:
             )
             for jd in records
         ]
+
+    def get_all_jds(self, is_active_version: bool) -> list[GetJDResponse]:
+        if not self.cache_service:
+            return self._load_all_jds(is_active_version)
+
+        raw = self.cache_service.get_or_set(
+            jd_list_key(is_active_version),
+            loader=lambda: json.dumps(
+                [jd.model_dump(mode="json") for jd in self._load_all_jds(is_active_version)]
+            ),
+            ttl=settings.cache_jd_list_ttl_seconds,
+        )
+        return [GetJDResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _invalidate_jd_caches(self, jd_id: UUID | str | None = None) -> None:
+        if not self.cache_service:
+            return
+        if jd_id is not None:
+            self.cache_service.delete(jd_key(jd_id))
+        self.cache_service.delete_by_prefix(jd_list_prefix())
+        self.cache_service.delete_by_prefix(jd_search_prefix())
 
     def download_jd_file(self, jd_id: UUID) -> tuple[bytes, str, str]:
         """
@@ -674,6 +720,7 @@ class JDService:
         )
 
         self.repository.commit()
+        self._invalidate_jd_caches(existing_jd.id)
 
         # EMBED_JD: only after the transaction above has committed - this
         # metadata-only update path creates a brand-new JD version (new
@@ -731,6 +778,7 @@ class JDService:
         )
 
         self.repository.commit()
+        self._invalidate_jd_caches(existing_jd.id)
 
         prompt = self.prompt_template_repository.get_by_id(existing_jd.prompt_template_id)
 
@@ -743,10 +791,7 @@ class JDService:
             prompt_name= prompt.name if prompt else None,
         )
 
-    def search_job_descriptions(
-        self,
-        request: JDSearchRequest,
-    )-> PaginatedJDResponse:
+    def _load_search_job_descriptions(self, request: JDSearchRequest) -> PaginatedJDResponse:
         records, total = self.repository.search(request=request)
 
         campaign_counts = self.repository.get_campaign_status_counts(
@@ -768,6 +813,20 @@ class JDService:
             size=request.size,
             items=items
         )
+
+    def search_job_descriptions(
+        self,
+        request: JDSearchRequest,
+    )-> PaginatedJDResponse:
+        if not self.cache_service:
+            return self._load_search_job_descriptions(request)
+
+        raw = self.cache_service.get_or_set(
+            jd_search_key(request.model_dump(mode="json")),
+            loader=lambda: self._load_search_job_descriptions(request).model_dump_json(),
+            ttl=settings.cache_jd_list_ttl_seconds,
+        )
+        return PaginatedJDResponse.model_validate_json(raw)
     
     # def export_jd_list(
     #     self,
