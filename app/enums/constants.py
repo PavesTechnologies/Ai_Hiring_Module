@@ -92,9 +92,6 @@ class ActionType(enum.Enum):
     SHORTLIST_PACKAGE_EXPORTED = "SHORTLIST_PACKAGE_EXPORTED"
     AUDIT_TRAIL_EXPORTED = "AUDIT_TRAIL_EXPORTED"
     COMPLIANCE_REPORT_EXPORTED = "COMPLIANCE_REPORT_EXPORTED"
-    DSAR_EXPORTED = "DSAR_EXPORTED"
-    SCHEDULED_EXPORT_CONFIGURED = "SCHEDULED_EXPORT_CONFIGURED"
-    SCHEDULED_EXPORT_SENT = "SCHEDULED_EXPORT_SENT"
     # Epic 4 (M05-E04) Phase D0 — the DB-side audit_action_type_enum does NOT
     # yet contain these 4 values (this migration adds them in the same
     # phase). Writing an AuditLog row with any of these will fail with

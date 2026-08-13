@@ -12,23 +12,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.export import get_export_service, get_scheduled_export_service
+from app.dependencies.export import get_export_service
 from app.enums.constants import ActionType
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 from app.schemas.export.export_schema import (
     BatchScorecardRequest,
-    DsarRequest,
     ExportDispatchResponse,
-    ExportPreviewResponse,
-    ScheduledExportConfigRequest,
-    ScheduledExportConfigResponse,
-    ScheduledExportHistoryEntry,
-    ScheduledExportPauseRequest,
 )
 from app.schemas.response import APIResponse
 from app.services.export.export_service import ExportService
-from app.services.export.scheduled_export_service import ScheduledExportService
 
 router = APIRouter(prefix="/exports", tags=["Exports"])
 
@@ -53,30 +46,6 @@ def _stamp() -> str:
 
 
 # ── candidate list ────────────────────────────────────────────────────
-
-
-@router.get(
-    "/campaigns/{campaign_id}/candidates/preview",
-    response_model=APIResponse[ExportPreviewResponse],
-    summary="Check whether an export will run inline or in the background",
-    description=(
-        "Lets the export dialog tell the user what will happen before "
-        "they commit, rather than discovering it after pressing Export."
-    ),
-)
-def preview_candidate_export(
-    campaign_id: UUID,
-    export_service: ExportService = Depends(get_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    count = export_service.candidate_list_row_count(campaign_id)
-    threshold = export_service.async_threshold()
-    return APIResponse.ok(data=ExportPreviewResponse(
-        row_count=count,
-        threshold=threshold,
-        will_be_async=count > threshold,
-        notify_email_hint=user.email if hasattr(user, "email") else None,
-    ))
 
 
 @router.get(
@@ -222,104 +191,6 @@ def export_shortlist_package(
 
 
 @router.get(
-    "/campaigns/{campaign_id}/schedule",
-    response_model=APIResponse[ScheduledExportConfigResponse],
-    summary="Read a campaign's scheduled export configuration",
-    description="HR_ADMIN only.",
-)
-def get_schedule(
-    campaign_id: UUID,
-    service: ScheduledExportService = Depends(get_scheduled_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    return APIResponse.ok(data=service.describe(campaign_id))
-
-
-@router.put(
-    "/campaigns/{campaign_id}/schedule",
-    response_model=APIResponse[ScheduledExportConfigResponse],
-    summary="Configure a recurring ranked-list export",
-    description=(
-        "Frequency, time, top N, format and recipients. A schedule on a "
-        "campaign that is not ACTIVE is auto-suspended until it becomes active again."
-    ),
-)
-def put_schedule(
-    campaign_id: UUID,
-    request: ScheduledExportConfigRequest,
-    service: ScheduledExportService = Depends(get_scheduled_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    result = service.configure(
-        campaign_id,
-        {**request.model_dump(), "recipients": [str(r) for r in request.recipients]},
-        actor_id=user.user_id,
-        actor_role=UserRole.HR_ADMIN.value,
-    )
-    return APIResponse.ok(data=result, message="Scheduled export saved.")
-
-
-@router.post(
-    "/campaigns/{campaign_id}/schedule/pause",
-    response_model=APIResponse[ScheduledExportConfigResponse],
-    summary="Pause or resume a scheduled export",
-    description="HR_ADMIN only.",
-)
-def pause_schedule(
-    campaign_id: UUID,
-    request: ScheduledExportPauseRequest,
-    service: ScheduledExportService = Depends(get_scheduled_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    result = service.set_paused(
-        campaign_id, request.paused,
-        actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value,
-    )
-    return APIResponse.ok(
-        data=result,
-        message="Scheduled export paused." if request.paused else "Scheduled export resumed.",
-    )
-
-
-@router.delete(
-    "/campaigns/{campaign_id}/schedule",
-    response_model=APIResponse[dict],
-    summary="Disable a campaign's scheduled export",
-    description="HR_ADMIN only.",
-)
-def delete_schedule(
-    campaign_id: UUID,
-    service: ScheduledExportService = Depends(get_scheduled_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    result = service.disable(
-        campaign_id, actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value,
-    )
-    return APIResponse.ok(data=result, message="Scheduled export disabled.")
-
-
-@router.get(
-    "/campaigns/{campaign_id}/schedule/history",
-    response_model=APIResponse[list[ScheduledExportHistoryEntry]],
-    summary="View scheduled export history and delivery status",
-    description=(
-        "The last N EXPORT_GENERATE runs for this campaign. Read-only; "
-        "past exports are never regenerated from here."
-    ),
-)
-def schedule_history(
-    campaign_id: UUID,
-    limit: int = Query(default=20, ge=1, le=100),
-    service: ScheduledExportService = Depends(get_scheduled_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    return APIResponse.ok(data=service.history(campaign_id, limit=limit))
-
-
-# ── audit & compliance ────────────────────────────────────────────────
-
-
-@router.get(
     "/campaigns/{campaign_id}/audit-trail",
     summary="Export the full campaign audit trail as XLSX",
     description=(
@@ -363,26 +234,3 @@ def export_compliance_summary(
     return _file(content, f"compliance_summary_{_stamp()}.pdf", "application/pdf")
 
 
-@router.post(
-    "/dsar",
-    status_code=status.HTTP_200_OK,
-    summary="Generate a Data Subject Access Report for a candidate",
-    description=(
-        "Looks the candidate up by email hash and returns every record "
-        "held about them across all campaigns. The submitted email is used only to compute "
-        "the hash and is never stored. HR_ADMIN only."
-    ),
-)
-def export_dsar(
-    request: DsarRequest,
-    export_service: ExportService = Depends(get_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    content, candidate_id = export_service.build_dsar_xlsx(str(request.email))
-    export_service.log_export(
-        actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value, campaign_id=None,
-        action_type=ActionType.DSAR_EXPORTED.value,
-        # The subject is recorded by id; the email that was searched is not.
-        details={"title": "DSAR generated", "candidate_id": str(candidate_id)},
-    )
-    return _file(content, f"dsar_{candidate_id}_{_stamp()}.xlsx", XLSX_TYPE)

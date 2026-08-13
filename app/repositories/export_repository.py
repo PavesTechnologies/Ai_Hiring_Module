@@ -4,10 +4,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.campaigns import HiringCampaign
-from app.models.candidates import Candidate, Resume
-from app.models.compliance import AuditLog, CandidateConsent
-from app.models.jd.job_descriptions import JobDescription
+from app.models.candidates import Resume
+from app.models.compliance import AuditLog
 from app.models.pipeline import (
     CampaignCandidate,
     CampaignCandidateAIEvaluation,
@@ -294,79 +292,3 @@ class ExportRepository:
             .order_by(func.count(AuditLog.id).desc())
         ).all()
         return rows
-
-    # ── export history ────────────────────────────────────────
-
-    def export_history(self, campaign_id: UUID, limit: int = 20):
-        """
-        Past EXPORT_GENERATE runs for one campaign, newest first.
-
-        Matched on the idempotency_key prefix because celery_task_log has no
-        campaign_id column; export_tasks.export_idempotency_key writes the
-        campaign into that key precisely so this lookup is possible without a
-        schema change.
-        """
-        from app.models.async_tasks import CeleryTaskLog
-
-        return (
-            self.db.query(CeleryTaskLog)
-            .filter(
-                CeleryTaskLog.task_type == "EXPORT_GENERATE",
-                CeleryTaskLog.idempotency_key.like(f"EXPORT_GENERATE:{campaign_id}:%"),
-            )
-            .order_by(CeleryTaskLog.queued_at.desc())
-            .limit(limit)
-            .all()
-        )
-
-    # ── DSAR ──────────────────────────────────────────────────
-
-    def candidate_by_email_hash(self, email_hash: str):
-        return (
-            self.db.query(Candidate)
-            .filter(Candidate.email_hash == email_hash)
-            .first()
-        )
-
-    def dsar_bundle(self, candidate_id: UUID) -> dict:
-        """Everything held about one candidate, across every campaign."""
-        resumes = self.db.query(Resume).filter(Resume.candidate_id == candidate_id).all()
-        appearances = self.db.execute(
-            select(
-                CampaignCandidate.id,
-                CampaignCandidate.campaign_id,
-                HiringCampaign.name.label("campaign_name"),
-                JobDescription.title.label("jd_title"),
-                CampaignCandidate.pipeline_stage,
-                CampaignCandidate.composite_score,
-                CampaignCandidate.deterministic_score,
-                CampaignCandidate.semantic_score,
-                CampaignCandidate.decision_type,
-                CampaignCandidate.decision_source,
-                CampaignCandidate.decision_reason,
-                CampaignCandidate.created_at,
-            )
-            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
-            .outerjoin(JobDescription, JobDescription.id == HiringCampaign.jd_id)
-            .where(CampaignCandidate.candidate_id == candidate_id)
-            .order_by(CampaignCandidate.created_at.asc())
-        ).all()
-        resume_ids = [r.id for r in resumes]
-        skills = (
-            self.db.query(CandidateSkill)
-            .filter(CandidateSkill.resume_id.in_(resume_ids))
-            .all()
-            if resume_ids else []
-        )
-        consents = (
-            self.db.query(CandidateConsent)
-            .filter(CandidateConsent.candidate_id == candidate_id)
-            .order_by(CandidateConsent.consent_timestamp.asc())
-            .all()
-        )
-        return {
-            "resumes": resumes,
-            "appearances": appearances,
-            "skills": skills,
-            "consents": consents,
-        }

@@ -1,4 +1,3 @@
-import hashlib
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -567,101 +566,6 @@ class ExportService:
               "information and no individual reviewer names are included."]],
         ))
         return build_pdf(out, title="Compliance Summary")
-
-    # ── DSAR ──────────────────────────────────────────────────
-
-    @staticmethod
-    def email_hash(email: str) -> str:
-        """
-        Matches how candidates.email_hash is written elsewhere in the codebase.
-        The plaintext email is used for the lookup and never stored.
-        """
-        return hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()
-
-    def build_dsar_xlsx(self, email: str, decrypt_pii=None) -> tuple[bytes, UUID]:
-        candidate = self.export_repo.candidate_by_email_hash(self.email_hash(email))
-        if candidate is None:
-            raise CampaignException("No candidate found for that email address.", 404)
-
-        bundle = self.export_repo.dsar_bundle(candidate.id)
-        wb = Workbook()
-
-        ws = wb.active
-        ws.title = "Candidate"
-        pii = {}
-        if decrypt_pii is not None:
-            try:
-                pii = decrypt_pii(candidate) or {}
-            except Exception:
-                # A DSAR must still be produced if decryption fails; the
-                # subject's own record is the point, and the omission is
-                # visible rather than silent.
-                logger.exception("DSAR PII decryption failed for candidate %s", candidate.id)
-                pii = {"full_name": "<decryption failed>", "email": "<decryption failed>"}
-        ExcelExport._write_sheet(
-            ws, ["Field", "Value"],
-            [
-                {"f": "Candidate ID", "v": str(candidate.id)},
-                {"f": "Full name", "v": pii.get("full_name", "<encrypted>")},
-                {"f": "Email", "v": pii.get("email", "<encrypted>")},
-                {"f": "Phone", "v": pii.get("phone", "<encrypted>")},
-                {"f": "Created", "v": _dt(candidate.created_at)},
-            ],
-            ["f", "v"],
-        )
-
-        ws2 = wb.create_sheet("Resumes")
-        ExcelExport._write_sheet(
-            ws2, ["Resume ID", "File", "Parse Status", "Version", "Active", "Uploaded At"],
-            [{
-                "id": str(r.id), "file": r.original_filename or r.file_path,
-                "status": _v(r.parse_status), "ver": r.version_number,
-                "active": "YES" if r.is_active_version else "NO", "at": _dt(r.created_at),
-            } for r in bundle["resumes"]],
-            ["id", "file", "status", "ver", "active", "at"],
-        )
-
-        ws3 = wb.create_sheet("Campaign Applications")
-        ExcelExport._write_sheet(
-            ws3,
-            ["Campaign", "JD Title", "Stage", "Composite", "Deterministic", "Semantic",
-             "Decision", "Layer", "Reason", "Applied At"],
-            [{
-                "c": a.campaign_name, "jd": a.jd_title or "", "st": _v(a.pipeline_stage),
-                "comp": _v(a.composite_score), "det": _v(a.deterministic_score),
-                "sem": _v(a.semantic_score), "dec": _v(a.decision_type),
-                "layer": _v(a.decision_source), "reason": a.decision_reason or "",
-                "at": _dt(a.created_at),
-            } for a in bundle["appearances"]],
-            ["c", "jd", "st", "comp", "det", "sem", "dec", "layer", "reason", "at"],
-        )
-
-        ws4 = wb.create_sheet("Skills")
-        ExcelExport._write_sheet(
-            ws4, ["Extracted Text", "Canonical Skill ID", "Match Tier", "Weight"],
-            [{
-                "raw": getattr(s, "raw_extracted_text", "") or "",
-                "cid": str(getattr(s, "canonical_skill_id", "") or ""),
-                "tier": _v(getattr(s, "match_tier", None)),
-                "w": _v(getattr(s, "scoring_weight", None)),
-            } for s in bundle["skills"]],
-            ["raw", "cid", "tier", "w"],
-        )
-
-        ws5 = wb.create_sheet("Consent")
-        ExcelExport._write_sheet(
-            ws5, ["Given", "Version", "Jurisdiction", "Source", "Timestamp", "Revoked At"],
-            [{
-                "g": "YES" if c.consent_given else "NO", "v": c.consent_version,
-                "j": c.jurisdiction, "s": c.consent_source,
-                "t": _dt(c.consent_timestamp), "r": _dt(c.revoked_at),
-            } for c in bundle["consents"]],
-            ["g", "v", "j", "s", "t", "r"],
-        )
-
-        buf = BytesIO()
-        wb.save(buf)
-        return buf.getvalue(), candidate.id
 
     # ── audit ─────────────────────────────────────────────────────────
 

@@ -14,7 +14,6 @@ from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
-from app.models.campaigns import CampaignStatus
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.candidate_note_repository import CandidateNoteRepository
@@ -22,7 +21,6 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.export_repository import ExportRepository
 from app.services.audit_service import AuditService
 from app.services.export.export_service import ExportService
-from app.services.export.scheduled_export_service import ScheduledExportService
 
 logger = logging.getLogger(__name__)
 
@@ -191,59 +189,5 @@ def generate_export_task(
             except Exception:
                 db.rollback()
         raise
-    finally:
-        db.close()
-
-
-@celery_app.task(name="export.run_scheduled_exports")
-def run_scheduled_exports_task():
-    """
-    M11-E05-S03 beat sweep. Evaluates every campaign's schedule and dispatches
-    the ones that are due.
-
-    One campaign failing must not stop the sweep, so each is guarded
-    individually — a bad schedule on one campaign is not allowed to silently
-    cancel everyone else's exports.
-    """
-    db = SessionLocal()
-    dispatched, skipped = 0, 0
-    try:
-        campaign_repo = CampaignRepository(db)
-        service = ScheduledExportService(
-            campaign_repo=campaign_repo,
-            export_service=_build_service(db),
-            audit_service=AuditService(AuditRepository(db)),
-        )
-
-        campaigns = campaign_repo.get_with_scheduled_exports()
-        now = datetime.now(timezone.utc)
-
-        for campaign in campaigns:
-            try:
-                if not service.is_due(campaign, now=now):
-                    skipped += 1
-                    continue
-                cfg = campaign.scheduled_export_config or {}
-                generate_export_task.delay(
-                    str(campaign.id),
-                    kind="CANDIDATE_LIST",
-                    requested_by=campaign.created_by,
-                    options={
-                        "scheduled": True,
-                        "format": cfg.get("format", "XLSX"),
-                        "top_n": cfg.get("top_n"),
-                        "recipients": cfg.get("recipients", []),
-                        "idempotency_key": export_idempotency_key(
-                            campaign.id, "SCHEDULED", now.strftime("%Y%m%d"),
-                        ),
-                    },
-                )
-                service.mark_sent(campaign, when=now)
-                dispatched += 1
-            except Exception:
-                logger.exception("Scheduled export failed for campaign %s", campaign.id)
-
-        logger.info("Scheduled exports: %s dispatched, %s skipped", dispatched, skipped)
-        return {"dispatched": dispatched, "skipped": skipped}
     finally:
         db.close()
