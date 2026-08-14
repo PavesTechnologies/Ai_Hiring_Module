@@ -9,6 +9,8 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.unknown_skill.skill_suggestion_response import SkillSuggestionResponse
 from app.services.ai.embedding_service import EmbeddingService
+from app.services.cache_service import CacheService
+from app.services.skills.skill_normalization_service import load_cached_active_skills
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +44,30 @@ class UnknownSkillSuggestionService:
         skill_repository: SkillRepository,
         config_repository: ConfigRepository,
         embedding_service: EmbeddingService,
+        cache_service: CacheService | None = None,
     ):
         self.skill_repository = skill_repository
         self.config_repository = config_repository
         self.embedding_service = embedding_service
+        self.cache_service = cache_service
+
+    def _active_skill_catalog(self) -> list:
+        """
+        The same Redis-cached {id, canonical_name, aliases} catalog
+        SkillNormalizationService uses for JD/resume matching - reused
+        here so the RapidFuzz suggestion methods stop reloading the whole
+        skill_ontology table (and, for the alias variant, re-flattening
+        every alias) on every single HR-review call.
+        """
+        return load_cached_active_skills(self.skill_repository, self.cache_service)
+
+    def _active_skill_aliases(self) -> list[tuple]:
+        """(skill, alias) pairs flattened from the cached catalog - same shape as SkillRepository.get_all_skill_aliases."""
+        return [
+            (skill, alias)
+            for skill in self._active_skill_catalog()
+            for alias in (skill.aliases or [])
+        ]
 
     # ── Public API - one method per endpoint ──────────────────────────────
 
@@ -57,7 +79,7 @@ class UnknownSkillSuggestionService:
 
         candidates: list[_ScoredCandidate] = [
             (skill, None, float(fuzz.ratio(unknown_skill.raw_text, skill.canonical_name)))
-            for skill in self.skill_repository.list_active_skills()
+            for skill in self._active_skill_catalog()
         ]
         top = self._rank_top_k(candidates, threshold=cutoff, top_k=top_k)
         logger.info(
@@ -90,7 +112,7 @@ class UnknownSkillSuggestionService:
 
         candidates: list[_ScoredCandidate] = [
             (skill, alias, float(fuzz.ratio(unknown_skill.raw_text, alias)))
-            for skill, alias in self.skill_repository.get_all_skill_aliases()
+            for skill, alias in self._active_skill_aliases()
         ]
         top = self._rank_top_k(candidates, threshold=cutoff, top_k=top_k)
         logger.info(
@@ -105,10 +127,17 @@ class UnknownSkillSuggestionService:
         unknown_skill = self._get_pending_unknown_skill(unknown_skill_id)
         top_k, cutoff = self._resolve_params(limit, threshold, self.SEMANTIC_THRESHOLD_CONFIG_KEY, self.DEFAULT_SEMANTIC_THRESHOLD)
 
+        # Aliases have no persisted embedding column (see _cosine_similarity's
+        # docstring), so a per-alias embedding-model call is still required
+        # here - this only removes the DB portion of the cost (the full
+        # get_all_skill_aliases table load) by reusing the cached catalog;
+        # the CPU cost of embedding every alias remains until alias
+        # embeddings are pre-computed and stored, which is a schema change
+        # out of scope for this pass.
         target_embedding = self.embedding_service.generate_embedding(unknown_skill.raw_text)
         candidates: list[_ScoredCandidate] = [
             (skill, alias, self._cosine_similarity(target_embedding, self.embedding_service.generate_embedding(alias)))
-            for skill, alias in self.skill_repository.get_all_skill_aliases()
+            for skill, alias in self._active_skill_aliases()
         ]
         top = self._rank_top_k(candidates, threshold=cutoff, top_k=top_k)
         logger.info(

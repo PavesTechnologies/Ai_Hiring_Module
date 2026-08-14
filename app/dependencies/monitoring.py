@@ -24,6 +24,8 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.services.embedding_dashboard_service import EmbeddingDashboardService
 from app.services.ops_monitoring_service import OpsMonitoringService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 
 
 def get_ops_monitoring_service(
@@ -35,6 +37,7 @@ def get_ops_monitoring_service(
     bulk_upload_job_repository: BulkUploadJobRepository = Depends(get_bulk_upload_job_repository),
     campaign_repository: CampaignRepository = Depends(get_campaign_repository),
     circuit_breaker_repository: CircuitBreakerRepository = Depends(get_circuit_breaker_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> OpsMonitoringService:
     return OpsMonitoringService(
         celery_task_log_repository=celery_task_log_repository,
@@ -45,6 +48,7 @@ def get_ops_monitoring_service(
         bulk_upload_job_repository=bulk_upload_job_repository,
         campaign_repository=campaign_repository,
         circuit_breaker_repository=circuit_breaker_repository,
+        cache_service=cache_service,
     )
 
 

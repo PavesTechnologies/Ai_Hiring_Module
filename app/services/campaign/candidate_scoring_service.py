@@ -130,10 +130,60 @@ class CandidateScoringService:
     # M07-E01 S02: hierarchy-aware mandatory-skill coverage breakdown
     # ------------------------------------------------------------------
 
+    def load_mandatory_skill_hierarchy_for_jd(self, jd_id: UUID) -> dict:
+        """
+        Convenience wrapper for callers that only have a jd_id (not
+        already-fetched coverage_rows) - e.g. ResumeSelectionService
+        comparing several resume versions against the same JD, where the
+        hierarchy should be loaded once up front rather than once per
+        build_mandatory_skill_breakdown call.
+        """
+        mandatory_jd_skills = self.skill_repository.get_mandatory_jd_skills(jd_id)
+        return self.load_mandatory_skill_hierarchy(
+            [jd_skill.canonical_skill_id for jd_skill in mandatory_jd_skills]
+        )
+
+    def load_mandatory_skill_hierarchy(self, mandatory_skill_ids: list[UUID]) -> dict:
+        """
+        Batch-loads everything the CHILD/GRANDCHILD/SIBLING hierarchy tiers
+        need for a fixed set of mandatory skill ids, in 3 queries total
+        (skills-themselves, their children/siblings, their grandchildren)
+        instead of one get_skill_by_id + one-or-more get_children call per
+        skill. This data depends only on the JD's mandatory skills, never
+        on which resume/candidate is being scored - callers comparing
+        multiple resume versions against the same JD (e.g.
+        ResumeSelectionService._compare_and_select) should call this once
+        and pass the result to every build_mandatory_skill_breakdown call
+        for that JD, instead of letting each one reload it.
+        """
+        skills_by_id = self.skill_ontology_repository.get_skills_by_ids(mandatory_skill_ids)
+
+        parent_ids = {
+            skill.parent_skill_id for skill in skills_by_id.values() if skill.parent_skill_id is not None
+        }
+        children_by_parent = self.skill_ontology_repository.get_children_batch(
+            list(set(mandatory_skill_ids) | parent_ids)
+        )
+
+        child_ids = {
+            child.id
+            for skill_id in mandatory_skill_ids
+            for child in children_by_parent.get(skill_id, [])
+            if child.is_active
+        }
+        grandchildren_by_parent = self.skill_ontology_repository.get_children_batch(list(child_ids))
+
+        return {
+            "skills_by_id": skills_by_id,
+            "children_by_parent": children_by_parent,
+            "grandchildren_by_parent": grandchildren_by_parent,
+        }
+
     def build_mandatory_skill_breakdown(
         self,
         jd_id: UUID,
         resume_id: UUID,
+        hierarchy: dict | None = None,
     ) -> dict:
         """
         Per-mandatory-skill match breakdown in strict priority order:
@@ -145,6 +195,12 @@ class CandidateScoringService:
         config_repository (HIERARCHY_GRANDCHILD_MULTIPLIER /
         HIERARCHY_SEMANTIC_ONLY_THRESHOLD) - calculate_deterministic_score
         delegates here, so it requires both too.
+
+        `hierarchy` is the JD-only batch-loaded bundle from
+        load_mandatory_skill_hierarchy - pass it in when scoring multiple
+        resumes against the same JD (it never changes between them) to
+        avoid recomputing it per resume. Left None (the default) for the
+        common single-resume case, where it's loaded internally.
         """
         if self.skill_ontology_repository is None or self.config_repository is None:
             raise ValueError(
@@ -153,6 +209,11 @@ class CandidateScoringService:
             )
 
         coverage_rows = self.skill_repository.get_mandatory_skill_coverage(jd_id, resume_id)
+
+        if hierarchy is None:
+            hierarchy = self.load_mandatory_skill_hierarchy(
+                [row.canonical_skill_id for row in coverage_rows]
+            )
 
         # Candidate's own in-play normalized skills (scoring_weight > 0),
         # keyed by canonical_skill_id - the pool every hierarchy tier below
@@ -201,7 +262,7 @@ class CandidateScoringService:
         for row in coverage_rows:
             entry = self._score_one_mandatory_skill(
                 row, candidate_skills_by_id, grandchild_multiplier, semantic_threshold,
-                core_multiplier, supporting_multiplier,
+                core_multiplier, supporting_multiplier, hierarchy,
             )
             if entry["match_type"] in _COVERED_MATCH_TYPE_VALUES:
                 matched_count += 1
@@ -251,6 +312,7 @@ class CandidateScoringService:
         semantic_threshold: float | None,
         core_multiplier: float = _DEFAULT_CORE_IMPORTANCE_MULTIPLIER,
         supporting_multiplier: float = _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER,
+        hierarchy: dict | None = None,
     ) -> dict:
         canonical_skill_id = row.canonical_skill_id
         weight = float(row.weight) if row.weight is not None else None
@@ -264,10 +326,17 @@ class CandidateScoringService:
             importance_label, core_multiplier, supporting_multiplier,
         )
 
+        # hierarchy is batch-loaded once for every mandatory skill on this
+        # JD (see load_mandatory_skill_hierarchy) - looked up here instead
+        # of a live get_skill_by_id/get_children call per skill.
+        skills_by_id = hierarchy["skills_by_id"]
+        children_by_parent = hierarchy["children_by_parent"]
+        grandchildren_by_parent = hierarchy["grandchildren_by_parent"]
+
         # Fetched once up front (not just for the SIBLING tier as before) -
         # every entry needs the JD skill's own canonical_name (T03), and
         # SIBLING/SEMANTIC still need target_skill itself below.
-        target_skill = self.skill_ontology_repository.get_skill_by_id(canonical_skill_id)
+        target_skill = skills_by_id.get(canonical_skill_id)
         canonical_name = target_skill.canonical_name if target_skill is not None else None
 
         # Tier 1: EXACT - already resolved by the T01 LEFT JOIN. The
@@ -285,7 +354,7 @@ class CandidateScoringService:
         # are never valid hierarchy match targets (S03-T01), even if a
         # stale candidate_skills row still points at one.
         children = [
-            child for child in self.skill_ontology_repository.get_children(canonical_skill_id)
+            child for child in children_by_parent.get(canonical_skill_id, [])
             if child.is_active
         ]
         child_match = self._best_hierarchy_match(children, candidate_skills_by_id)
@@ -305,7 +374,7 @@ class CandidateScoringService:
             grandchildren = [
                 grandchild
                 for child in children
-                for grandchild in self.skill_ontology_repository.get_children(child.id)
+                for grandchild in grandchildren_by_parent.get(child.id, [])
                 if grandchild.is_active
             ]
             grandchild_match = self._best_hierarchy_match(grandchildren, candidate_skills_by_id)
@@ -329,7 +398,7 @@ class CandidateScoringService:
         else:
             siblings = [
                 sibling
-                for sibling in self.skill_ontology_repository.get_children(target_skill.parent_skill_id)
+                for sibling in children_by_parent.get(target_skill.parent_skill_id, [])
                 if sibling.id != canonical_skill_id and sibling.is_active
             ]
             sibling_match = self._best_hierarchy_match(siblings, candidate_skills_by_id)
@@ -504,12 +573,15 @@ class CandidateScoringService:
         contribution = jd_skill.weight * candidate_skill.scoring_weight * 1.0
         """
         coverage_rows = self.skill_repository.get_mandatory_skill_coverage(jd_id, resume_id, mandatory=False)
+        skills_by_id = self.skill_ontology_repository.get_skills_by_ids(
+            [row.canonical_skill_id for row in coverage_rows]
+        )
 
         preferred_skills = []
         for row in coverage_rows:
             weight = float(row.weight) if row.weight is not None else None
             is_exact_match = row.candidate_scoring_weight is not None
-            target_skill = self.skill_ontology_repository.get_skill_by_id(row.canonical_skill_id)
+            target_skill = skills_by_id.get(row.canonical_skill_id)
             canonical_name = target_skill.canonical_name if target_skill is not None else None
             preferred_skills.append(self._breakdown_entry(
                 row.canonical_skill_id, canonical_name, bool(row.mandatory), weight,

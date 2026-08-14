@@ -1,6 +1,8 @@
 from fastapi import Depends
 
 from app.core.encryption_service import EncryptionService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 from app.dependencies.campaign import get_jd_repository
 from app.dependencies.campaign_candidate import (
     get_audit_service,
@@ -19,6 +21,7 @@ from app.dependencies.skill_ontology import (
     get_skill_ontology_repository,
     get_skill_repository,
 )
+from app.dependencies.unknown_skill_suggestion import get_embedding_service
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
@@ -28,6 +31,7 @@ from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
+from app.services.ai.embedding_service import EmbeddingService
 from app.services.audit_service import AuditService
 from app.services.campaign.candidate_scoring_service import CandidateScoringService
 from app.services.campaign.resume_selection_service import ResumeSelectionService
@@ -74,6 +78,9 @@ def get_talent_pool_service(
     celery_task_log_service: CeleryTaskLogService = Depends(get_celery_task_log_service),
     resume_selection_service: ResumeSelectionService = Depends(get_resume_selection_service),
     skill_repo: SkillRepository = Depends(get_skill_repository),
+    config_repo: ConfigRepository = Depends(get_config_repository),
+    embedding_service: EmbeddingService = Depends(get_embedding_service),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> TalentPoolService:
     return TalentPoolService(
         candidate_repo=candidate_repo,
@@ -86,4 +93,7 @@ def get_talent_pool_service(
         celery_task_log_service=celery_task_log_service,
         resume_selection_service=resume_selection_service,
         skill_repo=skill_repo,
+        config_repo=config_repo,
+        embedding_service=embedding_service,
+        cache_service=cache_service,
     )

@@ -24,6 +24,23 @@ class Settings(BaseSettings):
     redis_password: str = ""
     redis_db: int = 3
 
+    # Application cache (cache-aside layer over the same Redis instance)
+    cache_key_prefix: str = "airs"
+    cache_default_ttl_seconds: int = 300
+    cache_jd_ttl_seconds: int = 600
+    cache_jd_list_ttl_seconds: int = 120
+    cache_resume_ttl_seconds: int = 600
+    cache_resume_list_ttl_seconds: int = 120
+    cache_campaign_ttl_seconds: int = 300
+    cache_campaign_list_ttl_seconds: int = 120
+    cache_skill_ttl_seconds: int = 1800
+    cache_skill_catalog_ttl_seconds: int = 1800
+    cache_reference_ttl_seconds: int = 3600
+    cache_lock_ttl_seconds: int = 10
+    cache_dashboard_ttl_seconds: int = 60
+    cache_dashboard_badge_ttl_seconds: int = 30
+    cache_dashboard_stage_timing_ttl_seconds: int = 120
+
     # AWS S3
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""

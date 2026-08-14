@@ -17,6 +17,9 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.repositories.user_repository import UserRepository
+from app.core.config import settings
+from app.core.cache_keys import resume_key, resume_list_key
+from app.services.cache_service import CacheService
 from app.schemas.resume.monitoring import (
     CandidateSummary,
     EmbeddingStatus,
@@ -94,6 +97,7 @@ class ResumeMonitoringService:
         campaign_candidate_repository: CampaignCandidateRepository,
         user_repository: UserRepository | None = None,
         config_repository: ConfigRepository | None = None,
+        cache_service: CacheService | None = None,
     ):
         self.resume_repository = resume_repository
         self.candidate_repository = candidate_repository
@@ -106,6 +110,7 @@ class ResumeMonitoringService:
         self.campaign_candidate_repository = campaign_candidate_repository
         self.user_repository = user_repository
         self.config_repository = config_repository
+        self.cache_service = cache_service
 
     def get_timeline(self, resume_id: UUID, attempt_number: int | None = None) -> ResumeTimelineResponse:
         """
@@ -180,6 +185,17 @@ class ResumeMonitoringService:
         return items
 
     def get_resume_detail(self, resume_id: UUID) -> ResumeDetailResponse:
+        if not self.cache_service:
+            return self._load_resume_detail(resume_id)
+
+        raw = self.cache_service.get_or_set(
+            resume_key(resume_id),
+            loader=lambda: self._load_resume_detail(resume_id).model_dump_json(),
+            ttl=settings.cache_resume_ttl_seconds,
+        )
+        return ResumeDetailResponse.model_validate_json(raw)
+
+    def _load_resume_detail(self, resume_id: UUID) -> ResumeDetailResponse:
         resume = self._get_resume_or_404(resume_id)
 
         candidate = self.candidate_repository.get_by_id(resume.candidate_id)
@@ -333,6 +349,36 @@ class ResumeMonitoringService:
         sort_by: str = "created_at",
         sort_dir: str = "desc",
     ) -> ResumeListResponse:
+        params = dict(
+            campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+            uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
+
+        if not self.cache_service:
+            return self._load_resume_list(**params)
+
+        raw = self.cache_service.get_or_set(
+            resume_list_key(params),
+            loader=lambda: self._load_resume_list(**params).model_dump_json(),
+            ttl=settings.cache_resume_list_ttl_seconds,
+        )
+        return ResumeListResponse.model_validate_json(raw)
+
+    def _load_resume_list(
+        self,
+        *,
+        campaign_id: UUID | None,
+        parse_status: ParseStatus | None,
+        source: str | None,
+        email_hash: str | None,
+        uploaded_from: datetime | None,
+        uploaded_to: datetime | None,
+        page: int,
+        size: int,
+        sort_by: str,
+        sort_dir: str,
+    ) -> ResumeListResponse:
         resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
             campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
             uploaded_from=uploaded_from, uploaded_to=uploaded_to,
@@ -385,6 +431,44 @@ class ResumeMonitoringService:
         and whether they succeeded/failed there, without a second
         per-candidate call.
         """
+        params = dict(
+            kind="pipeline", campaign_id=campaign_id, parse_status=parse_status, source=source,
+            email_hash=email_hash, uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+            page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+        )
+
+        if not self.cache_service:
+            return self._load_resume_list_with_pipeline_status(
+                campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+                uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+                page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+            )
+
+        raw = self.cache_service.get_or_set(
+            resume_list_key(params),
+            loader=lambda: self._load_resume_list_with_pipeline_status(
+                campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
+                uploaded_from=uploaded_from, uploaded_to=uploaded_to,
+                page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+            ).model_dump_json(),
+            ttl=settings.cache_resume_list_ttl_seconds,
+        )
+        return ResumeListWithPipelineResponse.model_validate_json(raw)
+
+    def _load_resume_list_with_pipeline_status(
+        self,
+        *,
+        campaign_id: UUID | None,
+        parse_status: ParseStatus | None,
+        source: str | None,
+        email_hash: str | None,
+        uploaded_from: datetime | None,
+        uploaded_to: datetime | None,
+        page: int,
+        size: int,
+        sort_by: str,
+        sort_dir: str,
+    ) -> ResumeListWithPipelineResponse:
         resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
             campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
             uploaded_from=uploaded_from, uploaded_to=uploaded_to,

@@ -60,6 +60,8 @@ from app.services.resume.resume_processing_context import ResumeProcessingContex
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
+from app.core.redis_client import get_redis_client
+from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
 
 logger = logging.getLogger(__name__)
@@ -346,7 +348,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
         embedding_service = EmbeddingService(db)
-        skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
+        skill_normalization_service = SkillNormalizationService(
+            skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
+        )
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
         pipeline = ResumeProcessingPipeline(

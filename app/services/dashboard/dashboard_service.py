@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from app.models.campaigns import CampaignStatus
@@ -12,13 +13,22 @@ from app.schemas.dashboard.dashboard_response import (
     RecruiterDashboardSummaryResponse,
     StageTimingResponse,
 )
+from app.core.config import settings
+from app.core.cache_keys import dashboard_key
+from app.services.cache_service import CacheService
 
 
 class DashboardService:
 
-    def __init__(self, dashboard_repo: DashboardRepository, config_repo: ConfigRepository):
+    def __init__(
+        self,
+        dashboard_repo: DashboardRepository,
+        config_repo: ConfigRepository,
+        cache_service: CacheService | None = None,
+    ):
         self.dashboard_repo = dashboard_repo
         self.config_repo = config_repo
+        self.cache_service = cache_service
 
     def _sla_thresholds(self) -> tuple[float, int, int]:
         """
@@ -45,6 +55,16 @@ class DashboardService:
         )
 
     def get_hr_admin_summary(self, user_id: str) -> HrAdminDashboardSummaryResponse:
+        if not self.cache_service:
+            return self._load_hr_admin_summary(user_id)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("hr-admin", {"user_id": user_id}),
+            loader=lambda: self._load_hr_admin_summary(user_id).model_dump_json(),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return HrAdminDashboardSummaryResponse.model_validate_json(raw)
+
+    def _load_hr_admin_summary(self, user_id: str) -> HrAdminDashboardSummaryResponse:
         screening, hm_review, interview = self._sla_thresholds()
         metrics = self.dashboard_repo.get_hr_admin_metrics(
             screening_sla_hours=screening,
@@ -69,6 +89,16 @@ class DashboardService:
         )
 
     def get_recruiter_summary(self, user_id: str) -> RecruiterDashboardSummaryResponse:
+        if not self.cache_service:
+            return self._load_recruiter_summary(user_id)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("recruiter", {"user_id": user_id}),
+            loader=lambda: self._load_recruiter_summary(user_id).model_dump_json(),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return RecruiterDashboardSummaryResponse.model_validate_json(raw)
+
+    def _load_recruiter_summary(self, user_id: str) -> RecruiterDashboardSummaryResponse:
         return RecruiterDashboardSummaryResponse(
             **self.dashboard_repo.get_recruiter_metrics(user_id),
             last_login_at=self.dashboard_repo.get_last_login_at(user_id),
@@ -85,6 +115,33 @@ class DashboardService:
         status: CampaignStatus | None = None,
         hiring_manager_id: str | None = None,
     ) -> list[DashboardCampaignCardResponse]:
+        params = {
+            "recruiter_id": recruiter_id, "show_closed": show_closed, "limit": limit,
+            "search": search, "status": status.value if status else None,
+            "hiring_manager_id": hiring_manager_id,
+        }
+        if not self.cache_service:
+            return self._load_campaign_cards(**params)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("campaign-cards", params),
+            loader=lambda: json.dumps(
+                [card.model_dump(mode="json") for card in self._load_campaign_cards(**params)]
+            ),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return [DashboardCampaignCardResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_campaign_cards(
+        self,
+        *,
+        recruiter_id: str | None,
+        show_closed: bool = False,
+        limit: int = 12,
+        search: str | None = None,
+        status: str | None = None,
+        hiring_manager_id: str | None = None,
+    ) -> list[DashboardCampaignCardResponse]:
+        status = CampaignStatus(status) if status else None
         screening, hm_review, interview = self._sla_thresholds()
         cap_warning_percentage, deadline_warning_days = self._warning_thresholds()
 
@@ -142,12 +199,34 @@ class DashboardService:
         return cards
 
     def get_nav_badges(self, recruiter_id: str | None) -> NavBadgeCountsResponse:
+        if not self.cache_service:
+            return self._load_nav_badges(recruiter_id)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("nav-badges", {"recruiter_id": recruiter_id}),
+            loader=lambda: self._load_nav_badges(recruiter_id).model_dump_json(),
+            ttl=settings.cache_dashboard_badge_ttl_seconds,
+        )
+        return NavBadgeCountsResponse.model_validate_json(raw)
+
+    def _load_nav_badges(self, recruiter_id: str | None) -> NavBadgeCountsResponse:
         return NavBadgeCountsResponse(
             **self.dashboard_repo.get_nav_badge_counts(recruiter_id),
             generated_at=datetime.now(timezone.utc),
         )
 
     def get_stage_timing(self, campaign_id) -> list[StageTimingResponse]:
+        if not self.cache_service:
+            return self._load_stage_timing(campaign_id)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("stage-timing", {"campaign_id": str(campaign_id)}),
+            loader=lambda: json.dumps(
+                [row.model_dump(mode="json") for row in self._load_stage_timing(campaign_id)]
+            ),
+            ttl=settings.cache_dashboard_stage_timing_ttl_seconds,
+        )
+        return [StageTimingResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_stage_timing(self, campaign_id) -> list[StageTimingResponse]:
         """
         Per-stage dwell times with the configured SLA attached, so the UI can
         draw the reference line and flag breaches without re-reading config.

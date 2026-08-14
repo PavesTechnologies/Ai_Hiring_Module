@@ -9,6 +9,8 @@ from app.repositories.saved_view_repository import SavedViewRepository
 from app.repositories.skill_search_repository import SkillSearchRepository
 from app.services.dashboard.dashboard_service import DashboardService
 from app.services.dashboard.saved_view_service import SavedViewService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 
 
 def get_dashboard_repository(db: Session = Depends(get_db)) -> DashboardRepository:
@@ -18,8 +20,11 @@ def get_dashboard_repository(db: Session = Depends(get_db)) -> DashboardReposito
 def get_dashboard_service(
     dashboard_repo: DashboardRepository = Depends(get_dashboard_repository),
     db: Session = Depends(get_db),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> DashboardService:
-    return DashboardService(dashboard_repo=dashboard_repo, config_repo=ConfigRepository(db))
+    return DashboardService(
+        dashboard_repo=dashboard_repo, config_repo=ConfigRepository(db), cache_service=cache_service,
+    )
 
 
 def get_saved_view_service(db: Session = Depends(get_db)) -> SavedViewService:

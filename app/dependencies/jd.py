@@ -11,6 +11,8 @@ from app.repositories.audit_repository import AuditRepository
 from app.services.audit_service import AuditService
 from app.dependencies.storage import get_storage_service
 from app.core.storage_service import StorageService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
@@ -53,6 +55,7 @@ def get_jd_service(
     audit_service: AuditService = Depends(get_audit_service),
     storage_service: StorageService = Depends(get_storage_service),
     prompt_template_repository: PromptTemplateRepository = Depends(get_prompt_template_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> JDService:
 
     return JDService(
@@ -61,6 +64,7 @@ def get_jd_service(
         audit_service=audit_service,
         storage_service=storage_service,
         prompt_template_repository=prompt_template_repository,
+        cache_service=cache_service,
     )
 
 
