@@ -91,7 +91,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
-from app.services.campaign.stage_transition_service import StageTransitionService
+from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
@@ -2109,6 +2109,156 @@ class CampaignCandidateService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+    def _assert_hiring_manager_owns_campaign(
+        self, campaign_candidate: CampaignCandidate, user_id: str,
+    ) -> None:
+        """
+        Epic 1: single-resource ownership check - only list-scoping (WHERE
+        hiring_manager_id = caller, e.g. get_campaigns_by_hiring_manager)
+        existed anywhere in this codebase before. Only ever called for a
+        caller without HR_ADMIN among their roles - HR_ADMIN is exempt from
+        ownership entirely, regardless of what other roles they also hold.
+        """
+        campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+        if not campaign:
+            raise CampaignException("Campaign not found.", 404)
+        if campaign.hiring_manager_id != user_id:
+            raise CampaignException(
+                "You do not have access to this candidate's campaign.", 403,
+            )
+
+    def _transition_or_raise(
+        self,
+        campaign_candidate_id: UUID,
+        to_stage: PipelineStage,
+        actor: Actor,
+        reason: str | None = None,
+    ) -> None:
+        """
+        Epic 1: shared wrapper around StageTransitionService.transition() -
+        the exception -> CampaignException mapping mirrors
+        update_resume_for_resubmission's identical mapping above verbatim;
+        factored out here since Epic 1 needs it 3 times, not duplicated per
+        method.
+        """
+        try:
+            self.stage_transition_service.transition(
+                campaign_candidate_id=campaign_candidate_id,
+                to_stage=to_stage,
+                actor=actor,
+                reason=reason,
+            )
+        except InvalidPipelineTransitionException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
+        except PipelineTransitionReasonRequiredException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 400) from exc
+        except ForbiddenPipelineRoleException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 403) from exc
+        except PipelineStageConflictException as exc:
+            self.campaign_candidate_repo.rollback()
+            raise CampaignException(str(exc), 409) from exc
+
+    def advance_to_interview(
+        self,
+        campaign_candidate_id: UUID,
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> CandidateScorecardResponse:
+        """
+        Epic 1: HM_REVIEW -> INTERVIEW. HIRING_MANAGER (own campaign only)
+        or HR_ADMIN - allowed_transitions lists both for this edge, no
+        reason required (requires_reason=False).
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+
+        if self.stage_transition_service is None:
+            raise CampaignException("Stage transition service is not configured.", 500)
+
+        self._transition_or_raise(
+            campaign_candidate_id=campaign_candidate_id,
+            to_stage=PipelineStage.INTERVIEW,
+            actor=Actor(roles=actor_roles, id=actor_id),
+        )
+
+        return self.get_campaign_candidate_scorecard(campaign_candidate_id)
+
+    def select_candidate(
+        self,
+        campaign_candidate_id: UUID,
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> CandidateScorecardResponse:
+        """
+        Epic 1: INTERVIEW -> SELECTED. HIRING_MANAGER (own campaign only) or
+        HR_ADMIN - allowed_transitions lists both for this edge, no reason
+        required (requires_reason=False).
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+
+        if self.stage_transition_service is None:
+            raise CampaignException("Stage transition service is not configured.", 500)
+
+        self._transition_or_raise(
+            campaign_candidate_id=campaign_candidate_id,
+            to_stage=PipelineStage.SELECTED,
+            actor=Actor(roles=actor_roles, id=actor_id),
+        )
+
+        return self.get_campaign_candidate_scorecard(campaign_candidate_id)
+
+    def reject_at_interview(
+        self,
+        campaign_candidate_id: UUID,
+        decision_reason: str,
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> CandidateScorecardResponse:
+        """
+        Epic 1: INTERVIEW -> REJECTED. allowed_transitions restricts this
+        edge to HIRING_MANAGER only (HR_ADMIN is not listed, and unlike
+        stalled-candidate override there's no HR_ADMIN path to this edge at
+        all - _OVERRIDE_FORBIDDEN_TARGETS in campaign_service.py excludes
+        REJECTED). The route admits both HIRING_MANAGER and HR_ADMIN
+        (matching the other 2 endpoints); Actor.roles carries the caller's
+        full role list into StageTransitionService.transition(), which
+        succeeds if ANY of them is HIRING_MANAGER (a dual-role actor is not
+        locked out) and raises ForbiddenPipelineRoleException itself for a
+        caller holding neither - not a route-level 403. Reason required
+        (requires_reason=True); word-count-capped at the schema layer
+        (RejectAtInterviewRequest), not here.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+
+        if self.stage_transition_service is None:
+            raise CampaignException("Stage transition service is not configured.", 500)
+
+        self._transition_or_raise(
+            campaign_candidate_id=campaign_candidate_id,
+            to_stage=PipelineStage.REJECTED,
+            actor=Actor(roles=actor_roles, id=actor_id),
+            reason=decision_reason,
+        )
+
+        return self.get_campaign_candidate_scorecard(campaign_candidate_id)
 
     def _queue_post_override_evaluation(self, campaign_candidate: CampaignCandidate) -> None:
         """

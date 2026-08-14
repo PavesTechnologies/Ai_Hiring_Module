@@ -70,8 +70,20 @@ _USER_FK_REFS_SQL = text("""
 """)
 
 
+def resolve_actor_role(user: TokenUser) -> str | None:
+    """
+    user.roles isn't guaranteed to list the functional role first - some
+    tokens carry an org/department label (e.g. "General") ahead of the
+    actual HR_ADMIN/RECRUITER/HIRING_MANAGER role. Picks the first entry
+    that's a recognized UserRole, so callers checking that role against a
+    permission set (require_roles, per-transition allowed_roles, ...) see
+    the role that's actually meaningful instead of an arbitrary roles[0].
+    """
+    return next((r for r in user.roles if r in LocalUserRole.__members__), None)
+
+
 def _new_user_from_token(user: TokenUser) -> User:
-    role_name = next((r for r in user.roles if r in LocalUserRole.__members__), None)
+    role_name = resolve_actor_role(user)
 
     return User(
         id=user.user_id,

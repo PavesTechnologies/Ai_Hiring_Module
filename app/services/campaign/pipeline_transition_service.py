@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
     InvalidPipelineTransitionException,
     PipelineTransitionReasonRequiredException,
 )
@@ -66,9 +67,19 @@ class PipelineTransitionService:
         whenever a real actor (human or a specific automated trigger) is
         driving the transition: it's stored on the history row regardless,
         but the PIPELINE_STAGE_TRANSITIONED audit event is only written
-        when it's present, since AuditLog.actor_id is a required FK — an
-        unattributed SYSTEM transition still gets its history row, just
-        not an audit entry.
+        when it's present — an unattributed SYSTEM transition still gets
+        its history row, just not an audit entry.
+
+        Epic 3 Fix 2 note: the "since AuditLog.actor_id is a required FK"
+        reasoning this comment used to give for that choice was false -
+        actor_id is nullable (both model and live schema), and
+        StageTransitionService.transition() already logs SYSTEM-triggered
+        writes correctly with actor_id=None/actor_role=SYSTEM. Not changed
+        here to always log with actor_id=None instead of skipping, since
+        this method has zero real call sites anywhere in the codebase
+        (see the class docstring) - that's a behavior change with nothing
+        to verify it against, not a mis-attribution fix like the 4 real
+        call sites fixed elsewhere in Epic 3 Fix 2.
 
         decision_type/decision_source/decision_details are optional -
         when supplied, the unified decision model is written onto
@@ -84,7 +95,7 @@ class PipelineTransitionService:
 
         effective_role = actor_role or source.value
         if effective_role not in transition.allowed_roles:
-            raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, [effective_role])
 
         if transition.requires_reason and not reason:
             raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)

@@ -459,11 +459,12 @@ class CampaignCandidateRepository:
     def get_most_recent_campaign_for_candidate(self, candidate_id: UUID) -> HiringCampaign | None:
         """
         Epic 3 (M05-E03) Phase C4 — resolves the candidate's most recent
-        campaign submission, for attributing the resubmission-alert audit
-        event's actor_id to that campaign's created_by (mirroring
-        CampaignSchedulerService._raise_health_alert's exact convention,
-        since AuditLog.actor_id is a required, non-null FK and no synthetic
-        SYSTEM actor exists in this codebase).
+        campaign submission, so ResubmissionAlertService.evaluate_resubmission_alerts
+        can attach a campaign_id to the CAMPAIGN_RESUBMISSION_DETECTED audit
+        entry. Previously also used to attribute actor_id to that campaign's
+        created_by - removed in Epic 3 Fix 2 (actor_id is nullable; this is
+        a scheduled sweep, not that user's action - see
+        ResubmissionAlertService's docstring).
         """
         stmt = (
             select(HiringCampaign)

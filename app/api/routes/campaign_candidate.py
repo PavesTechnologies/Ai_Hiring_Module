@@ -33,6 +33,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MovePipelineStageRequest,
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
+    RejectAtInterviewRequest,
     SortOrder,
     UpdateResumeResubmissionResponse,
 )
@@ -401,38 +402,99 @@ def apply_hr_override(
 
 
 @router.post(
-    "/{campaign_candidate_id}/stage",
-    response_model=APIResponse[CampaignCandidateResponse],
+    "/{campaign_candidate_id}/advance-to-interview",
+    response_model=APIResponse[CandidateScorecardResponse],
     status_code=status.HTTP_200_OK,
-    summary="Move Pipeline Stage (Pipeline Board drag-and-drop)",
+    summary="Advance Candidate To Interview",
     description=(
-        "Moves one candidate to an arbitrary target pipeline_stage - the "
-        "Pipeline Board's drag-and-drop action. Backed entirely by "
-        "PipelineTransitionService: whether the move is allowed at all, "
-        "which roles may perform it, and whether a reason is required all "
-        "depend on the allowed_transitions row for this exact from/to "
-        "pair, not on role alone."
+        "HM_REVIEW -> INTERVIEW. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
-def move_campaign_candidate_stage(
+def advance_to_interview(
     campaign_candidate_id: UUID,
-    request: MovePipelineStageRequest,
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    user: TokenUser = Depends(get_current_user),
 ):
-    result = service.move_pipeline_stage(
+    scorecard = service.advance_to_interview(
         campaign_candidate_id,
-        to_stage=request.to_stage,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
-        reason=request.reason,
+        actor_roles=user.roles,
     )
 
     return APIResponse.ok(
-        data=result,
-        message="Candidate moved successfully.",
+        data=scorecard,
+        message="Candidate advanced to interview.",
+    )
+
+
+@router.post(
+    "/{campaign_candidate_id}/select",
+    response_model=APIResponse[CandidateScorecardResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Select Candidate",
+    description=(
+        "INTERVIEW -> SELECTED. HIRING_MANAGER (own campaign only) or HR_ADMIN."
+    ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+)
+def select_candidate(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Depends(get_current_user),
+):
+    scorecard = service.select_candidate(
+        campaign_candidate_id,
+        actor_id=user.user_id,
+        actor_roles=user.roles,
+    )
+
+    return APIResponse.ok(
+        data=scorecard,
+        message="Candidate selected.",
+    )
+
+
+@router.post(
+    "/{campaign_candidate_id}/reject-interview",
+    response_model=APIResponse[CandidateScorecardResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Reject Candidate At Interview",
+    description=(
+        "INTERVIEW -> REJECTED. HIRING_MANAGER only - allowed_transitions "
+        "does not list HR_ADMIN for this edge. The route admits both "
+        "HIRING_MANAGER and HR_ADMIN (matching advance-to-interview/select); "
+        "a caller holding neither is rejected by StageTransitionService."
+        "transition()'s own role check (checked against the caller's full "
+        "role list, so a dual-role caller is not locked out), not by a "
+        "route-level 403 - role enforcement for who can call a specific "
+        "transition is not duplicated at the endpoint layer anywhere else "
+        "in this router either (see apply_hr_override)."
+    ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+)
+def reject_interview(
+    campaign_candidate_id: UUID,
+    request: RejectAtInterviewRequest,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Depends(get_current_user),
+):
+    scorecard = service.reject_at_interview(
+        campaign_candidate_id,
+        decision_reason=request.decision_reason,
+        actor_id=user.user_id,
+        actor_roles=user.roles,
+    )
+
+    return APIResponse.ok(
+        data=scorecard,
+        message="Candidate rejected at interview.",
     )
 
 

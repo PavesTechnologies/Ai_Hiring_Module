@@ -62,7 +62,9 @@ def test_apply_hr_override_with_real_stage_transition_service_moves_candidate_to
 
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = True
-    stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock())
+    stage_transition_service = StageTransitionService(
+        allowed_transition_repo, campaign_candidate_repo, MagicMock(), MagicMock(),
+    )
 
     service = CampaignCandidateService(
         campaign_repo=MagicMock(),
@@ -104,7 +106,9 @@ def test_apply_hr_override_blocked_by_real_stage_transition_service_leaves_candi
 
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = False  # e.g. seed row removed/misconfigured
-    stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock())
+    stage_transition_service = StageTransitionService(
+        allowed_transition_repo, campaign_candidate_repo, MagicMock(), MagicMock(),
+    )
 
     service = CampaignCandidateService(
         campaign_repo=MagicMock(),
@@ -141,7 +145,9 @@ def test_reject_then_override_lifecycle_reflected_consistently_in_scorecard_and_
 
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = True
-    stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock())
+    stage_transition_service = StageTransitionService(
+        allowed_transition_repo, campaign_candidate_repo, MagicMock(), MagicMock(),
+    )
 
     service = CampaignCandidateService(
         campaign_repo=MagicMock(),

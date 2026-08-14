@@ -16,6 +16,7 @@ from app.repositories.campaign_candidate_ai_evaluation_repository import Campaig
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -134,7 +135,10 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+        interview_schedule_repo = InterviewScheduleRepository(db)
+        stage_transition_service = StageTransitionService(
+            allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+        )
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 

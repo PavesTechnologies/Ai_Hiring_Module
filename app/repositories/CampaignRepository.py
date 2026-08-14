@@ -1144,6 +1144,10 @@ class CampaignRepository:
     # again) rather than collapsing to campaign_candidates' latest decision.
 
     def get_rejection_layer_breakdown(self, campaign_id: UUID) -> dict[str, int]:
+        # GROUP BY the expression, not the "decision_source" alias -
+        # campaign_candidates also has a real decision_source column, and
+        # Postgres resolves a bare GROUP BY identifier against a real
+        # column over a same-named SELECT alias.
         rows = self.db.execute(text("""
             SELECT sh.scores_snapshot->>'decision_source' AS decision_source, COUNT(*) AS cnt
             FROM campaign_candidate_stage_history sh
@@ -1151,7 +1155,7 @@ class CampaignRepository:
             WHERE cc.campaign_id = :campaign_id
               AND sh.to_stage = 'REJECTED'
               AND sh.scores_snapshot->>'decision_source' IS NOT NULL
-            GROUP BY decision_source
+            GROUP BY sh.scores_snapshot->>'decision_source'
         """), {"campaign_id": str(campaign_id)}).all()
         return {row.decision_source: row.cnt for row in rows}
 
