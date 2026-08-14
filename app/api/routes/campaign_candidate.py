@@ -13,6 +13,7 @@ from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
 from app.schemas.campaign.campaign_candidate_schema import (
+    CampaignBoardResponse,
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
     CampaignCandidateSummaryResponse,
@@ -29,6 +30,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
     CandidateTimelineResponse,
     HrOverrideRequest,
+    MovePipelineStageRequest,
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,
@@ -134,6 +136,35 @@ def get_campaign_candidates(
     return APIResponse.ok(
         data=result,
         message="Campaign candidates retrieved successfully.",
+    )
+
+
+@router.get(
+    "/campaign/{campaign_id}/board",
+    response_model=APIResponse[CampaignBoardResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Pipeline Board",
+    description=(
+        "Every candidate in the campaign, bucketed by pipeline_stage into "
+        "Kanban board columns (Uploaded, Screening, Shortlisted, Hold, "
+        "Interview, Selected, Rejected). Reuses the exact same enriched "
+        "candidate data the Candidate Listing endpoint returns - no "
+        "separate scoring or ranking. HM_REVIEW/FRAUD_REVIEW candidates "
+        "aren't part of this board; other_count accounts for them."
+    ),
+)
+def get_campaign_board(
+    campaign_id: UUID,
+    service: CampaignCandidateService = Depends(
+        get_campaign_candidate_service,
+    ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    result = service.get_campaign_board(campaign_id)
+
+    return APIResponse.ok(
+        data=result,
+        message="Pipeline board retrieved successfully.",
     )
 
 

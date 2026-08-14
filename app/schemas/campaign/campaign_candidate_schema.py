@@ -112,6 +112,36 @@ class RankedCampaignCandidatesResponse(BaseModel):
     total: int
 
 
+class CampaignBoardColumn(BaseModel):
+    stage: PipelineStage
+    count: int
+    candidates: list[CampaignCandidateResponse]
+
+
+class CampaignBoardResponse(BaseModel):
+    """
+    Pipeline Board - every candidate in the campaign (the same enriched
+    rows get_campaign_candidates already returns), bucketed by
+    pipeline_stage into columns. HM_REVIEW/FRAUD_REVIEW candidates aren't
+    among this board's columns; other_count accounts for them so the
+    total is never silently short.
+    """
+    campaign_id: UUID
+    columns: list[CampaignBoardColumn]
+    other_count: int = 0
+
+
+class MovePipelineStageRequest(BaseModel):
+    """Pipeline Board drag-and-drop - move one candidate to an arbitrary target stage."""
+    to_stage: PipelineStage
+    # Only required when the specific from->to transition's allowed_transitions
+    # row has requires_reason=True - PipelineTransitionService enforces this,
+    # not this schema.
+    reason: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CampaignCandidateSummaryResponse(BaseModel):
     """M10-E03 Phase 1: aggregate counts/statistics for one campaign's candidates - read-only, never audited."""
     total_candidates: int

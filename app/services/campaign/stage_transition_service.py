@@ -14,6 +14,7 @@ from app.exceptions.pipeline_transition_exceptions import (
 from app.models.pipeline import CampaignCandidate, DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -67,10 +68,18 @@ class StageTransitionService:
         allowed_transition_repo: AllowedTransitionRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
+        interview_schedule_repo: InterviewScheduleRepository,
     ):
         self.allowed_transition_repo = allowed_transition_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        # Epic 4: required, not optional-with-a-runtime-check - same
+        # reversal this class already went through for audit_service. An
+        # optional param whose absence only fails on someone's first real
+        # INTERVIEW transition is a trapdoor; every real caller (the DI
+        # wiring and all 3 scoring Celery tasks) already has a db session
+        # to build one, even the tasks that never reach to_stage=INTERVIEW.
+        self.interview_schedule_repo = interview_schedule_repo
 
     def transition_to_screening(self, campaign_candidate) -> bool:
         """
@@ -414,6 +423,24 @@ class StageTransitionService:
         # as the history insert above.
         locked_candidate.pipeline_stage = to_stage
         self.campaign_candidate_repo.update(locked_candidate)
+
+        # Epic 4: INTERVIEW-entry hook - same transaction as the stage move
+        # above, not a best-effort follow-up after commit (unlike
+        # apply_hr_override's post-commit re-evaluation queueing, which is
+        # forced post-commit because it enqueues a Celery task - a
+        # cross-system call that can't be rolled back with the DB
+        # transaction). Creating an interview_schedules row is a plain
+        # INSERT on this same session; campaign_candidate_id's UNIQUE
+        # constraint is a hard invariant ("every candidate at INTERVIEW has
+        # exactly one row"), not a convention, so a failure here must roll
+        # back the stage move too, not leave a candidate at INTERVIEW with
+        # no row for the schedule endpoint to act on.
+        if to_stage == PipelineStage.INTERVIEW:
+            # get_or_create, not a blind insert: a candidate re-entering
+            # INTERVIEW (e.g. after a fraud-review clear) already has a row
+            # from its first entry, and that row must be left untouched -
+            # never reset back to PENDING.
+            self.interview_schedule_repo.get_or_create_pending(locked_candidate.id)
 
         # Logs the role that actually permitted this transition, not an
         # arbitrary one - matters once actor.roles can hold roles the edge

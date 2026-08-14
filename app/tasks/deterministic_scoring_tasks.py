@@ -9,7 +9,7 @@ from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource
+from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource, PipelineStage
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
@@ -19,6 +19,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
@@ -34,6 +35,7 @@ from app.services.campaign.experience_education_validation_service import (
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
+from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
 
@@ -126,7 +128,10 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+        interview_schedule_repo = InterviewScheduleRepository(db)
+        stage_transition_service = StageTransitionService(
+            allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+        )
 
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
@@ -188,12 +193,41 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             raise ValueError(f"Job description '{campaign.jd_id}' not found.")
 
         stage_transition_service.transition_to_screening(campaign_candidate)
+        # transition_to_screening()'s return value used to be discarded here -
+        # its own no-op branches are meant to be benign (candidate already
+        # progressed past UPLOADED, e.g. a redelivered duplicate task), but a
+        # genuine failure (e.g. no allowed_transitions row for UPLOADED ->
+        # SCREENING) is *also* a silent no-op from its return value alone,
+        # and scoring would proceed anyway - persisting a real score against
+        # a candidate still stuck at UPLOADED, with the task marked SUCCESS
+        # and never retried. Checking pipeline_stage after the call
+        # distinguishes the two: if it's still UPLOADED, the transition
+        # genuinely did not apply, which is never safe to score through
+        # silently - raising here routes it through this task's normal
+        # failure handling (task_log marked FAILED, visible for retry)
+        # instead of a silent, permanent stuck state.
+        if campaign_candidate.pipeline_stage == PipelineStage.UPLOADED:
+            raise RuntimeError(
+                f"transition_to_screening did not advance campaign_candidate {campaign_candidate.id} "
+                "past UPLOADED - deterministic scoring cannot safely proceed. Check allowed_transitions "
+                "for an UPLOADED -> SCREENING row."
+            )
 
 
         parsed_json = resume.parsed_json or {}
-        candidate_total_years = parsed_json.get("total_experience_years")
+        # Same "JSON is the single source of truth" preference as
+        # education/JD-experience above: prefer total_experience_years
+        # computed from work_experience's own start_date/end_date (the same
+        # computation the resume-parsed-json display endpoint already
+        # applies, per annotate_work_experience_durations' own docstring -
+        # it doesn't trust the AI-extracted figure verbatim since that can
+        # drift from what the listed dates actually add up to) over the raw
+        # extracted field, which is null whenever the resume never states an
+        # explicit "X years" figure even though its dates make one computable.
+        candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
         candidate_education_entries = parsed_json.get("education")
         required_degree_text = (job_description.education_criteria or {}).get("degree")
+        jd_extracted_education = (job_description.extracted_json or {}).get("education")
 
         weight_configs = config_repo.get_configs_by_keys([
             _EXPERIENCE_TOLERANCE_YEARS_KEY,
@@ -212,11 +246,14 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             float(job_description.min_experience_years)
             if job_description.min_experience_years is not None else None
         )
+        jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
         experience_result = validation_service.validate_experience(
             min_experience_years, candidate_total_years,
+            jd_extracted_experience=jd_extracted_experience,
         )
         education_result = validation_service.validate_education(
             required_degree_text, candidate_education_entries, candidate_total_years,
+            jd_extracted_education=jd_extracted_education,
         )
         score_weights = {
             "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
@@ -233,6 +270,8 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             experience_result=experience_result,
             education_result=education_result,
             score_weights=score_weights,
+            required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
+            max_missing_core_skills=int(campaign.max_missing_core_skills),
         )
 
         now = datetime.now(timezone.utc)
@@ -272,7 +311,10 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             "mandatory_skills_checked": len(breakdown["mandatory_skills"]),
             "matched": matched_count,
             "missing": len(missing_entries),
-          
+            "mandatory_coverage_pct": breakdown["mandatory_coverage_pct"],
+            "missing_core_skill_count": breakdown.get("missing_core_skill_count"),
+            "max_missing_core_skills": breakdown.get("max_missing_core_skills"),
+            "skill_qualification_passed": breakdown.get("skill_qualification_passed"),
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
             "rejection_reason": rejection_reason,

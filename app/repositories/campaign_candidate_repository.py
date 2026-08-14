@@ -297,6 +297,33 @@ class CampaignCandidateRepository:
             stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
         return list(self.db.execute(stmt).scalars().all())
 
+    def get_campaign_usage_by_resume_ids(
+        self,
+        resume_ids: list[UUID],
+    ) -> list[tuple[UUID, UUID, str, PipelineStage]]:
+        """
+        S02-T01 - (resume_id, campaign_id, campaign_name, pipeline_stage) rows
+        for a batch of resume versions, backing "which campaigns was this
+        resume version used in". Mirrors get_campaign_context_for_candidate's
+        join but keyed by resume_id (a resume can be linked to more than one
+        campaign via "use existing" duplicate resolution) and batched like
+        get_by_resume_ids.
+        """
+        if not resume_ids:
+            return []
+        stmt = (
+            select(
+                CampaignCandidate.resume_id,
+                HiringCampaign.id,
+                HiringCampaign.name,
+                CampaignCandidate.pipeline_stage,
+            )
+            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+            .where(CampaignCandidate.resume_id.in_(resume_ids))
+            .order_by(CampaignCandidate.created_at.desc())
+        )
+        return list(self.db.execute(stmt).all())
+
     def get_by_campaign_and_candidate(
         self,
         campaign_id: UUID,
@@ -522,6 +549,17 @@ class CampaignCandidateRepository:
 
         return self.db.execute(stmt).unique().all()
 
+    def get_candidate_ids_by_campaign(self, campaign_id: UUID) -> set[UUID]:
+        """
+        Bare candidate_ids already added to a campaign - used by Talent
+        Pool search to exclude already-added candidates when an HR_ADMIN is
+        browsing to add people to a specific campaign. Deliberately not
+        get_all_by_campaign's full Candidate/Resume/ai_evaluation join -
+        only the id set is needed here.
+        """
+        stmt = select(CampaignCandidate.candidate_id).where(CampaignCandidate.campaign_id == campaign_id)
+        return set(self.db.execute(stmt).scalars().all())
+
     def get_ids_by_campaign(
         self,
         campaign_id: UUID,
@@ -708,6 +746,35 @@ class CampaignCandidateRepository:
             "highest": float(highest) if highest is not None else None,
             "lowest": float(lowest) if lowest is not None else None,
             "average": float(average) if average is not None else None,
+        }
+
+    def get_best_composite_scores_by_candidate_ids(self, candidate_ids: list[UUID]) -> dict[UUID, float]:
+        """
+        Talent Pool Search (M13-E01 S02 T0x) - MAX(composite_score) per
+        candidate for a batch of candidates in ONE query, so the Talent
+        Pool list page's "best historical composite score" card field never
+        issues one aggregate query per candidate. Mirrors
+        get_score_aggregates' MAX(composite_score), generalized across every
+        campaign a candidate has ever been submitted to (not one campaign)
+        and grouped per candidate instead of scalar for one campaign.
+
+        A candidate with campaign_candidates rows but every composite_score
+        NULL (not yet scored) groups to a NULL MAX and is filtered out below
+        - simply absent from the returned dict, exactly like a candidate
+        with no campaign_candidates rows at all. Callers must treat a
+        missing key as "no score", never as 0.
+        """
+        if not candidate_ids:
+            return {}
+        stmt = (
+            select(CampaignCandidate.candidate_id, func.max(CampaignCandidate.composite_score))
+            .where(CampaignCandidate.candidate_id.in_(candidate_ids))
+            .group_by(CampaignCandidate.candidate_id)
+        )
+        return {
+            candidate_id: float(best_score)
+            for candidate_id, best_score in self.db.execute(stmt).all()
+            if best_score is not None
         }
 
     def get_ai_recommendation_counts(self, campaign_id: UUID) -> dict[str, int]:

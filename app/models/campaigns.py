@@ -40,6 +40,19 @@ class HiringCampaign(Base):
     deterministic_threshold: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=70.00, server_default=text("70.00")
     )
+    # Skill-stage qualification (core/supporting importance) - see
+    # CandidateScoringService.evaluate_skill_qualification. 0.00 default
+    # means "no coverage gate" (always satisfied) until a campaign
+    # explicitly configures one - existing campaigns keep scoring exactly
+    # as before this feature existed.
+    required_skill_coverage_threshold: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0.00, server_default=text("0.00")
+    )
+    # Fixed business limit (never proportional to required-skill count) -
+    # see DEFAULT_MAX_MISSING_CORE_SKILLS.
+    max_missing_core_skills: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default=text("3")
+    )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     prompt_template_id: Mapped[uuid.UUID] = mapped_column(

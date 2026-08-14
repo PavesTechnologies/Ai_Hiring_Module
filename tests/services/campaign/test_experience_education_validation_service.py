@@ -102,7 +102,7 @@ def test_education_fails_for_lower_degree_without_equivalent_experience():
 
     assert result["passed"] is False
     assert result["equivalent_experience_applied"] is False
-    assert result["score"] == round((3 / 4) * 100, 2)  # BACHELOR(3) / MASTER(4)
+    assert result["score"] == round((4 / 6) * 100, 2)  # BACHELOR(4) / MASTER(6) - app.enums.education.DEGREE_LEVEL_RANK
 
 
 def test_equivalent_experience_substitutes_for_insufficient_degree():

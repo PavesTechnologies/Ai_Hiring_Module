@@ -13,8 +13,13 @@ JD_ID = uuid4()
 RESUME_ID = uuid4()
 
 
-def _coverage_row(canonical_skill_id, weight, candidate_scoring_weight, match_tier=None, confidence=None):
-    """Mimics one row of SkillRepository.get_mandatory_skill_coverage's LEFT JOIN result."""
+def _coverage_row(canonical_skill_id, weight, candidate_scoring_weight, match_tier=None, confidence=None, importance=None):
+    """
+    Mimics one row of SkillRepository.get_mandatory_skill_coverage's LEFT
+    JOIN result. importance mirrors jd_skills.importance ("CORE"/
+    "SUPPORTING"/None) - default None matches every pre-existing call site
+    (a legacy/unclassified JDSkill row).
+    """
     return SimpleNamespace(
         canonical_skill_id=canonical_skill_id,
         weight=weight,
@@ -22,6 +27,7 @@ def _coverage_row(canonical_skill_id, weight, candidate_scoring_weight, match_ti
         candidate_scoring_weight=candidate_scoring_weight,
         match_tier=match_tier,
         confidence=confidence,
+        importance=importance,
     )
 
 
@@ -542,15 +548,31 @@ def test_mixed_tiers_all_count_as_covered_except_missing():
 
 
 # ---------------------------------------------------------------- deterministic_passed override (rule 12)
+#
+# NOTE: "any mandatory skill missing -> automatic fail" was the OLD rule.
+# It has been replaced by evaluate_skill_qualification's three checks
+# (required-skill coverage, importance-weighted score vs.
+# deterministic_threshold, missing-CORE-skill limit) - see the
+# "skill qualification (core/supporting)" section below for the tests that
+# now own this behavior. A candidate CAN have a missing mandatory skill and
+# still pass, provided none of the three checks fail.
 
 
-def test_deterministic_passed_false_when_any_mandatory_skill_missing_even_if_coverage_meets_threshold():
+def test_deterministic_passed_true_when_one_uncategorized_mandatory_skill_missing_and_defaults_used():
+    """
+    One of four mandatory skills is MISSING, but it was never AI-classified
+    core/supporting (importance=None, e.g. a legacy JDSkill row) - it still
+    counts against coverage/score, but never against the CORE-only gap
+    limit. With the default coverage threshold (0.0, always satisfied) and
+    default max_missing_core_skills (3), this candidate now PASSES - unlike
+    the old "any missing mandatory skill -> fail" rule.
+    """
     a, b, c, d = uuid4(), uuid4(), uuid4(), uuid4()
     rows = [
         _coverage_row(a, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
         _coverage_row(b, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
         _coverage_row(c, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
-        _coverage_row(d, weight=25.0, candidate_scoring_weight=None),  # stays MISSING
+        _coverage_row(d, weight=25.0, candidate_scoring_weight=None),  # stays MISSING, importance=None
     ]
     skill_by_id_map = {d: _ontology_skill(d, parent_skill_id=None)}
     service, campaign_candidate_repository = make_service(
@@ -559,14 +581,135 @@ def test_deterministic_passed_false_when_any_mandatory_skill_missing_even_if_cov
     campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
     campaign_candidate_repository.get_by_id.return_value = campaign_candidate
 
-    # 75% coverage clears a 50% threshold, but one mandatory skill is MISSING.
     breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=50.0)
 
     assert breakdown["mandatory_coverage_pct"] == 75.0
     assert breakdown["deterministic_score"] == 75.0
-    assert breakdown["deterministic_passed"] is False
-    assert campaign_candidate.deterministic_passed is False
+    assert breakdown["missing_core_skill_count"] == 0
+    assert breakdown["skill_qualification_passed"] is True
+    assert breakdown["deterministic_passed"] is True
+    assert campaign_candidate.deterministic_passed is True
     assert campaign_candidate.deterministic_score == 75.0
+
+
+def test_deterministic_passed_false_when_missing_skill_is_core_and_coverage_threshold_configured():
+    """
+    Same shape as above, but the missing skill IS classified "core", and
+    the campaign explicitly configures a 100% coverage threshold - now the
+    coverage check fails (75% < 100%) even though the core-gap count (1)
+    is still within the default limit of 3.
+    """
+    a, b, c, d = uuid4(), uuid4(), uuid4(), uuid4()
+    rows = [
+        _coverage_row(a, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(b, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(c, weight=25.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(d, weight=25.0, candidate_scoring_weight=None, importance="CORE"),  # stays MISSING
+    ]
+    skill_by_id_map = {d: _ontology_skill(d, parent_skill_id=None)}
+    service, campaign_candidate_repository = make_service(
+        rows, children_map={d: []}, skill_by_id_map=skill_by_id_map,
+    )
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=50.0,
+        required_skill_coverage_threshold=100.0,
+    )
+
+    assert breakdown["mandatory_skills"][3]["importance"] == "core"
+    assert breakdown["missing_core_skill_count"] == 1
+    assert breakdown["core_gap_passed"] is True  # 1 <= default limit of 3
+    assert breakdown["coverage_passed"] is False  # 75% < 100% threshold
+    assert breakdown["skill_qualification_passed"] is False
+    assert breakdown["deterministic_passed"] is False
+
+
+def test_deterministic_passed_false_when_missing_core_skills_exceed_max_missing_core_skills():
+    """Four CORE mandatory skills missing, default max_missing_core_skills=3 -> FAILS on the core-gap check alone."""
+    core_ids = [uuid4() for _ in range(4)]
+    matched_id = uuid4()
+    rows = [_coverage_row(matched_id, weight=10.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
+    rows += [
+        _coverage_row(core_id, weight=10.0, candidate_scoring_weight=None, importance="CORE")
+        for core_id in core_ids
+    ]
+    skill_by_id_map = {core_id: _ontology_skill(core_id, parent_skill_id=None) for core_id in core_ids}
+    service, campaign_candidate_repository = make_service(
+        rows, children_map={core_id: [] for core_id in core_ids}, skill_by_id_map=skill_by_id_map,
+    )
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    # Score alone (10/50*100=20%) already fails a 0% threshold's opposite -
+    # use threshold=0 so ONLY the core-gap check can be responsible for the
+    # failure, isolating what this test is actually proving.
+    breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=0.0)
+
+    assert breakdown["missing_core_skill_count"] == 4
+    assert breakdown["max_missing_core_skills"] == 3
+    assert breakdown["core_gap_passed"] is False
+    assert breakdown["score_passed"] is True  # 20% >= 0% threshold
+    assert breakdown["coverage_passed"] is True  # default threshold 0.0
+    assert breakdown["skill_qualification_passed"] is False
+    assert breakdown["deterministic_passed"] is False
+
+
+def test_missing_core_skills_within_configured_limit_still_passes():
+    """
+    Part 22 case 2: 15 required (imitated with fewer rows for test brevity),
+    2 missing CORE skills, default limit of 3 -> core-gap check passes, and
+    with score/coverage also clearing their thresholds, the candidate PASSES
+    despite having missing required skills.
+    """
+    matched_ids = [uuid4() for _ in range(13)]
+    missing_core_ids = [uuid4() for _ in range(2)]
+    rows = [
+        _coverage_row(mid, weight=1.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0, importance="CORE")
+        for mid in matched_ids
+    ]
+    rows += [
+        _coverage_row(cid, weight=1.0, candidate_scoring_weight=None, importance="CORE")
+        for cid in missing_core_ids
+    ]
+    skill_by_id_map = {cid: _ontology_skill(cid, parent_skill_id=None) for cid in missing_core_ids}
+    service, campaign_candidate_repository = make_service(
+        rows, children_map={cid: [] for cid in missing_core_ids}, skill_by_id_map=skill_by_id_map,
+    )
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    # coverage = 13/15 = 86.7%, score = 13/15*100 = 86.7% too (all weights
+    # equal), missing_core_skill_count = 2 <= default limit of 3.
+    breakdown = service.calculate_and_store_score_breakdown(
+        campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0,
+        required_skill_coverage_threshold=80.0,
+    )
+
+    assert breakdown["mandatory_coverage_pct"] == round(13 / 15 * 100, 2)
+    assert breakdown["missing_core_skill_count"] == 2
+    assert breakdown["core_gap_passed"] is True
+    assert breakdown["coverage_passed"] is True
+    assert breakdown["score_passed"] is True
+    assert breakdown["skill_qualification_passed"] is True
+    assert breakdown["deterministic_passed"] is True
+
+
+def test_deterministic_passed_true_when_all_covered_and_threshold_met():
+    a, b = uuid4(), uuid4()
+    rows = [
+        _coverage_row(a, weight=50.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+        _coverage_row(b, weight=50.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
+    ]
+    service, campaign_candidate_repository = make_service(rows)
+    campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
+    campaign_candidate_repository.get_by_id.return_value = campaign_candidate
+
+    breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0)
+
+    assert breakdown["deterministic_passed"] is True
+    assert campaign_candidate.deterministic_passed is True
 
 
 def test_deterministic_passed_true_when_all_covered_and_threshold_met():
@@ -597,7 +740,10 @@ def test_calculate_and_store_score_breakdown_persists_onto_campaign_candidate():
 
     breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=70.0)
 
-    assert campaign_candidate.score_breakdown == breakdown
+    # Pre-existing test bug fixed in passing: the persisted field is
+    # deterministic_breakdown (campaign_candidates.deterministic_breakdown),
+    # not score_breakdown - that name never existed on the model.
+    assert campaign_candidate.deterministic_breakdown == breakdown
     campaign_candidate_repository.update.assert_called_once_with(campaign_candidate)
     campaign_candidate_repository.commit.assert_not_called()
 
@@ -941,15 +1087,18 @@ def test_preferred_bonus_does_not_affect_mandatory_coverage_score_or_passed_deci
     # Mandatory: actual=50 / max=100 * 100 = 50.0. A huge preferred bonus
     # (100.0) exists alongside it but must have NO effect whatsoever on
     # deterministic_score, mandatory_coverage_pct, or deterministic_passed -
-    # no addition, no clamping, nothing.
+    # no addition, no clamping, nothing. The missing mandatory skill here
+    # is uncategorized (importance=None), so with default qualification
+    # thresholds it no longer force-fails the candidate either (Part 7) -
+    # the 50% weighted score alone clears the 40% threshold.
     breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=40.0)
 
     assert breakdown["mandatory_coverage_pct"] == 50.0
     assert breakdown["deterministic_score"] == 50.0
     assert breakdown["preferred_skill_bonus"] == 100.0
-    assert breakdown["deterministic_passed"] is False  # forced by the MISSING mandatory skill
+    assert breakdown["deterministic_passed"] is True
     assert campaign_candidate.deterministic_score == 50.0
-    assert campaign_candidate.deterministic_passed is False
+    assert campaign_candidate.deterministic_passed is True
 
 
 def test_mandatory_scoring_and_hierarchy_entries_unchanged_when_preferred_skills_present():
@@ -1051,7 +1200,15 @@ def test_semantic_match_contributes_at_0_2_credit():
     assert breakdown["deterministic_score"] == round(100.0 * 1.0 * 0.2, 4)
 
 
-def test_missing_skill_zero_contribution_reduces_weighted_score_and_forces_fail():
+def test_missing_skill_zero_contribution_reduces_weighted_score_but_no_longer_auto_fails():
+    """
+    A missing mandatory skill still zeroes its own contribution and drags
+    the weighted score down - that arithmetic is unchanged. What HAS
+    changed (Part 7): with this skill uncategorized (importance=None) and
+    default qualification thresholds, a weighted score that clears
+    deterministic_threshold now passes overall, instead of being force-
+    failed purely because something was missing.
+    """
     matched_id, missing_id = uuid4(), uuid4()
     rows = [
         _coverage_row(matched_id, weight=50.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
@@ -1062,14 +1219,12 @@ def test_missing_skill_zero_contribution_reduces_weighted_score_and_forces_fail(
     campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
     campaign_candidate_repository.get_by_id.return_value = campaign_candidate
 
-    # Weighted score (50.0) alone would clear a 40% threshold, but the
-    # missing mandatory skill must still force a fail.
     breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=40.0)
 
     missing_entry = next(e for e in breakdown["mandatory_skills"] if e["canonical_skill_id"] == str(missing_id))
     assert missing_entry["skill_contribution"] == 0.0
     assert breakdown["deterministic_score"] == 50.0
-    assert breakdown["deterministic_passed"] is False
+    assert breakdown["deterministic_passed"] is True
 
 
 def test_threshold_boundary_evaluated_against_weighted_score_not_coverage_pct():
@@ -1156,4 +1311,7 @@ def test_partial_match_ratio_independent_of_weight_magnitude():
 
     # actual = 7 (matched) + 0 (missing) = 7, max = 7 + 7 = 14 -> 7/14*100 = 50.0
     assert breakdown["deterministic_score"] == 50.0
-    assert breakdown["deterministic_passed"] is False  # MISSING mandatory skill forces fail
+    # Part 7: the missing skill is uncategorized (importance=None), so it
+    # no longer auto-fails the candidate - 50% clears the 40% threshold,
+    # coverage/core-gap both use their always-satisfied defaults.
+    assert breakdown["deterministic_passed"] is True

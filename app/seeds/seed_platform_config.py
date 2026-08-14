@@ -174,6 +174,18 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="CORE_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'core'. 1.0 (neutral, no differentiation from supporting) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER",
+            value="1.0",
+            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'supporting'. 1.0 (neutral, no differentiation from core) until deliberately changed.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
             value="20",
             description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
@@ -261,6 +273,18 @@ try:
             key="INTERVIEW_SLA_DAYS",
             value="7",
             description="Days a candidate may sit in INTERVIEW before being flagged as stalled (M04-E04-S04)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="DASHBOARD_LOAD_TIMEOUT_SECONDS",
+            value="10",
+            description="Per-section dashboard fetch timeout before that section shows its error state (M11-E01-S05)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="MAX_SAVED_VIEWS_PER_USER",
+            value="10",
+            description="Maximum saved filter views one user may keep per campaign (M11-E03-S03-T01)",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
@@ -396,6 +420,18 @@ try:
             key="MAX_EMAIL_RETRY_COUNT",
             value="4",
             description="Max attempts for a transient interview/notification email send failure before dead-lettering (M12)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_DOWNLOAD_URL_EXPIRY_SECONDS",
+            value="300",
+            description="Validity (seconds) of a server-generated signed URL for downloading a specific resume version (M07-E0x S02-T01)",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
+            key="RESUME_FRESHNESS_MAX_AGE_DAYS",
+            value="180",
+            description="Max age (days, ~6 months) of a resume version's created_at before ResumeSelectionService excludes it from Talent Pool campaign selection, regardless of is_talent_pool_eligible (M13-E01 Talent Pool Eligibility)",
         ),
     ]
 

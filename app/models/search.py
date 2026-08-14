@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -21,4 +21,8 @@ class SearchQuery(Base):
     top_score: Mapped[Optional[float]] = mapped_column(Numeric(7, 6), nullable=True)
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     search_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # M11-E03-S01-T03 — canonical_skill_id UUIDs (as strings) selected for a
+    # skill search. The spec's zero_results flag is derivable from
+    # result_count == 0, so it is not stored separately.
+    canonical_skill_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

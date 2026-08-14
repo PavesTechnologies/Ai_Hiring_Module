@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.enums.education import DegreeLevel, EducationField
+
 
 def _clean_string_list(values: list[str]) -> list[str]:
     """
@@ -69,11 +71,33 @@ class EducationEntry(BaseModel):
     institution: str | None = None
     field: str | None = None
     graduation_year: int | None = None
+    # AI-classified, controlled-vocabulary companions to the raw degree/
+    # field text above - the raw fields are always preserved unchanged.
+    # Default to UNKNOWN (never guessed) rather than None, so downstream
+    # matching always gets a valid enum value to branch on.
+    degree_level: str = DegreeLevel.UNKNOWN.value
+    field_normalized: str = EducationField.UNKNOWN.value
 
     @field_validator("degree", "institution", "field")
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
+
+    @field_validator("degree_level")
+    @classmethod
+    def validate_degree_level(cls, value: str) -> str:
+        try:
+            return DegreeLevel(value).value
+        except ValueError:
+            return DegreeLevel.UNKNOWN.value
+
+    @field_validator("field_normalized")
+    @classmethod
+    def validate_field_normalized(cls, value: str) -> str:
+        try:
+            return EducationField(value).value
+        except ValueError:
+            return EducationField.UNKNOWN.value
 
 
 class ResumeExtractionResponse(BaseModel):

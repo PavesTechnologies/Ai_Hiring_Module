@@ -18,7 +18,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = 2
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_host: str = "localhost"
+    redis_port: str = "6379"
+    redis_username: str = ""
+    redis_password: str = ""
+    redis_db: int = 3
 
     # AWS S3
     aws_access_key_id: str = ""
@@ -44,6 +48,28 @@ class Settings(BaseSettings):
     # Encryption
     candidate_pii_key: str = ""
 
+    # Microsoft Teams calendar integration (M12) — delegated OAuth,
+    # Calendars.ReadWrite/OnlineMeetings.ReadWrite/offline_access/User.Read.
+    # No admin-consent gate; each user goes through /oauth/microsoft/connect
+    # individually.
+    microsoft_client_id: str = ""
+    microsoft_tenant_id: str = ""
+    microsoft_client_secret: str = ""
+    microsoft_redirect_uri: str = ""
+
+    # Google Meet calendar integration (M12) - same delegated-OAuth shape
+    # as Microsoft above, calendar.events scope only.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+
+    # HMAC-signs the OAuth `state` param so /oauth/microsoft/callback (which
+    # never carries our own Authorization header - see JWTMiddleware's
+    # public-path bypass for that route) can still verify which user
+    # initiated the connect flow, without a session store this codebase
+    # doesn't otherwise have.
+    oauth_state_signing_key: str = ""
+
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
 
@@ -61,9 +87,6 @@ class Settings(BaseSettings):
     # absolute URL.
     frontend_base_url: str = ""
 
-
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -108,6 +131,21 @@ class Settings(BaseSettings):
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
             f"?sslmode={self.db_sslmode}"
         )
+
+    @property
+    def redis_url(self) -> str:
+        auth = ""
+        if self.redis_username or self.redis_password:
+            auth = f"{self.redis_username}:{self.redis_password}@"
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def CELERY_BROKER_URL(self) -> str:
+        return self.redis_url
+
+    @property
+    def CELERY_RESULT_BACKEND(self) -> str:
+        return self.redis_url
 
     model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
 

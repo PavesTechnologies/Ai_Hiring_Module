@@ -48,6 +48,62 @@ unrelated work (that's how the E02 test fixes ended up being only 3 of the
 
 ---
 
+## Test suite: `campaign_candidate.ai_evaluation` missing from stale `SimpleNamespace` fixtures
+
+**Status:** open, discovered 2026-08-14, not fixed. Separate entry from
+"Test suite: widespread staleness from the `decision_*` model redesign"
+above — same general shape (a schema/model change landed without a
+matching pass over test fixtures), but a different specific attribute,
+a different (and wider) set of affected files, and not confirmed to share
+the same root-cause merge, so kept distinct rather than folded in.
+
+Found while verifying Epic 4 (M12) Step 3 (interview scheduling endpoints)
+didn't introduce regressions: a full, non-scoped `pytest --collect-only`
+followed by a full run (excluding the 6 files already known to fail
+collection from the `RejectionLayer` issue above) produced **90 failed,
+881 passed** — far outside Step 3's own change surface. Confirmed via
+`git status`/`git log` that none of the failing files (or their
+corresponding source files) were touched by this session's work.
+
+Traced one representative failure
+(`test_composite_scoring_service.py`) to its root cause:
+`composite_scoring_service.py`'s `_effective_ai_score` reads
+`campaign_candidate.ai_evaluation.effective_ai_score` (a 1:1 relationship
+to `CampaignCandidateAIEvaluation`), but the test file's
+`_make_campaign_candidate()` fixture builds a bare `SimpleNamespace` with
+no `ai_evaluation` attribute at all, so every code path that reaches
+`_effective_ai_score` raises `AttributeError:
+'types.SimpleNamespace' object has no attribute 'ai_evaluation'` before
+ever exercising the logic under test.
+
+**Confirmed affected (by file, not exhaustively traced to root cause
+beyond the one above):** `test_composite_scoring_service.py`,
+`test_semantic_scoring_service.py`,
+`test_campaign_candidate_ranking_service.py`,
+`test_campaign_candidate_ranking_export_service.py`,
+`test_campaign_candidate_rejection_analytics_service.py`,
+`test_campaign_candidate_rejection_analytics_integration.py`,
+`test_campaign_candidate_semantic_endpoint.py`,
+`test_candidate_erasure_service_request_erasure.py` (tests/services/compliance/),
+`test_jd_service_weight_assignment.py` (tests/services/jd/),
+`test_resume_processing_pipeline_flow.py` (tests/services/resume/),
+`test_embedding_tasks.py` (tests/tasks/) — several of these may share the
+`ai_evaluation` root cause, others may not; not individually confirmed.
+This is a wider file set than the `decision_*` redesign entry above ever
+scanned (that entry only covered `tests/services/campaign/` plus 2 task
+files), so it's plausible some of these were already broken before that
+entry was written and simply never surfaced in a full run until now.
+
+**Not fixed here:** out of scope for Epic 4 Step 3, which only touches
+interview scheduling. Same "found something unrelated, didn't touch it,
+documented it" standard as every other entry in this file. Whoever picks
+this up should run a full, unscoped `pytest --collect-only -q` first
+(not a targeted subset) to get an honest current count, since both this
+entry and the `decision_*` entry above were each discovered by a
+targeted run that didn't cover the other's files.
+
+---
+
 ## Alembic: multiple unmerged migration heads
 
 **Status:** open, pre-existing, recurring. Not fixed by any of the entries below.
@@ -203,29 +259,172 @@ level; `d3a86f21c9e4` is a fresh, separate, still-open incident.
 
 ## Alembic: `alembic_version` stamped at a phantom revision `d3a86f21c9e4` (2026-08-11)
 
-**Status:** open, discovered 2026-08-11, not fixed. Discovered as a side
-effect of verifying the `9a1c2f3e6b7d` collision fix above (`alembic
-current` was expected to succeed once the collision was resolved; instead
-it failed with a different, unrelated error).
+**Status:** resolved 2026-08-13. Discovered as a side effect of verifying
+the `9a1c2f3e6b7d` collision fix above (`alembic current` was expected to
+succeed once that collision was resolved; instead it failed with a
+different, unrelated error).
 
-`alembic_version` is currently stamped at `d3a86f21c9e4` — a revision id
-that does not exist anywhere in this repo's `alembic/versions/` directory
-(confirmed: only 6 migration files exist in this checkout right now,
+`alembic_version` was stamped at `d3a86f21c9e4` — a revision id that did
+not exist anywhere in this repo's `alembic/versions/` directory at the
+time (confirmed: only 6 migration files existed in that checkout,
 `7043b9ed5abe`, `09f831e39061`, `e686c750b7b4`, `9a1c2f3e6b7d`,
-`b6dda6ad1824`, `08655d0b0117` — `d3a86f21c9e4` is not one of them). This
-is the same recurring pattern as every entry above: something applied a
-schema change directly against the shared dev DB and hand-stamped
-`alembic_version` without ever committing the migration file — except this
-time it happened *after* this session's own `9a1c2f3e6b7d` stamp (which
-was itself resolved via the placeholder fix above), meaning the DB has
-moved again since.
+`b6dda6ad1824`, `08655d0b0117` — `d3a86f21c9e4` was not one of them).
 
-**Not investigated further yet** — this needs the same "verify every
-current head's schema effects against live DB state before touching
-anything" methodology as every prior recurrence, which is real work
-(comparing live schema/enum state against every migration's effects) and
-wasn't in scope for the collision fix that surfaced it. Flagging it here
-so it isn't lost, rather than guessing at a fix.
+**Investigated (2026-08-11), before the real file was known:** a full
+drift audit (recursively importing every SQLAlchemy model and comparing
+all 43 live tables and all 34 live enum types against the ORM) found
+exactly 3 unexplained items — `hiring_campaigns.max_missing_core_skills`,
+`hiring_campaigns.required_skill_coverage_threshold`, and
+`jd_skills.importance` (new enum `jd_skill_importance_enum`) — all live,
+all referenced by zero code anywhere in `app/`. Concluded these were
+"in-progress work applied directly to the shared dev DB, migration file
+never committed," and authored a no-op placeholder
+(`d3a86f21c9e4_placeholder_for_missing_revision.py`) into the exact
+stamped id, explicitly stating *"this is not a collision with a real
+migration that simply hadn't been pulled yet."*
+
+**That statement was wrong, and it's worth naming plainly why, since it's
+a different mistake from the `9a1c2f3e6b7d` incident above and worth
+telling apart:** the `9a1c2f3e6b7d` case was a genuine *coincidental*
+collision — two people independently generated the same random 12-hex-char
+id at roughly the same time, with no way either could have known about the
+other's revision beforehand. This case was not that. The real migration
+(`d3a86f21c9e4_skill_importance_and_qualification_thresholds.py` —
+confirmed on merge, 2026-08-13, to add exactly the 3 items found above)
+already existed on a teammate's branch (niharika, PR #94) at the time of
+the 2026-08-11 investigation — it simply hadn't been merged into this
+checkout yet. "No file exists anywhere I can find" was an accurate
+statement about that moment, not a permanent fact — especially on a repo
+with this much concurrent, unpushed, or in-flight work across branches.
+The exhaustive-sounding search (recursive model audit, live schema diff)
+made the conclusion *feel* more certain than "phantom, not a pulled-later
+collision" actually was; it was still bounded by what existed in fetched
+branches at that moment. Worth remembering next time a search comes back
+empty: empty now doesn't mean empty later.
+
+**How it was fixed (2026-08-13, once the real file landed via merge):**
+same resolution shape as the `9a1c2f3e6b7d` incident — the placeholder
+(never anything but a no-op) was deleted outright rather than renamed,
+since alembic_version only ever stores a revision id string, never a file
+hash. The live DB was already stamped past `d3a86f21c9e4` (at
+`7b3f6a92e1c4`, downstream), so alembic never re-runs a revision it has
+already recorded as passed — swapping which file backs an already-passed
+id is safe *specifically because* it's already passed; this would not
+hold for a revision the DB hadn't reached yet. Using the real migration
+file going forward (instead of the deleted no-op) is also the correct
+choice for any future fresh-database bootstrap, since the placeholder
+never actually created these columns — only the real file does.
+`c8e1a4f97d52`'s `down_revision` already read `'d3a86f21c9e4'` and needed
+no change; deleting the placeholder alone let the chain resolve onto the
+real file. Confirmed clean afterward: `alembic heads`/`current` no longer
+warn about this id at all.
+
+**Uncovered while verifying this fix, tracked separately below:** a
+*third*, unrelated head (`c1f4a7b93e20`, M11 saved views/skill search,
+also from PR #94) was hidden by this collision's noise and only became
+visible once it was resolved — see the next entry.
+
+---
+
+## Alembic: `c1f4a7b93e20` (M11 saved views/skill search) is a second unmerged head (2026-08-13)
+
+**Status:** resolved 2026-08-13. Surfaced only after deleting the
+superseded `d3a86f21c9e4` placeholder above — with two migrations both
+claiming `d3a86f21c9e4`, `alembic heads` was already erroring out on that
+collision and never got far enough to report this second, independent
+problem.
+
+`c1f4a7b93e20_m11_saved_views_and_skill_search.py` (PR #94, adds the
+`user_saved_views` table, `candidate_notes` table, `search_queries.
+canonical_skill_ids`, and 3 `audit_action_type_enum` values) has
+`down_revision = '7043b9ed5abe'` — it branches directly off the initial
+schema migration, not off this branch's current tip at the time
+(`7b3f6a92e1c4`). Same fork shape as every recurrence above, structurally
+— but worth naming plainly what's actually different about the *cause*
+here, distinct from both incidents above:
+
+- `9a1c2f3e6b7d` was a genuine **coincidental hash collision** — two
+  people independently generated the same random id with no way either
+  could have known about the other.
+- `d3a86f21c9e4` was **a premature conclusion** — the real file existed
+  on a teammate's branch the whole time; the investigation just hadn't
+  fetched it yet, and said so more confidently ("not a collision... this
+  is genuinely missing") than the evidence actually supported.
+- **This one is neither a collision nor a mistake.** Confirmed initially
+  (2026-08-13, first pass) that neither `user_saved_views` nor
+  `search_queries.canonical_skill_ids` existed live yet — a genuinely
+  new, not-yet-applied migration, nothing to investigate further. By the
+  time the fix was actually written moments later, a **concurrent
+  process — almost certainly a teammate or CI finishing the same PR #94
+  merge from another environment** — had run `c1f4a7b93e20` for real
+  against this same shared dev DB: `user_saved_views` now existed,
+  `alembic_version` was restamped to `c1f4a7b93e20` alone, with no
+  record that this branch's own chain (`7b3f6a92e1c4` and everything
+  under it) had ever been applied — even though every one of its schema
+  effects (audit_log indexes/triggers, `idempotency_key`, etc., re-
+  verified directly against the live DB) was still fully intact. Nothing
+  was lost; only the bookkeeping briefly disagreed with reality. **This
+  is arguably the most normal and likely-to-recur of the three risks
+  documented in this file** — two people validly working on two
+  different branches of the same migration chain at the same time on a
+  shared instance is not a bug in anyone's workflow, it's the default
+  outcome of that workflow without a lock. It's the strongest case yet
+  for "always `git fetch` and check `alembic heads` immediately before
+  starting new migration work, and again immediately before stamping/
+  upgrading" — not because someone erred, but because this can happen
+  even when nobody does.
+
+**How it was fixed:** re-verified live (full recursive model-vs-DB drift
+audit, not just the two originally-named items) that both branches'
+complete schema effects were genuinely live before touching anything.
+Authored a real merge migration (`43535e9e3cf7`, `down_revision =
+('7b3f6a92e1c4', 'c1f4a7b93e20')`) and applied it via `alembic stamp`
+(not `upgrade` — by that point nothing needed to execute; both sides
+were already applied). Confirmed clean afterward: `alembic heads`/
+`current` resolve to the single new head with no warnings.
+
+---
+
+## Alembic/schema: undocumented "scheduled exports / compliance" drift (2026-08-13)
+
+**Status:** resolved (bookkeeping only — the feature itself is not built).
+Discovered while verifying the `c1f4a7b93e20` merge above was safe to
+stamp: the full recursive model-vs-live drift audit run for that merge
+turned up further drift with an unrelated root cause, deliberately kept
+as its own entry rather than folded into the merge above — different
+cause, different fix, easier for a future reader to follow separately.
+
+Found live, with zero corresponding file or code anywhere:
+- `hiring_campaigns.scheduled_export_config` (jsonb, nullable)
+- 8 new `audit_action_type_enum` values: `AUDIT_TRAIL_EXPORTED`,
+  `CANDIDATE_LIST_EXPORTED`, `COMPLIANCE_REPORT_EXPORTED`,
+  `DSAR_EXPORTED`, `SCHEDULED_EXPORT_CONFIGURED`, `SCHEDULED_EXPORT_SENT`,
+  `SCORECARD_EXPORTED`, `SHORTLIST_PACKAGE_EXPORTED`
+
+Reads like one cohesive, unbuilt feature (DSAR = Data Subject Access
+Request, a GDPR term) — a "compliance / scheduled exports" epic that
+someone applied directly to this shared dev DB.
+
+**Searched exhaustively before concluding this is genuinely missing** —
+learning directly from the `d3a86f21c9e4` mistake above, not just
+repeating the same search with more confidence: `git fetch --all` first
+(picked up brand-new commits on `RMe`/`loki`/`main`/`niharika`), then
+sanity-checked that the search mechanism itself actually works by
+confirming it *does* find a known-real term (`c1f4a7b93e20` on
+`origin/main`) before trusting a "zero results" reading for the terms
+that actually matter, then searched every local and remote branch tip,
+current and full history (`git log --all --diff-filter=A`). Zero hits
+anywhere, on anything.
+
+**How it was fixed:** authored a no-op placeholder (`e9961d228f3d`,
+`down_revision = '43535e9e3cf7'`, chained on top of the merge above) and
+applied it via `alembic stamp` (not `upgrade` — the schema change is
+already live; nothing to execute). This resolves the bookkeeping only.
+**The feature itself does not exist** — no model field, no service, no
+endpoint reads or writes `scheduled_export_config` or any of the 8 new
+action types anywhere in this codebase. Whoever picks up the real
+"compliance / scheduled exports" work will be adding code against a
+schema that already exists, not authoring the schema itself.
 
 ---
 

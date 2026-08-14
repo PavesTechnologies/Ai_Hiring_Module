@@ -78,7 +78,17 @@ def _make_service(campaign_candidate, campaign, allowed_rows=None):
     )
 
     audit_service = MagicMock()
-    stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+    # Epic 4: required whenever advance_to_interview's tests transition to
+    # INTERVIEW - a bare MagicMock satisfies transition()'s "must be
+    # configured" check. Accessible afterward via
+    # service.stage_transition_service.interview_schedule_repo for tests
+    # that need to assert on it, without changing this helper's widely-used
+    # 4-value return signature.
+    interview_schedule_repo = MagicMock()
+    interview_schedule_repo.get_or_create_pending.return_value = (SimpleNamespace(id=uuid4()), True)
+    stage_transition_service = StageTransitionService(
+        allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+    )
 
     service = CampaignCandidateService(
         campaign_repo=campaign_repo,

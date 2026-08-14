@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
     InvalidPipelineTransitionException,
     PipelineTransitionReasonRequiredException,
 )
@@ -94,7 +95,7 @@ class PipelineTransitionService:
 
         effective_role = actor_role or source.value
         if effective_role not in transition.allowed_roles:
-            raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, [effective_role])
 
         if transition.requires_reason and not reason:
             raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)

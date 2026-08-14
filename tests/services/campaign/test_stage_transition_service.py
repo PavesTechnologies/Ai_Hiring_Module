@@ -44,7 +44,7 @@ def make_service(is_allowed: bool):
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = is_allowed
     campaign_candidate_repo = MagicMock()
-    service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock())
+    service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock(), MagicMock())
     return service, allowed_transition_repo, campaign_candidate_repo
 
 
@@ -246,7 +246,15 @@ def _make_transition_env(candidate, allowed_row, locked_candidate=None):
         SimpleNamespace(id=uuid4()), True,
     )
     audit_service = MagicMock()
-    service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+    # Epic 4: required whenever a test transitions to INTERVIEW - a bare
+    # MagicMock satisfies transition()'s "must be configured" check without
+    # needing every one of this file's many unrelated tests to care about
+    # it, so it's constructed here but not part of this helper's return
+    # signature (tests that need to assert on it build their own env).
+    interview_schedule_repo = MagicMock()
+    service = StageTransitionService(
+        allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+    )
     return service, allowed_transition_repo, campaign_candidate_repo, audit_service
 
 
@@ -589,4 +597,84 @@ def test_unexpected_error_during_audit_write_propagates_and_leaves_session_uncom
     # path - whatever called transition() is entirely responsible for
     # deciding what happens to the still-open transaction.
     campaign_candidate_repo.commit.assert_not_called()
+
+
+"""
+Epic 4: transition()'s INTERVIEW-entry hook - auto-creates a PENDING
+interview_schedules row, same transaction as the stage move (see
+stage_transition_service.py's own comment for why this differs from
+apply_hr_override's post-commit pattern). get_or_create, not a blind
+insert: a candidate re-entering INTERVIEW (e.g. after a fraud-review
+clear) already has a row and must not get a second one - that guarantee
+lives in InterviewScheduleRepository.get_or_create_pending itself (see
+tests/repositories/test_interview_schedule_repository.py for its
+check-then-create logic; this project has no real-DB test harness
+anywhere, so the campaign_candidate_id UNIQUE constraint itself isn't
+independently exercised, only the row-exists check that's meant to avoid
+ever relying on it), not in transition(), which just calls it
+unconditionally whenever to_stage is INTERVIEW.
+"""
+
+
+def test_transition_to_interview_creates_pending_interview_schedule():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.HM_REVIEW)
+    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+    interview_schedule_repo.get_or_create_pending.return_value = (SimpleNamespace(id=uuid4()), True)
+
+    result, was_created = service.transition(
+        candidate.id, PipelineStage.INTERVIEW, Actor(roles=["HIRING_MANAGER"], id="hm-1"),
+    )
+
+    assert was_created is True
+    assert result.pipeline_stage == PipelineStage.INTERVIEW
+    interview_schedule_repo.get_or_create_pending.assert_called_once_with(candidate.id)
+
+
+def test_transition_to_a_non_interview_stage_never_touches_interview_schedule_repo():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SCREENING)
+    row = _allowed_row(["SYSTEM"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+
+    service.transition(candidate.id, PipelineStage.REJECTED, Actor.system())
+
+    interview_schedule_repo.get_or_create_pending.assert_not_called()
+
+
+def test_stage_transition_service_construction_requires_interview_schedule_repo():
+    """
+    Epic 4 consistency fix: interview_schedule_repo is a required
+    constructor param, not optional-with-a-runtime-check inside
+    transition() - same reversal this class already went through for
+    audit_service. A missing required arg is a plain TypeError at
+    construction time, not a domain-specific failure worth asserting on
+    beyond "the caller cannot forget to wire this up."
+    """
+    with pytest.raises(TypeError):
+        StageTransitionService(MagicMock(), MagicMock(), MagicMock())
+
+
+def test_transition_to_interview_via_fraud_clear_reuses_existing_schedule_untouched():
+    """
+    FRAUD_REVIEW -> INTERVIEW (the real M12 fraud-clear edge, HR_ADMIN
+    only, reason required) is a re-entry into INTERVIEW for a candidate
+    that already went through it once - get_or_create_pending is expected
+    to return the existing row (was_created=False); transition() doesn't
+    special-case this at all, it just calls the same method uniformly.
+    """
+    candidate = _make_candidate(pipeline_stage=PipelineStage.FRAUD_REVIEW)
+    row = _allowed_row(["HR_ADMIN"], requires_reason=True)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+    existing_schedule = SimpleNamespace(id=uuid4())
+    interview_schedule_repo.get_or_create_pending.return_value = (existing_schedule, False)
+
+    result, was_created = service.transition(
+        candidate.id, PipelineStage.INTERVIEW, Actor(roles=["HR_ADMIN"], id="hr-1"), reason="false positive, cleared",
+    )
+
+    assert was_created is True  # the STAGE transition itself was applied
+    interview_schedule_repo.get_or_create_pending.assert_called_once_with(candidate.id)
     campaign_candidate_repo.rollback.assert_not_called()
