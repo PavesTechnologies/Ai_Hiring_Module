@@ -1,3 +1,4 @@
+import json
 import logging
 import math
 from datetime import datetime, timezone
@@ -48,6 +49,16 @@ from app.schemas.campaign.campaign_reopen_schema import (JDReadinessIssue,
 from app.schemas.campaign.campaign_response import (CampaignWeightHistoryResponse,
     WeightHistoryItemResponse,
 )
+from app.core.config import settings
+from app.core.cache_keys import (
+    campaign_key,
+    campaign_list_key,
+    campaign_list_prefix,
+    campaign_platform_defaults_key,
+    campaign_scoring_key,
+    campaign_weight_presets_key,
+)
+from app.services.cache_service import CacheService
 from app.repositories.campaign_weight_preset_repository import (CampaignWeightPresetRepository,
 )
 from app.schemas.campaign.campaign_detail_response import (CampaignDetailResponse,
@@ -105,7 +116,9 @@ class CampaignService:
         prompt_template_repo: PromptTemplateRepository | None = None,
         campaign_weight_configuration_history_repo: CampaignWeightConfigurationHistoryRepository | None = None,
         resume_repo: ResumeRepository | None = None,
+        cache_service: CacheService | None = None,
     ):
+        self.cache_service = cache_service
         self.campaign_repo = campaign_repo
         self.jd_repo = jd_repo
         self.audit_service = audit_service
@@ -301,6 +314,33 @@ class CampaignService:
         ids = [c.hiring_manager_id for c in campaigns if c.hiring_manager_id]
         return self.campaign_repo.get_hiring_manager_names(ids)
 
+    def _campaign_aggregate_maps(
+        self,
+        campaigns: list[HiringCampaign],
+        hm_review_sla_days: int,
+        stale_campaign_days: int,
+    ) -> dict[str, dict]:
+        """
+        Batches the 5 per-campaign aggregate lookups (candidate/shortlisted/
+        selected/overdue-review counts + pipeline-stalled flag) that every
+        campaign list endpoint annotates each row with - same
+        batch-once-before-the-loop pattern as _prompt_name_map/
+        _hiring_manager_name_map above, replacing 5 queries per campaign
+        row with 5 queries total for the whole page.
+        """
+        campaign_ids = [c.id for c in campaigns]
+        return {
+            "candidate_counts": self.campaign_repo.get_candidate_counts(campaign_ids),
+            "shortlisted_counts": self.campaign_repo.get_shortlisted_counts(campaign_ids),
+            "selected_counts": self.campaign_repo.get_selected_counts(campaign_ids),
+            "overdue_review_counts": self.campaign_repo.get_overdue_review_counts(
+                campaign_ids, hm_review_sla_days,
+            ),
+            "pipeline_stalled_map": self.campaign_repo.get_pipeline_stalled_map(
+                campaign_ids, stale_campaign_days,
+            ),
+        }
+
     def _close_if_all_positions_filled(self,
         campaign_id: UUID,
         actor_id: str,
@@ -465,6 +505,8 @@ class CampaignService:
             )
 
             self.campaign_repo.commit()
+            if self.cache_service:
+                self.cache_service.delete_by_prefix(campaign_list_prefix())
 
 
             hiring_manager_name = request.hiring_manager_id
@@ -504,7 +546,26 @@ class CampaignService:
             self.campaign_repo.rollback()
             raise
 
+    def _invalidate_campaign_caches(self, campaign_id: UUID, org_id: UUID | None = None) -> None:
+        if not self.cache_service:
+            return
+        self.cache_service.delete(campaign_key(campaign_id), campaign_scoring_key(campaign_id))
+        self.cache_service.delete_by_prefix(campaign_list_prefix())
+        if org_id is not None:
+            self.cache_service.delete(campaign_weight_presets_key(org_id))
+
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
+        if not self.cache_service:
+            return self._load_campaign_by_id(campaign_id)
+
+        raw = self.cache_service.get_or_set(
+            campaign_key(campaign_id),
+            loader=lambda: self._load_campaign_by_id(campaign_id).model_dump_json(),
+            ttl=settings.cache_campaign_ttl_seconds,
+        )
+        return CampaignResponse.model_validate_json(raw)
+
+    def _load_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
@@ -558,6 +619,17 @@ class CampaignService:
         self,
         campaign_id: UUID,
     ) -> CampaignScoringConfigurationResponse:
+        if not self.cache_service:
+            return self._load_scoring_configuration(campaign_id)
+
+        raw = self.cache_service.get_or_set(
+            campaign_scoring_key(campaign_id),
+            loader=lambda: self._load_scoring_configuration(campaign_id).model_dump_json(),
+            ttl=settings.cache_campaign_ttl_seconds,
+        )
+        return CampaignScoringConfigurationResponse.model_validate_json(raw)
+
+    def _load_scoring_configuration(self, campaign_id: UUID) -> CampaignScoringConfigurationResponse:
 
         campaign = self.campaign_repo.get_by_id(campaign_id)
 
@@ -623,6 +695,17 @@ class CampaignService:
         )
     
     def get_platform_scoring_defaults(self) -> CampaignScoringDefaultsResponse:
+        if not self.cache_service:
+            return self._load_platform_scoring_defaults()
+
+        raw = self.cache_service.get_or_set(
+            campaign_platform_defaults_key(),
+            loader=lambda: self._load_platform_scoring_defaults().model_dump_json(),
+            ttl=settings.cache_campaign_ttl_seconds,
+        )
+        return CampaignScoringDefaultsResponse.model_validate_json(raw)
+
+    def _load_platform_scoring_defaults(self) -> CampaignScoringDefaultsResponse:
         """
         Org-wide default weights/thresholds from platform_config — used by
         the new-campaign form to prefill and by Reset to Defaults previews.
@@ -687,6 +770,18 @@ class CampaignService:
         return [CampaignMinimalResponse(id=row.id, name=row.name) for row in rows]
 
     def get_all_campaigns(self, user: User, show_closed: bool = False) -> list[CampaignResponse]:
+        if not self.cache_service:
+            return self._load_all_campaigns(show_closed)
+        raw = self.cache_service.get_or_set(
+            campaign_list_key({"kind": "all", "show_closed": show_closed}),
+            loader=lambda: json.dumps(
+                [c.model_dump(mode="json") for c in self._load_all_campaigns(show_closed)]
+            ),
+            ttl=settings.cache_campaign_list_ttl_seconds,
+        )
+        return [CampaignResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_all_campaigns(self, show_closed: bool) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
@@ -695,6 +790,7 @@ class CampaignService:
         metrics = self.campaign_repo.get_campaign_list_metrics(
             [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
         )
+        aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
                 name=c.name,
@@ -710,6 +806,9 @@ class CampaignService:
                 candidate_count=metrics[c.id]["candidate_count"],
                 shortlisted_count=metrics[c.id]["shortlisted_count"],
                 approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
+                candidate_count=aggregates["candidate_counts"].get(c.id, 0),
+                shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
+                approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -718,6 +817,8 @@ class CampaignService:
                 ),
                 overdue_review=metrics[c.id]["overdue_review"],
                 pipeline_stalled=metrics[c.id]["pipeline_stalled"],
+                overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
+                pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
             for c in campaigns
         ]
@@ -730,6 +831,30 @@ class CampaignService:
         status: CampaignStatus | None = None,
         page: int = 1,
         page_size: int = 6,
+    ) -> CampaignPageResponse:
+        if not self.cache_service:
+            return self._load_all_campaigns_for_hr_admin(created_by, show_closed, search, status, page, page_size)
+        raw = self.cache_service.get_or_set(
+            campaign_list_key({
+                "kind": "hr-admin", "created_by": created_by, "show_closed": show_closed,
+                "search": search, "status": status.value if status else None,
+                "page": page, "page_size": page_size,
+            }),
+            loader=lambda: self._load_all_campaigns_for_hr_admin(
+                created_by, show_closed, search, status, page, page_size,
+            ).model_dump_json(),
+            ttl=settings.cache_campaign_list_ttl_seconds,
+        )
+        return CampaignPageResponse.model_validate_json(raw)
+
+    def _load_all_campaigns_for_hr_admin(
+        self,
+        created_by: str,
+        show_closed: bool,
+        search: str | None,
+        status: CampaignStatus | None,
+        page: int,
+        page_size: int,
     ) -> CampaignPageResponse:
         # Scoped to the requesting HR_ADMIN's own campaigns (created_by from
         # their token) and paginated, 6 per page by default — this endpoint
@@ -745,6 +870,7 @@ class CampaignService:
         metrics = self.campaign_repo.get_campaign_list_metrics(
             [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
         )
+        aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         items = [
             CampaignResponse(id=c.id,
                 name=c.name,
@@ -760,6 +886,9 @@ class CampaignService:
                 candidate_count=metrics[c.id]["candidate_count"],
                 shortlisted_count=metrics[c.id]["shortlisted_count"],
                 approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
+                candidate_count=aggregates["candidate_counts"].get(c.id, 0),
+                shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
+                approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -768,12 +897,28 @@ class CampaignService:
                 ),
                 overdue_review=metrics[c.id]["overdue_review"],
                 pipeline_stalled=metrics[c.id]["pipeline_stalled"],
+                overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
+                pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
             for c in campaigns
         ]
         return CampaignPageResponse(items=items, page=page, page_size=page_size, total=total)
 
     def get_all_campaigns_for_hiring_manager(self, manager_id: UUID, show_closed: bool = False) -> list[CampaignResponse]:
+        if not self.cache_service:
+            return self._load_all_campaigns_for_hiring_manager(manager_id, show_closed)
+        raw = self.cache_service.get_or_set(
+            campaign_list_key({"kind": "hiring-manager", "manager_id": str(manager_id), "show_closed": show_closed}),
+            loader=lambda: json.dumps(
+                [c.model_dump(mode="json") for c in self._load_all_campaigns_for_hiring_manager(manager_id, show_closed)]
+            ),
+            ttl=settings.cache_campaign_list_ttl_seconds,
+        )
+        return [CampaignResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_all_campaigns_for_hiring_manager(
+        self, manager_id: UUID, show_closed: bool,
+    ) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.get_all_campaigns_for_hiring_manager(manager_id, show_closed=show_closed)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
@@ -782,6 +927,7 @@ class CampaignService:
         metrics = self.campaign_repo.get_campaign_list_metrics(
             [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
         )
+        aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
                 name=c.name,
@@ -797,6 +943,9 @@ class CampaignService:
                 candidate_count=metrics[c.id]["candidate_count"],
                 shortlisted_count=metrics[c.id]["shortlisted_count"],
                 approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
+                candidate_count=aggregates["candidate_counts"].get(c.id, 0),
+                shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
+                approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -805,6 +954,8 @@ class CampaignService:
                 ),
                 overdue_review=metrics[c.id]["overdue_review"],
                 pipeline_stalled=metrics[c.id]["pipeline_stalled"],
+                overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
+                pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
             for c in campaigns
         ]
@@ -820,6 +971,18 @@ class CampaignService:
             # own, regardless of what hiring_manager_id filter was requested.
             filters.hiring_manager_id = requesting_user.user_id
 
+        if not self.cache_service:
+            return self._load_search_campaigns(filters)
+        raw = self.cache_service.get_or_set(
+            campaign_list_key({"kind": "search", **filters.model_dump(mode="json")}),
+            loader=lambda: json.dumps(
+                [c.model_dump(mode="json") for c in self._load_search_campaigns(filters)]
+            ),
+            ttl=settings.cache_campaign_list_ttl_seconds,
+        )
+        return [CampaignResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_search_campaigns(self, filters: CampaignFilterRequest) -> list[CampaignResponse]:
         campaigns = self.campaign_repo.search_campaigns(filters)
         cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
@@ -828,6 +991,7 @@ class CampaignService:
         metrics = self.campaign_repo.get_campaign_list_metrics(
             [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
         )
+        aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
 
         return [
             CampaignResponse(id=c.id,
@@ -844,6 +1008,9 @@ class CampaignService:
                 candidate_count=metrics[c.id]["candidate_count"],
                 shortlisted_count=metrics[c.id]["shortlisted_count"],
                 approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
+                candidate_count=aggregates["candidate_counts"].get(c.id, 0),
+                shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
+                approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
                     c.max_candidates,
                     cap_warning_percentage,
                 ),
@@ -852,6 +1019,8 @@ class CampaignService:
                 ),
                 overdue_review=metrics[c.id]["overdue_review"],
                 pipeline_stalled=metrics[c.id]["pipeline_stalled"],
+                overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
+                pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
             for c in campaigns
         ]
@@ -945,6 +1114,7 @@ class CampaignService:
                 self._record_weight_configuration_change(campaign, old_weights, updated_by)
 
             self.campaign_repo.commit()
+            self._invalidate_campaign_caches(campaign.id)
 
             if weight_fields_changed:
                 self._enqueue_composite_recalculation_for_campaign(campaign.id)
@@ -960,6 +1130,19 @@ class CampaignService:
     def get_weight_presets(self,
         org_id: UUID,
     ) -> list[CampaignWeightPresetResponse]:
+        if not self.cache_service:
+            return self._load_weight_presets(org_id)
+
+        raw = self.cache_service.get_or_set(
+            campaign_weight_presets_key(org_id),
+            loader=lambda: json.dumps(
+                [preset.model_dump(mode="json") for preset in self._load_weight_presets(org_id)]
+            ),
+            ttl=settings.cache_campaign_ttl_seconds,
+        )
+        return [CampaignWeightPresetResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_weight_presets(self, org_id: UUID) -> list[CampaignWeightPresetResponse]:
 
         system_presets = [
             CampaignWeightPresetResponse(id=UUID("00000000-0000-0000-0000-000000000001"),
@@ -1056,25 +1239,31 @@ class CampaignService:
             created_by=created_by,
         )
 
-        preset = self.preset_repo.create(preset)
+        try:
+            preset = self.preset_repo.create(preset)
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=created_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_CREATED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Created campaign weight preset '{preset.name}'"
+                },
+                campaign_id=None,
+                jurisdiction=None,
+                ip_address=None,
+                session_id=None,
+                request_id=None,
+            )
 
-        self.audit_service.log(actor_id=created_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_CREATED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Created campaign weight preset '{preset.name}'"
-            },
-            campaign_id=None,
-            jurisdiction=None,
-            ip_address=None,
-            session_id=None,
-            request_id=None,
-        )
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+            if self.cache_service:
+                self.cache_service.delete(campaign_weight_presets_key(org_id))
+        except Exception:
+            self.preset_repo.rollback()
+            raise
+
         return CampaignWeightPresetResponse.model_validate(preset
         )
     
@@ -1141,22 +1330,26 @@ class CampaignService:
         preset.semantic_threshold = request.semantic_threshold
         preset.ai_threshold = request.ai_threshold
 
-        preset = self.preset_repo.update(preset
-        )
+        try:
+            preset = self.preset_repo.update(preset
+            )
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=updated_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_UPDATED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Updated preset '{preset.name}'"
+                },
+            )
 
-        self.audit_service.log(actor_id=updated_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_UPDATED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Updated preset '{preset.name}'"
-            },
-        )
-
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+            if self.cache_service:
+                self.cache_service.delete(campaign_weight_presets_key(org_id))
+        except Exception:
+            self.preset_repo.rollback()
+            raise
 
         return CampaignWeightPresetResponse.model_validate(preset
         )
@@ -1188,22 +1381,26 @@ class CampaignService:
                 None,
             )
 
-        self.preset_repo.delete(preset
-        )
+        try:
+            self.preset_repo.delete(preset
+            )
 
-        self.preset_repo.commit()
+            self.audit_service.log(actor_id=deleted_by,
+                actor_role="HR_ADMIN",
+                action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_DELETED.value,
+                entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
+                entity_id=preset.id,
+                details={
+                    "title": f"Deleted preset '{preset.name}'"
+                },
+            )
 
-        self.audit_service.log(actor_id=deleted_by,
-            actor_role="HR_ADMIN",
-            action_type=ActionType.CAMPAIGN_WEIGHT_PRESET_DELETED.value,
-            entity_type=EntityType.CAMPAIGN_WEIGHT_PRESET.value,
-            entity_id=preset.id,
-            details={
-                "title": f"Deleted preset '{preset.name}'"
-            },
-        )
-
-        self.audit_service.repository.save()
+            self.preset_repo.commit()
+            if self.cache_service:
+                self.cache_service.delete(campaign_weight_presets_key(org_id))
+        except Exception:
+            self.preset_repo.rollback()
+            raise
 
     def get_campaign_details(self,campaign_id: UUID, user:TokenUser) -> CampaignDetailResponse:
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -2006,6 +2203,8 @@ class CampaignService:
         before = self.config_repo.get_configs_by_keys(list(updates.keys()))
         updated = self.config_repo.update_configs(updates, updated_by)
         self.config_repo.commit()
+        if self.cache_service:
+            self.cache_service.delete(campaign_platform_defaults_key())
 
         self.audit_service.log(actor_id=updated_by,
             actor_role="HR_ADMIN",
@@ -2378,6 +2577,7 @@ class CampaignService:
                 self._record_weight_configuration_change(campaign, old_weights, updated_by)
 
             self.campaign_repo.commit()
+            self._invalidate_campaign_caches(campaign.id)
 
             if weight_fields_changed:
                 self._enqueue_composite_recalculation_for_campaign(campaign.id)
@@ -2548,6 +2748,7 @@ class CampaignService:
             )
 
             self.campaign_repo.commit()
+            self._invalidate_campaign_caches(campaign.id)
 
             return CampaignClosureResultResponse(campaign_id=str(campaign.id),
                 campaign_name=campaign.name,
@@ -2712,6 +2913,7 @@ class CampaignService:
             )
 
             self.campaign_repo.commit()
+            self._invalidate_campaign_caches(campaign.id)
 
             return CampaignReopenResultResponse(campaign_id=campaign.id,
                 campaign_name=campaign.name,

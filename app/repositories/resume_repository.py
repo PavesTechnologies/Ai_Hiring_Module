@@ -791,6 +791,13 @@ class ResumeRepository:
         self.db.refresh(candidate_skill)
         return candidate_skill
 
+    def bulk_create_candidate_skills(self, candidate_skills: list[CandidateSkill]) -> None:
+        """One flush for every matched candidate skill instead of one create_candidate_skill round trip each."""
+        if not candidate_skills:
+            return
+        self.db.add_all(candidate_skills)
+        self.db.flush()
+
     def get_parse_attempts(self, resume_id: UUID) -> list[ResumeParseAttempt]:
         """Read counterpart to record_parse_attempt — monitoring-only, no writes."""
         stmt = (

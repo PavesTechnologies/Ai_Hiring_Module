@@ -17,8 +17,11 @@ def get_dashboard_repository(db: Session = Depends(get_db)) -> DashboardReposito
 def get_dashboard_service(
     dashboard_repo: DashboardRepository = Depends(get_dashboard_repository),
     db: Session = Depends(get_db),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> DashboardService:
-    return DashboardService(dashboard_repo=dashboard_repo, config_repo=ConfigRepository(db))
+    return DashboardService(
+        dashboard_repo=dashboard_repo, config_repo=ConfigRepository(db), cache_service=cache_service,
+    )
 
 
 def get_candidate_search_service(db: Session = Depends(get_db)) -> CandidateSearchService:

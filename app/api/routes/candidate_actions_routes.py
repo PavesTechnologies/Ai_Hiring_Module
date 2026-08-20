@@ -14,7 +14,7 @@ from app.dependencies.candidate_actions import (
     get_candidate_note_service,
     get_override_revert_service,
 )
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, require_roles, resolve_actor_role
 from app.models.identity import UserRole
 from app.schemas.campaign.bulk_stage_move_schema import (
     BulkStageMoveRequest,
@@ -94,7 +94,7 @@ def single_stage_move(
         target_stage=request.target_stage,
         reason=request.reason,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=resolve_actor_role(user),
     )
     return APIResponse.ok(data=result, message=result.detail)
 
@@ -122,7 +122,7 @@ def manual_reject(
         campaign_candidate_id=campaign_candidate_id,
         reason=request.reason,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=resolve_actor_role(user),
     )
     return APIResponse.ok(data=result, message=result.detail)
 
@@ -157,7 +157,7 @@ def add_candidate_note(
 ):
     result = service.add_note(
         campaign_candidate_id, request.note_text,
-        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        actor_id=user.user_id, actor_role=resolve_actor_role(user),
     )
     return APIResponse.ok(data=result, message="Note added.")
 
@@ -178,7 +178,7 @@ def edit_candidate_note(
     result = service.edit_note(
         note_id, request.note_text,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=resolve_actor_role(user),
         is_hr_admin=UserRole.HR_ADMIN.value in (user.roles or []),
     )
     return APIResponse.ok(data=result, message="Note updated.")
@@ -201,7 +201,7 @@ def delete_candidate_note(
     service.delete_note(
         note_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=resolve_actor_role(user),
         is_hr_admin=UserRole.HR_ADMIN.value in (user.roles or []),
     )
     return APIResponse.ok(data={}, message="Note deleted.")

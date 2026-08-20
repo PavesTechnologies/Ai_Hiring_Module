@@ -40,16 +40,16 @@ _TRANSITIONS = [
     {
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.FRAUD_REVIEW,
@@ -75,9 +75,9 @@ _TRANSITIONS = [
     {
         "from_stage": PipelineStage.REJECTED,
         "to_stage": PipelineStage.SCREENING,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04).",
+        "notes": "Override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04); RECRUITER/HIRING_MANAGER added alongside HR_ADMIN.",
     },
     # Epic 3 (M05-E03) Phase C5 — "update resume" resubmission re-trigger.
     # Deliberately not seeded: SELECTED/REJECTED/FRAUD_REVIEW -> UPLOADED —
@@ -124,6 +124,7 @@ _TRANSITIONS = [
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.SCREENING,
         "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
+
         "requires_reason": False,
         "notes": "Initial resume screening kickoff after upload; SYSTEM-driven in the normal flow, HR_ADMIN/RECRUITER can force it manually (M12).",
     },
@@ -174,23 +175,23 @@ _TRANSITIONS = [
     {
         "from_stage": PipelineStage.SHORTLISTED,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.HM_REVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.INTERVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.FRAUD_REVIEW,

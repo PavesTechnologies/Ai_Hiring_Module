@@ -146,6 +146,13 @@ class ActionType(enum.Enum):
     # DETERMINISTIC_SCORE_COMPUTED/SEMANTIC_SCORE_COMPUTED's convention of
     # logging every completed computation, not just rejections.
     AI_EVALUATION_COMPUTED = "AI_EVALUATION_COMPUTED"
+    # Epic 4 (M12) — interview scheduling. Paired migration
+    # (alembic/versions/429b9809bc63_epic4_interview_scheduling.py) adds
+    # these to the DB-side enum in the same change, so there is no gap
+    # between this Python addition and the live schema.
+    INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
+    INTERVIEW_RESCHEDULED = "INTERVIEW_RESCHEDULED"
+    INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"

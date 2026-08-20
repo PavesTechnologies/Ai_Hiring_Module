@@ -24,6 +24,23 @@ class Settings(BaseSettings):
     redis_password: str = ""
     redis_db: int = 3
 
+    # Application cache (cache-aside layer over the same Redis instance)
+    cache_key_prefix: str = "airs"
+    cache_default_ttl_seconds: int = 300
+    cache_jd_ttl_seconds: int = 600
+    cache_jd_list_ttl_seconds: int = 120
+    cache_resume_ttl_seconds: int = 600
+    cache_resume_list_ttl_seconds: int = 120
+    cache_campaign_ttl_seconds: int = 300
+    cache_campaign_list_ttl_seconds: int = 120
+    cache_skill_ttl_seconds: int = 1800
+    cache_skill_catalog_ttl_seconds: int = 1800
+    cache_reference_ttl_seconds: int = 3600
+    cache_lock_ttl_seconds: int = 10
+    cache_dashboard_ttl_seconds: int = 60
+    cache_dashboard_badge_ttl_seconds: int = 30
+    cache_dashboard_stage_timing_ttl_seconds: int = 120
+
     # AWS S3
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
@@ -47,6 +64,28 @@ class Settings(BaseSettings):
 
     # Encryption
     candidate_pii_key: str = ""
+
+    # Microsoft Teams calendar integration (M12) — delegated OAuth,
+    # Calendars.ReadWrite/OnlineMeetings.ReadWrite/offline_access/User.Read.
+    # No admin-consent gate; each user goes through /oauth/microsoft/connect
+    # individually.
+    microsoft_client_id: str = ""
+    microsoft_tenant_id: str = ""
+    microsoft_client_secret: str = ""
+    microsoft_redirect_uri: str = ""
+
+    # Google Meet calendar integration (M12) - same delegated-OAuth shape
+    # as Microsoft above, calendar.events scope only.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+
+    # HMAC-signs the OAuth `state` param so /oauth/microsoft/callback (which
+    # never carries our own Authorization header - see JWTMiddleware's
+    # public-path bypass for that route) can still verify which user
+    # initiated the connect flow, without a session store this codebase
+    # doesn't otherwise have.
+    oauth_state_signing_key: str = ""
 
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env

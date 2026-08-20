@@ -1,6 +1,8 @@
 from fastapi import Depends
 
 from app.core.encryption_service import EncryptionService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 from app.dependencies.campaign import get_jd_repository
 from app.dependencies.campaign_candidate import (
     get_audit_service,
@@ -78,6 +80,7 @@ def get_talent_pool_service(
     skill_repo: SkillRepository = Depends(get_skill_repository),
     config_repo: ConfigRepository = Depends(get_config_repository),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> TalentPoolService:
     return TalentPoolService(
         candidate_repo=candidate_repo,
@@ -92,4 +95,5 @@ def get_talent_pool_service(
         skill_repo=skill_repo,
         config_repo=config_repo,
         embedding_service=embedding_service,
+        cache_service=cache_service,
     )

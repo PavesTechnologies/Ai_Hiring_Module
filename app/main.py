@@ -28,6 +28,10 @@ from app.api.routes.prompt_template_routes import router as prompt_template_rout
 from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.api.routes.talent_pool_routes import filters_router as talent_pool_filters_router
 from app.api.routes.talent_pool_routes import router as talent_pool_router
+from app.api.routes.audit_log_routes import router as audit_log_router
+from app.api.routes.google_oauth_routes import router as google_oauth_router
+from app.api.routes.interview_routes import router as interview_router
+from app.api.routes.oauth_routes import router as oauth_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -181,6 +185,7 @@ app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=[
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
+app.include_router(router=audit_log_router, prefix=API_PREFIX, tags=["Audit Log"])
 app.include_router(router=talent_pool_filters_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=dashboard_routes.router, prefix=API_PREFIX, tags=["Dashboard"])
 app.include_router(router=candidate_actions_routes.router, prefix=API_PREFIX, tags=["Candidate Actions"])

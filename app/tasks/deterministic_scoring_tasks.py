@@ -9,7 +9,7 @@ from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource
+from app.models.pipeline import AIEvaluationStatus, CompositeScoreTriggerSource, DecisionSource, PipelineStage
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
@@ -19,6 +19,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
@@ -127,7 +128,10 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+        interview_schedule_repo = InterviewScheduleRepository(db)
+        stage_transition_service = StageTransitionService(
+            allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+        )
 
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
@@ -189,6 +193,25 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             raise ValueError(f"Job description '{campaign.jd_id}' not found.")
 
         stage_transition_service.transition_to_screening(campaign_candidate)
+        # transition_to_screening()'s return value used to be discarded here -
+        # its own no-op branches are meant to be benign (candidate already
+        # progressed past UPLOADED, e.g. a redelivered duplicate task), but a
+        # genuine failure (e.g. no allowed_transitions row for UPLOADED ->
+        # SCREENING) is *also* a silent no-op from its return value alone,
+        # and scoring would proceed anyway - persisting a real score against
+        # a candidate still stuck at UPLOADED, with the task marked SUCCESS
+        # and never retried. Checking pipeline_stage after the call
+        # distinguishes the two: if it's still UPLOADED, the transition
+        # genuinely did not apply, which is never safe to score through
+        # silently - raising here routes it through this task's normal
+        # failure handling (task_log marked FAILED, visible for retry)
+        # instead of a silent, permanent stuck state.
+        if campaign_candidate.pipeline_stage == PipelineStage.UPLOADED:
+            raise RuntimeError(
+                f"transition_to_screening did not advance campaign_candidate {campaign_candidate.id} "
+                "past UPLOADED - deterministic scoring cannot safely proceed. Check allowed_transitions "
+                "for an UPLOADED -> SCREENING row."
+            )
 
 
         parsed_json = resume.parsed_json or {}

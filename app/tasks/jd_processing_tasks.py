@@ -27,6 +27,8 @@ from app.services.jd.jd_processing_pipeline import JDProcessingPipeline
 from app.services.jd.jd_service import JDService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
+from app.core.redis_client import get_redis_client
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +114,9 @@ def process_jd_document(
             extraction_service=GeminiExtractionService(),
             hash_service=HashService(),
             storage_service=StorageService(),
-            skill_normalization_service=SkillNormalizationService(skill_repo, embedding_service),
+            skill_normalization_service=SkillNormalizationService(
+                skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
+            ),
             embedding_service=embedding_service,
             jd_service=jd_service,
             jd_repository=jd_repo,

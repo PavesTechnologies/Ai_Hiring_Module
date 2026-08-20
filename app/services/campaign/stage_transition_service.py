@@ -14,6 +14,7 @@ from app.exceptions.pipeline_transition_exceptions import (
 from app.models.pipeline import CampaignCandidate, DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -22,17 +23,19 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Actor:
     """
-    E02: who/what is requesting a pipeline_stage transition. No existing
-    abstraction fit this - TokenUser (app/middleware/rbac.py) carries
-    `roles: list[str]` off a real auth token and has no SYSTEM-sentinel
-    concept, since it only ever represents an authenticated human request.
+    E02: who/what is requesting a pipeline_stage transition. Mirrors
+    TokenUser's `roles: list[str]` shape (app/middleware/rbac.py) rather
+    than a single role - Epic 1 needs `transition()` to pass for a caller
+    holding ANY of an edge's allowed_roles, same any-of-list semantics
+    require_roles already uses at the route-gate level, not just the
+    caller's first/preferred role.
     """
-    role: str
+    roles: list[str]
     id: str | None = None
 
     @classmethod
     def system(cls) -> "Actor":
-        return cls(role="SYSTEM", id=None)
+        return cls(roles=["SYSTEM"], id=None)
 
 
 class StageTransitionService:
@@ -65,10 +68,18 @@ class StageTransitionService:
         allowed_transition_repo: AllowedTransitionRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
+        interview_schedule_repo: InterviewScheduleRepository,
     ):
         self.allowed_transition_repo = allowed_transition_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        # Epic 4: required, not optional-with-a-runtime-check - same
+        # reversal this class already went through for audit_service. An
+        # optional param whose absence only fails on someone's first real
+        # INTERVIEW transition is a trapdoor; every real caller (the DI
+        # wiring and all 3 scoring Celery tasks) already has a db session
+        # to build one, even the tasks that never reach to_stage=INTERVIEW.
+        self.interview_schedule_repo = interview_schedule_repo
 
     def transition_to_screening(self, campaign_candidate) -> bool:
         """
@@ -370,8 +381,8 @@ class StageTransitionService:
         # DB level. Deliberately an `if`/raise, not a bare `assert` - `python
         # -O` strips asserts, which would silently turn this into no check
         # at all in an optimized build.
-        if actor.role not in transition_row.allowed_roles:
-            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, actor.role)
+        if not any(r in transition_row.allowed_roles for r in actor.roles):
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, actor.roles)
 
         # 3. Reason check.
         if transition_row.requires_reason and not (reason and reason.strip()):
@@ -385,7 +396,7 @@ class StageTransitionService:
         if locked_candidate.pipeline_stage != from_stage:
             raise PipelineStageConflictException(from_stage.value)
 
-        is_system = actor.role == "SYSTEM"
+        is_system = "SYSTEM" in actor.roles
         changed_by = None if is_system else actor.id
         transition_source = TransitionSource.SYSTEM if is_system else TransitionSource.MANUAL
 
@@ -413,9 +424,33 @@ class StageTransitionService:
         locked_candidate.pipeline_stage = to_stage
         self.campaign_candidate_repo.update(locked_candidate)
 
+        # Epic 4: INTERVIEW-entry hook - same transaction as the stage move
+        # above, not a best-effort follow-up after commit (unlike
+        # apply_hr_override's post-commit re-evaluation queueing, which is
+        # forced post-commit because it enqueues a Celery task - a
+        # cross-system call that can't be rolled back with the DB
+        # transaction). Creating an interview_schedules row is a plain
+        # INSERT on this same session; campaign_candidate_id's UNIQUE
+        # constraint is a hard invariant ("every candidate at INTERVIEW has
+        # exactly one row"), not a convention, so a failure here must roll
+        # back the stage move too, not leave a candidate at INTERVIEW with
+        # no row for the schedule endpoint to act on.
+        if to_stage == PipelineStage.INTERVIEW:
+            # get_or_create, not a blind insert: a candidate re-entering
+            # INTERVIEW (e.g. after a fraud-review clear) already has a row
+            # from its first entry, and that row must be left untouched -
+            # never reset back to PENDING.
+            self.interview_schedule_repo.get_or_create_pending(locked_candidate.id)
+
+        # Logs the role that actually permitted this transition, not an
+        # arbitrary one - matters once actor.roles can hold roles the edge
+        # doesn't list at all (e.g. a HIRING_MANAGER+HR_ADMIN actor on an
+        # edge only HIRING_MANAGER can use).
+        resolved_role = next(r for r in actor.roles if r in transition_row.allowed_roles)
+
         self.audit_service.log(
             actor_id=changed_by,
-            actor_role=actor.role,
+            actor_role=resolved_role,
             action_type=ActionType.PIPELINE_STAGE_TRANSITIONED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=locked_candidate.id,
