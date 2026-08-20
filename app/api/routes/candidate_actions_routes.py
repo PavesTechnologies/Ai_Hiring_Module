@@ -1,5 +1,5 @@
 """
-M11-E04 recruiter/HR actions on candidates.
+Recruiter/HR actions on candidates.
 
 Deliberately a separate router from campaign_candidate.py: that module belongs
 to M07/M10 and has been overwritten by pulls more than once, so M11's additions
@@ -48,7 +48,7 @@ router = APIRouter(prefix="/candidate-actions", tags=["Candidate Actions"])
     status_code=status.HTTP_200_OK,
     summary="Move multiple candidates to the next stage",
     description=(
-        "M11-E04-S03-T02 — all selected candidates must currently share the same stage. "
+        "All selected candidates must currently share the same stage. "
         "Applies one shared reason, runs every move through the validated transition "
         "engine, and records the batch as a single audit entry."
     ),
@@ -76,7 +76,7 @@ def bulk_stage_move(
     status_code=status.HTTP_200_OK,
     summary="Move one candidate to another stage",
     description=(
-        "M11-E04-S03-T01 — moves a single candidate with a mandatory reason. The target "
+        "Moves a single candidate with a mandatory reason. The target "
         "must be a legal transition from the candidate's current stage; the openings cap, "
         "stage history and decision record all apply exactly as they do to a bulk move."
     ),
@@ -105,7 +105,7 @@ def single_stage_move(
     status_code=status.HTTP_200_OK,
     summary="Manually reject a candidate with a reason",
     description=(
-        "M11-E04-S03-T03 — rejects a candidate directly from the candidate list. Routed "
+        "Rejects a candidate directly from the candidate list. Routed "
         "through the same transition engine as any other stage move, so the rejection is "
         "recorded as a decision rather than a bare stage change."
     ),
@@ -132,7 +132,7 @@ def manual_reject(
     response_model=APIResponse[list[CandidateNoteResponse]],
     status_code=status.HTTP_200_OK,
     summary="List recruiter notes on a candidate",
-    description="M11-E04-S01 — newest first. Deleted notes are never returned.",
+    description="Newest first. Deleted notes are never returned.",
 )
 def list_candidate_notes(
     campaign_candidate_id: UUID,
@@ -147,7 +147,7 @@ def list_candidate_notes(
     response_model=APIResponse[CandidateNoteResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Add a recruiter note to a candidate",
-    description="M11-E04-S01-T01 — notes are scoped to this candidate within this campaign.",
+    description="Notes are scoped to this candidate within this campaign.",
 )
 def add_candidate_note(
     campaign_candidate_id: UUID,
@@ -167,7 +167,7 @@ def add_candidate_note(
     response_model=APIResponse[CandidateNoteResponse],
     status_code=status.HTTP_200_OK,
     summary="Edit a recruiter note",
-    description="M11-E04-S01-T02 — authors edit their own notes; HR_ADMIN may edit any.",
+    description="Authors edit their own notes; HR_ADMIN may edit any.",
 )
 def edit_candidate_note(
     note_id: UUID,
@@ -190,7 +190,7 @@ def edit_candidate_note(
     status_code=status.HTTP_200_OK,
     summary="Delete a recruiter note",
     description=(
-        "M11-E04-S01-T02 — soft delete. The note leaves the list but is retained for audit."
+        "Soft delete. The note leaves the list but is retained for audit."
     ),
 )
 def delete_candidate_note(
@@ -213,7 +213,7 @@ def delete_candidate_note(
     status_code=status.HTTP_200_OK,
     summary="Note counts for a page of candidates",
     description=(
-        "M11-E04-S01-T03 — one query for the whole page, so the list's note badges do not "
+        "One query for the whole page, so the list's note badges do not "
         "cost one round trip per row. POST because the id list can exceed a sane URL length."
     ),
 )
@@ -232,7 +232,7 @@ def candidate_note_counts(
     status_code=status.HTTP_200_OK,
     summary="Clear an HR override and restore the automated decision",
     description=(
-        "M11-E04-S02-T03 — reverses an HR override, restoring the deterministic or semantic "
+        "Reverses an HR override, restoring the deterministic or semantic "
         "decision it replaced (read back from decision_details, never recomputed). Only "
         "available while the candidate is still in SCREENING, i.e. before the override has "
         "produced a new outcome. HR_ADMIN only."

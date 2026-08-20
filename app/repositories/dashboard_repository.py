@@ -19,7 +19,7 @@ from app.models.pipeline import (
 )
 from app.models.skills import UnknownSkill, UnknownSkillStatus
 
-# M11-E01-S01-T02 names these three explicitly.
+# Names these three explicitly.
 MONITORED_SERVICES = ("GEMINI_FLASH", "EMBEDDING_SERVICE", "MINIO")
 
 
@@ -68,7 +68,7 @@ class DashboardRepository:
         from_created = select(HiringCampaign.id).where(HiringCampaign.created_by == user_id)
         return from_resumes.union(from_bulk, from_created).subquery()
 
-    # ── HR_ADMIN summary (S01-T02) ────────────────────────────────────
+    # ── HR_ADMIN summary ────────────────────────────────────
 
     def get_hr_admin_metrics(
         self,
@@ -144,7 +144,7 @@ class DashboardRepository:
             .all()
         )
 
-    # ── RECRUITER summary (S01-T03) ───────────────────────────────────
+    # ── RECRUITER summary ───────────────────────────────────
 
     def get_recruiter_metrics(self, user_id: str) -> dict:
         now = datetime.now(timezone.utc)
@@ -195,7 +195,7 @@ class DashboardRepository:
             "failed_bulk_jobs": failed_bulk_jobs,
         }
 
-    # ── campaign cards (S02-T01 + S03-T01) ────────────────────────────
+    # ── campaign cards ( + ) ────────────────────────────
 
     def get_campaign_cards(
         self,
@@ -272,7 +272,7 @@ class DashboardRepository:
             stmt = stmt.where(
                 HiringCampaign.id.in_(select(self._recruiter_campaign_ids(recruiter_id)))
             )
-        # S02-T03: search spans campaign name AND the linked JD title, so
+        # Search spans campaign name AND the linked JD title, so
         # "python" finds campaigns named for the role as well as those merely
         # linked to a Python JD.
         if search:
@@ -287,7 +287,7 @@ class DashboardRepository:
 
         return self.db.execute(stmt).all()
 
-    # ── nav badges (S03-T03) ──────────────────────────────────────────
+    # ── nav badges ──────────────────────────────────────────
 
     def get_nav_badge_counts(self, recruiter_id: str | None) -> dict:
         """
@@ -329,7 +329,7 @@ class DashboardRepository:
             "ai_failures": row.ai_failures or 0,
         }
 
-    # ── stage timing metrics (S04-T02) ────────────────────────────────
+    # ── stage timing metrics ────────────────────────────────
 
     def get_stage_timing(self, campaign_id: UUID):
         """

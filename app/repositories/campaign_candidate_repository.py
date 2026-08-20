@@ -551,6 +551,31 @@ class CampaignCandidateRepository:
             .all()
         )
 
+    def count_rejected_by_campaigns(self, campaign_ids) -> dict:
+        """
+        {campaign_id: rejected_count} for many campaigns in one aggregate query.
+
+        Callers that only need the number must use this rather than
+        len(get_rejected_by_campaign(id)) per campaign, which materialises every
+        rejected row just to discard it.
+        """
+        ids = [cid for cid in set(campaign_ids or []) if cid]
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(
+                CampaignCandidate.campaign_id,
+                func.count(CampaignCandidate.id),
+            )
+            .filter(
+                CampaignCandidate.campaign_id.in_(ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.REJECTED,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        return {cid: count for cid, count in rows}
+
     def get_overridden(
         self,
         campaign_id: UUID | None = None,

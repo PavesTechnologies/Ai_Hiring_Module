@@ -61,6 +61,7 @@ celery_app.conf.imports = (
     "app.tasks.embedding_health_tasks",
     "app.tasks.reindex_tasks",
     "app.tasks.talent_pool_tasks",
+    "app.tasks.export_tasks",
 )
 
 

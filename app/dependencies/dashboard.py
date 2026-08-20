@@ -5,12 +5,9 @@ from app.db.session import get_db
 from app.repositories.candidate_filter_repository import CandidateFilterRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.dashboard_repository import DashboardRepository
-from app.repositories.saved_view_repository import SavedViewRepository
 from app.repositories.skill_search_repository import SkillSearchRepository
+from app.services.dashboard.candidate_search_service import CandidateSearchService
 from app.services.dashboard.dashboard_service import DashboardService
-from app.services.dashboard.saved_view_service import SavedViewService
-from app.dependencies.cache import get_cache_service
-from app.services.cache_service import CacheService
 
 
 def get_dashboard_repository(db: Session = Depends(get_db)) -> DashboardRepository:
@@ -27,10 +24,8 @@ def get_dashboard_service(
     )
 
 
-def get_saved_view_service(db: Session = Depends(get_db)) -> SavedViewService:
-    return SavedViewService(
-        saved_view_repo=SavedViewRepository(db),
-        config_repo=ConfigRepository(db),
+def get_candidate_search_service(db: Session = Depends(get_db)) -> CandidateSearchService:
+    return CandidateSearchService(
         skill_search_repo=SkillSearchRepository(db),
         candidate_filter_repo=CandidateFilterRepository(db),
     )
