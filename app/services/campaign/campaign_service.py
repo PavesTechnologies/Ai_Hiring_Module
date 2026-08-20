@@ -787,9 +787,6 @@ class CampaignService:
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
         prompt_names = self._prompt_name_map(campaigns)
-        metrics = self.campaign_repo.get_campaign_list_metrics(
-            [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
-        )
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
@@ -803,9 +800,6 @@ class CampaignService:
                 created_at=c.created_at,
                 prompt_template_id=c.prompt_template_id,
                 prompt_name=prompt_names.get(c.prompt_template_id),
-                candidate_count=metrics[c.id]["candidate_count"],
-                shortlisted_count=metrics[c.id]["shortlisted_count"],
-                approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
                 candidate_count=aggregates["candidate_counts"].get(c.id, 0),
                 shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
                 approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
@@ -815,8 +809,6 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(c.deadline,
                     deadline_warning_days,
                 ),
-                overdue_review=metrics[c.id]["overdue_review"],
-                pipeline_stalled=metrics[c.id]["pipeline_stalled"],
                 overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
                 pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
@@ -867,9 +859,6 @@ class CampaignService:
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
         prompt_names = self._prompt_name_map(campaigns)
-        metrics = self.campaign_repo.get_campaign_list_metrics(
-            [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
-        )
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         items = [
             CampaignResponse(id=c.id,
@@ -883,9 +872,6 @@ class CampaignService:
                 created_at=c.created_at,
                 prompt_template_id=c.prompt_template_id,
                 prompt_name=prompt_names.get(c.prompt_template_id),
-                candidate_count=metrics[c.id]["candidate_count"],
-                shortlisted_count=metrics[c.id]["shortlisted_count"],
-                approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
                 candidate_count=aggregates["candidate_counts"].get(c.id, 0),
                 shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
                 approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
@@ -895,8 +881,6 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(c.deadline,
                     deadline_warning_days,
                 ),
-                overdue_review=metrics[c.id]["overdue_review"],
-                pipeline_stalled=metrics[c.id]["pipeline_stalled"],
                 overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
                 pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
@@ -924,9 +908,6 @@ class CampaignService:
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
         prompt_names = self._prompt_name_map(campaigns)
-        metrics = self.campaign_repo.get_campaign_list_metrics(
-            [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
-        )
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
@@ -940,9 +921,6 @@ class CampaignService:
                 created_at=c.created_at,
                 prompt_template_id=c.prompt_template_id,
                 prompt_name=prompt_names.get(c.prompt_template_id),
-                candidate_count=metrics[c.id]["candidate_count"],
-                shortlisted_count=metrics[c.id]["shortlisted_count"],
-                approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
                 candidate_count=aggregates["candidate_counts"].get(c.id, 0),
                 shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
                 approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
@@ -952,8 +930,6 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(c.deadline,
                     deadline_warning_days,
                 ),
-                overdue_review=metrics[c.id]["overdue_review"],
-                pipeline_stalled=metrics[c.id]["pipeline_stalled"],
                 overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
                 pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )
@@ -988,9 +964,6 @@ class CampaignService:
         hm_review_sla_days, stale_campaign_days = self._get_review_stall_thresholds()
         hm_names = self._hiring_manager_name_map(campaigns)
         prompt_names = self._prompt_name_map(campaigns)
-        metrics = self.campaign_repo.get_campaign_list_metrics(
-            [c.id for c in campaigns], hm_review_sla_days, stale_campaign_days,
-        )
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
 
         return [
@@ -1005,9 +978,6 @@ class CampaignService:
                 created_at=c.created_at,
                 prompt_template_id=c.prompt_template_id,
                 prompt_name=prompt_names.get(c.prompt_template_id),
-                candidate_count=metrics[c.id]["candidate_count"],
-                shortlisted_count=metrics[c.id]["shortlisted_count"],
-                approaching_cap=self._is_approaching_cap(metrics[c.id]["selected_count"],
                 candidate_count=aggregates["candidate_counts"].get(c.id, 0),
                 shortlisted_count=aggregates["shortlisted_counts"].get(c.id, 0),
                 approaching_cap=self._is_approaching_cap(aggregates["selected_counts"].get(c.id, 0),
@@ -1017,8 +987,6 @@ class CampaignService:
                 deadline_soon=self._is_deadline_soon(c.deadline,
                     deadline_warning_days,
                 ),
-                overdue_review=metrics[c.id]["overdue_review"],
-                pipeline_stalled=metrics[c.id]["pipeline_stalled"],
                 overdue_review=aggregates["overdue_review_counts"].get(c.id, 0) > 0,
                 pipeline_stalled=aggregates["pipeline_stalled_map"].get(c.id, False),
             )

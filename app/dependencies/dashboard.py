@@ -2,10 +2,12 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.dependencies.cache import get_cache_service
 from app.repositories.candidate_filter_repository import CandidateFilterRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.skill_search_repository import SkillSearchRepository
+from app.services.cache_service import CacheService
 from app.services.dashboard.candidate_search_service import CandidateSearchService
 from app.services.dashboard.dashboard_service import DashboardService
 
