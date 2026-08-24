@@ -31,6 +31,7 @@ from app.api.routes.audit_log_routes import router as audit_log_router
 from app.api.routes.google_oauth_routes import router as google_oauth_router
 from app.api.routes.interview_routes import router as interview_router
 from app.api.routes.oauth_routes import router as oauth_router
+from app.websocket.router import router as websocket_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -191,6 +192,7 @@ app.include_router(router=candidate_actions_routes.router, prefix=API_PREFIX, ta
 app.include_router(router=interview_router, prefix=API_PREFIX, tags=["Interview Scheduling"])
 app.include_router(router=oauth_router, prefix=API_PREFIX, tags=["Microsoft OAuth"])
 app.include_router(router=google_oauth_router, prefix=API_PREFIX, tags=["Google OAuth"])
+app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["WebSocket"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

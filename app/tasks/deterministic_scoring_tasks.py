@@ -38,6 +38,7 @@ from app.services.notifications.candidate_rejection_email_service import Candida
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +334,14 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         )
 
         campaign_candidate_repo.commit()
+
+        try:
+            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

@@ -98,6 +98,7 @@ from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
+from app.websocket.publisher import publish_board_candidate_removed, publish_board_stage_changed
 
 logger = logging.getLogger(__name__)
 
@@ -539,6 +540,14 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
+        try:
+            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
+
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
 
         task_id = uuid4()
@@ -596,6 +605,14 @@ class CampaignCandidateService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+        try:
+            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         candidate = (
             self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
@@ -2943,9 +2960,27 @@ class CampaignCandidateService:
                     404,
                 )
 
+            # Captured before delete/commit: the session's default
+            # expire_on_commit=True means `candidate`'s attributes would
+            # otherwise trigger a re-SELECT of a now-deleted row on next
+            # access (raising ObjectDeletedError) - both the audit log call
+            # and the WebSocket publish below need these as plain values.
+            deleted_id = candidate.id
+            deleted_campaign_id = candidate.campaign_id
+            deleted_candidate_id = candidate.candidate_id
+            deleted_resume_id = candidate.resume_id
+
             self.campaign_candidate_repo.delete(candidate)
 
             self.campaign_candidate_repo.commit()
+
+            try:
+                publish_board_candidate_removed(deleted_campaign_id, deleted_id)
+            except Exception:
+                logger.exception(
+                    "Failed to publish board.candidate_removed for campaign_candidate_id=%s",
+                    deleted_id,
+                )
 
             # Audit Log
             self.audit_service.log(
@@ -2953,11 +2988,11 @@ class CampaignCandidateService:
                 actor_role=actor_role,
                 action_type=ActionType.CANDIDATE_REMOVED,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE,
-                entity_id=candidate.id,
-                campaign_id=candidate.campaign_id,
+                entity_id=deleted_id,
+                campaign_id=deleted_campaign_id,
                 details={
-                    "candidate_id": str(candidate.candidate_id),
-                    "resume_id": str(candidate.resume_id),
+                    "candidate_id": str(deleted_candidate_id),
+                    "resume_id": str(deleted_resume_id),
                 },
             )
 
