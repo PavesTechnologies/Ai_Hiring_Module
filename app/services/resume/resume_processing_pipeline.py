@@ -151,7 +151,9 @@ class ResumeProcessingPipeline:
             )
             logger.warning("=== STAGE COMPLETED: %s === resume_id=%s", stage.value, context.resume_id)
 
-        self.stage_tracker.link_document_id(context.task_id, context.resume_id)
+        self.stage_tracker.link_document_id(
+            context.task_id, context.resume_id, document_type=context.document_type,
+        )
 
         logger.warning("=== ResumeProcessingPipeline.run() RETURNING === resume_id=%s", context.resume_id)
         return context.resume_id
