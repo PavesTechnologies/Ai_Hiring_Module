@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     # doesn't otherwise have.
     oauth_state_signing_key: str = ""
 
+    # M12 Step 3 - HMAC-signs the interview-feedback link token
+    # (app/core/feedback_token.py). Separate secret from
+    # oauth_state_signing_key on purpose: different domain, different
+    # payload shape, different lifetime (14 days vs. OAuth's 10 minutes) -
+    # a leaked feedback-link key should never let anyone forge OAuth
+    # state, or vice versa.
+    feedback_token_signing_key: str = ""
+
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
 

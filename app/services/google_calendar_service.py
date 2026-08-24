@@ -9,6 +9,12 @@ from app.services.google_oauth_service import GoogleOAuthService
 logger = logging.getLogger(__name__)
 
 _EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+# Without sendUpdates, Google adds attendees to the event's data but never
+# actually emails them or puts the event on their own calendar - "all"
+# notifies every attendee (not just ones outside the organizer's domain,
+# unlike "externalOnly"), which matters here since interviewers can be
+# either internal staff or external candidates/panelists.
+_SEND_UPDATES = "all"
 
 
 class GoogleCalendarService:
@@ -58,7 +64,7 @@ class GoogleCalendarService:
 
         try:
             response = self.http_client.post(
-                _EVENTS_URL, params={"conferenceDataVersion": 1}, json=body,
+                _EVENTS_URL, params={"conferenceDataVersion": 1, "sendUpdates": _SEND_UPDATES}, json=body,
                 headers={"Authorization": f"Bearer {access_token}"}, timeout=10.0,
             )
             response.raise_for_status()
@@ -80,7 +86,7 @@ class GoogleCalendarService:
 
         try:
             response = self.http_client.patch(
-                f"{_EVENTS_URL}/{external_calendar_event_id}", json=body,
+                f"{_EVENTS_URL}/{external_calendar_event_id}", params={"sendUpdates": _SEND_UPDATES}, json=body,
                 headers={"Authorization": f"Bearer {access_token}"}, timeout=10.0,
             )
             response.raise_for_status()
@@ -97,7 +103,7 @@ class GoogleCalendarService:
 
         try:
             response = self.http_client.delete(
-                f"{_EVENTS_URL}/{external_calendar_event_id}",
+                f"{_EVENTS_URL}/{external_calendar_event_id}", params={"sendUpdates": _SEND_UPDATES},
                 headers={"Authorization": f"Bearer {access_token}"}, timeout=10.0,
             )
             response.raise_for_status()

@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -678,3 +678,148 @@ def test_transition_to_interview_via_fraud_clear_reuses_existing_schedule_untouc
     assert was_created is True  # the STAGE transition itself was applied
     interview_schedule_repo.get_or_create_pending.assert_called_once_with(candidate.id)
     campaign_candidate_repo.rollback.assert_not_called()
+
+
+"""
+M12 cascading-cancellation follow-up: transition()'s INTERVIEW-exit hook -
+leaving INTERVIEW for SELECTED/REJECTED/SHORTLISTED cancels any still-
+active interview round. FRAUD_REVIEW/HOLD deliberately do NOT trigger
+this (both have a real return-to-INTERVIEW edge - reversible pauses, not
+exits) - not exercised here since neither is even reachable as a
+from_stage=INTERVIEW target through this method's own allowed_transitions
+checks in these tests' fixtures, but see
+test_pipeline_transition_service.py/
+test_campaign_service_override_candidate_stage.py for the other 2 engines
+that can also reach these targets.
+"""
+
+
+@pytest.mark.parametrize("to_stage", [PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED])
+def test_transition_from_interview_to_a_terminal_stage_cancels_active_rounds(to_stage):
+    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
+    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+
+    service.transition(candidate.id, to_stage, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
+
+    interview_schedule_repo.cancel_active_rounds.assert_called_once_with(
+        candidate.id,
+        reason=f"Candidate outcome finalized: {to_stage.value}",
+        changed_by="hm-1",
+        changed_by_role="HIRING_MANAGER",
+    )
+
+
+def test_transition_from_interview_to_non_cascade_stage_never_touches_interview_schedule_repo_cascade():
+    """FRAUD_REVIEW is a reversible pause (has a clear-edge back to INTERVIEW) - must not cascade-cancel."""
+    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
+    row = _allowed_row(["SYSTEM", "HR_ADMIN"], requires_reason=True)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+
+    service.transition(
+        candidate.id, PipelineStage.FRAUD_REVIEW, Actor(roles=["HR_ADMIN"], id="hr-1"), reason="fraud pattern detected",
+    )
+
+    interview_schedule_repo.cancel_active_rounds.assert_not_called()
+
+
+def test_transition_into_interview_never_triggers_the_exit_cascade():
+    """Sanity check: the entry hook (to_stage=INTERVIEW) and the exit hook are mutually exclusive on the same call."""
+    candidate = _make_candidate(pipeline_stage=PipelineStage.HM_REVIEW)
+    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+    interview_schedule_repo = service.interview_schedule_repo
+    interview_schedule_repo.get_or_create_pending.return_value = (SimpleNamespace(id=uuid4()), True)
+
+    service.transition(candidate.id, PipelineStage.INTERVIEW, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
+
+    interview_schedule_repo.cancel_active_rounds.assert_not_called()
+
+
+"""
+Epic 5 Step 2 - CANDIDATE_SELECTED email hook, post-commit (transition()
+commits internally, unlike PipelineTransitionService.transition_stage()
+- see candidate_notification_emails.py's own docstring for why the hook
+placement differs between the two). Only SELECTED queues an email here -
+REJECTED/SHORTLISTED share the same cascade-cancel target set above but
+are not candidate_notification_emails.py trigger events.
+"""
+
+
+def test_transition_to_selected_queues_a_candidate_selected_email_after_commit():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
+    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+
+    with patch("app.services.campaign.stage_transition_service.queue_candidate_selected_email") as mock_queue:
+        service.transition(candidate.id, PipelineStage.SELECTED, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
+
+    mock_queue.assert_called_once_with(campaign_candidate_repo.db, candidate)
+    campaign_candidate_repo.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("to_stage", [PipelineStage.REJECTED, PipelineStage.SHORTLISTED])
+def test_transition_to_other_cascade_stages_never_queues_a_selected_email(to_stage):
+    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
+    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+
+    with patch("app.services.campaign.stage_transition_service.queue_candidate_selected_email") as mock_queue:
+        service.transition(candidate.id, to_stage, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
+
+    mock_queue.assert_not_called()
+
+
+"""
+Epic 5 follow-up - manual re-score trigger: arriving at SCREENING from
+anywhere other than UPLOADED cancels active interview rounds (same
+transaction as the stage move) and enqueues a re-score (post-commit,
+best-effort - it calls out to Celery). Never fires for the automated
+UPLOADED->SCREENING path, which scores the candidate itself.
+"""
+
+
+def test_transition_to_screening_from_fraud_review_cancels_rounds_and_enqueues_rescore():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.FRAUD_REVIEW)
+    row = _allowed_row(["HR_ADMIN"], requires_reason=True)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+
+    with patch("app.services.campaign.stage_transition_service.enqueue_manual_rescore") as mock_rescore:
+        service.transition(
+            candidate.id, PipelineStage.SCREENING, Actor(roles=["HR_ADMIN"], id="hr-1"), reason="cleared for re-screen",
+        )
+
+    service.interview_schedule_repo.cancel_active_rounds.assert_called_once_with(
+        candidate.id,
+        reason="Candidate returned to SCREENING for re-evaluation",
+        changed_by="hr-1",
+        changed_by_role="HR_ADMIN",
+    )
+    campaign_candidate_repo.commit.assert_called_once()
+    mock_rescore.assert_called_once_with(campaign_candidate_repo.db, candidate)
+
+
+def test_transition_to_screening_from_uploaded_never_cancels_rounds_or_enqueues_rescore():
+    """The automated resume-upload path - scores the candidate itself, must never get this hook or it would re-trigger itself indefinitely."""
+    candidate = _make_candidate(pipeline_stage=PipelineStage.UPLOADED)
+    row = _allowed_row(["SYSTEM"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+
+    with patch("app.services.campaign.stage_transition_service.enqueue_manual_rescore") as mock_rescore:
+        service.transition(candidate.id, PipelineStage.SCREENING, Actor.system())
+
+    service.interview_schedule_repo.cancel_active_rounds.assert_not_called()
+    mock_rescore.assert_not_called()
+
+
+def test_transition_to_a_non_screening_stage_never_enqueues_rescore():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SCREENING)
+    row = _allowed_row(["SYSTEM", "HR_ADMIN", "RECRUITER"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
+
+    with patch("app.services.campaign.stage_transition_service.enqueue_manual_rescore") as mock_rescore:
+        service.transition(candidate.id, PipelineStage.SHORTLISTED, Actor(roles=["HR_ADMIN"], id="hr-1"))
+
+    mock_rescore.assert_not_called()

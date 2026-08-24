@@ -90,6 +90,8 @@ from app.schemas.campaign.campaign_candidate_schema import (
     UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -577,6 +579,8 @@ class CampaignCandidateService:
         if campaign_candidate is None:
             raise CampaignException("Campaign candidate not found.", 404)
 
+        from_stage = campaign_candidate.pipeline_stage
+
         try:
             self.pipeline_transition_service.transition_stage(
                 campaign_candidate,
@@ -587,6 +591,16 @@ class CampaignCandidateService:
                 source=TransitionSource.MANUAL,
             )
             self.campaign_candidate_repo.commit()
+            # Epic 5 Step 2 - best-effort, after commit, same reasoning as
+            # _queue_rejection_email: a failure to queue/send this must
+            # never undo the already-committed move.
+            if to_stage == PipelineStage.SELECTED:
+                queue_candidate_selected_email(self.campaign_candidate_repo.db, campaign_candidate)
+            # Epic 5 follow-up - manual re-score trigger, post-commit
+            # (see manual_candidate_rescore.py). Never fires for the
+            # automated UPLOADED->SCREENING path.
+            if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+                enqueue_manual_rescore(self.campaign_candidate_repo.db, campaign_candidate)
         except InvalidPipelineTransitionException as exc:
             self.campaign_candidate_repo.rollback()
             raise CampaignException(str(exc), 409) from exc
@@ -1344,6 +1358,20 @@ class CampaignCandidateService:
     ) -> SemanticScoreBreakdownResponse | None:
         breakdown = campaign_candidate.semantic_breakdown
         if not breakdown:
+            # Bug fix: a candidate rejected at DETERMINISTIC never has
+            # semantic scoring enqueued at all (deterministic_scoring_tasks.py
+            # only calls _enqueue_semantic_scoring on a deterministic PASS),
+            # so semantic_breakdown stays NULL forever - indistinguishable
+            # from "hasn't reached semantic yet" without this check. Scoped
+            # to REJECTED + DETERMINISTIC only, matching
+            # _SCORECARD_BANNER_DECISION_SOURCE's existing scope - an
+            # overridden-past-rejection candidate is a separate, narrower
+            # case left alone here.
+            if (
+                campaign_candidate.pipeline_stage == PipelineStage.REJECTED
+                and campaign_candidate.decision_source == DecisionSource.DETERMINISTIC
+            ):
+                return SemanticScoreBreakdownResponse(summary=SemanticScoreSummary(status="NOT_APPLICABLE"))
             return None
 
         passed = breakdown.get("semantic_passed")

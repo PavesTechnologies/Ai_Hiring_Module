@@ -61,7 +61,7 @@ def test_create_event_extracts_the_video_entry_point_as_the_meet_link():
     assert event_id == "google-event-1"
     body = http_client.post.call_args.kwargs["json"]
     assert body["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"] == "hangoutsMeet"
-    assert http_client.post.call_args.kwargs["params"] == {"conferenceDataVersion": 1}
+    assert http_client.post.call_args.kwargs["params"] == {"conferenceDataVersion": 1, "sendUpdates": "all"}
 
 
 def test_create_event_uses_flat_attendee_shape_not_microsofts_nested_one():
@@ -157,6 +157,24 @@ def test_update_event_uses_patch_not_put():
     http_client.put.assert_not_called()
 
 
+def test_update_event_sends_updates_to_attendees():
+    """
+    Without sendUpdates, Google adds attendees to the event's data but
+    never emails them or adds it to their own calendar - a rescheduled
+    interview would silently fail to notify anyone.
+    """
+    http_client = MagicMock()
+    http_client.patch.return_value = _response()
+    service, _ = _make_env(http_client=http_client)
+
+    service.update_event(
+        "user-1", "google-event-1", subject="x", start_at=_START, end_at=_END,
+        attendees=_ATTENDEES, location=None,
+    )
+
+    assert http_client.patch.call_args.kwargs["params"] == {"sendUpdates": "all"}
+
+
 def test_update_event_skipped_cleanly_when_not_connected():
     http_client = MagicMock()
     service, oauth_service = _make_env(access_token=None, http_client=http_client)
@@ -193,6 +211,17 @@ def test_delete_event_calls_the_api():
 
     http_client.delete.assert_called_once()
     assert "google-event-1" in http_client.delete.call_args.args[0]
+
+
+def test_delete_event_sends_updates_to_attendees():
+    """A cancelled interview must still notify attendees it's off, same reasoning as update_event."""
+    http_client = MagicMock()
+    http_client.delete.return_value = _response()
+    service, _ = _make_env(http_client=http_client)
+
+    service.delete_event("user-1", "google-event-1")
+
+    assert http_client.delete.call_args.kwargs["params"] == {"sendUpdates": "all"}
 
 
 def test_delete_event_skipped_cleanly_when_not_connected():

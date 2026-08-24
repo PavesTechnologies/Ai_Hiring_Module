@@ -121,6 +121,89 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
+    # Epic 5 Step 4: placeholder copy only, [SEED]-tagged like the M12
+    # entries above. The ONLY non-candidate recipient template in this
+    # file - {candidate_name}/{job_title} still refer to the candidate
+    # being interviewed, not the recipient (see send_candidate_email_
+    # task's EXTERNAL_INTERVIEWER branch). {recipient_name} is the
+    # interviewer's own name - deliberately NOT reusing {interviewer_name}
+    # (the INTERVIEW_SCHEDULED/RESCHEDULED templates' own placeholder,
+    # which means "every interviewer on the round, joined" - a different
+    # scope than "the one person this specific email is addressed to").
+    # {feedback_link} is the signed, expiring token URL from
+    # app.core.feedback_token, built by
+    # interview_feedback_request_emails.py as
+    # f"{FRONTEND_BASE_URL}/interview-feedback/{token}" - that frontend
+    # route path is an assumption, not confirmed against a real frontend
+    # page (none exists yet as of this session); whoever builds the
+    # actual feedback form page should confirm/correct this path.
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
+        "name": "[SEED] Interview Feedback Requested",
+        "subject": "[SEED] Feedback requested: {candidate_name} - {job_title}",
+        "body_template": (
+            "Hello {recipient_name},\n\n"
+            "Thank you for interviewing {candidate_name} for the {job_title} position.\n\n"
+            "Please share your feedback using the link below:\n"
+            "{feedback_link}\n\n"
+            "This link is unique to you and will expire in 14 days.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    # Interviewer lifecycle follow-up: [SEED]-tagged like the entries
+    # above. {notes_block} is precomputed by interview_interviewer_
+    # lifecycle_emails.py as either "" or "\n\nNotes: {the actual notes}" -
+    # str.format has no conditional-block syntax, so "render if present,
+    # omit cleanly if absent" is resolved at context-build time, not in
+    # this template string itself.
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_INTERVIEWER_INVITATION,
+        "name": "[SEED] Interview Interviewer Invitation",
+        "subject": "[SEED] You're invited to interview {candidate_name} - {job_title}",
+        "body_template": (
+            "Hello {recipient_name},\n\n"
+            "You've been added as an interviewer for {candidate_name}'s interview for the "
+            "{job_title} position.\n\n"
+            "Date: {interview_date}\n"
+            "Time: {interview_time}\n"
+            "Mode: {interview_mode}"
+            "{notes_block}\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_INTERVIEWER_REMOVED,
+        "name": "[SEED] Interview Interviewer Removed",
+        "subject": "[SEED] Update on {candidate_name}'s interview - {job_title}",
+        "body_template": (
+            "Hello {recipient_name},\n\n"
+            "You're no longer needed for {candidate_name}'s interview for the {job_title} "
+            "position. Thank you for your time.\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
+    # {reason_block} follows the same precomputed-context pattern as
+    # {notes_block} above - "" or "\n\nReason: {the actual reason}".
+    {
+        "trigger_event": EmailTriggerEvent.INTERVIEW_INTERVIEWER_CANCELLED,
+        "name": "[SEED] Interview Interviewer Cancelled",
+        "subject": "[SEED] Interview cancelled: {candidate_name} - {job_title}",
+        "body_template": (
+            "Hello {recipient_name},\n\n"
+            "The interview with {candidate_name} for the {job_title} position, previously "
+            "scheduled for {interview_date} at {interview_time}, has been cancelled."
+            "{reason_block}\n\n"
+            "Best regards,\n"
+            "The Hiring Team"
+        ),
+        "is_active": True,
+    },
 ]
 
 try:

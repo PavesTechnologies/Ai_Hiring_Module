@@ -16,8 +16,30 @@ from app.repositories.allowed_transition_repository import AllowedTransitionRepo
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
+from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 
 logger = logging.getLogger(__name__)
+
+# M12 cascading-cancellation follow-up: leaving INTERVIEW for one of these
+# 3 stages cancels any still-active interview round. The dividing line is
+# principled, not arbitrary: SELECTED/REJECTED/SHORTLISTED have no
+# return-to-INTERVIEW edge anywhere in allowed_transitions - genuinely
+# terminal (or, for SHORTLISTED, a big-enough backward jump past
+# HM_REVIEW that any lingering active round would just be stale garbage
+# by the time the candidate might reach INTERVIEW again, incorrectly
+# satisfying the auto-create-PENDING hook's "already has a row" check).
+# FRAUD_REVIEW and HOLD are deliberately excluded - both have a real
+# clear/resume edge back to INTERVIEW, so the system already models them
+# as reversible pauses, not exits; force-cancelling real scheduled
+# logistics over a pause that might resolve in the candidate's favor
+# would be a real, avoidable disruption. Same constant, same reasoning,
+# duplicated (not shared via import) in PipelineTransitionService and
+# CampaignService.override_candidate_stage - the other 2 places a
+# candidate can leave INTERVIEW from.
+_INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
+    {PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED},
+)
 
 
 @dataclass(frozen=True)
@@ -448,6 +470,39 @@ class StageTransitionService:
         # edge only HIRING_MANAGER can use).
         resolved_role = next(r for r in actor.roles if r in transition_row.allowed_roles)
 
+        # M12 cascading-cancellation hook - opposite direction of the
+        # INTERVIEW-entry hook above, same transaction, same "a failure
+        # here rolls back the whole transition" reasoning. changed_by is
+        # never None for these 3 target stages (see
+        # _INTERVIEW_EXIT_CASCADE_STAGES's own comment - none of them
+        # permit a SYSTEM-only actor in allowed_transitions), so this
+        # always has a real actor to attribute the cancellation to.
+        if from_stage == PipelineStage.INTERVIEW and to_stage in _INTERVIEW_EXIT_CASCADE_STAGES:
+            self.interview_schedule_repo.cancel_active_rounds(
+                locked_candidate.id,
+                reason=f"Candidate outcome finalized: {to_stage.value}",
+                changed_by=changed_by,
+                changed_by_role=resolved_role,
+            )
+
+        # Epic 5 follow-up - manual re-score trigger: arriving at
+        # SCREENING from anywhere other than UPLOADED (the automated
+        # resume-upload path, which scores the candidate itself and must
+        # never get this hook - see manual_candidate_rescore.py's own
+        # docstring for why) cancels any still-active interview rounds.
+        # Same transaction, same reasoning as the cascade-cancel hook
+        # above - matters in practice for a candidate currently paused at
+        # HOLD/FRAUD_REVIEW (the only 2 stages that can both reach
+        # SCREENING and still have active rounds); a harmless no-op
+        # otherwise.
+        if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+            self.interview_schedule_repo.cancel_active_rounds(
+                locked_candidate.id,
+                reason="Candidate returned to SCREENING for re-evaluation",
+                changed_by=changed_by,
+                changed_by_role=resolved_role,
+            )
+
         self.audit_service.log(
             actor_id=changed_by,
             actor_role=resolved_role,
@@ -464,4 +519,21 @@ class StageTransitionService:
         )
 
         self.campaign_candidate_repo.commit()
+
+        # Epic 5 Step 2 - best-effort, after commit, same reasoning as
+        # _queue_rejection_email: a failure to queue/send this must never
+        # undo the already-committed transition.
+        if to_stage == PipelineStage.SELECTED:
+            queue_candidate_selected_email(self.campaign_candidate_repo.db, locked_candidate)
+
+        # Epic 5 follow-up - manual re-score trigger, post-commit (unlike
+        # the cascade-cancel above, this enqueues a Celery task - a
+        # cross-system call that can't be rolled back with the DB
+        # transaction, same reasoning as queue_candidate_selected_email
+        # above and _queue_post_override_evaluation elsewhere). Never
+        # fires for the automated UPLOADED->SCREENING path - see
+        # manual_candidate_rescore.py.
+        if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+            enqueue_manual_rescore(self.campaign_candidate_repo.db, locked_candidate)
+
         return locked_candidate, True

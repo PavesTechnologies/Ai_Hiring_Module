@@ -14,6 +14,7 @@ from app.repositories.resume_repository import ResumeRepository
 
 from sqlalchemy.orm import Session
 
+from app.core.encryption_service import EncryptionService
 from app.enums.constants import ActionType, COMPOSITE_SCORE_FORMULA_VERSION, EntityType, UserRole
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
@@ -21,6 +22,8 @@ from app.models.campaigns import CampaignStatus, CampaignWeightConfigurationHist
 from app.models.identity import User
 from app.models.identity import UserRole as LocalUserRole
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_repository import CandidateRepository
+from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.campaign_weight_configuration_history_repository import (
     CampaignWeightConfigurationHistoryRepository,
 )
@@ -35,6 +38,8 @@ from app.schemas.campaign.campaign_response import CampaignResponse, CampaignSco
 from app.schemas.campaign.campaign_schema import CampaignCreateRequest, CampaignUpdateRequest, CampaignScoringUpdateRequest, PlatformDefaultWeightsUpdateRequest
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
+from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
@@ -93,6 +98,7 @@ from app.schemas.campaign.campaign_processing_queue_response import (TaskTypeBre
 )
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.schemas.campaign.campaign_timeline_response import CampaignTimelineResponse, TimelineEntry
 
 logger = logging.getLogger(__name__)
@@ -100,6 +106,16 @@ logger = logging.getLogger(__name__)
 # M10-E01 Design Decision 9: weight-field names whose change (as opposed to
 # a threshold-only change) must trigger a composite-score recalculation.
 _WEIGHT_FIELDS = {"weight_deterministic", "weight_semantic", "weight_ai"}
+
+# M12 cascading-cancellation follow-up: same constant, same reasoning as
+# StageTransitionService's own copy (see that file for the full
+# rationale) - duplicated, not imported, since this is the third of the
+# 3 places a candidate can leave INTERVIEW from (override_candidate_stage
+# can reach SELECTED/SHORTLISTED via an explicit target_stage even though
+# neither is this stage's own _STAGE_OVERRIDE_NEXT default).
+_INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
+    {PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED},
+)
 
 
 class CampaignService:
@@ -117,6 +133,7 @@ class CampaignService:
         campaign_weight_configuration_history_repo: CampaignWeightConfigurationHistoryRepository | None = None,
         resume_repo: ResumeRepository | None = None,
         cache_service: CacheService | None = None,
+        interview_schedule_repo: InterviewScheduleRepository | None = None,
     ):
         self.cache_service = cache_service
         self.campaign_repo = campaign_repo
@@ -140,6 +157,14 @@ class CampaignService:
             campaign_weight_configuration_history_repo or CampaignWeightConfigurationHistoryRepository(db)
         )
         self.prompt_template_repo = prompt_template_repo or PromptTemplateRepository(db)
+        # M12 gap fix — override_candidate_stage is a third path (besides
+        # StageTransitionService.transition() and
+        # PipelineTransitionService.transition_stage()) that can reach
+        # to_stage=INTERVIEW, found live when a candidate moved there via
+        # this override had no interview_schedules row at all. Same
+        # defaulted-from-db convention as the repos above, so
+        # get_campaign_service's existing DI wiring needs no change.
+        self.interview_schedule_repo = interview_schedule_repo or InterviewScheduleRepository(db)
 
     def _get_warning_thresholds(self) -> tuple[float, int]:
         """
@@ -1775,8 +1800,31 @@ class CampaignService:
             hm_review_sla_days=slas["hm_review_sla_days"],
             interview_sla_days=slas["interview_sla_days"],
         )
-        return StalledCandidatesResponse(items=[StalledCandidateItem(**r) for r in rows],
-            total=len(rows),
+
+        # Frontend follow-up: candidate_name added to what was originally a
+        # deliberately anonymous response - decrypted the same way every
+        # other campaign-wide list in this codebase does (see
+        # CampaignCandidateService._decrypt_candidate_name /
+        # InterviewScheduleService.get_campaign_interviews).
+        # EncryptionService/CandidateRepository constructed ad-hoc rather
+        # than added to this class's already-large constructor, matching
+        # that same convention for an occasional-use dependency.
+        encryption_service = EncryptionService(EncryptionKeyRepository(self.db))
+        candidates_by_id = {
+            c.id: c for c in CandidateRepository(self.db).get_by_ids([r["candidate_id"] for r in rows])
+        }
+
+        items = []
+        for r in rows:
+            candidate = candidates_by_id.get(r.pop("candidate_id"))
+            candidate_name = (
+                encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
+                if candidate is not None else "Unknown"
+            )
+            items.append(StalledCandidateItem(candidate_name=candidate_name, **r))
+
+        return StalledCandidatesResponse(items=items,
+            total=len(items),
             sla_config=slas,
         )
 
@@ -1878,6 +1926,37 @@ class CampaignService:
             change_reason=request.reason,
             transition_source=TransitionSource.OVERRIDE,
         )
+        if target == PipelineStage.INTERVIEW:
+            # Same-transaction, same reasoning as the other two engines
+            # that can reach to_stage=INTERVIEW - a plain INSERT on this
+            # same session, get_or_create so a re-entry never gets a
+            # second row, must roll back with the rest of this override
+            # if it fails.
+            self.interview_schedule_repo.get_or_create_pending(cc.id)
+        if from_stage == PipelineStage.INTERVIEW and target in _INTERVIEW_EXIT_CASCADE_STAGES:
+            # M12 cascading-cancellation hook - same constant, same
+            # reasoning as StageTransitionService/PipelineTransitionService's
+            # own copies (this is the third of the 3 places a candidate can
+            # leave INTERVIEW from - override_candidate_stage can reach
+            # SELECTED/SHORTLISTED via an explicit target_stage even though
+            # neither is this stage's _STAGE_OVERRIDE_NEXT default).
+            self.interview_schedule_repo.cancel_active_rounds(
+                cc.id,
+                reason=f"Candidate outcome finalized: {target.value}",
+                changed_by=actor_id,
+                changed_by_role=actor_role,
+            )
+        # Epic 5 follow-up - manual re-score trigger: arriving at
+        # SCREENING from anywhere other than UPLOADED cancels any still-
+        # active interview rounds, same transaction, same reasoning as
+        # the cascade-cancel hook above.
+        if target == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+            self.interview_schedule_repo.cancel_active_rounds(
+                cc.id,
+                reason="Candidate returned to SCREENING for re-evaluation",
+                changed_by=actor_id,
+                changed_by_role=actor_role,
+            )
         self.audit_service.log(actor_id=actor_id,
             actor_role=actor_role,
             action_type=ActionType.CANDIDATE_STAGE_OVERRIDDEN,
@@ -1897,6 +1976,18 @@ class CampaignService:
         if target == PipelineStage.SELECTED:
             self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
+
+        # Epic 5 Step 2 - best-effort, after commit, same reasoning as
+        # _queue_rejection_email: a failure to queue/send this must never
+        # undo the already-committed override.
+        if target == PipelineStage.SELECTED:
+            queue_candidate_selected_email(self.campaign_repo.db, cc)
+        # Epic 5 follow-up - manual re-score trigger, post-commit (see
+        # manual_candidate_rescore.py). Never fires for the automated
+        # UPLOADED->SCREENING path.
+        if target == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+            enqueue_manual_rescore(self.campaign_repo.db, cc)
+
         return StalledActionResponse(campaign_candidate_id=cc.id,
             action="STAGE_OVERRIDDEN",
             detail=f"Moved from {from_stage.value} to {target.value}.",
