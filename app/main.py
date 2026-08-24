@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.api.routes import candidate_actions_routes
+from app.api.routes import export_routes
 from app.api.routes import dashboard_routes
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
@@ -193,6 +194,7 @@ app.include_router(router=interview_router, prefix=API_PREFIX, tags=["Interview 
 app.include_router(router=oauth_router, prefix=API_PREFIX, tags=["Microsoft OAuth"])
 app.include_router(router=google_oauth_router, prefix=API_PREFIX, tags=["Google OAuth"])
 app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["WebSocket"])
+app.include_router(router=export_routes.router, prefix=API_PREFIX, tags=["Exports"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

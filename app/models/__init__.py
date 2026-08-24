@@ -8,7 +8,6 @@ from .campaigns import HiringCampaign
 
 from .compliance import AuditLog
 
-from .saved_views import UserSavedView
 
 from .candidate_notes import CandidateNote
 

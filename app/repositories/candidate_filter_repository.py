@@ -9,7 +9,7 @@ from app.models.pipeline import CampaignCandidate
 
 # The parser emits education entries as {degree, institution} free text — there
 # is no normalised degree_level (and no is_highest_degree) despite what
-# M11-E03-S02-T02 assumes. These patterns map a requested level onto the text
+# Assumes. These patterns map a requested level onto the text
 # actually present, including the abbreviations Indian resumes commonly use.
 # Deliberately conservative: a missed match is better than a wrong one, since
 # this filter silently removes candidates from a reviewer's view.
@@ -64,7 +64,7 @@ class CandidateFilterRepository:
             .where(CampaignCandidate.campaign_id == campaign_id)
         )
 
-        # ── experience (T02) ──────────────────────────────────────────
+        # ── experience ──────────────────────────────────────────
         if experience_min is not None or experience_max is not None:
             years = cast(
                 Resume.parsed_json[text("'total_experience_years'")].astext, Float
@@ -81,7 +81,7 @@ class CandidateFilterRepository:
                 expr = or_(expr, years.is_(None))
             stmt = stmt.where(expr)
 
-        # ── education level (T02) ─────────────────────────────────────
+        # ── education level ─────────────────────────────────────
         if degree_levels:
             patterns: list[str] = []
             for level in degree_levels:
@@ -100,7 +100,7 @@ class CandidateFilterRepository:
                 )
                 stmt = stmt.where(exists_q)
 
-        # ── upload source (T03) ───────────────────────────────────────
+        # ── upload source ───────────────────────────────────────
         if uploaded_by:
             stmt = stmt.where(Resume.uploaded_by == uploaded_by)
         if uploaded_from is not None:

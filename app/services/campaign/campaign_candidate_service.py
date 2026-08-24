@@ -2462,6 +2462,10 @@ class CampaignCandidateService:
         for row in rows:
             override_counts[row.campaign_id] = override_counts.get(row.campaign_id, 0) + 1
 
+        # One aggregate query for every campaign's denominator instead of
+        # loading each campaign's rejected rows just to count them.
+        rejected_counts = self.campaign_candidate_repo.count_rejected_by_campaigns(campaign_ids)
+
         alerts = []
         for cid in campaign_ids:
             campaign = self._get_campaign_cached(cid, campaign_cache)
@@ -2469,13 +2473,11 @@ class CampaignCandidateService:
                 continue
 
             override_count = override_counts.get(cid, 0)
-            # Denominator: all-time rejected candidates in this campaign
-            # (reuses S03's get_rejected_by_campaign) - override_rate
-            # answers "of the candidates this campaign's deterministic
-            # filter rejected, what fraction did HR decide to override",
-            # which is what "review campaign JD skills or thresholds"
-            # is actually about.
-            rejected_count = len(self.campaign_candidate_repo.get_rejected_by_campaign(cid))
+            # Denominator: all-time rejected candidates in this campaign.
+            # override_rate answers "of the candidates this campaign's
+            # deterministic filter rejected, what fraction did HR override",
+            # which is what the "review JD skills or thresholds" hint is about.
+            rejected_count = rejected_counts.get(cid, 0)
             override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
             alert = override_rate > threshold
 
