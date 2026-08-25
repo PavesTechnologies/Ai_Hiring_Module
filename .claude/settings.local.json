@@ -76,7 +76,8 @@
       "Bash(./venv/Scripts/python.exe -m pytest tests/repositories/test_campaign_candidate_ranking_repository.py -q)",
       "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_ranking_service.py -q)",
       "Bash(./venv/Scripts/python.exe -m pytest tests/api/test_campaign_candidate_ranking_routes.py -q)",
-      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_scorecard_service.py::test_scorecard_banner_present_for_deterministic_rejection -q)"
+      "Bash(./venv/Scripts/python.exe -m pytest tests/services/campaign/test_campaign_candidate_scorecard_service.py::test_scorecard_banner_present_for_deterministic_rejection -q)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='celery.exe'\" -ErrorAction SilentlyContinue)"
     ],
     "deny": [],
     "ask": [],

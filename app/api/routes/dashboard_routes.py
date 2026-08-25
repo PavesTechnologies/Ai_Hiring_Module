@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
 
-from app.dependencies.dashboard import get_dashboard_service, get_saved_view_service
+from app.dependencies.dashboard import get_dashboard_service, get_candidate_search_service
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.campaigns import CampaignStatus
 from app.models.identity import UserRole
@@ -16,17 +16,13 @@ from app.schemas.dashboard.dashboard_response import (
 )
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.pipeline import PipelineStage
-from app.schemas.dashboard.saved_view_schema import (
+from app.schemas.dashboard.candidate_search_schema import (
     CampaignUploaderResponse,
     CandidateFilterResultResponse,
-    CrossCampaignSearchResponse,
-    SavedViewCreateRequest,
-    SavedViewResponse,
-    SavedViewUpdateRequest,
     SkillFilterResultResponse,
     SkillSuggestionResponse,
 )
-from app.services.dashboard.saved_view_service import SavedViewService
+from app.services.dashboard.candidate_search_service import CandidateSearchService
 from app.schemas.response import APIResponse
 from app.services.dashboard.dashboard_service import DashboardService
 
@@ -38,7 +34,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
     response_model=APIResponse[HrAdminDashboardSummaryResponse],
     status_code=status.HTTP_200_OK,
     summary="Platform-wide activity summary (HR_ADMIN)",
-    description="M11-E01-S01-T02 — org-wide hiring activity plus external-dependency health.",
+    description="Org-wide hiring activity plus external-dependency health.",
 )
 def get_hr_admin_summary(
     service: DashboardService = Depends(get_dashboard_service),
@@ -55,7 +51,7 @@ def get_hr_admin_summary(
     response_model=APIResponse[RecruiterDashboardSummaryResponse],
     status_code=status.HTTP_200_OK,
     summary="Own-activity summary (RECRUITER)",
-    description="M11-E01-S01-T03 — scoped to the caller's own uploads and campaigns.",
+    description="Scoped to the caller's own uploads and campaigns.",
 )
 def get_recruiter_summary(
     service: DashboardService = Depends(get_dashboard_service),
@@ -73,7 +69,7 @@ def get_recruiter_summary(
     status_code=status.HTTP_200_OK,
     summary="Campaign summary cards",
     description=(
-        "M11-E01-S02-T01 / S03-T01 — campaign cards with per-stage counts and health "
+        "T01 — campaign cards with per-stage counts and health "
         "indicators. HR_ADMIN sees every campaign; RECRUITER is scoped to campaigns they "
         "uploaded to or created."
     ),
@@ -106,7 +102,7 @@ def get_dashboard_campaigns(
     status_code=status.HTTP_200_OK,
     summary="Live nav badge counts",
     description=(
-        "M11-E01-S03-T03 — cross-campaign pending reviews, fraud-review queue and AI "
+        "Cross-campaign pending reviews, fraud-review queue and AI "
         "failures. RECRUITER counts are scoped to their accessible campaigns."
     ),
 )
@@ -127,7 +123,7 @@ def get_nav_badges(
     status_code=status.HTTP_200_OK,
     summary="Skill autocomplete within a campaign",
     description=(
-        "M11-E03-S01-T01 — canonical skills matching the query by name or alias, "
+        "Canonical skills matching the query by name or alias, "
         "restricted to skills candidates in this campaign actually hold."
     ),
 )
@@ -135,7 +131,7 @@ def suggest_skills(
     campaign_id: UUID,
     q: str = Query(..., min_length=1, description="Partial skill name or alias."),
     limit: int = Query(default=10, ge=1, le=25),
-    service: SavedViewService = Depends(get_saved_view_service),
+    service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     return APIResponse.ok(
@@ -150,7 +146,7 @@ def suggest_skills(
     status_code=status.HTTP_200_OK,
     summary="Candidates holding ALL of the given skills",
     description=(
-        "M11-E03-S01-T02 — AND logic: a candidate must hold every requested skill. "
+        "AND logic: a candidate must hold every requested skill. "
         "Returns campaign_candidate ids plus how each skill matched, and logs the "
         "search to search_queries (T03), including zero-result searches."
     ),
@@ -159,7 +155,7 @@ def filter_candidates_by_skill(
     campaign_id: UUID,
     skill_ids: list[UUID] = Query(..., description="Repeat for each skill; AND-combined."),
     q: str = Query(default="", description="Raw text typed, for search analytics."),
-    service: SavedViewService = Depends(get_saved_view_service),
+    service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     ids, tiers = service.resolve_skill_filter(
@@ -184,7 +180,7 @@ def filter_candidates_by_skill(
     status_code=status.HTTP_200_OK,
     summary="Filter candidates by resume-derived criteria",
     description=(
-        "M11-E03-S02-T02/T03 — experience years, education level and upload source. "
+        "Experience years, education level and upload source. "
         "These live in resumes.parsed_json rather than on campaign_candidates, so "
         "they are resolved here and intersected with the other active filters. "
         "NOTE: the parser emits education as free-text `degree` with no normalised "
@@ -206,7 +202,7 @@ def filter_candidates(
     uploaded_from: datetime | None = Query(default=None),
     uploaded_to: datetime | None = Query(default=None),
     upload_type: str | None = Query(default=None, description="individual | bulk"),
-    service: SavedViewService = Depends(get_saved_view_service),
+    service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     ids = service.filter_candidates(
@@ -234,11 +230,11 @@ def filter_candidates(
     response_model=APIResponse[list[CampaignUploaderResponse]],
     status_code=status.HTTP_200_OK,
     summary="Distinct uploaders for a campaign",
-    description="M11-E03-S02-T03 — populates the 'Uploaded By' filter dropdown.",
+    description="Populates the 'Uploaded By' filter dropdown.",
 )
 def get_campaign_uploaders(
     campaign_id: UUID,
-    service: SavedViewService = Depends(get_saved_view_service),
+    service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     rows = service.get_campaign_uploaders(campaign_id)
@@ -254,162 +250,12 @@ def get_campaign_uploaders(
 
 
 @router.get(
-    "/cross-campaign-search",
-    response_model=APIResponse[CrossCampaignSearchResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Search candidates across all accessible campaigns",
-    description=(
-        "M11-E03-S04-T01/T02 — candidates holding ALL the given skills anywhere the "
-        "caller can see, deduplicated per candidate with their stage and score in each "
-        "campaign. RECRUITER is scoped to campaigns they uploaded to or created; "
-        "HR_ADMIN sees the whole organisation. No PII — candidate UUID only."
-    ),
-)
-def cross_campaign_search(
-    skill_ids: list[UUID] = Query(..., description="Repeat for each skill; AND-combined."),
-    min_composite_score: float | None = Query(default=None, ge=0, le=100),
-    campaign_status: list[CampaignStatus] | None = Query(default=None),
-    reached_stage: str | None = Query(
-        default=None, description="Only candidates currently at this stage in some campaign.",
-    ),
-    rejected_only: bool = Query(
-        default=False,
-        description="Only candidates rejected in EVERY campaign — i.e. free to consider again.",
-    ),
-    q: str = Query(default="", description="Raw text typed, for search analytics."),
-    dashboard_service: DashboardService = Depends(get_dashboard_service),
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    is_hr_admin = UserRole.HR_ADMIN.value in (user.roles or [])
-    # Scoping is resolved here from the token, never accepted from the client.
-    accessible = None
-    if not is_hr_admin:
-        accessible = [
-            c.id for c in dashboard_service.get_campaign_cards(
-                recruiter_id=user.user_id, show_closed=True, limit=50,
-            )
-        ]
-
-    stage = None
-    if reached_stage:
-        try:
-            stage = PipelineStage(reached_stage)
-        except ValueError:
-            raise CampaignException(f"Unknown pipeline stage '{reached_stage}'.", 422)
-
-    return APIResponse.ok(
-        data=service.cross_campaign_search(
-            skill_ids=skill_ids,
-            user_id=user.user_id,
-            accessible_campaign_ids=accessible,
-            min_composite_score=min_composite_score,
-            campaign_statuses=campaign_status,
-            reached_stage=stage,
-            rejected_only=rejected_only,
-            query_text=q,
-        ),
-        message="Cross-campaign search completed successfully",
-    )
-
-
-# ── Saved views (M11-E03-S03) ─────────────────────────────────────────
-
-@router.get(
-    "/campaigns/{campaign_id}/saved-views",
-    response_model=APIResponse[list[SavedViewResponse]],
-    status_code=status.HTTP_200_OK,
-    summary="List my saved filter views",
-)
-def list_saved_views(
-    campaign_id: UUID,
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    return APIResponse.ok(
-        data=service.list_views(user.user_id, campaign_id),
-        message="Saved views retrieved successfully",
-    )
-
-
-@router.post(
-    "/campaigns/{campaign_id}/saved-views",
-    response_model=APIResponse[SavedViewResponse],
-    status_code=status.HTTP_201_CREATED,
-    summary="Save the current filter configuration",
-    description="M11-E03-S03-T01. Enforces MAX_SAVED_VIEWS_PER_USER server-side.",
-)
-def create_saved_view(
-    campaign_id: UUID,
-    request: SavedViewCreateRequest,
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    return APIResponse.ok(
-        data=service.create_view(user.user_id, campaign_id, request),
-        message="View saved successfully",
-    )
-
-
-@router.patch(
-    "/saved-views/{view_id}",
-    response_model=APIResponse[SavedViewResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Rename or update a saved view",
-    description="M11-E03-S03-T02. Only the view's owner can modify it.",
-)
-def update_saved_view(
-    view_id: UUID,
-    request: SavedViewUpdateRequest,
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    return APIResponse.ok(
-        data=service.update_view(user.user_id, view_id, request),
-        message="View updated successfully",
-    )
-
-
-@router.post(
-    "/saved-views/{view_id}/applied",
-    response_model=APIResponse[SavedViewResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Record that a view was applied",
-    description="Stamps last_applied_at so the manage panel can show staleness.",
-)
-def mark_saved_view_applied(
-    view_id: UUID,
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    return APIResponse.ok(
-        data=service.mark_applied(user.user_id, view_id),
-        message="View applied",
-    )
-
-
-@router.delete(
-    "/saved-views/{view_id}",
-    status_code=status.HTTP_200_OK,
-    summary="Delete a saved view",
-    description="M11-E03-S03-T02. Only the view's owner can delete it.",
-)
-def delete_saved_view(
-    view_id: UUID,
-    service: SavedViewService = Depends(get_saved_view_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
-):
-    service.delete_view(user.user_id, view_id)
-    return APIResponse.ok(data=None, message="View deleted successfully")
-
-
-@router.get(
     "/campaigns/{campaign_id}/stage-timing",
     response_model=APIResponse[list[StageTimingResponse]],
     status_code=status.HTTP_200_OK,
     summary="Stage dwell times (HR_ADMIN)",
     description=(
-        "M11-E01-S04-T02 — average and maximum days candidates have spent in their "
+        "Average and maximum days candidates have spent in their "
         "current stage, with the configured SLA and breach flag per stage."
     ),
 )

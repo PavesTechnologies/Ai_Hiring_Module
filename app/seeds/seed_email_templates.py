@@ -47,28 +47,27 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
-    # M12 (Workflow & Interview Scheduling): placeholder copy only - subject
-    # and name are [SEED]-tagged so these are easy to find and replace with
-    # real copy once M12's actual notification content is finalized.
-    # {candidate_name}/{job_title}/{interview_date}/{interview_time}/
-    # {interview_mode}/{interviewer_name} placeholders only, matching this
-    # file's existing no-internal-detail-leakage convention.
-    #
-    # NOTE: no interview_schedules table exists yet (M12 follow-up work).
-    # These placeholder names are a reasonable guess at what that table will
-    # expose, but whoever wires up the actual render/send call needs to pass
-    # a dict with exactly these keys - expect to revisit/rename one or two
-    # once that table and the send-email code path are actually built.
+    # M12 (Workflow & Interview Scheduling). {candidate_name}/{job_title}/
+    # {interview_date}/{interview_time}/{interview_mode}/{interviewer_name}/
+    # {meeting_info} placeholders, matching this file's existing
+    # no-internal-detail-leakage convention. {meeting_info} is precomputed
+    # by candidate_notification_emails.py's _meeting_info_line - a real
+    # "Join here: {link}" line for TEAMS/MEET once the calendar API
+    # actually returned one, a graceful fallback if it hasn't yet, the
+    # location for ONSITE, or a phone-call notice for PHONE - str.format
+    # has no conditional-block syntax, so this branch lives in the context
+    # builder, not the template string itself.
     {
         "trigger_event": EmailTriggerEvent.INTERVIEW_SCHEDULED,
-        "name": "[SEED] Interview Scheduled",
-        "subject": "[SEED] Your interview for {job_title} has been scheduled",
+        "name": "Interview Scheduled",
+        "subject": "Your interview for {job_title} has been scheduled",
         "body_template": (
             "Dear {candidate_name},\n\n"
             "Your interview for the {job_title} position has been scheduled.\n\n"
             "Date: {interview_date}\n"
             "Time: {interview_time}\n"
             "Mode: {interview_mode}\n"
+            "{meeting_info}\n"
             "Interviewer: {interviewer_name}\n\n"
             "Please let us know as soon as possible if this time does not work for you.\n\n"
             "Best regards,\n"
@@ -78,14 +77,15 @@ _TEMPLATES = [
     },
     {
         "trigger_event": EmailTriggerEvent.INTERVIEW_RESCHEDULED,
-        "name": "[SEED] Interview Rescheduled",
-        "subject": "[SEED] Your interview for {job_title} has been rescheduled",
+        "name": "Interview Rescheduled",
+        "subject": "Your interview for {job_title} has been rescheduled",
         "body_template": (
             "Dear {candidate_name},\n\n"
             "Your interview for the {job_title} position has been rescheduled.\n\n"
             "New date: {interview_date}\n"
             "New time: {interview_time}\n"
             "Mode: {interview_mode}\n"
+            "{meeting_info}\n"
             "Interviewer: {interviewer_name}\n\n"
             "We apologize for any inconvenience and look forward to speaking with you.\n\n"
             "Best regards,\n"
@@ -95,8 +95,8 @@ _TEMPLATES = [
     },
     {
         "trigger_event": EmailTriggerEvent.INTERVIEW_CANCELLED,
-        "name": "[SEED] Interview Cancelled",
-        "subject": "[SEED] Your interview for {job_title} has been cancelled",
+        "name": "Interview Cancelled",
+        "subject": "Your interview for {job_title} has been cancelled",
         "body_template": (
             "Dear {candidate_name},\n\n"
             "Your interview for the {job_title} position, previously scheduled for "
@@ -109,8 +109,8 @@ _TEMPLATES = [
     },
     {
         "trigger_event": EmailTriggerEvent.CANDIDATE_SELECTED,
-        "name": "[SEED] Candidate Selected",
-        "subject": "[SEED] Congratulations - you have been selected for {job_title}",
+        "name": "Candidate Selected",
+        "subject": "Congratulations - you have been selected for {job_title}",
         "body_template": (
             "Dear {candidate_name},\n\n"
             "Congratulations! We are pleased to inform you that you have been selected "

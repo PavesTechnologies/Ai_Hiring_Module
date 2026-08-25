@@ -2,6 +2,7 @@ import logging
 from zoneinfo import ZoneInfo
 
 from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+from app.models.interview import InterviewPlatform
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.tasks.email_tasks import send_candidate_email_task
@@ -56,6 +57,27 @@ def _already_notified(notifications) -> bool:
     return any(n.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT) for n in notifications)
 
 
+def _meeting_info_line(schedule) -> str:
+    """
+    Precomputed, single-placeholder conditional text - same "str.format
+    has no conditional-block syntax" pattern already used for notes_block/
+    reason_block in interview_interviewer_lifecycle_emails.py. Branches on
+    platform, and on whether a meeting_link actually exists yet for a
+    video platform (the calendar API call can fail, or the scheduler may
+    not have connected their calendar at all) - never shows a broken/
+    empty placeholder either way.
+    """
+    if schedule.platform in (InterviewPlatform.TEAMS, InterviewPlatform.MEET):
+        if schedule.meeting_link:
+            return f"Join here: {schedule.meeting_link}"
+        return "Your interviewer will share the meeting link separately."
+    if schedule.platform == InterviewPlatform.ONSITE:
+        return f"Location: {schedule.location}" if schedule.location else "Location details will be shared separately."
+    if schedule.platform == InterviewPlatform.PHONE:
+        return "You will be called at the scheduled time."
+    return ""
+
+
 def _interview_email_context(schedule, interviewers: list) -> dict | None:
     """
     Shared placeholder set for all 3 interview trigger events, matching
@@ -80,6 +102,7 @@ def _interview_email_context(schedule, interviewers: list) -> dict | None:
         "interview_time": local_start.strftime("%I:%M %p %Z").lstrip("0"),
         "interview_mode": schedule.platform.value.title() if schedule.platform else "Not specified",
         "interviewer_name": interviewer_names,
+        "meeting_info": _meeting_info_line(schedule),
     }
 
 

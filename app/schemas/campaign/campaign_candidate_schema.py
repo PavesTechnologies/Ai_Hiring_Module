@@ -937,6 +937,35 @@ class UpdateResumeResubmissionResponse(BaseModel):
     task_id: UUID
 
 
+class SendRejectionEmailResponse(BaseModel):
+    """Manual "Send Rejection Email" action - human-driven rejections never auto-send, unlike the automated scoring paths."""
+    status: str = "queued"
+
+
+class BulkSendRejectionEmailRequest(BaseModel):
+    """
+    Bulk follow-up to the single-candidate action above. No campaign_id -
+    unlike BulkStageMoveRequest, candidates here can span multiple
+    campaigns, since sending a rejection email has no shared-stage/
+    shared-campaign constraint the way a stage move does. Deliberately no
+    min_length (unlike BulkStageMoveRequest's own min_length=1) - an empty
+    list is a valid no-op here, not a client error.
+    """
+    campaign_candidate_ids: list[UUID] = Field(..., max_length=200)
+
+
+class BulkSendRejectionEmailResponse(BaseModel):
+    """
+    Per-id results, never all-or-nothing - mirrors BulkStageMoveResultResponse's
+    "never silently drop an id" principle, but genuinely partial-success
+    (unlike that endpoint's own all-or-nothing transition loop): one
+    candidate's failure (wrong stage, ownership, etc.) never blocks the rest.
+    """
+    queued: list[UUID] = []
+    failed: list[dict] = []
+    detail: str
+
+
 class CandidateCampaignHistoryEntryResponse(BaseModel):
     
 

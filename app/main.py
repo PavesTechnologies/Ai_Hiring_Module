@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.api.routes import candidate_actions_routes
+from app.api.routes import export_routes
 from app.api.routes import dashboard_routes
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
@@ -33,6 +34,7 @@ from app.api.routes.interview_feedback_routes import router as interview_feedbac
 from app.api.routes.user_notification_preference_routes import router as user_notification_preference_router
 from app.api.routes.interview_routes import router as interview_router
 from app.api.routes.oauth_routes import router as oauth_router
+from app.websocket.router import router as websocket_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -195,6 +197,8 @@ app.include_router(router=interview_feedback_router, prefix=API_PREFIX, tags=["I
 app.include_router(router=user_notification_preference_router, prefix=API_PREFIX, tags=["User Notification Preferences"])
 app.include_router(router=oauth_router, prefix=API_PREFIX, tags=["Microsoft OAuth"])
 app.include_router(router=google_oauth_router, prefix=API_PREFIX, tags=["Google OAuth"])
+app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["WebSocket"])
+app.include_router(router=export_routes.router, prefix=API_PREFIX, tags=["Exports"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

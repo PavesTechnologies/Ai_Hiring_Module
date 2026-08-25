@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Callable, TypeVar
 from uuid import UUID
@@ -10,6 +11,9 @@ from app.models.async_tasks import (
 )
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.services.jd import context_serializer
+from app.websocket.publisher import publish_stage_completed, publish_task_linked
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -48,9 +52,25 @@ class StageExecutionService:
         status: StageExecutionStatus,
         error_message: str | None = None,
         duration_ms: int | None = None,
+        context=None,
     ) -> DocumentProcessingStageExecution:
         execution = self.repository.complete_stage(execution, status, error_message, duration_ms)
         self.repository.commit()
+
+        # WebSocket real-time update - published only after the row above is
+        # committed. context is JD's own JDProcessingContext when available
+        # (carries created_by, needed to route a JD event to the uploading
+        # user's channel); Resume stages never pass it and don't need to -
+        # RESUME routes by task_id alone. Never allowed to break the
+        # pipeline: publish_stage_completed already swallows Redis errors.
+        try:
+            publish_stage_completed(execution, created_by=getattr(context, "created_by", None))
+        except Exception:
+            logger.exception(
+                "Failed to publish stage.completed for task_id=%s stage=%s",
+                execution.task_id, execution.stage.value,
+            )
+
         return execution
 
     def skip_stage(
@@ -94,7 +114,7 @@ class StageExecutionService:
         except Exception as exc:
             duration_ms = int((time.monotonic() - started) * 1000)
             try:
-                self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms)
+                self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms, context=context)
                 if context is not None and checkpoint_repo is not None:
                     checkpoint_repo.upsert(
                         task_id,
@@ -113,7 +133,7 @@ class StageExecutionService:
 
         duration_ms = int((time.monotonic() - started) * 1000)
         try:
-            self.complete_stage(execution, StageExecutionStatus.SUCCESS, duration_ms=duration_ms)
+            self.complete_stage(execution, StageExecutionStatus.SUCCESS, duration_ms=duration_ms, context=context)
         except Exception as exc:
             raise StageExecutionError(stage, exc) from exc
         return result
@@ -127,6 +147,17 @@ class StageExecutionService:
         """
         return self.repository.get_latest_attempt_number(task_id, stage) + 1
 
-    def link_document_id(self, task_id: str, document_id: UUID) -> None:
+    def link_document_id(
+        self,
+        task_id: str,
+        document_id: UUID,
+        document_type: DocumentType | None = None,
+        created_by: str | None = None,
+    ) -> None:
         self.repository.link_document_id(task_id, document_id)
         self.repository.commit()
+
+        try:
+            publish_task_linked(task_id, document_id, document_type, created_by=created_by)
+        except Exception:
+            logger.exception("Failed to publish task.linked for task_id=%s", task_id)

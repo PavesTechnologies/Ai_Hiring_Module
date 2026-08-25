@@ -137,7 +137,7 @@ class JDProcessingPipeline:
                     context.task_id,
                     context.document_type,
                     ProcessingStage.TEXT_EXTRACTION,
-                    lambda: self._run_text_extraction(context),
+                    lambda: self._run_text_extraction_from_raw_text(context),
                     attempt_number=attempt_number,
                     context=context,
                     checkpoint_repo=self.checkpoint_repo,
@@ -197,7 +197,10 @@ class JDProcessingPipeline:
                 )
 
         if context.jd_id:
-            self.stage_tracker.link_document_id(context.task_id, context.jd_id)
+            self.stage_tracker.link_document_id(
+                context.task_id, context.jd_id,
+                document_type=context.document_type, created_by=context.created_by,
+            )
             return context.jd_id
 
         if context.duplicate_jd_info:
@@ -258,6 +261,15 @@ class JDProcessingPipeline:
             file_path=context.file_path,
         )
         context.text = TextExtractionService.extract(file_content, context.source_format)
+
+    def _run_text_extraction_from_raw_text(self, context: JDProcessingContext) -> None:
+        """
+        Raw-text (JSON-body) branch's TEXT_EXTRACTION stage: there is no
+        uploaded file to download/extract from, so this just records the
+        stage as done against the text already supplied by the caller
+        instead of hitting storage_service with a None file_path.
+        """
+        context.text = context.raw_text
 
     def _run_text_extraction_and_check_duplicate(
         self, context: JDProcessingContext, is_reprocess: bool, lineage_root_id: UUID | None,

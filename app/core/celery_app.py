@@ -62,6 +62,7 @@ celery_app.conf.imports = (
     "app.tasks.reindex_tasks",
     "app.tasks.talent_pool_tasks",
     "app.tasks.interview_tasks",
+    "app.tasks.export_tasks",
 )
 
 

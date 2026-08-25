@@ -20,6 +20,7 @@ from app.tasks.resume_processing_tasks import (
     RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
     process_resume_document,
 )
+from app.websocket.publisher import publish_board_candidate_added
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,19 @@ class ResumeIntakeService:
         except Exception:
             self.campaign_repo.rollback()
             raise
+
+        # WebSocket board update - published only after the commit above,
+        # which is what actually persists create_campaign_candidate()'s
+        # insert (CampaignCandidateService itself never commits this branch;
+        # it shares this request's session, and this is the first commit
+        # reached after that insert). Never allowed to fail the upload.
+        try:
+            publish_board_candidate_added(campaign_id, campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_added for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         logger.info("Resume stored | resume_id=%s campaign_id=%s", resume.id, campaign_id)
 

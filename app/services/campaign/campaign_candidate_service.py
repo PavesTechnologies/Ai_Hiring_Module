@@ -41,6 +41,8 @@ from app.repositories.candidate_composite_score_history_repository import (
 )
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.email_notification_repository import EmailNotificationRepository
+from app.repositories.email_template_repository import EmailTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
@@ -86,20 +88,25 @@ from app.schemas.campaign.campaign_candidate_schema import (
     RankedCampaignCandidatesResponse,
     SemanticScoreBreakdownResponse,
     SemanticScoreSummary,
+    BulkSendRejectionEmailResponse,
     ResubmissionInfoResponse,
+    SendRejectionEmailResponse,
     UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
+from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
+from app.tasks.email_tasks import send_candidate_email_task
 from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
+from app.websocket.publisher import publish_board_candidate_removed, publish_board_stage_changed
 
 logger = logging.getLogger(__name__)
 
@@ -541,6 +548,14 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
+        try:
+            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
+
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
 
         task_id = uuid4()
@@ -610,6 +625,14 @@ class CampaignCandidateService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+        try:
+            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         candidate = (
             self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
@@ -2288,6 +2311,95 @@ class CampaignCandidateService:
 
         return self.get_campaign_candidate_scorecard(campaign_candidate_id)
 
+    def send_rejection_email(
+        self,
+        campaign_candidate_id: UUID,
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> SendRejectionEmailResponse:
+        """
+        Manual "Send Rejection Email" action. Every human-driven rejection
+        path (reject_at_interview, board drag-and-drop move_pipeline_stage,
+        BulkStageMoveService) never auto-sends - unlike the automated
+        deterministic/semantic/AI-evaluation rejection paths, which still
+        send automatically and are completely untouched by this method.
+        A human explicitly triggers this once ready.
+
+        Reuses CandidateRejectionEmailService/the exact CANDIDATE_REJECTED
+        template the automated path already uses - not a parallel
+        implementation, and not a rejection-specific content path: the
+        template only ever substitutes candidate_name/job_title, same as
+        every other rejection email, so campaign_candidate.decision_reason
+        is deliberately never surfaced here either.
+
+        allow_resend=True: unlike feedback (a one-time, locked decision),
+        re-sending a rejection notice (e.g. after fixing a template typo)
+        is a reasonable, low-risk action - not over-engineering a dedup
+        lock that doesn't serve a real purpose here.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+
+        if campaign_candidate.pipeline_stage != PipelineStage.REJECTED:
+            raise CampaignException("This candidate hasn't been rejected.", 400)
+
+        db = self.campaign_candidate_repo.db
+        email_service = CandidateRejectionEmailService(EmailTemplateRepository(db), EmailNotificationRepository(db))
+        notification = email_service.queue_rejection_email(
+            candidate_id=campaign_candidate.candidate_id,
+            campaign_candidate_id=campaign_candidate.id,
+            allow_resend=True,
+        )
+        if notification is None:
+            # allow_resend=True already rules out the dedup branch - the
+            # only way queue_rejection_email still returns None is no
+            # active template configured, a real ops issue a human
+            # clicking this button deserves to see, not a silent no-op.
+            raise CampaignException("No active rejection email template is configured.", 500)
+
+        send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
+        return SendRejectionEmailResponse(status="queued")
+
+    def bulk_send_rejection_email(
+        self,
+        campaign_candidate_ids: list[UUID],
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> BulkSendRejectionEmailResponse:
+        """
+        Bulk follow-up to send_rejection_email - calls that exact method per
+        id rather than duplicating its validation (not found / ownership /
+        must be REJECTED / no active template), so behavior for a single id
+        inside a bulk call is always identical to calling the single-candidate
+        endpoint directly.
+
+        Deliberately NOT BulkStageMoveService.bulk_move's all-or-nothing
+        shape: a stage move audits the batch as one event with a shared
+        openings cap, so any one failure rolling back the whole thing is
+        correct there. Sending an email per candidate has no such
+        cross-candidate constraint, so each id's outcome is independent -
+        one candidate's wrong stage or ownership failure never blocks the
+        rest.
+        """
+        queued: list[UUID] = []
+        failed: list[dict] = []
+        for cc_id in campaign_candidate_ids:
+            try:
+                self.send_rejection_email(cc_id, actor_id=actor_id, actor_roles=actor_roles)
+                queued.append(cc_id)
+            except CampaignException as exc:
+                failed.append({"campaign_candidate_id": str(cc_id), "reason": exc.message})
+
+        return BulkSendRejectionEmailResponse(
+            queued=queued,
+            failed=failed,
+            detail=f"Queued {len(queued)} rejection email(s), {len(failed)} failed.",
+        )
+
     def _queue_post_override_evaluation(self, campaign_candidate: CampaignCandidate) -> None:
         """
         Story 543: routes on whether a semantic_score already exists -
@@ -2473,6 +2585,10 @@ class CampaignCandidateService:
         for row in rows:
             override_counts[row.campaign_id] = override_counts.get(row.campaign_id, 0) + 1
 
+        # One aggregate query for every campaign's denominator instead of
+        # loading each campaign's rejected rows just to count them.
+        rejected_counts = self.campaign_candidate_repo.count_rejected_by_campaigns(campaign_ids)
+
         alerts = []
         for cid in campaign_ids:
             campaign = self._get_campaign_cached(cid, campaign_cache)
@@ -2480,13 +2596,11 @@ class CampaignCandidateService:
                 continue
 
             override_count = override_counts.get(cid, 0)
-            # Denominator: all-time rejected candidates in this campaign
-            # (reuses S03's get_rejected_by_campaign) - override_rate
-            # answers "of the candidates this campaign's deterministic
-            # filter rejected, what fraction did HR decide to override",
-            # which is what "review campaign JD skills or thresholds"
-            # is actually about.
-            rejected_count = len(self.campaign_candidate_repo.get_rejected_by_campaign(cid))
+            # Denominator: all-time rejected candidates in this campaign.
+            # override_rate answers "of the candidates this campaign's
+            # deterministic filter rejected, what fraction did HR override",
+            # which is what the "review JD skills or thresholds" hint is about.
+            rejected_count = rejected_counts.get(cid, 0)
             override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
             alert = override_rate > threshold
 
@@ -2971,9 +3085,27 @@ class CampaignCandidateService:
                     404,
                 )
 
+            # Captured before delete/commit: the session's default
+            # expire_on_commit=True means `candidate`'s attributes would
+            # otherwise trigger a re-SELECT of a now-deleted row on next
+            # access (raising ObjectDeletedError) - both the audit log call
+            # and the WebSocket publish below need these as plain values.
+            deleted_id = candidate.id
+            deleted_campaign_id = candidate.campaign_id
+            deleted_candidate_id = candidate.candidate_id
+            deleted_resume_id = candidate.resume_id
+
             self.campaign_candidate_repo.delete(candidate)
 
             self.campaign_candidate_repo.commit()
+
+            try:
+                publish_board_candidate_removed(deleted_campaign_id, deleted_id)
+            except Exception:
+                logger.exception(
+                    "Failed to publish board.candidate_removed for campaign_candidate_id=%s",
+                    deleted_id,
+                )
 
             # Audit Log
             self.audit_service.log(
@@ -2981,11 +3113,11 @@ class CampaignCandidateService:
                 actor_role=actor_role,
                 action_type=ActionType.CANDIDATE_REMOVED,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE,
-                entity_id=candidate.id,
-                campaign_id=candidate.campaign_id,
+                entity_id=deleted_id,
+                campaign_id=deleted_campaign_id,
                 details={
-                    "candidate_id": str(candidate.candidate_id),
-                    "resume_id": str(candidate.resume_id),
+                    "candidate_id": str(deleted_candidate_id),
+                    "resume_id": str(deleted_resume_id),
                 },
             )
 

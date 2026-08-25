@@ -1564,9 +1564,11 @@ class CampaignService:
     _ACTIVE_TASK_STATUSES = ("QUEUED", "RUNNING", "RETRY")
 
     def _circuit_breaker_summaries(self) -> list[CircuitBreakerSummaryResponse]:
+        # One query for all monitored services rather than one per service.
+        rows = self.circuit_breaker_repo.get_by_service_names(self._MONITORED_BREAKER_SERVICES)
         summaries = []
         for name in self._MONITORED_BREAKER_SERVICES:
-            row = self.circuit_breaker_repo.get_by_service_name(name)
+            row = rows.get(name)
             summaries.append(CircuitBreakerSummaryResponse(service_name=name,
                 state=row.state.value if row else "CLOSED",  # absent row == never failed
                 failure_count=row.failure_count if row else 0,

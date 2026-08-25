@@ -27,7 +27,7 @@ def _schedule(**overrides):
     defaults = dict(
         id=uuid4(), start_at=datetime(2026, 8, 28, 14, 0, tzinfo=timezone.utc),
         end_at=datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc), platform=InterviewPlatform.TEAMS,
-        timezone="UTC",
+        timezone="UTC", meeting_link=None, location=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -89,6 +89,55 @@ def test_interview_email_context_converts_a_non_utc_timezone_before_formatting()
 
     assert context["interview_date"] == "August 28, 2026"
     assert context["interview_time"] == "2:00 PM IST"
+
+
+# ----------------------------------------------------------------------
+# meeting_info - the missing meeting-link fix. Genuinely absent from the
+# context before this fix (confirmed by investigation, not "passed but
+# unused") - never shows a broken/empty placeholder either way.
+# ----------------------------------------------------------------------
+
+def test_meeting_info_teams_with_a_real_link_shows_the_join_line():
+    schedule = _schedule(platform=InterviewPlatform.TEAMS, meeting_link="https://teams.microsoft.com/l/meetup/abc")
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "Join here: https://teams.microsoft.com/l/meetup/abc"
+
+
+def test_meeting_info_meet_with_a_real_link_shows_the_join_line():
+    schedule = _schedule(platform=InterviewPlatform.MEET, meeting_link="https://meet.google.com/abc-defg-hij")
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "Join here: https://meet.google.com/abc-defg-hij"
+
+
+def test_meeting_info_teams_with_no_link_yet_falls_back_gracefully():
+    """The calendar API call can fail, or the scheduler may not have connected their calendar at all - never a broken/empty placeholder."""
+    schedule = _schedule(platform=InterviewPlatform.TEAMS, meeting_link=None)
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "Your interviewer will share the meeting link separately."
+
+
+def test_meeting_info_onsite_shows_location_instead_of_a_link():
+    schedule = _schedule(platform=InterviewPlatform.ONSITE, meeting_link=None, location="4th Floor, Tower B, Bengaluru")
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "Location: 4th Floor, Tower B, Bengaluru"
+
+
+def test_meeting_info_onsite_with_no_location_falls_back_gracefully():
+    schedule = _schedule(platform=InterviewPlatform.ONSITE, meeting_link=None, location=None)
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "Location details will be shared separately."
+
+
+def test_meeting_info_phone_indicates_a_call_with_no_link():
+    schedule = _schedule(platform=InterviewPlatform.PHONE, meeting_link=None)
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == "You will be called at the scheduled time."
+
+
+def test_meeting_info_empty_when_platform_unset():
+    schedule = _schedule(platform=None, meeting_link=None)
+    context = mod._interview_email_context(schedule, [])
+    assert context["meeting_info"] == ""
 
 
 # ----------------------------------------------------------------------
@@ -199,6 +248,27 @@ def test_queue_interview_rescheduled_email_uses_the_rescheduled_trigger_event():
         )
         created = notification_repo.create.call_args.args[0]
         assert created.trigger_event == EmailTriggerEvent.INTERVIEW_RESCHEDULED
+
+
+def test_queue_interview_rescheduled_email_uses_the_current_meeting_link_not_a_stale_one():
+    """
+    reschedule() reassigns schedule.meeting_link (a fresh create_event/
+    update_event call, or None if the platform changed away from video)
+    before ever calling this function - this confirms the queued
+    template_context reflects whatever schedule.meeting_link is AT CALL
+    TIME, not some earlier value from before the reschedule.
+    """
+    notification_repo, template_repo = _patched()
+    with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
+         patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
+         patch(f"{MODULE}.send_candidate_email_task"):
+        schedule = _schedule(meeting_link="https://teams.microsoft.com/l/meetup/NEW-post-reschedule-link")
+        mod.queue_interview_rescheduled_email(MagicMock(), _campaign_candidate(), schedule, [])
+
+        created = notification_repo.create.call_args.args[0]
+        assert created.template_context["meeting_info"] == (
+            "Join here: https://teams.microsoft.com/l/meetup/NEW-post-reschedule-link"
+        )
 
 
 def test_queue_interview_cancelled_email_uses_the_cancelled_trigger_event_and_prior_start_at():
