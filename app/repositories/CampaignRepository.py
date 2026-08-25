@@ -1054,6 +1054,12 @@ class CampaignRepository:
             actor_id = last_actor.get(cc.id)
             result.append({
                 "campaign_candidate_id": cc.id,
+                # Not part of StalledCandidateItem itself - the service
+                # layer pops this to batch-resolve/decrypt candidate_name
+                # (EncryptionService is a service-layer concern, same
+                # convention as CampaignCandidateService/
+                # InterviewScheduleService.get_campaign_interviews).
+                "candidate_id": cc.candidate_id,
                 "pipeline_stage": cc.pipeline_stage.value,
                 "days_stalled": round((now - cc.updated_at).total_seconds() / 86400, 1),
                 "last_updated_at": cc.updated_at,

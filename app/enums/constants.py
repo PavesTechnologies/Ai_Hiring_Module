@@ -153,6 +153,9 @@ class ActionType(enum.Enum):
     INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
     INTERVIEW_RESCHEDULED = "INTERVIEW_RESCHEDULED"
     INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED"
+    # M12 Step 3 — interview feedback. Paired migration adds this to the
+    # DB-side enum in the same change, same convention as the 3 above.
+    INTERVIEW_FEEDBACK_SUBMITTED = "INTERVIEW_FEEDBACK_SUBMITTED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"

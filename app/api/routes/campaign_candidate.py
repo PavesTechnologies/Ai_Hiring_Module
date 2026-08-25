@@ -13,6 +13,8 @@ from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
 from app.schemas.campaign.campaign_candidate_schema import (
+    BulkSendRejectionEmailRequest,
+    BulkSendRejectionEmailResponse,
     CampaignBoardResponse,
     CampaignCandidateCreateRequest,
     CampaignCandidateResponse,
@@ -34,6 +36,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,
+    SendRejectionEmailResponse,
     SortOrder,
     UpdateResumeResubmissionResponse,
 )
@@ -496,6 +499,60 @@ def reject_interview(
         data=scorecard,
         message="Candidate rejected at interview.",
     )
+
+
+@router.post(
+    "/{campaign_candidate_id}/send-rejection-email",
+    response_model=APIResponse[SendRejectionEmailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Send Rejection Email",
+    description=(
+        "Manual send for human-driven rejections (reject-interview, board "
+        "drag-and-drop, bulk stage moves) - unlike automated scoring-based "
+        "rejections (SCREENING stage), these never auto-send; a human "
+        "explicitly triggers this once ready. 400 if the candidate isn't "
+        "currently REJECTED. Re-sending is allowed (e.g. after fixing a "
+        "template typo) - unlike feedback, this isn't a one-time locked "
+        "decision. HIRING_MANAGER (own campaign only) or HR_ADMIN."
+    ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+)
+def send_rejection_email(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(get_campaign_candidate_service),
+    user: TokenUser = Depends(get_current_user),
+):
+    result = service.send_rejection_email(
+        campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
+    )
+    return APIResponse.ok(data=result, message="Rejection email queued.")
+
+
+@router.post(
+    "/bulk-send-rejection-email",
+    response_model=APIResponse[BulkSendRejectionEmailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Send Rejection Email",
+    description=(
+        "Bulk follow-up to the single-candidate Send Rejection Email action. "
+        "Runs the same validation per candidate id (must be REJECTED, "
+        "ownership, active template) and never fails the whole request over "
+        "one bad id - a per-id queued/failed split is always returned, even "
+        "when every id fails or the list is empty. HIRING_MANAGER (own "
+        "campaign candidates only) or HR_ADMIN (any campaign); candidates "
+        "can span multiple campaigns in a single call."
+    ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+)
+def bulk_send_rejection_email(
+    request: BulkSendRejectionEmailRequest,
+    service: CampaignCandidateService = Depends(get_campaign_candidate_service),
+    user: TokenUser = Depends(get_current_user),
+):
+    result = service.bulk_send_rejection_email(
+        request.campaign_candidate_ids, actor_id=user.user_id, actor_roles=user.roles,
+    )
+    return APIResponse.ok(data=result, message=result.detail)
 
 
 @router.post(

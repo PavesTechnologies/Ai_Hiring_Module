@@ -68,6 +68,22 @@ class DashboardRepository:
         from_created = select(HiringCampaign.id).where(HiringCampaign.created_by == user_id)
         return from_resumes.union(from_bulk, from_created).subquery()
 
+    def is_campaign_accessible_to_recruiter(self, user_id: str, campaign_id: UUID) -> bool:
+        """
+        Campaign-wide interview calendar follow-up - the first caller of
+        _recruiter_campaign_ids outside this class. Reuses the exact same
+        "campaigns I uploaded to or created" definition rather than the
+        HiringCampaign.recruiter_id column, which exists on the model but
+        is never actually checked against the acting user anywhere in this
+        codebase - _recruiter_campaign_ids is the one real, established
+        definition of "a recruiter's own campaigns."
+        """
+        stmt = select(HiringCampaign.id).where(
+            HiringCampaign.id == campaign_id,
+            HiringCampaign.id.in_(select(self._recruiter_campaign_ids(user_id))),
+        ).limit(1)
+        return self.db.execute(stmt).first() is not None
+
     # ── HR_ADMIN summary ────────────────────────────────────
 
     def get_hr_admin_metrics(

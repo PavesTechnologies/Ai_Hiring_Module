@@ -30,6 +30,8 @@ class CandidateRejectionEmailService:
         self,
         candidate_id: UUID,
         campaign_candidate_id: UUID,
+        *,
+        allow_resend: bool = False,
     ) -> EmailNotification | None:
         """
         Creates and commits an email_notifications row (status=QUEUED) for
@@ -42,8 +44,14 @@ class CandidateRejectionEmailService:
         semantic, ...) the rejection came from - a QUEUED or already-SENT
         notification for this exact campaign_candidate_id is never
         duplicated (a prior FAILED attempt is retried by queuing a new one).
+
+        Manual "Send Rejection Email" follow-up: allow_resend=True skips
+        that dedup check entirely - unlike feedback (a one-time, locked
+        decision), a human re-sending a rejection notice (e.g. after
+        fixing a template typo) is a reasonable, low-risk action. Default
+        False leaves every existing automated caller's behavior unchanged.
         """
-        already_notified = any(
+        already_notified = not allow_resend and any(
             notification.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT)
             for notification in self.email_notification_repo.get_by_campaign_candidate_id_and_trigger_event(
                 campaign_candidate_id, EmailTriggerEvent.CANDIDATE_REJECTED,

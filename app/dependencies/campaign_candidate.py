@@ -19,6 +19,7 @@ from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+from app.repositories.interview_feedback_repository import InterviewFeedbackRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
@@ -100,25 +101,36 @@ def get_allowed_transition_repository(
     return AllowedTransitionRepository(db)
 
 
+def get_interview_schedule_repository(
+    db: Session = Depends(get_db),
+) -> InterviewScheduleRepository:
+    return InterviewScheduleRepository(db)
+
+
 def get_pipeline_transition_service(
     allowed_transition_repo: AllowedTransitionRepository = Depends(get_allowed_transition_repository),
     campaign_candidate_repo: CampaignCandidateRepository = Depends(get_campaign_candidate_repository),
     audit_service: AuditService = Depends(get_audit_service),
+    interview_schedule_repo: InterviewScheduleRepository = Depends(get_interview_schedule_repository),
     db: Session = Depends(get_db),
 ) -> PipelineTransitionService:
     return PipelineTransitionService(
         allowed_transition_repo=allowed_transition_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=audit_service,
+        interview_schedule_repo=interview_schedule_repo,
         # enables the openings cap / auto-close on SELECTED
         campaign_repo=CampaignRepository(db),
     )
 
 
-def get_interview_schedule_repository(
-    db: Session = Depends(get_db),
-) -> InterviewScheduleRepository:
-    return InterviewScheduleRepository(db)
+def get_interview_feedback_repository(db: Session = Depends(get_db)) -> InterviewFeedbackRepository:
+    """
+    Local factory, not imported from app.dependencies.interview_feedback -
+    that module already imports several factories FROM this file, so
+    importing back from it here would be circular.
+    """
+    return InterviewFeedbackRepository(db)
 
 
 def get_interview_schedule_service(
@@ -128,10 +140,11 @@ def get_interview_schedule_service(
     audit_service: AuditService = Depends(get_audit_service),
     microsoft_calendar_service: MicrosoftCalendarService = Depends(get_microsoft_calendar_service),
     google_calendar_service: GoogleCalendarService = Depends(get_google_calendar_service),
+    interview_feedback_repo: InterviewFeedbackRepository = Depends(get_interview_feedback_repository),
 ) -> InterviewScheduleService:
     return InterviewScheduleService(
         interview_schedule_repo, campaign_candidate_repo, campaign_repo, audit_service,
-        microsoft_calendar_service, google_calendar_service,
+        microsoft_calendar_service, google_calendar_service, interview_feedback_repo,
     )
 
 

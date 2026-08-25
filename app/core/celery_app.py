@@ -61,6 +61,7 @@ celery_app.conf.imports = (
     "app.tasks.embedding_health_tasks",
     "app.tasks.reindex_tasks",
     "app.tasks.talent_pool_tasks",
+    "app.tasks.interview_tasks",
     "app.tasks.export_tasks",
 )
 
@@ -148,5 +149,15 @@ celery_app.conf.beat_schedule = {
         # upload leaves a candidate's resume unprocessed for as long as
         # this interval.
         "schedule": crontab(minute="*/5"),
+    },
+    "request-interview-feedback-for-ended-rounds": {
+        "task": "interview.request_feedback_for_ended_rounds",
+        # Epic 5 Step 4 - a feedback-request email only makes sense once
+        # a round's end_at has passed; hourly is the real middle ground
+        # this codebase already uses (see auto-close-expired-campaigns) -
+        # frequent enough that a request goes out within an hour of the
+        # interview ending, cheap enough (a single indexed range query)
+        # not to need a longer interval like the daily campaign-wide scans.
+        "schedule": crontab(minute=0),
     },
 }

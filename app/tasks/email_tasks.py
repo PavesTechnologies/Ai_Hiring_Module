@@ -7,7 +7,7 @@ from app.core.encryption_service import EncryptionService
 from app.db.session import SessionLocal
 from app.exceptions.email_exception import EmailDeliveryException
 from app.models.async_tasks import FailureClassification, TaskStatus
-from app.models.email import EmailNotificationStatus
+from app.models.email import EmailNotificationStatus, EmailRecipientType
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
@@ -20,7 +20,6 @@ from app.repositories.jd_repository import JDRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
-from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.notifications.ses_email_client import SESEmailClient
 
 logger = logging.getLogger(__name__)
@@ -47,10 +46,22 @@ _EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_del
 def send_candidate_email_task(self, email_notification_id: str) -> None:
     """
     M07-E03 S02 T02/T03: sends ONE queued email_notifications row via SES.
-    Runs fully independently of whatever queued it - the candidate_rejections
-    record and the SCREENING -> REJECTED pipeline transition that triggered
-    this are already committed in a separate, earlier transaction by the
-    time this task starts, and nothing here can roll either of them back.
+    Runs fully independently of whatever queued it - the triggering write
+    (a pipeline transition, an interview schedule/reschedule/cancel, ...)
+    is already committed in a separate, earlier transaction by the time
+    this task starts, and nothing here can roll it back.
+
+    Epic 5 Step 2: generalized beyond candidate-only recipients.
+    recipient_type determines how the send address/display name resolve
+    (decrypt via candidate_id for CANDIDATE, read the plaintext
+    recipient_email/name snapshot for EXTERNAL_INTERVIEWER - interview_
+    interviewers.email is never encrypted in the first place, see that
+    model's own docstring) - but candidate_name/job_title are still
+    resolved the same way for BOTH recipient types, since even an
+    interviewer-facing email talks about a specific candidate, not the
+    recipient. template_context (set at queue time by whichever caller
+    had the freshest point-in-time values) is merged in on top for
+    whatever extra placeholders that trigger_event's template needs.
     """
     db = SessionLocal()
     task_id = self.request.id
@@ -89,31 +100,47 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         if template is None:
             raise ValueError(f"EmailTemplate '{notification.template_id}' not found.")
 
-        candidate = candidate_repo.get_by_id(notification.candidate_id)
-        if candidate is None:
-            raise ValueError(f"Candidate '{notification.candidate_id}' not found.")
+        campaign_candidate = None
+        if notification.campaign_candidate_id is not None:
+            campaign_candidate = campaign_candidate_repo.get_by_id(notification.campaign_candidate_id)
 
         # Never use campaign name - JobDescription.title only. Falls back
         # to a generic phrase only if the chain is somehow unresolvable
         # (e.g. campaign/JD deleted after the notification was queued).
         job_title = "the position you applied for"
-        if notification.campaign_candidate_id is not None:
-            campaign_candidate = campaign_candidate_repo.get_by_id(notification.campaign_candidate_id)
+        if campaign_candidate is not None:
+            campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
+            if campaign is not None:
+                job_description = jd_repo.get_by_id(campaign.jd_id)
+                if job_description is not None:
+                    job_title = job_description.title
+
+        if notification.recipient_type == EmailRecipientType.CANDIDATE:
+            candidate = candidate_repo.get_by_id(notification.candidate_id)
+            if candidate is None:
+                raise ValueError(f"Candidate '{notification.candidate_id}' not found.")
+            # Decrypt only here, at send time - never persisted anywhere.
+            to_address = encryption_service.decrypt(candidate.email_encrypted, candidate.encryption_key_id)
+            candidate_full_name = encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
+        else:
+            # interview_interviewers.email/.name are plain columns, never
+            # encrypted - there's nothing to decrypt for the recipient side.
+            to_address = notification.recipient_email
+            candidate_full_name = "the candidate"
             if campaign_candidate is not None:
-                campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
-                if campaign is not None:
-                    job_description = jd_repo.get_by_id(campaign.jd_id)
-                    if job_description is not None:
-                        job_title = job_description.title
+                candidate = candidate_repo.get_by_id(campaign_candidate.candidate_id)
+                if candidate is not None:
+                    candidate_full_name = encryption_service.decrypt(
+                        candidate.full_name_encrypted, candidate.encryption_key_id,
+                    )
 
-        # Decrypt only here, at send time - never persisted anywhere.
-        to_address = encryption_service.decrypt(candidate.email_encrypted, candidate.encryption_key_id)
-        candidate_full_name = encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
-
-        subject, body = CandidateRejectionEmailService.render_content(
-            template.subject, template.body_template,
-            candidate_full_name=candidate_full_name, job_title=job_title,
-        )
+        context = {
+            "candidate_name": candidate_full_name,
+            "job_title": job_title,
+            **(notification.template_context or {}),
+        }
+        subject = template.subject.format(**context)
+        body = template.body_template.format(**context)
 
         SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body)
 
@@ -122,7 +149,10 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         notification_repo.update(notification)
         notification_repo.commit()
 
-        task_log_service.mark_success(task_log, summary=f"Sent to candidate_id={notification.candidate_id}.")
+        task_log_service.mark_success(
+            task_log,
+            summary=f"Sent {notification.trigger_event.value} to recipient_type={notification.recipient_type.value}.",
+        )
 
     except Exception as ex:
         db.rollback()

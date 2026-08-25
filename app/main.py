@@ -30,6 +30,8 @@ from app.api.routes.talent_pool_routes import filters_router as talent_pool_filt
 from app.api.routes.talent_pool_routes import router as talent_pool_router
 from app.api.routes.audit_log_routes import router as audit_log_router
 from app.api.routes.google_oauth_routes import router as google_oauth_router
+from app.api.routes.interview_feedback_routes import router as interview_feedback_router
+from app.api.routes.user_notification_preference_routes import router as user_notification_preference_router
 from app.api.routes.interview_routes import router as interview_router
 from app.api.routes.oauth_routes import router as oauth_router
 from app.websocket.router import router as websocket_router
@@ -191,6 +193,8 @@ app.include_router(router=talent_pool_filters_router, prefix=API_PREFIX, tags=["
 app.include_router(router=dashboard_routes.router, prefix=API_PREFIX, tags=["Dashboard"])
 app.include_router(router=candidate_actions_routes.router, prefix=API_PREFIX, tags=["Candidate Actions"])
 app.include_router(router=interview_router, prefix=API_PREFIX, tags=["Interview Scheduling"])
+app.include_router(router=interview_feedback_router, prefix=API_PREFIX, tags=["Interview Feedback"])
+app.include_router(router=user_notification_preference_router, prefix=API_PREFIX, tags=["User Notification Preferences"])
 app.include_router(router=oauth_router, prefix=API_PREFIX, tags=["Microsoft OAuth"])
 app.include_router(router=google_oauth_router, prefix=API_PREFIX, tags=["Google OAuth"])
 app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["WebSocket"])

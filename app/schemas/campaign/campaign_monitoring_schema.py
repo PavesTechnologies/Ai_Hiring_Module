@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 # ── Stalled candidates ─────────────────────────────────────────────────
 
 class StalledCandidateItem(BaseModel):
-    campaign_candidate_id: UUID          # anonymous UUID — no PII by design
+    campaign_candidate_id: UUID
+    candidate_name: str                  # decrypted full name - added for the frontend's Stalled tab
     pipeline_stage: str
     days_stalled: float
     last_updated_at: datetime
