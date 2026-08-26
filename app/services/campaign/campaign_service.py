@@ -39,7 +39,6 @@ from app.schemas.campaign.campaign_schema import CampaignCreateRequest, Campaign
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
-from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
@@ -1979,11 +1978,9 @@ class CampaignService:
             self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
 
-        # Epic 5 Step 2 - best-effort, after commit, same reasoning as
-        # _queue_rejection_email: a failure to queue/send this must never
-        # undo the already-committed override.
-        if target == PipelineStage.SELECTED:
-            queue_candidate_selected_email(self.campaign_repo.db, cc)
+        # Selection email is no longer sent automatically here - see
+        # CampaignCandidateService.send_selection_email (manual send
+        # button, matching the "Send Rejection Email" precedent).
         # Epic 5 follow-up - manual re-score trigger, post-commit (see
         # manual_candidate_rescore.py). Never fires for the automated
         # UPLOADED->SCREENING path.

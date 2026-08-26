@@ -739,37 +739,13 @@ def test_transition_into_interview_never_triggers_the_exit_cascade():
 
 
 """
-Epic 5 Step 2 - CANDIDATE_SELECTED email hook, post-commit (transition()
-commits internally, unlike PipelineTransitionService.transition_stage()
-- see candidate_notification_emails.py's own docstring for why the hook
-placement differs between the two). Only SELECTED queues an email here -
-REJECTED/SHORTLISTED share the same cascade-cancel target set above but
-are not candidate_notification_emails.py trigger events.
+M12 follow-up - CANDIDATE_SELECTED email is no longer queued automatically
+from transition() at all (previously fired here post-commit on SELECTED).
+Sending it is now a manual action -
+CampaignCandidateService.send_selection_email - matching the earlier
+"Send Rejection Email" precedent, so there is nothing left to assert here;
+see tests/services/campaign/test_campaign_candidate_send_selection_email.py.
 """
-
-
-def test_transition_to_selected_queues_a_candidate_selected_email_after_commit():
-    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
-    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
-    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
-
-    with patch("app.services.campaign.stage_transition_service.queue_candidate_selected_email") as mock_queue:
-        service.transition(candidate.id, PipelineStage.SELECTED, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
-
-    mock_queue.assert_called_once_with(campaign_candidate_repo.db, candidate)
-    campaign_candidate_repo.commit.assert_called_once()
-
-
-@pytest.mark.parametrize("to_stage", [PipelineStage.REJECTED, PipelineStage.SHORTLISTED])
-def test_transition_to_other_cascade_stages_never_queues_a_selected_email(to_stage):
-    candidate = _make_candidate(pipeline_stage=PipelineStage.INTERVIEW)
-    row = _allowed_row(["HIRING_MANAGER", "HR_ADMIN"], requires_reason=False)
-    service, allowed_transition_repo, campaign_candidate_repo, audit_service = _make_transition_env(candidate, row)
-
-    with patch("app.services.campaign.stage_transition_service.queue_candidate_selected_email") as mock_queue:
-        service.transition(candidate.id, to_stage, Actor(roles=["HIRING_MANAGER"], id="hm-1"))
-
-    mock_queue.assert_not_called()
 
 
 """

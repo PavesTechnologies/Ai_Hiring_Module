@@ -182,38 +182,15 @@ def test_override_from_interview_to_hold_never_cascades():
 # PipelineTransitionService.transition_stage(), which never commits).
 # ----------------------------------------------------------------------
 
-def test_override_from_interview_to_selected_queues_a_candidate_selected_email_after_commit():
-    candidate = _make_candidate(PipelineStage.INTERVIEW)
-    campaign = SimpleNamespace(
-        id=candidate.campaign_id, hiring_manager_id="hm-1", max_candidates=None, status=None,
-    )
-    service, campaign_repo, interview_schedule_repo = _make_service(campaign, candidate)
-    campaign_repo.get_by_id_for_update.return_value = campaign
-
-    with patch("app.services.campaign.campaign_service.queue_candidate_selected_email") as mock_queue:
-        service.override_candidate_stage(
-            campaign.id, candidate.id,
-            StageOverrideRequest(reason="ready to select"),
-            actor_id="hr-1", actor_role="HR_ADMIN",
-        )
-
-    mock_queue.assert_called_once_with(campaign_repo.db, candidate)
-    campaign_repo.commit.assert_called_once()
-
-
-def test_override_from_interview_to_shortlisted_never_queues_a_selected_email():
-    candidate = _make_candidate(PipelineStage.INTERVIEW)
-    campaign = SimpleNamespace(id=candidate.campaign_id, hiring_manager_id="hm-1")
-    service, campaign_repo, interview_schedule_repo = _make_service(campaign, candidate)
-
-    with patch("app.services.campaign.campaign_service.queue_candidate_selected_email") as mock_queue:
-        service.override_candidate_stage(
-            campaign.id, candidate.id,
-            StageOverrideRequest(reason="sending back to shortlist", target_stage="SHORTLISTED"),
-            actor_id="hr-1", actor_role="HR_ADMIN",
-        )
-
-    mock_queue.assert_not_called()
+"""
+M12 follow-up - CANDIDATE_SELECTED email is no longer queued automatically
+from override_candidate_stage (previously fired here post-commit when
+target == SELECTED). Sending it is now a manual action -
+CampaignCandidateService.send_selection_email - matching the earlier
+"Send Rejection Email" precedent; queue_candidate_selected_email is no
+longer imported by campaign_service.py at all, so there is nothing left
+to assert here. See test_campaign_candidate_send_selection_email.py.
+"""
 
 
 # ----------------------------------------------------------------------

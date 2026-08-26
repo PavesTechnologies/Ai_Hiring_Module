@@ -18,6 +18,7 @@ from app.exceptions.pipeline_transition_exceptions import (
     PipelineTransitionReasonRequiredException,
 )
 from app.models.campaigns import CampaignStatus, HiringCampaign
+from app.models.email import EmailTriggerEvent
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
     AIEvaluationStatus,
@@ -91,6 +92,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     BulkSendRejectionEmailResponse,
     ResubmissionInfoResponse,
     SendRejectionEmailResponse,
+    SendSelectionEmailResponse,
     UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
@@ -606,11 +608,9 @@ class CampaignCandidateService:
                 source=TransitionSource.MANUAL,
             )
             self.campaign_candidate_repo.commit()
-            # Epic 5 Step 2 - best-effort, after commit, same reasoning as
-            # _queue_rejection_email: a failure to queue/send this must
-            # never undo the already-committed move.
-            if to_stage == PipelineStage.SELECTED:
-                queue_candidate_selected_email(self.campaign_candidate_repo.db, campaign_candidate)
+            # Selection email is no longer sent automatically here - see
+            # send_selection_email below (manual send button, matching
+            # the "Send Rejection Email" precedent).
             # Epic 5 follow-up - manual re-score trigger, post-commit
             # (see manual_candidate_rescore.py). Never fires for the
             # automated UPLOADED->SCREENING path.
@@ -2363,6 +2363,46 @@ class CampaignCandidateService:
 
         send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
         return SendRejectionEmailResponse(status="queued")
+
+    def send_selection_email(
+        self,
+        campaign_candidate_id: UUID,
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> SendSelectionEmailResponse:
+        """
+        Manual "Send Selection Email" action - mirrors send_rejection_email
+        exactly. Reaching SELECTED (via select_candidate, board drag-and-
+        drop/bulk move, or a stalled-candidate override) no longer queues
+        this email automatically - a human explicitly triggers it once
+        ready, same reasoning as the rejection flow: HR/HM may want to
+        finalize offer details before the candidate is notified.
+
+        queue_candidate_selected_email (unlike CandidateRejectionEmailService.
+        queue_rejection_email) has no return value to inspect for "was
+        there an active template" - it's shared with 0 remaining automatic
+        callers now, but keeps its own best-effort/never-raise contract
+        regardless. So the template check happens explicitly here first,
+        the same outcome (a real ops issue surfaced to the human clicking
+        the button, not a silent no-op) via a different mechanism.
+        """
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+
+        if campaign_candidate.pipeline_stage != PipelineStage.SELECTED:
+            raise CampaignException("This candidate hasn't been selected.", 400)
+
+        db = self.campaign_candidate_repo.db
+        template = EmailTemplateRepository(db).get_active_by_trigger_event(EmailTriggerEvent.CANDIDATE_SELECTED)
+        if template is None:
+            raise CampaignException("No active selection email template is configured.", 500)
+
+        queue_candidate_selected_email(db, campaign_candidate, allow_resend=True)
+        return SendSelectionEmailResponse(status="queued")
 
     def bulk_send_rejection_email(
         self,

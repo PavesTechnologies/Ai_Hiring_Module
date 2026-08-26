@@ -217,13 +217,15 @@ def test_move_pipeline_stage_returns_updated_candidate_response():
 
 
 # ----------------------------------------------------------------------
-# Epic 5 Step 2 - CANDIDATE_SELECTED email hook. move_pipeline_stage is
-# one of PipelineTransitionService's 3 real callers (the other 2 are
-# BulkStageMoveService's bulk_move/move_one) - each needs this hook
-# independently, since transition_stage() itself never commits.
+# M12 follow-up - CANDIDATE_SELECTED email is no longer queued
+# automatically from any stage-move path, including move_pipeline_stage.
+# Sending it is now a manual action - see
+# CampaignCandidateService.send_selection_email and
+# test_campaign_candidate_send_selection_email.py.
 # ----------------------------------------------------------------------
 
-def test_move_pipeline_stage_queues_selected_email_after_commit_when_target_is_selected():
+@pytest.mark.parametrize("target_stage", [PipelineStage.SELECTED, PipelineStage.SHORTLISTED])
+def test_move_pipeline_stage_never_queues_a_selected_email(target_stage):
     cc = _campaign_candidate()
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_by_id.return_value = cc
@@ -238,27 +240,7 @@ def test_move_pipeline_stage_queues_selected_email_after_commit_when_target_is_s
     )
 
     with patch("app.services.campaign.campaign_candidate_service.queue_candidate_selected_email") as mock_queue:
-        service.move_pipeline_stage(cc.id, PipelineStage.SELECTED, actor_id="user-1")
-
-    mock_queue.assert_called_once_with(campaign_candidate_repo.db, cc)
-
-
-def test_move_pipeline_stage_does_not_queue_selected_email_for_other_target_stages():
-    cc = _campaign_candidate()
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    candidate_repo = MagicMock()
-    candidate_repo.get_by_id.return_value = None
-    resume_repo = MagicMock()
-    resume_repo.get_by_id.return_value = None
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-        candidate_repo=candidate_repo, resume_repo=resume_repo,
-    )
-
-    with patch("app.services.campaign.campaign_candidate_service.queue_candidate_selected_email") as mock_queue:
-        service.move_pipeline_stage(cc.id, PipelineStage.SHORTLISTED, actor_id="user-1")
+        service.move_pipeline_stage(cc.id, target_stage, actor_id="user-1")
 
     mock_queue.assert_not_called()
 

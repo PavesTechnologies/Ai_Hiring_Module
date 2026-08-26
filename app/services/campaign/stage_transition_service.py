@@ -17,7 +17,6 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
-from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 
 logger = logging.getLogger(__name__)
 
@@ -520,11 +519,11 @@ class StageTransitionService:
 
         self.campaign_candidate_repo.commit()
 
-        # Epic 5 Step 2 - best-effort, after commit, same reasoning as
-        # _queue_rejection_email: a failure to queue/send this must never
-        # undo the already-committed transition.
-        if to_stage == PipelineStage.SELECTED:
-            queue_candidate_selected_email(self.campaign_candidate_repo.db, locked_candidate)
+        # Selection email is no longer sent automatically on this
+        # transition - see CampaignCandidateService.send_selection_email
+        # (M12 follow-up: recruiters wanted a manual send button here,
+        # matching the earlier "Send Rejection Email" precedent, rather
+        # than a mail firing the instant the stage changes).
 
         # Epic 5 follow-up - manual re-score trigger, post-commit (unlike
         # the cascade-cancel above, this enqueues a Celery task - a

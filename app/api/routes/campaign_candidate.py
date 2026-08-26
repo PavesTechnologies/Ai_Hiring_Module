@@ -37,6 +37,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,
     SendRejectionEmailResponse,
+    SendSelectionEmailResponse,
     SortOrder,
     UpdateResumeResubmissionResponse,
 )
@@ -526,6 +527,32 @@ def send_rejection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
     return APIResponse.ok(data=result, message="Rejection email queued.")
+
+
+@router.post(
+    "/{campaign_candidate_id}/send-selection-email",
+    response_model=APIResponse[SendSelectionEmailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Send Selection Email",
+    description=(
+        "Manual send for a candidate reaching SELECTED (select-candidate action, "
+        "board drag-and-drop, bulk stage moves, stalled-candidate override) - "
+        "this no longer auto-sends; a human explicitly triggers it once ready. "
+        "400 if the candidate isn't currently SELECTED. Re-sending is allowed "
+        "(e.g. after fixing a template typo) - unlike feedback, this isn't a "
+        "one-time locked decision. HIRING_MANAGER (own campaign only) or HR_ADMIN."
+    ),
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+)
+def send_selection_email(
+    campaign_candidate_id: UUID,
+    service: CampaignCandidateService = Depends(get_campaign_candidate_service),
+    user: TokenUser = Depends(get_current_user),
+):
+    result = service.send_selection_email(
+        campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
+    )
+    return APIResponse.ok(data=result, message="Selection email queued.")
 
 
 @router.post(
