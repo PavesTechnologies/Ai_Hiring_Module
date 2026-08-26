@@ -113,12 +113,10 @@ class DashboardService:
         limit: int = 12,
         search: str | None = None,
         status: CampaignStatus | None = None,
-        hiring_manager_id: str | None = None,
     ) -> list[DashboardCampaignCardResponse]:
         params = {
             "recruiter_id": recruiter_id, "show_closed": show_closed, "limit": limit,
             "search": search, "status": status.value if status else None,
-            "hiring_manager_id": hiring_manager_id,
         }
         if not self.cache_service:
             return self._load_campaign_cards(**params)
@@ -139,7 +137,6 @@ class DashboardService:
         limit: int = 12,
         search: str | None = None,
         status: str | None = None,
-        hiring_manager_id: str | None = None,
     ) -> list[DashboardCampaignCardResponse]:
         status = CampaignStatus(status) if status else None
         screening, hm_review, interview = self._sla_thresholds()
@@ -154,7 +151,6 @@ class DashboardService:
             interview_sla_days=interview,
             search=search,
             status=status,
-            hiring_manager_id=hiring_manager_id,
         )
 
         # one batched lookup instead of a name query per card

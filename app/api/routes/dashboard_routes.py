@@ -14,8 +14,6 @@ from app.schemas.dashboard.dashboard_response import (
     RecruiterDashboardSummaryResponse,
     StageTimingResponse,
 )
-from app.exceptions.campaign_exceptions import CampaignException
-from app.models.pipeline import PipelineStage
 from app.schemas.dashboard.candidate_search_schema import (
     CampaignUploaderResponse,
     CandidateFilterResultResponse,
@@ -79,7 +77,6 @@ def get_dashboard_campaigns(
     limit: int = Query(default=12, ge=1, le=50),
     search: str | None = Query(default=None, description="Matches campaign name or JD title."),
     status_filter: CampaignStatus | None = Query(default=None, alias="status"),
-    hiring_manager_id: str | None = Query(default=None),
     service: DashboardService = Depends(get_dashboard_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
@@ -91,7 +88,6 @@ def get_dashboard_campaigns(
         limit=limit,
         search=search,
         status=status_filter,
-        hiring_manager_id=hiring_manager_id,
     )
     return APIResponse.ok(data=cards, message="Campaign cards retrieved successfully")
 

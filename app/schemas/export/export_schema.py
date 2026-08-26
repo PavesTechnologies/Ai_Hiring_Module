@@ -1,7 +1,4 @@
-from datetime import datetime
-from uuid import UUID
-
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel
 
 
 class ExportDispatchResponse(BaseModel):
@@ -17,9 +14,3 @@ class ExportDispatchResponse(BaseModel):
     row_count: int
     threshold: int
     detail: str
-
-
-class BatchScorecardRequest(BaseModel):
-    campaign_candidate_ids: list[UUID] = Field(..., min_length=2, max_length=100)
-    # SINGLE_PDF concatenates with page breaks; ZIP is one PDF per candidate.
-    format: str = Field(default="PDF", pattern="^(PDF|ZIP)$")

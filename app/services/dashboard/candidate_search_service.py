@@ -19,7 +19,7 @@ class CandidateSearchService:
     def __init__(
         self,
         skill_search_repo: SkillSearchRepository,
-        candidate_filter_repo: "CandidateFilterRepository | None" = None,
+        candidate_filter_repo: CandidateFilterRepository,
     ):
         self.skill_search_repo = skill_search_repo
         self.candidate_filter_repo = candidate_filter_repo
@@ -78,11 +78,7 @@ class CandidateSearchService:
     # ── resume-derived filters ────────────────────────────────────────
 
     def filter_candidates(self, campaign_id: UUID, **filters) -> list[UUID] | None:
-        if self.candidate_filter_repo is None:
-            return None
         return self.candidate_filter_repo.filter_candidate_ids(campaign_id, **filters)
 
     def get_campaign_uploaders(self, campaign_id: UUID):
-        if self.candidate_filter_repo is None:
-            return []
         return self.candidate_filter_repo.get_campaign_uploaders(campaign_id)

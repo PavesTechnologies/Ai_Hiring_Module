@@ -288,12 +288,6 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="MAX_BATCH_SCORECARD_EXPORT",
-            value="20",
-            description="Maximum candidates selectable for one batch scorecard export (M11-E05-S02-T02)",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
             key="EXPORT_LINK_EXPIRY_HOURS",
             value="24",
             description="Lifetime of a generated export's signed download link (M11-E05-S01-T03)",
