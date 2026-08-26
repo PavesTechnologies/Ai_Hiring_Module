@@ -208,7 +208,6 @@ class DashboardRepository:
         interview_sla_days: int,
         search: str | None = None,
         status: CampaignStatus | None = None,
-        hiring_manager_id: str | None = None,
     ):
         """
         Every card and all six of its counts in ONE grouped query.
@@ -282,8 +281,6 @@ class DashboardRepository:
             )
         if status is not None:
             stmt = stmt.where(HiringCampaign.status == status)
-        if hiring_manager_id:
-            stmt = stmt.where(HiringCampaign.hiring_manager_id == hiring_manager_id)
 
         return self.db.execute(stmt).all()
 

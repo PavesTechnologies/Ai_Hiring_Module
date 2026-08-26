@@ -2,24 +2,21 @@ import logging
 from datetime import datetime, timezone
 from io import BytesIO
 from uuid import UUID
-from zipfile import ZIP_DEFLATED, ZipFile
 
 from openpyxl import Workbook
 
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import EntityType
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.pipeline import DecisionType, PipelineStage
+from app.models.pipeline import DecisionType
 from app.repositories.export_repository import ExportRepository
 from app.utils.excel_export import ExcelExport
 from app.utils.pdf_export import (
-    build_pdf, bullet_list, data_table, heading, key_value_table, page_break,
-    spacer, title_block,
+    build_pdf, data_table, heading, key_value_table, spacer, title_block,
 )
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EXPORT_ASYNC_THRESHOLD = 500
-DEFAULT_MAX_BATCH_SCORECARD_EXPORT = 20
 
 _CANDIDATE_HEADERS = [
     "Rank", "Candidate ID", "Composite", "Deterministic", "Semantic %",
@@ -104,9 +101,6 @@ class ExportService:
 
     def async_threshold(self) -> int:
         return self._config_int("EXPORT_ASYNC_THRESHOLD", DEFAULT_EXPORT_ASYNC_THRESHOLD)
-
-    def max_batch_scorecards(self) -> int:
-        return self._config_int("MAX_BATCH_SCORECARD_EXPORT", DEFAULT_MAX_BATCH_SCORECARD_EXPORT)
 
     def _require_campaign(self, campaign_id: UUID):
         campaign = self.campaign_repo.get_by_id(campaign_id)
@@ -352,83 +346,6 @@ class ExportService:
             raise CampaignException("Candidate not found in this campaign.", 404)
         return build_pdf(self._scorecard_flowables(campaign, rows[0]), title="Candidate Scorecard")
 
-    # ── batch scorecards ──────────────────────────────────────
-
-    def build_batch_scorecards(
-        self, campaign_id: UUID, campaign_candidate_ids: list[UUID], fmt: str = "PDF",
-    ) -> tuple[bytes, str, str]:
-        """Returns (bytes, filename_suffix, content_type)."""
-        campaign = self._require_campaign(campaign_id)
-        limit = self.max_batch_scorecards()
-        if len(campaign_candidate_ids) < 2:
-            raise CampaignException("Select at least 2 candidates for a batch export.", 422)
-        if len(campaign_candidate_ids) > limit:
-            raise CampaignException(
-                f"Batch scorecard export is limited to {limit} candidates at a time.", 422,
-            )
-
-        rows = self.export_repo.candidates_for_export(
-            campaign_id, campaign_candidate_ids=campaign_candidate_ids,
-        )
-        if not rows:
-            raise CampaignException("None of the selected candidates belong to this campaign.", 404)
-
-        if fmt.upper() == "ZIP":
-            buf = BytesIO()
-            with ZipFile(buf, "w", ZIP_DEFLATED) as zf:
-                for r in rows:
-                    pdf = build_pdf(self._scorecard_flowables(campaign, r), title="Candidate Scorecard")
-                    zf.writestr(f"scorecard_{r.candidate_id}.pdf", pdf)
-            return buf.getvalue(), "zip", "application/zip"
-
-        flowables = []
-        for i, r in enumerate(rows):
-            if i:
-                flowables.append(page_break())
-            flowables += self._scorecard_flowables(campaign, r)
-        return build_pdf(flowables, title="Candidate Scorecards"), "pdf", "application/pdf"
-
-    # ── shortlist package ─────────────────────────────────────
-
-    def build_shortlist_package(self, campaign_id: UUID) -> bytes:
-        campaign = self._require_campaign(campaign_id)
-        rows = self.export_repo.candidates_for_export(
-            campaign_id, pipeline_stage=PipelineStage.SHORTLISTED,
-        )
-
-        flowables = []
-        flowables += title_block(
-            "Shortlist Package",
-            f"{campaign.name} · generated {_dt(datetime.now(timezone.utc))}",
-        )
-        flowables.append(key_value_table([
-            ("Campaign", campaign.name),
-            ("Campaign status", _v(campaign.status)),
-            ("Shortlisted candidates", len(rows)),
-            ("Weight — deterministic", _v(campaign.weight_deterministic)),
-            ("Weight — semantic", _v(campaign.weight_semantic)),
-            ("Weight — AI", _v(campaign.weight_ai)),
-            ("Openings", _v(getattr(campaign, "max_candidates", None))),
-        ]))
-
-        flowables.append(heading("Ranking Summary"))
-        flowables.append(data_table(
-            ["Rank", "Candidate ID", "Composite", "AI Rec.", "Key Strength"],
-            [[
-                str(i),
-                str(r.candidate_id),
-                _v(r.composite_score),
-                _v(r.ai_recommendation),
-                (r.ai_strengths or [None])[0] or "—",
-            ] for i, r in enumerate(rows, start=1)],
-        ))
-
-        for r in rows:
-            flowables.append(page_break())
-            flowables += self._scorecard_flowables(campaign, r)
-
-        return build_pdf(flowables, title="Shortlist Package")
-
     # ── audit trail XLSX ──────────────────────────────────────
 
     def build_audit_trail_xlsx(self, campaign_id: UUID) -> bytes:
@@ -498,74 +415,6 @@ class ExportService:
         buf = BytesIO()
         wb.save(buf)
         return buf.getvalue()
-
-    # ── compliance summary PDF ────────────────────────────────
-
-    def build_compliance_pdf(self, campaign_id: UUID) -> bytes:
-        campaign = self._require_campaign(campaign_id)
-        counts = self.export_repo.layer_counts(campaign_id)
-        ai_counts = self.export_repo.ai_recommendation_counts(campaign_id)
-        reasons = self.export_repo.rejection_reason_distribution(campaign_id)
-        interventions = self.export_repo.manual_interventions(campaign_id)
-
-        total = counts.get("total", 0) or 0
-
-        def pct(n):
-            return f"{(n or 0)} ({round((n or 0) / total * 100, 1)}%)" if total else str(n or 0)
-
-        out = []
-        out += title_block(
-            "Equal Opportunity Compliance Summary",
-            f"{campaign.name} · generated {_dt(datetime.now(timezone.utc))}",
-        )
-        out.append(key_value_table([
-            ("Campaign", campaign.name),
-            ("Status", _v(campaign.status)),
-            ("Total candidates", total),
-            ("Created", _dt(campaign.created_at)),
-        ]))
-
-        out.append(heading("Screening Layer Summary"))
-        out.append(data_table(
-            ["Layer", "Passed", "Failed"],
-            [
-                ["Deterministic", pct(counts.get("det_pass")), pct(counts.get("det_fail"))],
-                ["Semantic", pct(counts.get("sem_pass")), pct(counts.get("sem_fail"))],
-                ["AI", ", ".join(f"{k}: {v}" for k, v in ai_counts.items()) or "—", "—"],
-            ],
-        ))
-
-        out.append(heading("Rejection Reason Distribution"))
-        out.append(data_table(
-            ["Layer", "Reason", "Count"],
-            # Aggregate rows only — no candidate identifiers appear here.
-            [[_v(r[0]), (r[1] or "—")[:120], str(r[2])] for r in reasons],
-        ))
-
-        out.append(heading("Override Summary"))
-        rejected = counts.get("rejected", 0) or 0
-        overridden = counts.get("overridden", 0) or 0
-        out.append(key_value_table([
-            ("Total overrides", overridden),
-            ("Rejected candidates", rejected),
-            ("Override rate", f"{round(overridden / rejected * 100, 1)}%" if rejected else "0%"),
-            ("Fraud-flagged", counts.get("fraud", 0)),
-        ]))
-
-        out.append(heading("Manual Intervention Log"))
-        out.append(data_table(
-            ["Action", "Actor Role", "Count"],
-            # Roles only, never names — reviewer privacy at aggregate level.
-            [[_v(i[0]), i[1] or "System", str(i[2])] for i in interventions],
-        ))
-
-        out.append(spacer(8))
-        out.append(data_table(
-            ["Statement"],
-            [["This report contains aggregate figures only. No candidate-identifying "
-              "information and no individual reviewer names are included."]],
-        ))
-        return build_pdf(out, title="Compliance Summary")
 
     # ── audit ─────────────────────────────────────────────────────────
 

@@ -9,17 +9,14 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Security, status
+from fastapi import APIRouter, Depends, Query, Security
 from fastapi.responses import StreamingResponse
 
 from app.dependencies.export import get_export_service
 from app.enums.constants import ActionType
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
-from app.schemas.export.export_schema import (
-    BatchScorecardRequest,
-    ExportDispatchResponse,
-)
+from app.schemas.export.export_schema import ExportDispatchResponse
 from app.schemas.response import APIResponse
 from app.services.export.export_service import ExportService
 
@@ -62,7 +59,6 @@ def export_candidate_list(
     campaign_id: UUID,
     include_rejected_sheet: bool = Query(default=False),
     campaign_candidate_ids: list[UUID] | None = Query(default=None),
-    force_sync: bool = Query(default=False, description="Bypass the async threshold."),
     export_service: ExportService = Depends(get_export_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
@@ -71,12 +67,11 @@ def export_candidate_list(
     )
     threshold = export_service.async_threshold()
 
-    if count > threshold and not force_sync:
+    if count > threshold:
         from app.tasks.export_tasks import generate_export_task
 
         task = generate_export_task.delay(
             str(campaign_id),
-            kind="CANDIDATE_LIST",
             requested_by=user.user_id,
             options={
                 "include_rejected_sheet": include_rejected_sheet,
@@ -136,58 +131,7 @@ def export_scorecard(
     return _file(content, f"scorecard_{_stamp()}.pdf", "application/pdf")
 
 
-@router.post(
-    "/campaigns/{campaign_id}/scorecards/batch",
-    summary="Batch export candidate scorecards",
-    description=(
-        "2 to MAX_BATCH_SCORECARD_EXPORT candidates, as one concatenated "
-        "PDF or a ZIP of individual PDFs. HR_ADMIN only."
-    ),
-)
-def export_batch_scorecards(
-    campaign_id: UUID,
-    request: BatchScorecardRequest,
-    export_service: ExportService = Depends(get_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    content, ext, ctype = export_service.build_batch_scorecards(
-        campaign_id, request.campaign_candidate_ids, fmt=request.format,
-    )
-    export_service.log_export(
-        actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value, campaign_id=campaign_id,
-        action_type=ActionType.SCORECARD_EXPORTED.value,
-        details={
-            "title": "Batch scorecards exported",
-            "count": len(request.campaign_candidate_ids),
-            "format": request.format,
-        },
-    )
-    return _file(content, f"scorecards_{_stamp()}.{ext}", ctype)
-
-
-@router.get(
-    "/campaigns/{campaign_id}/shortlist-package",
-    summary="Generate the hiring-manager shortlist package",
-    description=(
-        "Cover page, ranking summary and a scorecard page per SHORTLISTED "
-        "candidate, in rank order. HR_ADMIN only."
-    ),
-)
-def export_shortlist_package(
-    campaign_id: UUID,
-    export_service: ExportService = Depends(get_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    content = export_service.build_shortlist_package(campaign_id)
-    export_service.log_export(
-        actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value, campaign_id=campaign_id,
-        action_type=ActionType.SHORTLIST_PACKAGE_EXPORTED.value,
-        details={"title": "Shortlist package generated"},
-    )
-    return _file(content, f"shortlist_package_{_stamp()}.pdf", "application/pdf")
-
-
-# ── scheduled exports ─────────────────────────────────────────────────
+# ── audit trail ───────────────────────────────────────────────────────
 
 
 @router.get(
@@ -210,27 +154,3 @@ def export_audit_trail(
         details={"title": "Audit trail exported"},
     )
     return _file(content, f"audit_trail_{_stamp()}.xlsx", XLSX_TYPE)
-
-
-@router.get(
-    "/campaigns/{campaign_id}/compliance-summary",
-    summary="Export the equal-opportunity compliance summary as PDF",
-    description=(
-        "Aggregate figures only. Contains no candidate-identifying "
-        "information and no individual reviewer names. HR_ADMIN only."
-    ),
-)
-def export_compliance_summary(
-    campaign_id: UUID,
-    export_service: ExportService = Depends(get_export_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    content = export_service.build_compliance_pdf(campaign_id)
-    export_service.log_export(
-        actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value, campaign_id=campaign_id,
-        action_type=ActionType.COMPLIANCE_REPORT_EXPORTED.value,
-        details={"title": "Compliance summary exported"},
-    )
-    return _file(content, f"compliance_summary_{_stamp()}.pdf", "application/pdf")
-
-
