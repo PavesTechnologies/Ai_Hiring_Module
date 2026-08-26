@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # CampaignService.override_candidate_stage - the other 2 places a
 # candidate can leave INTERVIEW from.
 _INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
-    {PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED},
+    {PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED, },
 )
 
 
