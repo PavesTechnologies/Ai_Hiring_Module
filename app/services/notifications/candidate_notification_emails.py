@@ -108,6 +108,7 @@ def _interview_email_context(schedule, interviewers: list) -> dict | None:
 
 def _queue_and_dispatch(
     db, *, campaign_candidate, trigger_event: EmailTriggerEvent, schedule=None, interviewers=None,
+    allow_resend: bool = False,
 ) -> None:
     """
     Every attribute read on campaign_candidate/schedule, every dedup
@@ -118,6 +119,13 @@ def _queue_and_dispatch(
     means this is one of the 3 per-round trigger events (dedup scoped to
     that round); absent means CANDIDATE_SELECTED (dedup scoped to the
     candidate, since it's terminal).
+
+    allow_resend=True skips the dedup check entirely - same convention
+    as CandidateRejectionEmailService.queue_rejection_email's own
+    allow_resend, for the same reason: a human re-sending a notice (e.g.
+    after fixing a template typo) via a manual "Send X Email" action is a
+    reasonable, low-risk action, unlike this function's other automatic
+    callers which must stay dedup-guarded.
     """
     campaign_candidate_id = None
     try:
@@ -136,7 +144,7 @@ def _queue_and_dispatch(
                 campaign_candidate_id, trigger_event,
             )
 
-        if _already_notified(existing):
+        if not allow_resend and _already_notified(existing):
             logger.info(
                 "%s email already queued/sent - skipping duplicate | campaign_candidate_id=%s interview_schedule_id=%s",
                 trigger_event.value, campaign_candidate_id, interview_schedule_id,
@@ -191,5 +199,8 @@ def queue_interview_cancelled_email(db, campaign_candidate, schedule, interviewe
     )
 
 
-def queue_candidate_selected_email(db, campaign_candidate) -> None:
-    _queue_and_dispatch(db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.CANDIDATE_SELECTED)
+def queue_candidate_selected_email(db, campaign_candidate, allow_resend: bool = False) -> None:
+    _queue_and_dispatch(
+        db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.CANDIDATE_SELECTED,
+        allow_resend=allow_resend,
+    )

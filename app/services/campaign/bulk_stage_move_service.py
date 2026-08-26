@@ -11,7 +11,6 @@ from app.schemas.campaign.bulk_stage_move_schema import (
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
-from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 
 # The unified decision model replaced hr_override; a manual stage move records
 # the decision it represents so the reason survives on the candidate itself.
@@ -125,12 +124,9 @@ class BulkStageMoveService:
                 },
             )
             self.campaign_candidate_repo.commit()
-            # Epic 5 Step 2 - best-effort, after commit, same reasoning as
-            # _queue_rejection_email. One per candidate, since a batch
-            # move can select several candidates in a single request.
-            if to_stage == PipelineStage.SELECTED:
-                for cc in candidates:
-                    queue_candidate_selected_email(self.campaign_candidate_repo.db, cc)
+            # Selection email is no longer sent automatically here - see
+            # CampaignCandidateService.send_selection_email (manual send
+            # button, matching the "Send Rejection Email" precedent).
             # Epic 5 follow-up - manual re-score trigger, post-commit
             # (see manual_candidate_rescore.py). Never fires for the
             # automated UPLOADED->SCREENING path.
@@ -212,10 +208,9 @@ class BulkStageMoveService:
                 },
             )
             self.campaign_candidate_repo.commit()
-            # Epic 5 Step 2 - best-effort, after commit, same reasoning as
-            # _queue_rejection_email.
-            if to_stage == PipelineStage.SELECTED:
-                queue_candidate_selected_email(self.campaign_candidate_repo.db, cc)
+            # Selection email is no longer sent automatically here - see
+            # CampaignCandidateService.send_selection_email (manual send
+            # button, matching the "Send Rejection Email" precedent).
             # Epic 5 follow-up - manual re-score trigger, post-commit
             # (see manual_candidate_rescore.py). Never fires for the
             # automated UPLOADED->SCREENING path.

@@ -20,6 +20,7 @@ _SELECT_PATH = "/campaign-candidates/{campaign_candidate_id}/select"
 _REJECT_PATH = "/campaign-candidates/{campaign_candidate_id}/reject-interview"
 _SEND_REJECTION_EMAIL_PATH = "/campaign-candidates/{campaign_candidate_id}/send-rejection-email"
 _BULK_SEND_REJECTION_EMAIL_PATH = "/campaign-candidates/bulk-send-rejection-email"
+_SEND_SELECTION_EMAIL_PATH = "/campaign-candidates/{campaign_candidate_id}/send-selection-email"
 
 
 def _get_route(path: str):
@@ -123,6 +124,21 @@ def test_bulk_send_rejection_email_request_rejects_over_200_ids():
 
     with pytest.raises(ValidationError, match="200"):
         BulkSendRejectionEmailRequest(campaign_candidate_ids=[uuid4() for _ in range(201)])
+
+
+# ----------------------------------------------------------------------
+# Manual "Send Selection Email" action (M12 follow-up) - reaching SELECTED
+# no longer auto-sends; same role gate as Send Rejection Email.
+# ----------------------------------------------------------------------
+
+def test_send_selection_email_route_is_registered():
+    route = _get_route(_SEND_SELECTION_EMAIL_PATH)
+    assert route.path == _SEND_SELECTION_EMAIL_PATH
+
+
+def test_send_selection_email_allows_hiring_manager_and_hr_admin():
+    allowed = _allowed_roles(_get_route(_SEND_SELECTION_EMAIL_PATH))
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
 
 
 # ----------------------------------------------------------------------

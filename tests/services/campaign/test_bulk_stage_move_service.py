@@ -91,40 +91,6 @@ def test_bulk_move_rolls_back_on_a_failed_transition():
     campaign_candidate_repo.commit.assert_not_called()
 
 
-def test_bulk_move_queues_a_selected_email_per_candidate_when_target_is_selected():
-    campaign_id = uuid4()
-    candidates = [_cc(campaign_id), _cc(campaign_id)]
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.side_effect = candidates
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with patch("app.services.campaign.bulk_stage_move_service.queue_candidate_selected_email") as mock_queue:
-        service.bulk_move(
-            campaign_id=campaign_id, campaign_candidate_ids=[c.id for c in candidates],
-            target_stage="SELECTED", reason="both cleared final round", actor_id="hm-1", actor_role="HIRING_MANAGER",
-        )
-
-    assert mock_queue.call_count == 2
-    mock_queue.assert_any_call(campaign_candidate_repo.db, candidates[0])
-    mock_queue.assert_any_call(campaign_candidate_repo.db, candidates[1])
-
-
-def test_bulk_move_does_not_queue_selected_email_for_other_target_stages():
-    campaign_id = uuid4()
-    candidates = [_cc(campaign_id)]
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.side_effect = candidates
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with patch("app.services.campaign.bulk_stage_move_service.queue_candidate_selected_email") as mock_queue:
-        service.bulk_move(
-            campaign_id=campaign_id, campaign_candidate_ids=[c.id for c in candidates],
-            target_stage="SHORTLISTED", reason="promoted after panel review", actor_id="hm-1", actor_role="HIRING_MANAGER",
-        )
-
-    mock_queue.assert_not_called()
-
-
 def test_bulk_move_enqueues_rescore_per_candidate_when_target_is_screening_from_hold():
     campaign_id = uuid4()
     candidates = [_cc(campaign_id, pipeline_stage=PipelineStage.HOLD), _cc(campaign_id, pipeline_stage=PipelineStage.HOLD)]
@@ -180,38 +146,6 @@ def test_move_one_transitions_and_commits():
     assert result.campaign_candidate_id == cc.id
 
 
-def test_move_one_queues_selected_email_after_commit_when_target_is_selected():
-    campaign_id = uuid4()
-    cc = _cc(campaign_id)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with patch("app.services.campaign.bulk_stage_move_service.queue_candidate_selected_email") as mock_queue:
-        service.move_one(
-            campaign_id=campaign_id, campaign_candidate_id=cc.id, target_stage="SELECTED",
-            reason="cleared final round", actor_id="hm-1", actor_role="HIRING_MANAGER",
-        )
-
-    mock_queue.assert_called_once_with(campaign_candidate_repo.db, cc)
-
-
-def test_move_one_does_not_queue_selected_email_for_other_target_stages():
-    campaign_id = uuid4()
-    cc = _cc(campaign_id)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with patch("app.services.campaign.bulk_stage_move_service.queue_candidate_selected_email") as mock_queue:
-        service.move_one(
-            campaign_id=campaign_id, campaign_candidate_id=cc.id, target_stage="SHORTLISTED",
-            reason="promoted after panel review", actor_id="hm-1", actor_role="HIRING_MANAGER",
-        )
-
-    mock_queue.assert_not_called()
-
-
 def test_move_one_enqueues_rescore_after_commit_when_target_is_screening_from_fraud_review():
     campaign_id = uuid4()
     cc = _cc(campaign_id, pipeline_stage=PipelineStage.FRAUD_REVIEW)
@@ -256,23 +190,6 @@ def test_move_one_raises_404_for_candidate_outside_the_campaign():
         )
 
     assert exc_info.value.status_code == 404
-
-
-# ----------------------------------------------------------------------
-# reject_one - a thin wrapper over move_one, never reaches SELECTED.
-# ----------------------------------------------------------------------
-
-def test_reject_one_never_queues_a_selected_email():
-    campaign_id = uuid4()
-    cc = _cc(campaign_id, pipeline_stage=PipelineStage.SCREENING)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with patch("app.services.campaign.bulk_stage_move_service.queue_candidate_selected_email") as mock_queue:
-        service.reject_one(campaign_id=campaign_id, campaign_candidate_id=cc.id, reason="did not meet the bar", actor_id="hm-1", actor_role="HIRING_MANAGER")
-
-    mock_queue.assert_not_called()
 
 
 def test_reject_one_raises_409_when_already_rejected():

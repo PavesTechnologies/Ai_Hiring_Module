@@ -318,3 +318,20 @@ def test_queue_candidate_selected_email_dedups_by_campaign_candidate_terminal_se
 
         notification_repo.create.assert_not_called()
         mock_task.apply_async.assert_not_called()
+
+
+def test_queue_candidate_selected_email_allow_resend_skips_the_dedup_check():
+    """
+    Manual "Send Selection Email" action always passes allow_resend=True -
+    same convention as CandidateRejectionEmailService.queue_rejection_email's
+    own allow_resend, confirming the wiring bypasses the dedup lock above.
+    """
+    existing = SimpleNamespace(status=EmailNotificationStatus.SENT)
+    notification_repo, template_repo = _patched(dedup_rows=[existing])
+    with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
+         patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
+         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+        mod.queue_candidate_selected_email(MagicMock(), _campaign_candidate(), allow_resend=True)
+
+        notification_repo.create.assert_called_once()
+        mock_task.apply_async.assert_called_once()

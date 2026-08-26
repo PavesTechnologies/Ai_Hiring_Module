@@ -942,6 +942,11 @@ class SendRejectionEmailResponse(BaseModel):
     status: str = "queued"
 
 
+class SendSelectionEmailResponse(BaseModel):
+    """Manual "Send Selection Email" action - reaching SELECTED no longer auto-sends; a human explicitly triggers this once ready."""
+    status: str = "queued"
+
+
 class BulkSendRejectionEmailRequest(BaseModel):
     """
     Bulk follow-up to the single-candidate action above. No campaign_id -
