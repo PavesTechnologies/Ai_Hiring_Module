@@ -38,6 +38,7 @@ from app.services.notifications.candidate_rejection_email_service import Candida
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +65,24 @@ def _cancel_downstream_ai_evaluation(
     task_log_service: CeleryTaskLogService,
     ai_evaluation_repo: CampaignCandidateAIEvaluationRepository,
 ) -> None:
-
+    """
+    Bug fix: previously returned early (no SKIPPED write at all) when no
+    QUEUED AI_EVALUATE task existed - which is the common case, since
+    AI_EVALUATE is only ever queued after a semantic PASS
+    (semantic_scoring_tasks.py's _enqueue_ai_evaluation). A candidate
+    rejected at DETERMINISTIC or SEMANTIC on its first pass through never
+    had an AI_EVALUATE row to cancel, so this always short-circuited and
+    the candidate's ai_evaluation_status was left at whatever get_or_create's
+    default is (PENDING) - indistinguishable from "not processed yet" on
+    the AI evaluation tab. Now always marks SKIPPED, whether or not there
+    was anything queued to cancel.
+    """
     queued_ai_evaluate_logs = [
         log for log in task_log_repo.get_by_campaign_candidate_and_task_type(
             campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
         )
         if log.status == TaskStatus.QUEUED
     ]
-    if not queued_ai_evaluate_logs:
-        return
-
     for log in queued_ai_evaluate_logs:
         task_log_service.mark_dead(log, _AI_EVALUATION_SKIPPED_ERROR_MESSAGE)
         logger.info(
@@ -333,6 +342,14 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         )
 
         campaign_candidate_repo.commit()
+
+        try:
+            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

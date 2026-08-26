@@ -13,11 +13,14 @@ from pydantic import ValidationError
 
 from app.api.routes.campaign_candidate import router
 from app.models.identity import UserRole
-from app.schemas.campaign.campaign_candidate_schema import RejectAtInterviewRequest
+from app.schemas.campaign.campaign_candidate_schema import BulkSendRejectionEmailRequest, RejectAtInterviewRequest
 
 _ADVANCE_PATH = "/campaign-candidates/{campaign_candidate_id}/advance-to-interview"
 _SELECT_PATH = "/campaign-candidates/{campaign_candidate_id}/select"
 _REJECT_PATH = "/campaign-candidates/{campaign_candidate_id}/reject-interview"
+_SEND_REJECTION_EMAIL_PATH = "/campaign-candidates/{campaign_candidate_id}/send-rejection-email"
+_BULK_SEND_REJECTION_EMAIL_PATH = "/campaign-candidates/bulk-send-rejection-email"
+_SEND_SELECTION_EMAIL_PATH = "/campaign-candidates/{campaign_candidate_id}/send-selection-email"
 
 
 def _get_route(path: str):
@@ -77,6 +80,64 @@ def test_reject_interview_route_gate_admits_both_roles_leaving_the_actual_reject
     the gate here must NOT be HIRING_MANAGER-only.
     """
     allowed = _allowed_roles(_get_route(_REJECT_PATH))
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+
+
+# ----------------------------------------------------------------------
+# Manual "Send Rejection Email" action.
+# ----------------------------------------------------------------------
+
+def test_send_rejection_email_route_is_registered():
+    route = _get_route(_SEND_REJECTION_EMAIL_PATH)
+    assert route.path == _SEND_REJECTION_EMAIL_PATH
+
+
+def test_send_rejection_email_allows_hiring_manager_and_hr_admin():
+    allowed = _allowed_roles(_get_route(_SEND_REJECTION_EMAIL_PATH))
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+
+
+# ----------------------------------------------------------------------
+# Bulk follow-up to Send Rejection Email - same role gate as the
+# single-candidate action; ownership is enforced per-id inside the
+# service, not narrowed at the route.
+# ----------------------------------------------------------------------
+
+def test_bulk_send_rejection_email_route_is_registered():
+    route = _get_route(_BULK_SEND_REJECTION_EMAIL_PATH)
+    assert route.path == _BULK_SEND_REJECTION_EMAIL_PATH
+
+
+def test_bulk_send_rejection_email_allows_hiring_manager_and_hr_admin():
+    allowed = _allowed_roles(_get_route(_BULK_SEND_REJECTION_EMAIL_PATH))
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+
+
+def test_bulk_send_rejection_email_request_accepts_an_empty_list():
+    """Unlike BulkStageMoveRequest (min_length=1), an empty batch is a valid no-op here."""
+    request = BulkSendRejectionEmailRequest(campaign_candidate_ids=[])
+    assert request.campaign_candidate_ids == []
+
+
+def test_bulk_send_rejection_email_request_rejects_over_200_ids():
+    from uuid import uuid4
+
+    with pytest.raises(ValidationError, match="200"):
+        BulkSendRejectionEmailRequest(campaign_candidate_ids=[uuid4() for _ in range(201)])
+
+
+# ----------------------------------------------------------------------
+# Manual "Send Selection Email" action (M12 follow-up) - reaching SELECTED
+# no longer auto-sends; same role gate as Send Rejection Email.
+# ----------------------------------------------------------------------
+
+def test_send_selection_email_route_is_registered():
+    route = _get_route(_SEND_SELECTION_EMAIL_PATH)
+    assert route.path == _SEND_SELECTION_EMAIL_PATH
+
+
+def test_send_selection_email_allows_hiring_manager_and_hr_admin():
+    allowed = _allowed_roles(_get_route(_SEND_SELECTION_EMAIL_PATH))
     assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
 
 

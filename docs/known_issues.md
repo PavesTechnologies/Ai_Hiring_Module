@@ -7,6 +7,149 @@ workaround is until someone actually fixes it.
 
 ---
 
+## M12: 2 pre-Epic-4 candidates at INTERVIEW with no `interview_schedules` row (backfilled 2026-08-17)
+
+**Status:** resolved. One-time backfill, not evidence of an ongoing gap.
+
+Found during the post-merge interview-endpoint contract re-verification
+(confirming the `campaign_service.py` caching-layer merge hadn't
+disturbed the 3 interview scheduling endpoints): 2 `campaign_candidates`
+rows at `pipeline_stage = 'INTERVIEW'`
+(`f66475ec-17ed-41e7-b2b4-965654ca7151`,
+`641044a6-3caf-4cb3-9b3d-22d47125b1d2`, both in campaign
+`9765547c-4885-4138-8002-87c8948ec512`) had no matching
+`interview_schedules` row at all.
+
+**Root cause:** both candidates transitioned to `INTERVIEW` before Epic 4
+Step 2's `StageTransitionService.transition()` hook existed - the hook
+that auto-creates a `PENDING` `interview_schedules` row on every
+HM_REVIEW/FRAUD_REVIEW -> INTERVIEW transition. Their transitions predate
+that code; nothing about the hook itself has ever failed to fire for a
+transition that ran after it was deployed. Practical impact: opening
+either candidate's schedule form would hit an unhandled 409 (`schedule()`
+only succeeds from an existing `PENDING` row - there's no row at all for
+these two to be in the wrong state, they're just missing one).
+
+**How it was fixed:** a one-time script (not a permanent code path) ran
+`InterviewScheduleRepository.get_or_create_pending(campaign_candidate_id)`
+directly against the live DB for both ids - the exact same method (same
+shape, same defaults) `transition()`'s hook itself calls, so the backfilled
+rows are indistinguishable from ones the hook would have created at the
+time. Both inserted as fresh `PENDING` rows (`was_created=True`, every
+other column null). Confirmed afterward: zero `campaign_candidates` at
+`INTERVIEW` without a matching `interview_schedules` row (3 candidates at
+`INTERVIEW`, 3 `interview_schedules` rows), and zero duplicate
+`campaign_candidate_id` rows (the `UNIQUE(campaign_candidate_id)`
+constraint was never at risk, but checked directly rather than assumed).
+
+**Correction (2026-08-17, later the same day):** the closing claim below
+was wrong, and it's worth naming plainly why rather than quietly editing
+it away. It said:
+
+> the hook covers 100% of transitions from the moment it was deployed
+> onward - this backfill exists only to cover the handful of candidates
+> that moved before that moment.
+
+That was true only for transitions going through
+`StageTransitionService.transition()` - it implicitly assumed that was
+the *only* way `pipeline_stage` could ever become `INTERVIEW`. It isn't.
+A third candidate hit the identical unhandled-409 symptom the same day,
+via a completely different code path that was never touched by the Epic
+4 Step 2 hook at all. See the next entry for the full finding and fix -
+this entry's backfill and root-cause description for the original 2
+candidates are still accurate, only the "not an ongoing gap" conclusion
+was overclaimed.
+
+---
+
+## M12: the INTERVIEW-entry hook was missing from 2 of 3 real pipeline-stage-writing paths (fixed 2026-08-17)
+
+**Status:** resolved. Confirmed via full codebase sweep - all 3 real
+`pipeline_stage` writers now carry the hook; no others exist.
+
+Surfaced within hours of the entry above, via a live 409 during frontend
+integration testing on a candidate that had genuinely reached
+`INTERVIEW` (`6706546a-0dcf-48f1-9567-62163122b697`, campaign
+`8ad83be2-7222-4f2c-89e4-7b66d2fcfb62`) - the entry above's "not an
+ongoing gap" claim turned out to be wrong within the same day it was
+written, which is exactly why it's being corrected in place above rather
+than left to stand.
+
+**Root cause:** this codebase has **three** independent code paths that
+can write `campaign_candidates.pipeline_stage`, not one:
+
+1. `StageTransitionService.transition()` - HM_REVIEW/FRAUD_REVIEW ->
+   INTERVIEW, used by Epic 1's `advance_to_interview`. **Had** the Epic 4
+   Step 2 hook already.
+2. `PipelineTransitionService.transition_stage()` - the generic engine
+   behind `move_pipeline_stage` (Pipeline Board drag-and-drop) and
+   `BulkStageMoveService`. Its own class docstring claimed "nothing in
+   the codebase calls this yet... still zero call sites of its own" -
+   true when Epic 3 wrote it, false by the time Epic 4 shipped (both
+   real callers above already existed), and nobody caught the staleness
+   because **this class had zero test coverage anywhere** - the one test
+   file that exercises `move_pipeline_stage`
+   (`test_campaign_candidate_board.py`) mocks `PipelineTransitionService`
+   out entirely, so its real `transition_stage()` body has never been
+   run by a test. **Did not have the hook.** This is exactly how the
+   live candidate above reached INTERVIEW with no `interview_schedules`
+   row: a Pipeline Board drag-and-drop, SHORTLISTED -> INTERVIEW,
+   `transition_source='MANUAL'`.
+3. `CampaignService.override_candidate_stage()` (the "Stalled
+   Candidates" manual-override action) - calls
+   `CampaignRepository.transition_candidate_stage()` directly, a third,
+   lower-level writer that neither of the other two engines wrap.
+   `_STAGE_OVERRIDE_NEXT` maps `HM_REVIEW -> INTERVIEW` as a natural
+   override target, and `target_stage` can also name `INTERVIEW`
+   explicitly. **Also had zero test coverage** for this method, and
+   **did not have the hook** either. Found by deliberately auditing for
+   *every* writer of `pipeline_stage`, not by waiting for a third live
+   incident - grepped `\.pipeline_stage = ` across `app/` and checked
+   each hit's target stage(s) individually.
+
+The common thread: the hook was added once, to the one class Epic 4's
+own build prompt happened to name, without auditing whether it was
+genuinely the only writer. It wasn't - both plain "does this call
+transition_stage" instances would have caught it immediately, and the
+absence of tests for both other classes is what let the gap ship
+unnoticed in each case.
+
+**How it was fixed:**
+- Backfilled the newly-found live gap immediately
+  (`InterviewScheduleRepository.get_or_create_pending`, same method,
+  same live-verified zero-gaps-after check as the entry above).
+- Added the identical hook (`if to_stage == PipelineStage.INTERVIEW:
+  self.interview_schedule_repo.get_or_create_pending(...)`, same-
+  transaction, before commit) to both `PipelineTransitionService.
+  transition_stage()` and `CampaignService.override_candidate_stage()`.
+- `PipelineTransitionService.interview_schedule_repo` is a **required**
+  constructor param (same reversal `StageTransitionService` already went
+  through) - `CampaignService.interview_schedule_repo` is optional,
+  defaulted from `db` (matching that class's own existing convention for
+  every other db-backed collaborator, e.g. `circuit_breaker_repo`), so
+  the existing `get_campaign_service` DI wiring needed no change.
+- Corrected `PipelineTransitionService`'s stale class docstring - it no
+  longer claims to have zero callers.
+- Added real tests for both classes' `to_stage=INTERVIEW` behavior
+  (`test_pipeline_transition_service.py`,
+  `test_campaign_service_override_candidate_stage.py`) - neither existed
+  before this fix, which is precisely why the gap survived as long as it
+  did in each case.
+- Full sweep confirmed: exactly 3 places in `app/` ever assign
+  `.pipeline_stage = <something>`; all 3 now carry the hook (the other 2
+  hits from that grep - `campaign_candidate_repository.py`'s
+  `update_pipeline_stage` and `override_revert_service.py`'s hardcoded
+  `REJECTED` - are called by an already-covered engine or never target
+  INTERVIEW at all, respectively).
+
+**Not (this time) claiming "not an ongoing gap" without the same audit
+that missed it twice already:** confirmed via the grep above, not
+assumed - if a fourth writer is ever added, it needs this same hook
+wired in as part of that change, not discovered later via another live
+409.
+
+---
+
 ## Test suite: widespread staleness from the `decision_*` model redesign
 
 **Status:** open, discovered 2026-08-10, not fixed. Scope is large enough that
@@ -461,3 +604,110 @@ production, with nothing catching a regression.
 `transition()` method — `transition_to_rejected`/`apply_hr_override`/
 `transition_to_screening`/`transition_on_ai_success` are all pre-existing
 and untouched by E02's changes.
+
+---
+
+## Epic 5: `MAX_EMAIL_RETRY_COUNT` (seeded, value 4) vs. the actual hardcoded retry cap (3)
+
+**Status:** open, discovered 2026-08-18 during Epic 5 Step 0's investigation.
+Real, minor inconsistency — not fixed as part of Step 2.
+
+`seed_platform_config.py` seeds `MAX_EMAIL_RETRY_COUNT = "4"`, described as
+"Max attempts for a transient interview/notification email send failure
+before dead-lettering." Nothing in the codebase actually reads this config
+key — `app/tasks/email_tasks.py`'s `send_candidate_email_task` uses its own
+hardcoded `_EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, ...)` instead,
+unrelated to the seeded value. Confirmed via a repo-wide grep for
+`MAX_EMAIL_RETRY_COUNT` — the seed row is the only reference anywhere.
+
+Practical impact is small: email sends really do cap at 3 attempts before
+dead-lettering, not 4, and nothing currently depends on the seeded value
+being authoritative. Worth fixing eventually (either read the config value
+into `_EMAIL_RETRY_POLICY.max_attempts` at task start, or delete the unused
+seed row so it stops implying a behavior that isn't real), but out of scope
+for Epic 5 Step 2's recipient-model widening.
+
+---
+
+## Epic 5: real, built infrastructure with zero current callers - not bugs, deliberately forward-scoped
+
+**Status:** informational, not a defect. Naming the pattern explicitly
+because it's now happened twice with the same shape, and whoever picks up
+the feature each of these is actually waiting on should know the
+groundwork already exists rather than re-discovering or re-building it.
+
+- **`SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES`** (seeded platform
+  config, M12) - describes batching `SHORTLISTED` notifications into a
+  digest. No `SHORTLISTED` trigger event exists in `EmailTriggerEvent`,
+  and no digest/batching mechanism exists anywhere in this codebase.
+  Waiting on: whatever eventually decides shortlist notifications should
+  exist at all, and in digest form specifically.
+- **`user_notification_preferences`** (table + `is_notification_enabled()`
+  helper + minimal `GET`/`PUT /users/me/notification-preferences` API,
+  Epic 5 Step 3) - fully built and tested, but nothing calls
+  `is_notification_enabled()` yet. Confirmed during Step 3's own
+  investigation: of the 6 real `EmailTriggerEvent` values, the 5 with a
+  live send path today (`CANDIDATE_REJECTED`, `INTERVIEW_SCHEDULED`/
+  `RESCHEDULED`/`CANCELLED`, `CANDIDATE_SELECTED`) all target a candidate
+  or an external interviewer - neither has a `users.id` row to hold a
+  preference against. `UPLOAD_PERMANENTLY_FAILED` is the one trigger
+  event actually scoped for internal users (the uploader + all active
+  HR_ADMIN), but it has zero send path of its own (see the
+  `UPLOAD_PERMANENTLY_FAILED`-precedent comment in `app/models/email.py`
+  - that's D11, still unbuilt). Waiting on: D11 (or any other future
+  internal-user-facing trigger). Whoever builds that should know this
+  table and helper are already sitting there ready, not something to
+  design from scratch.
+
+Both were deliberately NOT forced into a fake integration just to prove
+they're wired - an honest "built, not yet consumed" beats a contrived
+caller that would need undoing later. If a third instance of this same
+shape turns up, it's worth asking whether trigger-event infrastructure is
+systematically being scoped ahead of the features that will use it, or
+whether that's simply an accurate reflection of this epic's own staged
+build order.
+
+---
+
+## Interview scheduling: historical rows' real timezone is unrecoverable (fixed going forward 2026-08-24)
+
+**Status:** fixed for every schedule()/reschedule() call from this date
+forward; one residual gap in historical data that cannot be corrected by
+code.
+
+Until this fix, `ScheduleInterviewRequest`/`RescheduleInterviewRequest`
+had no timezone field at all - `_combine_utc()` just tagged whatever raw
+date/time the client sent with `tzinfo=UTC`, a relabel, not a conversion.
+Every downstream reader (the Teams/Google calendar invite payload, the 3
+notification email builders, the interviewer feedback form) then echoed
+those mislabeled numbers, so they all agreed with each other internally
+but none were actually correct - and `request_feedback()`/`complete()`'s
+"has this interview happened yet" gates and the feedback-request sweep
+compared this fake-UTC value against a real `datetime.now(timezone.utc)`,
+firing up to a full UTC-offset early/late. Reported live as a mail-vs-
+calendar time discrepancy - the calendar invite is auto-localized by the
+viewer's own calendar client (which is why it looked "right" to some
+viewers and "wrong" to others), while the static email text was never
+localized to anything.
+
+Fixed: `interview_schedules.timezone` (new column, IANA zone name) is now
+required on the request schema, and `_combine_to_utc()` does a genuine
+`ZoneInfo`-based conversion before storage. Every reader that used to
+format `start_at`/`end_at` directly now converts back to `schedule.
+timezone` first (`InterviewScheduleService._to_response`,
+`InterviewFeedbackService.get_feedback_form_context`,
+`candidate_notification_emails._interview_email_context`,
+`interview_interviewer_lifecycle_emails._round_context`). The calendar
+invite payload needed no change - once the underlying instant is
+genuinely UTC, declaring `"timeZone": "UTC"` in the Graph/Google payload
+is already correct.
+
+**The one thing this cannot fix:** rows created before this migration
+have `timezone` backfilled to `'UTC'` as a technical column default, not
+a claim that they were actually scheduled in UTC - their real intended
+timezone was never recorded anywhere and cannot be recovered. Any
+still-active historical round scheduled by a non-UTC caller will keep
+displaying whatever wrong time it already had. This only matters for
+rounds still SCHEDULED/RESCHEDULED (not yet COMPLETED/CANCELLED) as of
+2026-08-24; no backfill/correction script is possible without knowing
+what timezone each one actually meant.

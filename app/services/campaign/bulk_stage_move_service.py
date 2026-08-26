@@ -9,6 +9,7 @@ from app.schemas.campaign.bulk_stage_move_schema import (
     SingleStageMoveResultResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 
 # The unified decision model replaced hr_override; a manual stage move records
@@ -123,6 +124,15 @@ class BulkStageMoveService:
                 },
             )
             self.campaign_candidate_repo.commit()
+            # Selection email is no longer sent automatically here - see
+            # CampaignCandidateService.send_selection_email (manual send
+            # button, matching the "Send Rejection Email" precedent).
+            # Epic 5 follow-up - manual re-score trigger, post-commit
+            # (see manual_candidate_rescore.py). Never fires for the
+            # automated UPLOADED->SCREENING path.
+            if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+                for cc in candidates:
+                    enqueue_manual_rescore(self.campaign_candidate_repo.db, cc)
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
@@ -198,6 +208,14 @@ class BulkStageMoveService:
                 },
             )
             self.campaign_candidate_repo.commit()
+            # Selection email is no longer sent automatically here - see
+            # CampaignCandidateService.send_selection_email (manual send
+            # button, matching the "Send Rejection Email" precedent).
+            # Epic 5 follow-up - manual re-score trigger, post-commit
+            # (see manual_candidate_rescore.py). Never fires for the
+            # automated UPLOADED->SCREENING path.
+            if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+                enqueue_manual_rescore(self.campaign_candidate_repo.db, cc)
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise

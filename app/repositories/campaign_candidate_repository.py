@@ -497,6 +497,14 @@ class CampaignCandidateRepository:
         not fixed here, out of scope for this refactor.
         """
         campaign_candidate.resume_id = new_resume_id
+        self._reset_evaluation_derived_fields(campaign_candidate)
+
+        self.db.flush()
+        self.db.refresh(campaign_candidate)
+        return campaign_candidate
+
+    def _reset_evaluation_derived_fields(self, campaign_candidate: CampaignCandidate) -> None:
+        """Shared by reset_for_resubmission (new resume) and reset_for_rescore (same resume, manual re-score trigger) - every evaluation-derived field, nothing identity/relationship-related."""
         campaign_candidate.screened_at = None
         campaign_candidate.deterministic_score = None
         campaign_candidate.deterministic_passed = None
@@ -513,6 +521,29 @@ class CampaignCandidateRepository:
         campaign_candidate.decision_details = None
         campaign_candidate.decision_by_user_id = None
         campaign_candidate.decision_at = None
+
+    def reset_for_rescore(self, campaign_candidate: CampaignCandidate) -> CampaignCandidate:
+        """
+        Epic 5 follow-up - manual re-score trigger (moving a candidate to
+        SCREENING from anywhere other than UPLOADED). Same field list as
+        reset_for_resubmission, EXCEPT resume_id - there's no new resume
+        here, the same one is being re-scored, so pointing at a
+        different resume would be wrong. AI evaluation fields still live
+        on the separate CampaignCandidateAIEvaluation row - reset
+        separately by the caller via CampaignCandidateAIEvaluationRepository.reset().
+
+        Unlike reset_for_resubmission, also clears semantic_breakdown and
+        semantic_score_computed_at - found live, via a candidate re-scored
+        from FRAUD_REVIEW showing a stale PASSED breakdown from its prior
+        scoring run (semantic_score itself was NULL, but semantic_breakdown
+        JSON survives reset_for_resubmission's pre-existing gap) alongside a
+        semantic scoring re-trigger that never actually dispatched. Not
+        applied to reset_for_resubmission - that path's own copy of this gap
+        is untouched, out of scope for this fix.
+        """
+        self._reset_evaluation_derived_fields(campaign_candidate)
+        campaign_candidate.semantic_breakdown = None
+        campaign_candidate.semantic_score_computed_at = None
 
         self.db.flush()
         self.db.refresh(campaign_candidate)
