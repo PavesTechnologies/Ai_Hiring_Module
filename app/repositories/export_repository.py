@@ -10,7 +10,6 @@ from app.models.pipeline import (
     CampaignCandidate,
     CampaignCandidateAIEvaluation,
     CampaignCandidateStageHistory,
-    DecisionType,
     PipelineStage,
 )
 from app.models.skills import CandidateSkill
@@ -37,7 +36,6 @@ class ExportRepository:
         campaign_id: UUID,
         *,
         campaign_candidate_ids: list[UUID] | None = None,
-        pipeline_stage: PipelineStage | None = None,
     ):
         """
         One row per candidate with the AI evaluation joined. LEFT JOIN, not
@@ -89,8 +87,6 @@ class ExportRepository:
         )
         if campaign_candidate_ids is not None:
             stmt = stmt.where(CampaignCandidate.id.in_(campaign_candidate_ids))
-        if pipeline_stage is not None:
-            stmt = stmt.where(CampaignCandidate.pipeline_stage == pipeline_stage)
         return self.db.execute(stmt).all()
 
     def days_in_current_stage(self, campaign_id: UUID) -> dict[str, int]:
@@ -212,83 +208,3 @@ class ExportRepository:
             .order_by(CampaignCandidateStageHistory.changed_at.asc())
         )
         return self.db.execute(stmt).all()
-
-    def layer_counts(self, campaign_id: UUID) -> dict:
-        """
-        Screening funnel: how many candidates passed/failed each layer.
-        FILTER beats several COUNT round trips and keeps the percentages
-        internally consistent by construction.
-        """
-        row = self.db.execute(
-            select(
-                func.count(CampaignCandidate.id).label("total"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.deterministic_passed.is_(True)).label("det_pass"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.deterministic_passed.is_(False)).label("det_fail"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.semantic_passed.is_(True)).label("sem_pass"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.semantic_passed.is_(False)).label("sem_fail"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.pipeline_stage == PipelineStage.REJECTED).label("rejected"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.decision_type == DecisionType.RESET).label("overridden"),
-                func.count(CampaignCandidate.id).filter(
-                    CampaignCandidate.is_fraud_flagged.is_(True)).label("fraud"),
-            ).where(CampaignCandidate.campaign_id == campaign_id)
-        ).first()
-        return dict(row._mapping) if row else {}
-
-    def ai_recommendation_counts(self, campaign_id: UUID) -> dict[str, int]:
-        rows = self.db.execute(
-            select(
-                CampaignCandidateAIEvaluation.ai_recommendation,
-                func.count(CampaignCandidateAIEvaluation.id),
-            )
-            .join(
-                CampaignCandidate,
-                CampaignCandidate.id == CampaignCandidateAIEvaluation.campaign_candidate_id,
-            )
-            .where(CampaignCandidate.campaign_id == campaign_id)
-            .group_by(CampaignCandidateAIEvaluation.ai_recommendation)
-        ).all()
-        return {
-            (r[0].value if hasattr(r[0], "value") else str(r[0])): r[1]
-            for r in rows if r[0] is not None
-        }
-
-    def rejection_reason_distribution(self, campaign_id: UUID, limit: int = 15):
-        """Aggregate only — deliberately carries no candidate identifiers."""
-        rows = self.db.execute(
-            select(
-                CampaignCandidate.decision_source,
-                CampaignCandidate.decision_reason,
-                func.count(CampaignCandidate.id).label("cnt"),
-            )
-            .where(
-                CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.pipeline_stage == PipelineStage.REJECTED,
-            )
-            .group_by(CampaignCandidate.decision_source, CampaignCandidate.decision_reason)
-            .order_by(func.count(CampaignCandidate.id).desc())
-            .limit(limit)
-        ).all()
-        return rows
-
-    def manual_interventions(self, campaign_id: UUID):
-        """
-        Actor ROLE only, never individual names — reviewer
-        privacy at aggregate level. Grouped so no name can leak.
-        """
-        rows = self.db.execute(
-            select(
-                AuditLog.action_type,
-                AuditLog.actor_role,
-                func.count(AuditLog.id).label("cnt"),
-            )
-            .where(AuditLog.campaign_id == campaign_id)
-            .group_by(AuditLog.action_type, AuditLog.actor_role)
-            .order_by(func.count(AuditLog.id).desc())
-        ).all()
-        return rows

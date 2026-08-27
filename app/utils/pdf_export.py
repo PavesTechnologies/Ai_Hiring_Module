@@ -3,10 +3,7 @@ M11-E05 PDF building blocks.
 
 The XLSX counterpart is app/utils/excel_export.py; this mirrors its role for
 PDF so no service has to know reportlab's API directly. Everything returns
-flowables, which the caller assembles into one document — that is what lets a
-single scorecard (S02-T01), a concatenated batch (S02-T02) and the shortlist
-package (S02-T03) share exactly the same page rendering instead of three
-lookalike implementations that drift.
+flowables, which the caller assembles into one document.
 """
 from io import BytesIO
 
@@ -16,7 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
 BRAND = colors.HexColor("#4F81BD")
@@ -62,10 +59,6 @@ def spacer(height=6):
     return Spacer(1, height)
 
 
-def page_break():
-    return PageBreak()
-
-
 def key_value_table(pairs, col_widths=(55 * mm, 115 * mm)):
     """Two-column label/value block — the shape most scorecard sections take."""
     rows = [[_p(f"<b>{k}</b>"), _p(v)] for k, v in pairs]
@@ -100,12 +93,6 @@ def data_table(headers, rows, col_widths=None):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     return t
-
-
-def bullet_list(items, empty="None recorded."):
-    if not items:
-        return _p(empty, "small")
-    return [_p(f"• {i}") for i in items]
 
 
 def _footer(canvas, doc):

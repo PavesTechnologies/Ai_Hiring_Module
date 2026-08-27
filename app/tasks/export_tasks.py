@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import ActionType
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
@@ -25,17 +25,18 @@ from app.services.export.export_service import ExportService
 logger = logging.getLogger(__name__)
 
 EXPORT_TASK_TYPE = "EXPORT_GENERATE"
+EXPORT_KIND = "CANDIDATE_LIST"
 EXPORT_BUCKET = "exports"
 DEFAULT_LINK_EXPIRY_HOURS = 24
 
 
-def export_idempotency_key(campaign_id, kind: str, stamp: str) -> str:
+def export_idempotency_key(campaign_id, stamp: str) -> str:
     """
     celery_task_log has no campaign_id column, so the campaign is encoded here.
     That makes the key both a genuine dedupe key and the only way to list a
     campaign's export history (S03-T03) without a schema change.
     """
-    return f"{EXPORT_TASK_TYPE}:{campaign_id}:{kind}:{stamp}"
+    return f"{EXPORT_TASK_TYPE}:{campaign_id}:{EXPORT_KIND}:{stamp}"
 
 
 def _build_service(db) -> ExportService:
@@ -60,7 +61,6 @@ def _link_expiry_seconds(db) -> int:
 def generate_export_task(
     self,
     campaign_id: str,
-    kind: str = "CANDIDATE_LIST",
     requested_by: str | None = None,
     options: dict | None = None,
 ):
@@ -89,41 +89,27 @@ def generate_export_task(
         task_log = CeleryTaskLog(
             id=uuid4(),
             task_id=str(self.request.id or uuid4()),
-            idempotency_key=options.get("idempotency_key") or export_idempotency_key(cid, kind, stamp),
+            idempotency_key=options.get("idempotency_key") or export_idempotency_key(cid, stamp),
             task_type=EXPORT_TASK_TYPE,
             created_by=requested_by,
-            title=f"{kind} export — {campaign.name}",
+            title=f"{EXPORT_KIND} export — {campaign.name}",
             status=TaskStatus.RUNNING,
             started_at=started,
         )
         db.add(task_log)
         db.commit()
 
-        if kind == "SHORTLIST_PACKAGE":
-            content = service.build_shortlist_package(cid)
-            ext, ctype = "pdf", "application/pdf"
-        elif kind == "AUDIT_TRAIL":
-            content = service.build_audit_trail_xlsx(cid)
-            ext, ctype = "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        elif kind == "COMPLIANCE":
-            content = service.build_compliance_pdf(cid)
-            ext, ctype = "pdf", "application/pdf"
-        elif kind == "BATCH_SCORECARDS":
-            ids = [UUID(str(i)) for i in options.get("campaign_candidate_ids", [])]
-            content, ext, ctype = service.build_batch_scorecards(
-                cid, ids, fmt=options.get("format", "PDF"),
-            )
-        else:
-            content = service.build_candidate_list_xlsx(
-                cid,
-                campaign_candidate_ids=[
-                    UUID(str(i)) for i in options["campaign_candidate_ids"]
-                ] if options.get("campaign_candidate_ids") else None,
-                include_rejected_sheet=bool(options.get("include_rejected_sheet")),
-            )
-            ext, ctype = "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        content = service.build_candidate_list_xlsx(
+            cid,
+            campaign_candidate_ids=[
+                UUID(str(i)) for i in options["campaign_candidate_ids"]
+            ] if options.get("campaign_candidate_ids") else None,
+            include_rejected_sheet=bool(options.get("include_rejected_sheet")),
+        )
+        ext = "xlsx"
+        ctype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-        object_path = f"{cid}/{kind.lower()}_{stamp}.{ext}"
+        object_path = f"{cid}/{EXPORT_KIND.lower()}_{stamp}.{ext}"
         signed_url = None
         try:
             from app.core.storage_service import StorageService
@@ -164,8 +150,8 @@ def generate_export_task(
             campaign_id=cid,
             action_type=ActionType.CANDIDATE_LIST_EXPORTED.value,
             details={
-                "title": f"{kind} export generated",
-                "kind": kind,
+                "title": f"{EXPORT_KIND} export generated",
+                "kind": EXPORT_KIND,
                 "async": True,
                 "object_path": object_path,
                 "bytes": len(content),
