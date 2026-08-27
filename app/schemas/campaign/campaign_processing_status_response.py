@@ -33,3 +33,11 @@ class DeadLetterQueueEntryResponse(BaseModel):
     resolution_notes: str | None = None
     replayed_at: datetime | None = None
     replay_supported: bool = False       # is this task_type in the replay registry?
+
+
+class DeadLetterQueuePageResponse(BaseModel):
+    """Paginated, replayable-only DLQ listing for a campaign."""
+    entries: list[DeadLetterQueueEntryResponse]
+    total: int
+    limit: int
+    offset: int
