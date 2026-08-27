@@ -63,6 +63,7 @@ from app.services.skills.skill_normalization_service import SkillNormalizationSe
 from app.core.redis_client import get_redis_client
 from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
+from app.tasks.resume_processing_tasks import _enqueue_deterministic_scoring
 from app.websocket.publisher import publish_board_candidate_added
 
 logger = logging.getLogger(__name__)
@@ -665,6 +666,16 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             _enqueue_resume_embedding(db, resume.id, task_log_service)
         except Exception:
             logger.exception("Failed to enqueue resume embedding after resume %s parsed.", resume.id)
+
+        # Same as process_resume_document's own post-success dispatch - a
+        # bulk-uploaded resume needs this too, otherwise its
+        # campaign_candidate is never scored and never leaves UPLOADED.
+        # A failure here must never affect this file's already-recorded
+        # PROCESSED outcome.
+        try:
+            _enqueue_deterministic_scoring(db, resume.id, task_log_service)
+        except Exception:
+            logger.exception("Failed to enqueue deterministic scoring after resume %s parsed.", resume.id)
 
     except StageExecutionError as stage_exc:
         should_retry = False

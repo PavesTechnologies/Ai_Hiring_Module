@@ -850,25 +850,48 @@ class CampaignRepository:
             result.setdefault(campaign_id, {})[stage.value] = count
         return result
 
-    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+    def _dead_letter_queue_for_campaign_query(self, campaign_id: UUID):
         """
-        (widened from the candidate-only join): campaign-linked
-        DLQ rows via campaign_candidate_id OR resume_id. Tasks that died before
-        their CampaignCandidate row existed carry only resume_id, and the old
-        candidate-only join silently hid them from the campaign view.
+        Base filter shared by every DLQ read for a campaign: rows linked via
+        campaign_candidate_id OR resume_id (widened from the candidate-only
+        join - tasks that died before their CampaignCandidate row existed
+        carry only resume_id, and the old candidate-only join silently hid
+        them from the campaign view).
         """
         candidate_ids = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id
         )
         resume_ids = select(CampaignCandidate.resume_id).where(CampaignCandidate.campaign_id == campaign_id
         )
-        return (self.db.query(DeadLetterQueue)
-            .filter(or_(DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
-                    DeadLetterQueue.resume_id.in_(resume_ids),
-                )
+        return self.db.query(DeadLetterQueue).filter(
+            or_(DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
+                DeadLetterQueue.resume_id.in_(resume_ids),
             )
+        )
+
+    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+        return (self._dead_letter_queue_for_campaign_query(campaign_id)
             .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
             .all()
         )
+
+    def get_replayable_dead_letter_queue_page(self,
+        campaign_id: UUID,
+        task_types: list[str],
+        limit: int,
+        offset: int,
+    ) -> tuple[list[DeadLetterQueue], int]:
+        """Same campaign scoping, narrowed to replayable task_types, page + total count."""
+        query = self._dead_letter_queue_for_campaign_query(campaign_id).filter(
+            DeadLetterQueue.task_type.in_(task_types)
+        )
+        total = query.count()
+        entries = (query
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        return entries, total
 
     def get_pending_resume_counts_by_campaign(self) -> list[tuple[UUID, str, int]]:
         """

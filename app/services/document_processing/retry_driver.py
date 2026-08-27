@@ -5,6 +5,19 @@ from app.models.async_tasks import FailureClassification
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import DEFAULT_POLICY, STAGE_POLICIES, compute_backoff_seconds
 
+# Celery's own Task.retry() treats max_retries=None as "fall back to this
+# task's configured max_retries" (its class default of 3 for every @task
+# here, since none of them override it) - NOT "no limit". Since
+# STAGE_POLICIES can allow more attempts than that (AI_EXTRACTION: 5), a
+# retry() call past Celery's own default silently re-raises the original
+# error instead of rescheduling, well before this driver's own
+# attempt_number >= policy.max_attempts check below ever gets to decide
+# that. Passing this ceiling instead keeps Celery permissive so
+# policy.max_attempts (checked below, and only below) remains the one
+# place retry-vs-give-up is actually decided. Same pattern already used by
+# embedding_tasks.py's own retry() calls (_CELERY_MAX_RETRIES_CEILING).
+_CELERY_MAX_RETRIES_CEILING = 1000
+
 
 class RetryDriver:
     def __init__(self, checkpoint_repo, stage_failure_log_repo, dead_letter_queue_repo, celery_task_log_service, task_log, task_type: str):
@@ -64,5 +77,5 @@ class RetryDriver:
 
         self.celery_task_log_service.mark_retry(self.task_log)
         delay = compute_backoff_seconds(policy, attempt_number)
-        celery_task.retry(exc=error.original, countdown=delay, max_retries=None)
+        celery_task.retry(exc=error.original, countdown=delay, max_retries=_CELERY_MAX_RETRIES_CEILING)
         return True

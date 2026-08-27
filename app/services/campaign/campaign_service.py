@@ -10,6 +10,7 @@ from app.models.async_tasks import TaskStatus
 from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.tasks.embedding_tasks import generate_resume_embedding_task, EMBED_RESUME_TASK_TYPE
+from app.tasks.ai_evaluation_tasks import calculate_ai_evaluation_task, AI_EVALUATE_TASK_TYPE
 from app.repositories.resume_repository import ResumeRepository
 
 from sqlalchemy.orm import Session
@@ -87,6 +88,7 @@ from app.schemas.campaign.campaign_monitoring_schema import (StalledCandidateIte
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
 from app.schemas.campaign.campaign_processing_status_response import (ProcessingStatusSummaryResponse,
     DeadLetterQueueEntryResponse,
+    DeadLetterQueuePageResponse,
 )
 from app.schemas.campaign.campaign_processing_queue_response import (TaskTypeBreakdownResponse,
     CircuitBreakerSummaryResponse,
@@ -1526,27 +1528,38 @@ class CampaignService:
             estimated_completion=estimate,
         )
 
-    def get_dead_letter_queue_for_campaign(self, campaign_id: UUID) -> list[DeadLetterQueueEntryResponse]:
-        """+ DLQ entries with replay metadata."""
+    def get_dead_letter_queue_for_campaign(self,
+        campaign_id: UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> DeadLetterQueuePageResponse:
+        """Paginated DLQ entries, narrowed to task_types this endpoint can actually replay."""
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
-        entries = self.campaign_repo.get_dead_letter_queue_entries(campaign_id)
-        return [
-            DeadLetterQueueEntryResponse(id=e.id,
-                task_type=e.task_type,
-                final_error_message=e.final_error_message,
-                retry_count=e.retry_count,
-                moved_to_dlq_at=e.moved_to_dlq_at,
-                campaign_candidate_id=e.campaign_candidate_id,
-                last_attempted_at=e.last_attempted_at,
-                resolution_notes=e.resolution_notes,
-                replayed_at=e.replayed_at,
-                replay_supported=e.task_type in self._DLQ_REPLAY_BUILDERS,
-            )
-            for e in entries
-        ]
+        entries, total = self.campaign_repo.get_replayable_dead_letter_queue_page(
+            campaign_id, list(self._DLQ_REPLAY_BUILDERS), limit, offset,
+        )
+        return DeadLetterQueuePageResponse(
+            entries=[
+                DeadLetterQueueEntryResponse(id=e.id,
+                    task_type=e.task_type,
+                    final_error_message=e.final_error_message,
+                    retry_count=e.retry_count,
+                    moved_to_dlq_at=e.moved_to_dlq_at,
+                    campaign_candidate_id=e.campaign_candidate_id,
+                    last_attempted_at=e.last_attempted_at,
+                    resolution_notes=e.resolution_notes,
+                    replayed_at=e.replayed_at,
+                    replay_supported=True,
+                )
+                for e in entries
+            ],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     # ── Processing Queue ────────────────────────────────────────────
 
@@ -1664,6 +1677,10 @@ class CampaignService:
         EMBED_RESUME_TASK_TYPE: lambda e: (generate_resume_embedding_task,
             {"resume_id": str(e.resume_id)},
             e.resume_id is not None,
+        ),
+        AI_EVALUATE_TASK_TYPE: lambda e: (calculate_ai_evaluation_task,
+            {"campaign_candidate_id": str(e.campaign_candidate_id)},
+            e.campaign_candidate_id is not None,
         ),
     }
 
