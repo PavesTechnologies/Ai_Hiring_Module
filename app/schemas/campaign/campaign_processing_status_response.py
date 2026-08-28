@@ -29,6 +29,7 @@ class DeadLetterQueueEntryResponse(BaseModel):
     moved_to_dlq_at: datetime
     campaign_candidate_id: UUID | None
     # additions:
+    candidate_name: str | None = None
     last_attempted_at: datetime | None = None
     resolution_notes: str | None = None
     replayed_at: datetime | None = None

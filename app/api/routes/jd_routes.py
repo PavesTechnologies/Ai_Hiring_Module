@@ -356,7 +356,7 @@ def get_all_active_jds(
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
 
 
-@router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
+@router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER))])
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),

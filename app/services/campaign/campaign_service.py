@@ -1541,6 +1541,27 @@ class CampaignService:
         entries, total = self.campaign_repo.get_replayable_dead_letter_queue_page(
             campaign_id, list(self._DLQ_REPLAY_BUILDERS), limit, offset,
         )
+
+        # candidate_name follow-up, decrypted the same way every other
+        # campaign-wide list in this codebase does (see
+        # CampaignCandidateService._decrypt_candidate_name /
+        # get_stalled_candidates above). EncryptionService/CandidateRepository
+        # constructed ad-hoc rather than added to this class's already-large
+        # constructor, matching that same convention for an occasional-use
+        # dependency.
+        candidate_ids_by_entry = self.campaign_repo.get_candidate_ids_for_dlq_entries(entries)
+        encryption_service = EncryptionService(EncryptionKeyRepository(self.db))
+        candidates_by_id = {
+            c.id: c for c in CandidateRepository(self.db).get_by_ids(list(set(candidate_ids_by_entry.values())))
+        }
+
+        def _candidate_name(entry_id: UUID) -> str | None:
+            candidate = candidates_by_id.get(candidate_ids_by_entry.get(entry_id))
+            return (
+                encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
+                if candidate is not None else None
+            )
+
         return DeadLetterQueuePageResponse(
             entries=[
                 DeadLetterQueueEntryResponse(id=e.id,
@@ -1549,6 +1570,7 @@ class CampaignService:
                     retry_count=e.retry_count,
                     moved_to_dlq_at=e.moved_to_dlq_at,
                     campaign_candidate_id=e.campaign_candidate_id,
+                    candidate_name=_candidate_name(e.id),
                     last_attempted_at=e.last_attempted_at,
                     resolution_notes=e.resolution_notes,
                     replayed_at=e.replayed_at,

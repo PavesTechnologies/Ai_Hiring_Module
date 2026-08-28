@@ -74,7 +74,7 @@ def get_campaign_interviews(
         "exists at all. HIRING_MANAGER (own campaign only) or HR_ADMIN, "
         "same as the other 3 interview endpoints."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def get_interview_rounds(
     campaign_candidate_id: UUID,
@@ -128,7 +128,7 @@ def schedule_interview(
         "stale meeting_link/calendar event left over from the "
         "cancellation. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def reschedule_interview(
     interview_id: UUID,
@@ -152,7 +152,7 @@ def reschedule_interview(
         "cancel_reason, never notes. HIRING_MANAGER (own campaign only) or "
         "HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def cancel_interview(
     interview_id: UUID,

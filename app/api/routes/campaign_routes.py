@@ -77,7 +77,7 @@ def create_campaign(request: CampaignCreateRequest,
     description="Lightweight list of ACTIVE campaigns for dropdowns/pickers.",
 )
 def get_active_campaigns(service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_active_campaigns_minimal(),
         message="Active campaigns retrieved successfully",
@@ -403,7 +403,7 @@ def get_campaign_details(campaign_id: UUID,
 )
 def get_pipeline_summary(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     summary = service.get_pipeline_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
@@ -492,7 +492,7 @@ def get_dead_letter_queue(campaign_id: UUID,
 )
 def get_processing_queue(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN,UserRole.RECRUITER,UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_processing_queue(campaign_id),
         message="Processing queue retrieved successfully.",

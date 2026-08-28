@@ -234,7 +234,7 @@ def get_resume_processing_status(
 def get_resume_parsed_json_by_candidate(
     campaign_candidate_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     """Read-only monitoring endpoint — returns the campaign candidate's active resume's parsed_json."""
     return APIResponse.ok(

@@ -121,7 +121,10 @@ class InterviewScheduleService:
         campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
             raise CampaignException("Campaign candidate not found.", 404)
-        if "HR_ADMIN" not in actor_roles:
+        # RECRUITER is campaign-agnostic everywhere else in this codebase
+        # (campaign list, campaign_candidate_service, etc.) - only
+        # HIRING_MANAGER is ever ownership-scoped to their own campaigns.
+        if "HR_ADMIN" not in actor_roles and "RECRUITER" not in actor_roles:
             self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
         return campaign_candidate
 

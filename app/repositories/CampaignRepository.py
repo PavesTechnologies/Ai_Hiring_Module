@@ -822,6 +822,35 @@ class CampaignRepository:
         )
         return entries, total
 
+    def get_candidate_ids_for_dlq_entries(self, entries: list[DeadLetterQueue]) -> dict[UUID, UUID]:
+        """
+        Maps each DLQ entry's id to its resolved candidate_id, for the
+        candidate_name follow-up on the DLQ list - campaign_candidate_id is
+        preferred, falling back to resume_id for entries that died before
+        their CampaignCandidate row existed (see _dead_letter_queue_for_campaign_query).
+        """
+        cc_ids = {e.campaign_candidate_id for e in entries if e.campaign_candidate_id}
+        resume_ids = {e.resume_id for e in entries if e.resume_id}
+        cc_candidate_ids = (
+            dict(self.db.query(CampaignCandidate.id, CampaignCandidate.candidate_id)
+                .filter(CampaignCandidate.id.in_(cc_ids)).all())
+            if cc_ids else {}
+        )
+        resume_candidate_ids = (
+            dict(self.db.query(Resume.id, Resume.candidate_id)
+                .filter(Resume.id.in_(resume_ids)).all())
+            if resume_ids else {}
+        )
+
+        result = {}
+        for e in entries:
+            candidate_id = cc_candidate_ids.get(e.campaign_candidate_id)
+            if candidate_id is None and e.resume_id:
+                candidate_id = resume_candidate_ids.get(e.resume_id)
+            if candidate_id is not None:
+                result[e.id] = candidate_id
+        return result
+
     def get_pending_resume_counts_by_campaign(self) -> list[tuple[UUID, str, int]]:
         """
         Epic 4 (M05-E04) Phase D12 - platform-wide, grouped by campaign,
