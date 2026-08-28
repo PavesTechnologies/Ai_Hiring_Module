@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy import func
@@ -7,7 +8,10 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import Candidate, ParseStatus, Resume
 from app.models.compliance import AuditLog
 from app.models.identity import User
-from app.models.pipeline import CampaignCandidate, DecisionType, PipelineStage
+from app.models.pipeline import (
+    CampaignCandidate, CampaignCandidateStageHistory, DecisionType, PipelineStage,
+)
+from app.models.skills import CandidateSkill, SkillOntology
 
 
 class DashboardRepository:
@@ -149,3 +153,139 @@ class DashboardRepository:
             .all()
         )
         return {str(user_id): full_name for user_id, full_name in rows}
+
+    # ── Candidate filter bar (CampaignDetails "More filters") ──────────
+
+    def search_campaign_skills(self,
+        campaign_id: uuid.UUID,
+        search: str | None,
+        limit: int,
+    ) -> list[tuple[uuid.UUID, str, str | None, int]]:
+        """
+        Skill-name autocomplete scoped to this campaign — only skills that
+        appear on the specific resume version each candidate submitted here
+        (CandidateSkill.resume_id == CampaignCandidate.resume_id), not every
+        historical resume the person has ever uploaded to any campaign.
+        """
+        query = (self.db.query(
+                SkillOntology.id,
+                SkillOntology.canonical_name,
+                SkillOntology.category,
+                func.count(func.distinct(CandidateSkill.candidate_id)),
+            )
+            .join(CandidateSkill, CandidateSkill.canonical_skill_id == SkillOntology.id)
+            .join(CampaignCandidate, CampaignCandidate.resume_id == CandidateSkill.resume_id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+        )
+        if search:
+            query = query.filter(SkillOntology.canonical_name.ilike(f"%{search.strip()}%"))
+        return (query
+            .group_by(SkillOntology.id, SkillOntology.canonical_name, SkillOntology.category)
+            .order_by(func.count(func.distinct(CandidateSkill.candidate_id)).desc(), SkillOntology.canonical_name.asc())
+            .limit(limit)
+            .all()
+        )
+
+    def filter_campaign_candidates_by_skills(self,
+        campaign_id: uuid.UUID,
+        skill_ids: list[uuid.UUID],
+    ) -> list[uuid.UUID]:
+        """
+        AND match: campaign candidates whose submitted resume holds every one
+        of the given canonical skill ids (GROUP BY ... HAVING COUNT DISTINCT
+        == len(skill_ids), same convention CampaignDetails' filter docs
+        already describe).
+        """
+        if not skill_ids:
+            return []
+        rows = (self.db.query(CampaignCandidate.id)
+            .join(CandidateSkill, CandidateSkill.resume_id == CampaignCandidate.resume_id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .filter(CandidateSkill.canonical_skill_id.in_(skill_ids))
+            .group_by(CampaignCandidate.id)
+            .having(func.count(func.distinct(CandidateSkill.canonical_skill_id)) == len(skill_ids))
+            .all()
+        )
+        return [row[0] for row in rows]
+
+    def get_campaign_candidates_for_resume_filter(self,
+        campaign_id: uuid.UUID,
+        *,
+        uploaded_by: str | None = None,
+        upload_type: str | None = None,
+        uploaded_from: datetime | None = None,
+        uploaded_to: datetime | None = None,
+    ) -> list[tuple[uuid.UUID, dict | None]]:
+        """
+        Every campaign candidate's (id, resume.parsed_json), pre-filtered by
+        whatever SQL-pushable resume columns were given (uploader, upload
+        source, upload date). Experience/education live in parsed_json as
+        free-text JSONB with no normalized column, so those two filters are
+        applied in Python by the caller — mirrors DashboardService's own
+        parsed_json reads elsewhere (e.g. _extract_designation_and_experience)
+        rather than introducing a first JSONB-path SQL filter with no
+        precedent in this codebase.
+        """
+        query = (self.db.query(CampaignCandidate.id, Resume.parsed_json)
+            .join(Resume, CampaignCandidate.resume_id == Resume.id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+        )
+        if uploaded_by:
+            query = query.filter(Resume.uploaded_by == uploaded_by)
+        if upload_type == "individual":
+            query = query.filter(Resume.bulk_upload_job_id.is_(None))
+        elif upload_type == "bulk":
+            query = query.filter(Resume.bulk_upload_job_id.isnot(None))
+        if uploaded_from is not None:
+            query = query.filter(Resume.created_at >= uploaded_from)
+        if uploaded_to is not None:
+            query = query.filter(Resume.created_at < uploaded_to)
+        return query.all()
+
+    def get_campaign_uploaders(self, campaign_id: uuid.UUID) -> list[tuple[str, int]]:
+        return (self.db.query(Resume.uploaded_by, func.count(CampaignCandidate.id))
+            .join(CampaignCandidate, CampaignCandidate.resume_id == Resume.id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .group_by(Resume.uploaded_by)
+            .order_by(func.count(CampaignCandidate.id).desc())
+            .all()
+        )
+
+    def get_campaign_stage_timing(self, campaign_id: uuid.UUID) -> list[tuple[str, float, float]]:
+        """
+        Average/max days spent in each stage, derived from
+        campaign_candidate_stage_history: for every transition INTO a stage,
+        LEAD() finds that same candidate's NEXT transition, and the gap
+        between the two is the time spent in that stage. A candidate still
+        currently sitting in a stage (no next transition yet) has no gap and
+        is excluded — their time-in-stage isn't over yet, so it would
+        understate the real duration if counted now.
+        """
+        duration_days = (
+            func.extract(
+                "epoch",
+                func.lead(CampaignCandidateStageHistory.changed_at).over(
+                    partition_by=CampaignCandidateStageHistory.campaign_candidate_id,
+                    order_by=CampaignCandidateStageHistory.changed_at,
+                ) - CampaignCandidateStageHistory.changed_at,
+            ) / 86400.0
+        ).label("duration_days")
+
+        subquery = (self.db.query(
+                CampaignCandidateStageHistory.to_stage.label("stage"),
+                duration_days,
+            )
+            .join(CampaignCandidate, CampaignCandidate.id == CampaignCandidateStageHistory.campaign_candidate_id)
+            .filter(CampaignCandidate.campaign_id == campaign_id)
+            .subquery()
+        )
+
+        return (self.db.query(
+                subquery.c.stage,
+                func.avg(subquery.c.duration_days),
+                func.max(subquery.c.duration_days),
+            )
+            .filter(subquery.c.duration_days.isnot(None))
+            .group_by(subquery.c.stage)
+            .all()
+        )
