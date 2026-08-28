@@ -59,3 +59,41 @@ class NotificationItemResponse(BaseModel):
 
 class NotificationsFeedResponse(BaseModel):
     items: list[NotificationItemResponse]
+
+
+class SkillSuggestionResponse(BaseModel):
+    canonical_skill_id: UUID
+    canonical_name: str
+    category: str | None
+    # Distinct candidates in this campaign holding the skill on the resume
+    # they submitted here — not a global occurrence count.
+    candidate_count: int
+
+
+class SkillFilterResponse(BaseModel):
+    campaign_candidate_ids: list[UUID]
+    # Reserved for a future confidence tiering (e.g. exact vs alias match);
+    # every hit here is an exact canonical-skill AND match, so always empty.
+    match_tiers: dict[str, int] = {}
+    result_count: int
+
+
+class CandidateFilterResponse(BaseModel):
+    campaign_candidate_ids: list[UUID]
+
+
+class UploaderResponse(BaseModel):
+    user_id: str
+    full_name: str
+    upload_count: int
+
+
+class StageTimingResponse(BaseModel):
+    stage: str
+    avg_days: float
+    max_days: float
+    # No SLA concept exists in the schema yet — always null/false rather
+    # than a fabricated threshold. Kept on the response so the frontend's
+    # existing conditional rendering has a stable shape to check against.
+    sla_days: float | None = None
+    breaches_sla: bool = False
