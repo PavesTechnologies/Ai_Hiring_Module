@@ -16,6 +16,7 @@ from app.repositories.campaign_candidate_ai_evaluation_repository import Campaig
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -29,6 +30,7 @@ from app.services.extractions.gemini_extraction_service import GeminiExtractionS
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +136,10 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+        interview_schedule_repo = InterviewScheduleRepository(db)
+        stage_transition_service = StageTransitionService(
+            allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+        )
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 
@@ -297,6 +302,14 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         )
 
         campaign_candidate_repo.commit()
+
+        try:
+            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

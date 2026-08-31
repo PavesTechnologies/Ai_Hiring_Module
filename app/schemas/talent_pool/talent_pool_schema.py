@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.candidates import ParseStatus
 from app.models.pipeline import PipelineStage
@@ -146,3 +146,101 @@ class BulkAddCandidatesResponse(BaseModel):
     added: int
     failed: int
     results: list[BulkAddCandidateResultItem]
+
+
+class EducationFilterOptions(BaseModel):
+    # Raw DegreeLevel/EducationField enum string values (e.g. "BACHELOR",
+    # "COMPUTER_SCIENCE") - the controlled vocabulary already produced by
+    # the resume-extraction pipeline, never a new display-label mapping.
+    degree_levels: list[str] = Field(default_factory=list)
+    fields: list[str] = Field(default_factory=list)
+
+
+class CampaignFilterOption(BaseModel):
+    id: UUID
+    name: str
+
+
+class TalentPoolFiltersResponse(BaseModel):
+    """Filter metadata for the Talent Pool Normal Search UI - never a candidate search result."""
+    locations: list[str] = Field(default_factory=list)
+    designations: list[str] = Field(default_factory=list)
+    education: EducationFilterOptions
+    campaigns: list[CampaignFilterOption] = Field(default_factory=list)
+    pipeline_stages: list[str] = Field(default_factory=list)
+
+
+# ----------------------------------------------------------------------
+# M14 — Talent Pool Semantic Search
+# ----------------------------------------------------------------------
+
+class TalentPoolSemanticSearchFilters(BaseModel):
+    """
+    Same structured filter semantics as Normal Search's own filter
+    categories (see TalentPoolService.search_candidates) - within each
+    category terms are OR'd, across categories they combine with AND.
+    Deliberately excludes `search`/`skill`/`skills`/`designation`/
+    `location`/`campaign_id` (singular) - Semantic Search has no
+    name-or-skill-token text box, and only the plural inclusion-based
+    campaign_ids filter applies here.
+    """
+    locations: list[str] | None = None
+    designations: list[str] | None = None
+    degree_levels: list[str] | None = None
+    education_fields: list[str] | None = None
+    campaign_ids: list[UUID] | None = None
+    pipeline_stages: list[PipelineStage] | None = None
+    experience_min: float | None = Field(default=None, ge=0)
+    experience_max: float | None = Field(default=None, ge=0)
+    score_min: float | None = Field(default=None, ge=0, le=100)
+    score_max: float | None = Field(default=None, ge=0, le=100)
+
+
+class TalentPoolSemanticSearchRequest(BaseModel):
+    """
+    POST /talent-pool/semantic-search — `query` is one free-text passage
+    (a full resume, a JD, a role description, a recruiter requirement, ...)
+    embedded whole, exactly once per request; it is never tokenized or
+    matched against skills the way Normal Search's `search` box is.
+    `size` is capped server-side at TALENT_POOL_MAX_PAGE_SIZE regardless of
+    what is requested here, mirroring Normal Search's own convention.
+    """
+    query: str = Field(..., min_length=1, max_length=8000)
+    filters: TalentPoolSemanticSearchFilters | None = None
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=6, ge=1, le=100)
+
+    @field_validator("query")
+    @classmethod
+    def _query_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("query must not be empty or whitespace-only.")
+        return stripped
+
+
+class TalentPoolSemanticSearchItem(BaseModel):
+    """
+    Deliberately mirrors TalentPoolSearchItem's exact candidate-card shape
+    (same fields, same meaning) so the frontend can reuse its existing
+    candidate cards/table - plus semantic_similarity_score, which has no
+    equivalent on Normal Search's response and must never be confused with
+    best_composite_score (a wholly different, AI-evaluation-derived value).
+    """
+    candidate: CandidateInfoResponse
+    matching_resume_id: UUID
+    matching_resume_version: int
+    summary: str | None = None
+    skills: list[str] = Field(default_factory=list)
+    best_composite_score: float | None = None
+    # pgvector cosine similarity (1 - cosine distance) between the query
+    # embedding and this candidate's resume embedding - higher is more
+    # semantically similar. Never best_composite_score.
+    semantic_similarity_score: float
+
+
+class TalentPoolSemanticSearchResponse(BaseModel):
+    items: list[TalentPoolSemanticSearchItem]
+    total: int
+    page: int
+    size: int

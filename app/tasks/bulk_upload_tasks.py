@@ -60,7 +60,11 @@ from app.services.resume.resume_processing_context import ResumeProcessingContex
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
 from app.services.skills.skill_normalization_service import SkillNormalizationService
+from app.core.redis_client import get_redis_client
+from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
+from app.tasks.resume_processing_tasks import _enqueue_deterministic_scoring
+from app.websocket.publisher import publish_board_candidate_added
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +350,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
         embedding_service = EmbeddingService(db)
-        skill_normalization_service = SkillNormalizationService(skill_repo, embedding_service)
+        skill_normalization_service = SkillNormalizationService(
+            skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
+        )
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
         pipeline = ResumeProcessingPipeline(
@@ -446,8 +452,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             already_linked = campaign_candidate_repo.get_by_campaign_and_candidate(
                 job.campaign_id, matched_candidate.id,
             )
+            added_campaign_candidate = None
             if already_linked is None:
-                campaign_candidate_service.create_campaign_candidate(
+                added_campaign_candidate = campaign_candidate_service.create_campaign_candidate(
                     CampaignCandidateCreateRequest(
                         campaign_id=job.campaign_id,
                         candidate_id=matched_candidate.id,
@@ -459,6 +466,20 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             file_repo.update_status(job_file.id, BulkUploadFileStatus.PROCESSED)
             job_repo.increment_duplicate_count(job.id)
             job_repo.commit()
+
+            # WebSocket board update - published only after the commit above,
+            # and only when this file actually linked a new campaign_candidate
+            # (already_linked is None); a file whose candidate was already on
+            # this campaign's board makes no board-visible change.
+            if added_campaign_candidate is not None:
+                try:
+                    publish_board_candidate_added(job.campaign_id, added_campaign_candidate)
+                except Exception:
+                    logger.exception(
+                        "Failed to publish board.candidate_added for campaign_candidate_id=%s",
+                        added_campaign_candidate.id,
+                    )
+
             _maybe_finalize_job(job_repo, job.id)
 
             # So the file-detail monitoring endpoint can resolve the existing
@@ -585,7 +606,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             initial_context=context,
         )
 
-        campaign_candidate_service.create_campaign_candidate(
+        added_campaign_candidate = campaign_candidate_service.create_campaign_candidate(
             CampaignCandidateCreateRequest(
                 campaign_id=job.campaign_id,
                 candidate_id=candidate.id,
@@ -616,6 +637,21 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         file_repo.update_status(job_file.id, BulkUploadFileStatus.PROCESSED)
         job_repo.increment_processed_count(job.id)
         job_repo.commit()
+
+        # WebSocket board update - published only after the commit above,
+        # which is what actually persists create_campaign_candidate()'s
+        # insert (CampaignCandidateService itself never commits this
+        # branch; it shares this task's session, and this is the first
+        # commit reached after that insert - same reasoning as
+        # ResumeIntakeService.upload_resume()'s individual-upload path).
+        try:
+            publish_board_candidate_added(job.campaign_id, added_campaign_candidate)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_added for campaign_candidate_id=%s",
+                added_campaign_candidate.id,
+            )
+
         _maybe_finalize_job(job_repo, job.id)
 
         task_log_service.mark_success(
@@ -630,6 +666,16 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             _enqueue_resume_embedding(db, resume.id, task_log_service)
         except Exception:
             logger.exception("Failed to enqueue resume embedding after resume %s parsed.", resume.id)
+
+        # Same as process_resume_document's own post-success dispatch - a
+        # bulk-uploaded resume needs this too, otherwise its
+        # campaign_candidate is never scored and never leaves UPLOADED.
+        # A failure here must never affect this file's already-recorded
+        # PROCESSED outcome.
+        try:
+            _enqueue_deterministic_scoring(db, resume.id, task_log_service)
+        except Exception:
+            logger.exception("Failed to enqueue deterministic scoring after resume %s parsed.", resume.id)
 
     except StageExecutionError as stage_exc:
         should_retry = False

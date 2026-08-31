@@ -21,6 +21,7 @@ from app.services.campaign.composite_scoring_service import CompositeScoringServ
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,14 @@ def calculate_composite_score_task(self, campaign_candidate_id: str, trigger_sou
         }
 
         campaign_candidate_repo.commit()
+
+        try:
+            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
+                campaign_candidate.id,
+            )
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

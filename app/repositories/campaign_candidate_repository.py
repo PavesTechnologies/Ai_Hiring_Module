@@ -342,6 +342,59 @@ class CampaignCandidateRepository:
             .first()
         )
 
+    def get_existing_candidate_ids(
+        self,
+        campaign_id: UUID,
+        candidate_ids: list[UUID],
+    ) -> set[UUID]:
+        """
+        Batch dedup check for bulk candidate addition - which of
+        candidate_ids already have a campaign_candidates row for this
+        campaign, in one query instead of one get_by_campaign_and_candidate
+        call per candidate.
+        """
+        if not candidate_ids:
+            return set()
+        rows = (
+            self.db.query(CampaignCandidate.candidate_id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                CampaignCandidate.candidate_id.in_(candidate_ids),
+            )
+            .all()
+        )
+        return {row.candidate_id for row in rows}
+
+    def bulk_create(
+        self,
+        campaign_candidates: list[CampaignCandidate],
+    ) -> list[CampaignCandidate]:
+        """
+        Inserts many new campaign_candidates rows in one flush instead of
+        one create_idempotent (each its own SAVEPOINT) per row - for bulk
+        candidate addition, where dedup against existing rows already
+        happened via get_existing_candidate_ids, so no per-row conflict
+        handling is needed here.
+        """
+        if not campaign_candidates:
+            return []
+        self.db.add_all(campaign_candidates)
+        self.db.flush()
+        for campaign_candidate in campaign_candidates:
+            self.db.refresh(campaign_candidate)
+        return campaign_candidates
+
+    def bulk_create_stage_history(
+        self,
+        histories: list[CampaignCandidateStageHistory],
+    ) -> list[CampaignCandidateStageHistory]:
+        """Bulk counterpart to create_stage_history - one flush for the whole batch."""
+        if not histories:
+            return []
+        self.db.add_all(histories)
+        self.db.flush()
+        return histories
+
     def get_campaign_context_for_candidate(
         self,
         candidate_id: UUID,
@@ -406,11 +459,12 @@ class CampaignCandidateRepository:
     def get_most_recent_campaign_for_candidate(self, candidate_id: UUID) -> HiringCampaign | None:
         """
         Epic 3 (M05-E03) Phase C4 — resolves the candidate's most recent
-        campaign submission, for attributing the resubmission-alert audit
-        event's actor_id to that campaign's created_by (mirroring
-        CampaignSchedulerService._raise_health_alert's exact convention,
-        since AuditLog.actor_id is a required, non-null FK and no synthetic
-        SYSTEM actor exists in this codebase).
+        campaign submission, so ResubmissionAlertService.evaluate_resubmission_alerts
+        can attach a campaign_id to the CAMPAIGN_RESUBMISSION_DETECTED audit
+        entry. Previously also used to attribute actor_id to that campaign's
+        created_by - removed in Epic 3 Fix 2 (actor_id is nullable; this is
+        a scheduled sweep, not that user's action - see
+        ResubmissionAlertService's docstring).
         """
         stmt = (
             select(HiringCampaign)
@@ -443,6 +497,14 @@ class CampaignCandidateRepository:
         not fixed here, out of scope for this refactor.
         """
         campaign_candidate.resume_id = new_resume_id
+        self._reset_evaluation_derived_fields(campaign_candidate)
+
+        self.db.flush()
+        self.db.refresh(campaign_candidate)
+        return campaign_candidate
+
+    def _reset_evaluation_derived_fields(self, campaign_candidate: CampaignCandidate) -> None:
+        """Shared by reset_for_resubmission (new resume) and reset_for_rescore (same resume, manual re-score trigger) - every evaluation-derived field, nothing identity/relationship-related."""
         campaign_candidate.screened_at = None
         campaign_candidate.deterministic_score = None
         campaign_candidate.deterministic_passed = None
@@ -459,6 +521,29 @@ class CampaignCandidateRepository:
         campaign_candidate.decision_details = None
         campaign_candidate.decision_by_user_id = None
         campaign_candidate.decision_at = None
+
+    def reset_for_rescore(self, campaign_candidate: CampaignCandidate) -> CampaignCandidate:
+        """
+        Epic 5 follow-up - manual re-score trigger (moving a candidate to
+        SCREENING from anywhere other than UPLOADED). Same field list as
+        reset_for_resubmission, EXCEPT resume_id - there's no new resume
+        here, the same one is being re-scored, so pointing at a
+        different resume would be wrong. AI evaluation fields still live
+        on the separate CampaignCandidateAIEvaluation row - reset
+        separately by the caller via CampaignCandidateAIEvaluationRepository.reset().
+
+        Unlike reset_for_resubmission, also clears semantic_breakdown and
+        semantic_score_computed_at - found live, via a candidate re-scored
+        from FRAUD_REVIEW showing a stale PASSED breakdown from its prior
+        scoring run (semantic_score itself was NULL, but semantic_breakdown
+        JSON survives reset_for_resubmission's pre-existing gap) alongside a
+        semantic scoring re-trigger that never actually dispatched. Not
+        applied to reset_for_resubmission - that path's own copy of this gap
+        is untouched, out of scope for this fix.
+        """
+        self._reset_evaluation_derived_fields(campaign_candidate)
+        campaign_candidate.semantic_breakdown = None
+        campaign_candidate.semantic_score_computed_at = None
 
         self.db.flush()
         self.db.refresh(campaign_candidate)
@@ -496,6 +581,31 @@ class CampaignCandidateRepository:
             )
             .all()
         )
+
+    def count_rejected_by_campaigns(self, campaign_ids) -> dict:
+        """
+        {campaign_id: rejected_count} for many campaigns in one aggregate query.
+
+        Callers that only need the number must use this rather than
+        len(get_rejected_by_campaign(id)) per campaign, which materialises every
+        rejected row just to discard it.
+        """
+        ids = [cid for cid in set(campaign_ids or []) if cid]
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(
+                CampaignCandidate.campaign_id,
+                func.count(CampaignCandidate.id),
+            )
+            .filter(
+                CampaignCandidate.campaign_id.in_(ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.REJECTED,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        return {cid: count for cid, count in rows}
 
     def get_overridden(
         self,

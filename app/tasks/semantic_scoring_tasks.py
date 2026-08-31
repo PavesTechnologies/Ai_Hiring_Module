@@ -19,6 +19,7 @@ from app.repositories.campaign_candidate_ai_evaluation_repository import Campaig
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
@@ -33,6 +34,7 @@ from app.tasks.deterministic_scoring_tasks import (
     _cancel_downstream_ai_evaluation,
     _queue_rejection_email,
 )
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +126,14 @@ def _score_and_persist_semantic(
     )
 
     campaign_candidate_repo.commit()
+
+    try:
+        publish_board_candidate_updated(campaign.id, campaign_candidate.id)
+    except Exception:
+        logger.exception(
+            "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
+            campaign_candidate.id,
+        )
 
     # Story 542: only after the transaction above has committed - never
     # send a rejection email for a candidate whose pipeline_stage didn't
@@ -323,7 +333,10 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
         audit_service = AuditService(AuditRepository(db))
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
-        stage_transition_service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, audit_service)
+        interview_schedule_repo = InterviewScheduleRepository(db)
+        stage_transition_service = StageTransitionService(
+            allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo,
+        )
 
         campaign_candidate = campaign_candidate_repo.get_by_id(UUID(campaign_candidate_id))
 

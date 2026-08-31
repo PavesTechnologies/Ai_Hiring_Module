@@ -46,10 +46,14 @@ class CampaignSchedulerService:
 
                     self.campaign_repo.close_campaign(campaign)
 
-                    # Audit log — attributed to the HR_ADMIN who created the campaign,
-                    # since the closure is triggered by the scheduler on their behalf.
-                    self.audit_service.log(actor_id=campaign.created_by,
-                        actor_role="HR_ADMIN",
+                    # Epic 3 Fix 2: this is a scheduler-triggered closure, not
+                    # something the campaign's creator did - AuditLog.actor_id
+                    # is nullable (both model and live schema; 24+ existing
+                    # rows already use actor_id=None/actor_role=SYSTEM, e.g.
+                    # StageTransitionService.transition()'s SYSTEM actor),
+                    # so there's no need to misattribute this to a human.
+                    self.audit_service.log(actor_id=None,
+                        actor_role="SYSTEM",
                         action_type=ActionType.CAMPAIGN_AUTO_CLOSED.value,
                         entity_type=EntityType.CAMPAIGN.value,
                         entity_id=campaign.id,
@@ -111,9 +115,21 @@ class CampaignSchedulerService:
                 c for c in self.campaign_repo.get_all_campaigns(show_closed=False)
                 if c.status == CampaignStatus.ACTIVE
             ]
+            active_campaign_ids = [c.id for c in active_campaigns]
+
+            # Batched once for every active campaign instead of once per
+            # campaign per condition (was 4 queries x N campaigns).
+            task_counts_by_campaign = self.campaign_repo.get_task_status_counts_batch(active_campaign_ids)
+            rejection_rate_by_campaign = self.campaign_repo.get_deterministic_rejection_rate_batch(
+                active_campaign_ids
+            )
+            avg_screening_hours_by_campaign = self.campaign_repo.get_average_screening_hours_batch(
+                active_campaign_ids
+            )
+            stage_counts_by_campaign = self.campaign_repo.get_stage_counts_batch(active_campaign_ids)
 
             for campaign in active_campaigns:
-                task_counts = self.campaign_repo.get_task_status_counts(campaign.id)
+                task_counts = task_counts_by_campaign.get(campaign.id, {})
                 dead_count = task_counts.get(TaskStatus.DEAD.value, 0)
                 if dead_count > dead_task_threshold:
                     self._raise_health_alert(campaign,
@@ -122,7 +138,7 @@ class CampaignSchedulerService:
                     )
                     alerts_raised += 1
 
-                rejection_rate = self.campaign_repo.get_deterministic_rejection_rate(campaign.id)
+                rejection_rate = rejection_rate_by_campaign.get(campaign.id, 0.0)
                 if rejection_rate > rejection_rate_threshold:
                     self._raise_health_alert(campaign,
                         condition="DETERMINISTIC_REJECTION_RATE_EXCEEDED",
@@ -133,7 +149,7 @@ class CampaignSchedulerService:
                     )
                     alerts_raised += 1
 
-                avg_screening_hours = self.campaign_repo.get_average_screening_hours(campaign.id)
+                avg_screening_hours = avg_screening_hours_by_campaign.get(campaign.id)
                 if avg_screening_hours is not None and avg_screening_hours > screening_sla_hours:
                     self._raise_health_alert(campaign,
                         condition="SCREENING_SLA_EXCEEDED",
@@ -144,7 +160,7 @@ class CampaignSchedulerService:
                     )
                     alerts_raised += 1
 
-                stage_counts = self.campaign_repo.get_stage_counts(campaign.id)
+                stage_counts = stage_counts_by_campaign.get(campaign.id, {})
                 fraud_count = stage_counts.get(PipelineStage.FRAUD_REVIEW.value, 0)
                 if fraud_count > fraud_threshold:
                     self._raise_health_alert(campaign,
@@ -187,12 +203,18 @@ class CampaignSchedulerService:
                 if c.status == CampaignStatus.ACTIVE
             ]
 
+            # Batched once for every active campaign instead of once per
+            # campaign (get_stalled_candidates_batch widens the same
+            # already-batched follow-up lookups to the whole campaign set).
+            stalled_by_campaign = self.campaign_repo.get_stalled_candidates_batch(
+                [c.id for c in active_campaigns],
+                screening_sla_hours=screening_sla_hours,
+                hm_review_sla_days=hm_review_sla_days,
+                interview_sla_days=interview_sla_days,
+            )
+
             for campaign in active_campaigns:
-                stalled = self.campaign_repo.get_stalled_candidates(campaign.id,
-                    screening_sla_hours=screening_sla_hours,
-                    hm_review_sla_days=hm_review_sla_days,
-                    interview_sla_days=interview_sla_days,
-                )
+                stalled = stalled_by_campaign.get(campaign.id, [])
                 if not stalled:
                     continue
 
@@ -211,8 +233,13 @@ class CampaignSchedulerService:
                     by_stage[row["pipeline_stage"]] = by_stage.get(row["pipeline_stage"], 0) + 1
                     by_reason[row["stall_reason"]] = by_reason.get(row["stall_reason"], 0) + 1
 
-                self.audit_service.log(actor_id=campaign.created_by,
-                    actor_role="HR_ADMIN",
+                # Epic 3 Fix 2: scheduler-triggered detection, not the
+                # campaign creator's action - see auto_close_expired_campaigns
+                # above for why actor_id=None/actor_role=SYSTEM is correct
+                # here (actor_id is nullable, matching StageTransitionService's
+                # SYSTEM actor convention).
+                self.audit_service.log(actor_id=None,
+                    actor_role="SYSTEM",
                     action_type=ActionType.STALLED_CANDIDATES_ALERT.value,
                     entity_type=EntityType.CAMPAIGN.value,
                     entity_id=campaign.id,
@@ -242,8 +269,11 @@ class CampaignSchedulerService:
         # Email notification
         # TODO:
         # Notify HR Admin
-        self.audit_service.log(actor_id=campaign.created_by,
-            actor_role="HR_ADMIN",
+        # Epic 3 Fix 2: scheduler-triggered health check, not the campaign
+        # creator's action - see auto_close_expired_campaigns above for why
+        # actor_id=None/actor_role=SYSTEM is correct here.
+        self.audit_service.log(actor_id=None,
+            actor_role="SYSTEM",
             action_type=ActionType.CAMPAIGN_HEALTH_ALERT.value,
             entity_type=EntityType.CAMPAIGN.value,
             entity_id=campaign.id,

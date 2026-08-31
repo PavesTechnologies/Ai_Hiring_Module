@@ -40,16 +40,16 @@ _TRANSITIONS = [
     {
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.FRAUD_REVIEW,
@@ -75,9 +75,9 @@ _TRANSITIONS = [
     {
         "from_stage": PipelineStage.REJECTED,
         "to_stage": PipelineStage.SCREENING,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04).",
+        "notes": "Override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04); RECRUITER/HIRING_MANAGER added alongside HR_ADMIN.",
     },
     # Epic 3 (M05-E03) Phase C5 — "update resume" resubmission re-trigger.
     # Deliberately not seeded: SELECTED/REJECTED/FRAUD_REVIEW -> UPLOADED —
@@ -124,6 +124,7 @@ _TRANSITIONS = [
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.SCREENING,
         "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
+
         "requires_reason": False,
         "notes": "Initial resume screening kickoff after upload; SYSTEM-driven in the normal flow, HR_ADMIN/RECRUITER can force it manually (M12).",
     },
@@ -162,35 +163,44 @@ _TRANSITIONS = [
         "requires_reason": False,
         "notes": "Hiring manager selects candidate after interview (M12); HR_ADMIN retains stalled-candidate override capability.",
     },
-    {
-        "from_stage": PipelineStage.INTERVIEW,
-        "to_stage": PipelineStage.REJECTED,
-        "allowed_roles": ["HIRING_MANAGER"],
-        "requires_reason": True,
-        "notes": "Hiring manager rejects candidate after interview (M12) — terminal human decision, reason required.",
-    },
+    # INTERVIEW -> REJECTED deliberately NOT defined here: it used to be
+    # ["HIRING_MANAGER"]-only, reason-required, but that duplicated the
+    # (from_stage, to_stage) pair _BOARD_TRANSITIONS also defines below with
+    # a broader role list - and this seeding loop only inserts a row when
+    # none exists yet for a pair, so whichever definition appears first in
+    # _TRANSITIONS silently wins and the other is dropped with no error.
+    # This entry, appearing first, was winning - which meant HR_ADMIN/
+    # RECRUITER got a 403 from the shared transition-engine check on every
+    # route that rejects a candidate out of INTERVIEW (candidate_actions_
+    # routes.py's manual_reject, and the Pipeline Board's own drag-and-drop,
+    # despite _BOARD_TRANSITIONS' own comment stating board moves are meant
+    # to be frictionless for HR_ADMIN/RECRUITER/HIRING_MANAGER alike).
+    # Removed so the _BOARD_TRANSITIONS definition (all 3 roles, no reason)
+    # is the only one seeded for this pair. reject_at_interview (Epic 1)
+    # keeps enforcing HIRING_MANAGER via its own route-level role gate
+    # instead of this table.
     # M12 — extend automated fraud detection to later stages, matching
     # the existing UPLOADED/SCREENING -> FRAUD_REVIEW pattern (M05-E03 S06).
     {
         "from_stage": PipelineStage.SHORTLISTED,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.HM_REVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.INTERVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM"],
-        "requires_reason": False,
-        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06).",
+        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
     },
     {
         "from_stage": PipelineStage.FRAUD_REVIEW,

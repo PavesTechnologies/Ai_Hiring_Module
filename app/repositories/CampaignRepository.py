@@ -263,7 +263,6 @@ class CampaignRepository:
             )
         )
         return self.db.execute(stmt).scalar() or 0
-
     def is_pipeline_stalled(self, campaign_id: UUID, stale_days: int) -> bool:
         """
         True if the campaign has candidates but none have been added
@@ -279,6 +278,84 @@ class CampaignRepository:
         cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
         return latest_added_at <= cutoff
 
+    def get_candidate_counts(self, campaign_ids: list[UUID]) -> dict[UUID, int]:
+        """Batch campaign_id -> candidate count, for list/dashboard endpoints - avoids get_candidate_count per row."""
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids))
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        return {campaign_id: count for campaign_id, count in rows}
+
+    def get_shortlisted_counts(self, campaign_ids: list[UUID]) -> dict[UUID, int]:
+        """Batch campaign_id -> shortlisted count - avoids get_shortlisted_count per row."""
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.SHORTLISTED,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        return {campaign_id: count for campaign_id, count in rows}
+
+    def get_selected_counts(self, campaign_ids: list[UUID]) -> dict[UUID, int]:
+        """Batch campaign_id -> selected count - avoids get_selected_count per row."""
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.SELECTED,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        return {campaign_id: count for campaign_id, count in rows}
+
+    def get_overdue_review_counts(self, campaign_ids: list[UUID], sla_days: int) -> dict[UUID, int]:
+        """Batch campaign_id -> overdue HM_REVIEW count - avoids get_overdue_review_count per row."""
+        if not campaign_ids:
+            return {}
+        cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
+
+        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.HM_REVIEW)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        stmt = (select(CampaignCandidate.campaign_id, func.count(CampaignCandidate.id))
+            .join(latest_entry, latest_entry.c.campaign_candidate_id == CampaignCandidate.id)
+            .where(CampaignCandidate.campaign_id.in_(campaign_ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
+                latest_entry.c.entered_at <= cutoff,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+        )
+        return {campaign_id: count for campaign_id, count in self.db.execute(stmt)}
+
+    def get_pipeline_stalled_map(self, campaign_ids: list[UUID], stale_days: int) -> dict[UUID, bool]:
+        """
+        Batch campaign_id -> is_pipeline_stalled, for list/dashboard
+        endpoints - avoids is_pipeline_stalled per row. A campaign_id
+        absent from the underlying GROUP BY (no candidates at all) is
+        "not stalled", same as is_pipeline_stalled's own None-check.
+        """
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, func.max(CampaignCandidate.created_at))
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids))
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
+        return {campaign_id: latest_added_at <= cutoff for campaign_id, latest_added_at in rows}
+
     def update(self, campaign: HiringCampaign) -> HiringCampaign:
         """Update an existing campaign and refresh it."""
         self.db.flush()
@@ -290,6 +367,7 @@ class CampaignRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
+
 
 
     def get_expired_campaigns(self, limit: int | None = None) -> list[HiringCampaign]:
@@ -671,25 +749,78 @@ class CampaignRepository:
         )
         return {status.value: count for status, count in rows}
 
-    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+    def get_task_status_counts_batch(self, campaign_ids: list[UUID]) -> dict[UUID, dict[str, int]]:
+        """Batch campaign_id -> task-status breakdown, for scheduled sweeps over every active campaign."""
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, CeleryTaskLog.status, func.count())
+            .select_from(CeleryTaskLog)
+            .join(CampaignCandidate, CeleryTaskLog.campaign_candidate_id == CampaignCandidate.id)
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids))
+            .group_by(CampaignCandidate.campaign_id, CeleryTaskLog.status)
+            .all()
+        )
+        result: dict[UUID, dict[str, int]] = {}
+        for campaign_id, status, count in rows:
+            result.setdefault(campaign_id, {})[status.value] = count
+        return result
+
+    def get_stage_counts_batch(self, campaign_ids: list[UUID]) -> dict[UUID, dict[str, int]]:
+        """Batch campaign_id -> pipeline-stage breakdown, for scheduled sweeps over every active campaign."""
+        if not campaign_ids:
+            return {}
+        rows = (self.db.query(CampaignCandidate.campaign_id, CampaignCandidate.pipeline_stage, func.count())
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids))
+            .group_by(CampaignCandidate.campaign_id, CampaignCandidate.pipeline_stage)
+            .all()
+        )
+        result: dict[UUID, dict[str, int]] = {}
+        for campaign_id, stage, count in rows:
+            result.setdefault(campaign_id, {})[stage.value] = count
+        return result
+
+    def _dead_letter_queue_for_campaign_query(self, campaign_id: UUID):
         """
-        (widened from the candidate-only join): campaign-linked
-        DLQ rows via campaign_candidate_id OR resume_id. Tasks that died before
-        their CampaignCandidate row existed carry only resume_id, and the old
-        candidate-only join silently hid them from the campaign view.
+        Base filter shared by every DLQ read for a campaign: rows linked via
+        campaign_candidate_id OR resume_id (widened from the candidate-only
+        join - tasks that died before their CampaignCandidate row existed
+        carry only resume_id, and the old candidate-only join silently hid
+        them from the campaign view).
         """
         candidate_ids = select(CampaignCandidate.id).where(CampaignCandidate.campaign_id == campaign_id
         )
         resume_ids = select(CampaignCandidate.resume_id).where(CampaignCandidate.campaign_id == campaign_id
         )
-        return (self.db.query(DeadLetterQueue)
-            .filter(or_(DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
-                    DeadLetterQueue.resume_id.in_(resume_ids),
-                )
+        return self.db.query(DeadLetterQueue).filter(
+            or_(DeadLetterQueue.campaign_candidate_id.in_(candidate_ids),
+                DeadLetterQueue.resume_id.in_(resume_ids),
             )
+        )
+
+    def get_dead_letter_queue_entries(self, campaign_id: UUID) -> list[DeadLetterQueue]:
+        return (self._dead_letter_queue_for_campaign_query(campaign_id)
             .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
             .all()
         )
+
+    def get_replayable_dead_letter_queue_page(self,
+        campaign_id: UUID,
+        task_types: list[str],
+        limit: int,
+        offset: int,
+    ) -> tuple[list[DeadLetterQueue], int]:
+        """Same campaign scoping, narrowed to replayable task_types, page + total count."""
+        query = self._dead_letter_queue_for_campaign_query(campaign_id).filter(
+            DeadLetterQueue.task_type.in_(task_types)
+        )
+        total = query.count()
+        entries = (query
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        return entries, total
 
     def get_pending_resume_counts_by_campaign(self) -> list[tuple[UUID, str, int]]:
         """
@@ -875,6 +1006,95 @@ class CampaignRepository:
             actor_id = last_actor.get(cc.id)
             result.append({
                 "campaign_candidate_id": cc.id,
+                # Not part of StalledCandidateItem itself - the service
+                # layer pops this to batch-resolve/decrypt candidate_name
+                # (EncryptionService is a service-layer concern, same
+                # convention as CampaignCandidateService/
+                # InterviewScheduleService.get_campaign_interviews).
+                "candidate_id": cc.candidate_id,
+                "pipeline_stage": cc.pipeline_stage.value,
+                "days_stalled": round((now - cc.updated_at).total_seconds() / 86400, 1),
+                "last_updated_at": cc.updated_at,
+                "stall_reason": reason,
+                "last_action_by": actor_names.get(actor_id) or actor_id,
+                "has_dead_letter_tasks": cc.id in failed_ids,
+            })
+        return result
+
+    def get_stalled_candidates_batch(
+        self,
+        campaign_ids: list[UUID],
+        screening_sla_hours: float,
+        hm_review_sla_days: float,
+        interview_sla_days: float,
+    ) -> dict[UUID, list[dict]]:
+        """
+        Batch counterpart to get_stalled_candidates - widens the top-level
+        filter to every campaign_id at once (the DLQ/dead-task/audit-actor
+        follow-up lookups were already batched by id list), then groups
+        the resulting per-candidate dicts by campaign_id. Used by the
+        scheduled stall-alert sweep, which otherwise ran this once per
+        active campaign.
+        """
+        if not campaign_ids:
+            return {}
+        now = datetime.now(timezone.utc)
+        cutoffs = {
+            PipelineStage.SCREENING: now - timedelta(hours=screening_sla_hours),
+            PipelineStage.HM_REVIEW: now - timedelta(days=hm_review_sla_days),
+            PipelineStage.INTERVIEW: now - timedelta(days=interview_sla_days),
+        }
+        rows = (self.db.query(CampaignCandidate)
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids),
+                or_(*[
+                    and_(CampaignCandidate.pipeline_stage == stage,
+                        CampaignCandidate.updated_at < cutoff,
+                    )
+                    for stage, cutoff in cutoffs.items()
+                ]),
+            )
+            .order_by(CampaignCandidate.updated_at.asc())
+            .all()
+        )
+        if not rows:
+            return {}
+
+        ids = [r.id for r in rows]
+
+        failed_ids = {
+            cid for (cid,) in self.db.query(CeleryTaskLog.campaign_candidate_id)
+            .filter(CeleryTaskLog.campaign_candidate_id.in_(ids),
+                CeleryTaskLog.status == TaskStatus.DEAD,
+            ).all()
+        } | {
+            cid for (cid,) in self.db.query(DeadLetterQueue.campaign_candidate_id)
+            .filter(DeadLetterQueue.campaign_candidate_id.in_(ids)).all()
+        }
+
+        last_actor: dict = {}
+        audit_rows = (self.db.query(AuditLog.entity_id, AuditLog.actor_id)
+            .filter(AuditLog.entity_id.in_(ids))
+            .order_by(AuditLog.created_at.desc())
+            .all()
+        )
+        for entity_id, actor_id in audit_rows:
+            last_actor.setdefault(entity_id, actor_id)
+
+        actor_names = self.get_hiring_manager_names([a for a in last_actor.values() if a])
+
+        stall_reasons = {
+            PipelineStage.SCREENING: "SCREENING_OVERDUE",
+            PipelineStage.HM_REVIEW: "HM_REVIEW_OVERDUE",
+            PipelineStage.INTERVIEW: "INTERVIEW_NOT_SCHEDULED",
+        }
+        result: dict[UUID, list[dict]] = {}
+        for cc in rows:
+            reason = stall_reasons[cc.pipeline_stage]
+            if cc.pipeline_stage == PipelineStage.SCREENING and cc.id in failed_ids:
+                reason = "AI_EVALUATION_FAILED"
+            actor_id = last_actor.get(cc.id)
+            result.setdefault(cc.campaign_id, []).append({
+                "campaign_candidate_id": cc.id,
                 "pipeline_stage": cc.pipeline_stage.value,
                 "days_stalled": round((now - cc.updated_at).total_seconds() / 86400, 1),
                 "last_updated_at": cc.updated_at,
@@ -953,6 +1173,10 @@ class CampaignRepository:
     # again) rather than collapsing to campaign_candidates' latest decision.
 
     def get_rejection_layer_breakdown(self, campaign_id: UUID) -> dict[str, int]:
+        # GROUP BY the expression, not the "decision_source" alias -
+        # campaign_candidates also has a real decision_source column, and
+        # Postgres resolves a bare GROUP BY identifier against a real
+        # column over a same-named SELECT alias.
         rows = self.db.execute(text("""
             SELECT sh.scores_snapshot->>'decision_source' AS decision_source, COUNT(*) AS cnt
             FROM campaign_candidate_stage_history sh
@@ -960,7 +1184,7 @@ class CampaignRepository:
             WHERE cc.campaign_id = :campaign_id
               AND sh.to_stage = 'REJECTED'
               AND sh.scores_snapshot->>'decision_source' IS NOT NULL
-            GROUP BY decision_source
+            GROUP BY sh.scores_snapshot->>'decision_source'
         """), {"campaign_id": str(campaign_id)}).all()
         return {row.decision_source: row.cnt for row in rows}
 
@@ -1037,6 +1261,25 @@ class CampaignRepository:
         )
         return (rejected / total) * 100
 
+    def get_deterministic_rejection_rate_batch(self, campaign_ids: list[UUID]) -> dict[UUID, float]:
+        """Batch campaign_id -> deterministic-layer rejection rate, for scheduled health-alert sweeps."""
+        if not campaign_ids:
+            return {}
+        totals = self.get_candidate_counts(campaign_ids)
+        rejected_rows = (self.db.query(CampaignCandidate.campaign_id, func.count(CampaignCandidate.id))
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids),
+                CampaignCandidate.decision_type == DecisionType.REJECTED,
+                CampaignCandidate.decision_source == DecisionSource.DETERMINISTIC,
+            )
+            .group_by(CampaignCandidate.campaign_id)
+            .all()
+        )
+        rejected_by_campaign = {campaign_id: count for campaign_id, count in rejected_rows}
+        return {
+            campaign_id: (rejected_by_campaign.get(campaign_id, 0) / total) * 100 if total else 0.0
+            for campaign_id, total in totals.items()
+        }
+
     def get_deterministic_rejection_details(
         self,
         campaign_id: UUID | None = None,
@@ -1102,3 +1345,33 @@ class CampaignRepository:
         now = datetime.now(timezone.utc)
         hours = [(now - r.entered_at).total_seconds() / 3600 for r in rows]
         return sum(hours) / len(hours)
+
+    def get_average_screening_hours_batch(self, campaign_ids: list[UUID]) -> dict[UUID, float]:
+        """Batch campaign_id -> average hours-in-SCREENING, for scheduled health-alert sweeps."""
+        if not campaign_ids:
+            return {}
+        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
+                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
+            )
+            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING)
+            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
+            .subquery()
+        )
+
+        rows = (self.db.query(CampaignCandidate.campaign_id, latest_entry.c.entered_at)
+            .join(CampaignCandidate,
+                CampaignCandidate.id == latest_entry.c.campaign_candidate_id,
+            )
+            .filter(CampaignCandidate.campaign_id.in_(campaign_ids),
+                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
+            )
+            .all()
+        )
+        now = datetime.now(timezone.utc)
+        hours_by_campaign: dict[UUID, list[float]] = {}
+        for campaign_id, entered_at in rows:
+            hours_by_campaign.setdefault(campaign_id, []).append((now - entered_at).total_seconds() / 3600)
+        return {
+            campaign_id: sum(hours) / len(hours)
+            for campaign_id, hours in hours_by_campaign.items()
+        }

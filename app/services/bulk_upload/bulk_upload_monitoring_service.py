@@ -31,6 +31,9 @@ from app.schemas.resume.monitoring import (
     SkillSummary,
 )
 from app.services.resume.monitoring_shared import build_failure_info, build_stage_timeline_fields
+from app.core.config import settings
+from app.core.cache_keys import dashboard_key
+from app.services.cache_service import CacheService
 
 
 class BulkUploadMonitoringService:
@@ -52,6 +55,7 @@ class BulkUploadMonitoringService:
         stage_repository: DocumentProcessingRepository,
         stage_failure_log_repository: StageFailureLogRepository,
         dead_letter_queue_repository: DeadLetterQueueRepository,
+        cache_service: CacheService | None = None,
     ):
         self.bulk_upload_job_repo = bulk_upload_job_repo
         self.bulk_upload_job_file_repo = bulk_upload_job_file_repo
@@ -62,6 +66,7 @@ class BulkUploadMonitoringService:
         self.stage_repository = stage_repository
         self.stage_failure_log_repository = stage_failure_log_repository
         self.dead_letter_queue_repository = dead_letter_queue_repository
+        self.cache_service = cache_service
 
     def list_files(
         self,
@@ -220,6 +225,16 @@ class BulkUploadMonitoringService:
         return BulkFileTimelineResponse(file_id=job_file.id, **fields)
 
     def get_job_metrics(self, bulk_upload_job_id: UUID) -> BulkJobMetricsResponse:
+        if not self.cache_service:
+            return self._load_job_metrics(bulk_upload_job_id)
+        raw = self.cache_service.get_or_set(
+            dashboard_key("bulk-job-metrics", {"bulk_upload_job_id": str(bulk_upload_job_id)}),
+            loader=lambda: self._load_job_metrics(bulk_upload_job_id).model_dump_json(),
+            ttl=settings.cache_dashboard_ttl_seconds,
+        )
+        return BulkJobMetricsResponse.model_validate_json(raw)
+
+    def _load_job_metrics(self, bulk_upload_job_id: UUID) -> BulkJobMetricsResponse:
         """
         total_files/processed/failed/duplicate come straight off the job
         row's own counters (already maintained atomically per-file by

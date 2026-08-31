@@ -7,15 +7,22 @@ from botocore.exceptions import ClientError
 
 from app.exceptions.email_exception import EmailDeliveryException
 from app.models.async_tasks import TaskStatus
-from app.models.email import EmailNotificationStatus
+from app.models.email import EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 
 TASKS_MODULE = "app.tasks.email_tasks"
 
 
-def _make_notification(status=EmailNotificationStatus.QUEUED, campaign_candidate_id=None):
+def _make_notification(
+    status=EmailNotificationStatus.QUEUED, campaign_candidate_id=None,
+    recipient_type=EmailRecipientType.CANDIDATE, recipient_email=None, template_context=None,
+    trigger_event=EmailTriggerEvent.CANDIDATE_REJECTED,
+):
     return SimpleNamespace(
-        id=uuid4(), candidate_id=uuid4(), campaign_candidate_id=campaign_candidate_id or uuid4(),
+        id=uuid4(), candidate_id=uuid4() if recipient_type == EmailRecipientType.CANDIDATE else None,
+        campaign_candidate_id=campaign_candidate_id or uuid4(),
         template_id=uuid4(), status=status, sent_at=None, error_reason=None,
+        recipient_type=recipient_type, recipient_email=recipient_email, template_context=template_context,
+        trigger_event=trigger_event,
     )
 
 
@@ -168,3 +175,77 @@ def test_dead_letters_after_permanent_ses_failure():
         assert create_kwargs["campaign_candidate_id"] == notification.campaign_candidate_id
         assert notification.status == EmailNotificationStatus.FAILED
         assert notification.error_reason is not None
+
+
+# ----------------------------------------------------------------------
+# Epic 5 Step 2 - generalized recipient model: template_context merge and
+# the EXTERNAL_INTERVIEWER recipient path.
+# ----------------------------------------------------------------------
+
+def test_template_context_is_merged_in_for_extra_placeholders():
+    """
+    INTERVIEW_SCHEDULED/RESCHEDULED/CANCELLED need interview_date/time/
+    mode/interviewer_name on top of candidate_name/job_title -
+    template_context (set at queue time) supplies those.
+    """
+    from app.tasks.email_tasks import send_candidate_email_task
+
+    with _Harness() as h:
+        notification = _make_notification(
+            trigger_event=EmailTriggerEvent.INTERVIEW_SCHEDULED,
+            template_context={"interview_date": "August 28, 2026", "interview_time": "2:00 PM"},
+        )
+        h.notification_repo.get_by_id.return_value = notification
+        h.template_repo.get_by_id.return_value = SimpleNamespace(
+            id=uuid4(),
+            subject="Your interview for {job_title}",
+            body_template="Dear {candidate_name}, your interview is on {interview_date} at {interview_time}.",
+        )
+        h.candidate_repo.get_by_id.return_value = _make_candidate()
+        h.campaign_candidate_repo.get_by_id.return_value = SimpleNamespace(campaign_id=uuid4())
+        h.campaign_repo.get_by_id.return_value = SimpleNamespace(jd_id=uuid4())
+        h.jd_repo.get_by_id.return_value = SimpleNamespace(title="Backend Engineer")
+
+        send_candidate_email_task(email_notification_id=str(notification.id))
+
+        h.ses_client_instance.send_email.assert_called_once_with(
+            to_address="candidate@example.com",
+            subject="Your interview for Backend Engineer",
+            body_text="Dear Jane Doe, your interview is on August 28, 2026 at 2:00 PM.",
+        )
+
+
+def test_external_interviewer_recipient_uses_plaintext_address_no_decryption():
+    """
+    An EXTERNAL_INTERVIEWER row's to_address comes straight from
+    recipient_email (never decrypted - interview_interviewers.email is
+    plaintext to begin with), but candidate_name still resolves via the
+    campaign_candidate -> candidate chain and IS decrypted, since the
+    email is still about a specific candidate even though the recipient
+    isn't them.
+    """
+    from app.tasks.email_tasks import send_candidate_email_task
+
+    with _Harness() as h:
+        h.encryption_service_instance.decrypt.side_effect = None
+        h.encryption_service_instance.decrypt.return_value = "Jane Doe"
+
+        notification = _make_notification(
+            recipient_type=EmailRecipientType.EXTERNAL_INTERVIEWER,
+            recipient_email="interviewer@example.com",
+        )
+        h.notification_repo.get_by_id.return_value = notification
+        h.template_repo.get_by_id.return_value = _make_template()
+        h.campaign_candidate_repo.get_by_id.return_value = SimpleNamespace(campaign_id=uuid4(), candidate_id=uuid4())
+        h.campaign_repo.get_by_id.return_value = SimpleNamespace(jd_id=uuid4())
+        h.jd_repo.get_by_id.return_value = SimpleNamespace(title="Backend Engineer")
+        h.candidate_repo.get_by_id.return_value = _make_candidate()
+
+        send_candidate_email_task(email_notification_id=str(notification.id))
+
+        h.ses_client_instance.send_email.assert_called_once_with(
+            to_address="interviewer@example.com",
+            subject="Update on your application for Backend Engineer",
+            body_text="Dear Jane Doe.",
+        )
+        h.encryption_service_instance.decrypt.assert_called_once()

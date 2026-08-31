@@ -38,12 +38,7 @@ class PreprocessingService:
         
         #remove empty lines at beginning and end of text
         text = "\n".join(lines).strip()
-        
-        
-        
-        #convert to lowercase
-        text = text.lower()
-        
+
         return text
     
     

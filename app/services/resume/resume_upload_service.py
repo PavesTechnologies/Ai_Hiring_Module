@@ -27,6 +27,8 @@ from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.upload_resume_result import UploadResumeResult
 from app.tasks.resume_processing_tasks import process_resume_document
+from app.core.cache_keys import candidate_list_prefix, resume_key, resume_list_prefix
+from app.services.cache_service import CacheService
 
 _AVAILABLE_RESOLUTIONS = ["use_existing", "upload_anyway"]
 
@@ -74,6 +76,7 @@ class ResumeUploadService:
         encryption_service: EncryptionService,
         dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
         campaign_repo: CampaignRepository | None = None,
+        cache_service: CacheService | None = None,
     ):
         self.resume_repo = resume_repo
         self.candidate_service = candidate_service
@@ -89,6 +92,14 @@ class ResumeUploadService:
         # only retry_parse/replay_from_dlq need them.
         self.dead_letter_queue_repo = dead_letter_queue_repo
         self.campaign_repo = campaign_repo
+        self.cache_service = cache_service
+
+    def _invalidate_resume_caches(self, resume_id) -> None:
+        if not self.cache_service:
+            return
+        self.cache_service.delete(resume_key(resume_id))
+        self.cache_service.delete_by_prefix(resume_list_prefix())
+        self.cache_service.delete_by_prefix(candidate_list_prefix())
 
     def upload(
         self,
@@ -252,6 +263,7 @@ class ResumeUploadService:
             self.resume_repo.rollback()
             raise
 
+        self._invalidate_resume_caches(resume.id)
         return resume
 
     def _build_duplicate_warning(
@@ -285,6 +297,7 @@ class ResumeUploadService:
         """
         self.resume_repo.set_task_id(resume, task_id)
         self.resume_repo.commit()
+        self._invalidate_resume_caches(resume.id)
 
     def _build_object_path(self, org_id: UUID | None, file_format: FileFormat) -> str:
         extension = _FORMAT_TO_EXTENSION[file_format]
@@ -372,6 +385,7 @@ class ResumeUploadService:
             self.resume_repo.rollback()
             raise
 
+        self._invalidate_resume_caches(resume.id)
         process_resume_document.apply_async(
             kwargs={
                 "resume_id": str(resume.id),
@@ -442,6 +456,7 @@ class ResumeUploadService:
             self.resume_repo.rollback()
             raise
 
+        self._invalidate_resume_caches(resume.id)
         process_resume_document.apply_async(
             kwargs={
                 "resume_id": str(resume.id),

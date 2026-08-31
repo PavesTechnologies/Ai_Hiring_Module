@@ -19,6 +19,18 @@ class CircuitBreakerRepository:
             .first()
         )
 
+    def get_by_service_names(self, service_names) -> dict[str, CircuitBreakerState]:
+        """Batched form of get_by_service_name, keyed by service_name."""
+        names = list(service_names or [])
+        if not names:
+            return {}
+        rows = (
+            self.db.query(CircuitBreakerState)
+            .filter(CircuitBreakerState.service_name.in_(names))
+            .all()
+        )
+        return {r.service_name: r for r in rows}
+
     def get_or_create(
         self,
         service_name: str,

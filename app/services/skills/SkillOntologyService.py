@@ -50,6 +50,16 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQueueService
 from app.utils.excel.skill_excel_reader import SkillExcelReader
 from app.utils.excel_export import ExcelExport
+from app.core.config import settings
+from app.core.cache_keys import (
+    skill_alias_catalog_key,
+    skill_catalog_key,
+    skill_categories_key,
+    skill_dashboard_summary_key,
+    skill_key,
+    skill_prefix,
+)
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +87,7 @@ class SkillOntologyService:
         audit_service: AuditService,
         celery_task_log_repository: CeleryTaskLogRepository,
         embedding_queue_service: EmbeddingQueueService,
+        cache_service: CacheService | None = None,
     ):
         self.repository = repository
         self.db = db
@@ -85,11 +96,45 @@ class SkillOntologyService:
         self.audit_service = audit_service
         self.celery_task_log_repository = celery_task_log_repository
         self.embedding_queue_service = embedding_queue_service
+        self.cache_service = cache_service
+
+    def _invalidate_skill_caches(self, skill_id: UUID | None = None) -> None:
+        if not self.cache_service:
+            return
+        if skill_id is not None:
+            self.cache_service.delete(skill_key(skill_id))
+        self.cache_service.delete(
+            skill_dashboard_summary_key(),
+            skill_categories_key(),
+            skill_catalog_key(),
+            skill_alias_catalog_key(),
+        )
+        self.cache_service.delete_by_prefix(skill_prefix())
 
     def get_dashboard_summary(self) -> SkillOntologySummaryResponse:
+        if not self.cache_service:
+            return self._load_dashboard_summary()
+        raw = self.cache_service.get_or_set(
+            skill_dashboard_summary_key(),
+            loader=lambda: self._load_dashboard_summary().model_dump_json(),
+            ttl=settings.cache_skill_ttl_seconds,
+        )
+        return SkillOntologySummaryResponse.model_validate_json(raw)
+
+    def _load_dashboard_summary(self) -> SkillOntologySummaryResponse:
         return SkillOntologySummaryResponse(**self.repository.get_dashboard_summary())
 
     def get_categories(self) -> list[SkillCategoryResponse]:
+        if not self.cache_service:
+            return self._load_categories()
+        raw = self.cache_service.get_or_set(
+            skill_categories_key(),
+            loader=lambda: json.dumps([category.model_dump(mode="json") for category in self._load_categories()]),
+            ttl=settings.cache_skill_ttl_seconds,
+        )
+        return [SkillCategoryResponse.model_validate(item) for item in json.loads(raw)]
+
+    def _load_categories(self) -> list[SkillCategoryResponse]:
         return [
             SkillCategoryResponse(category=category, count=count)
             for category, count in self.repository.get_categories()
@@ -138,6 +183,16 @@ class SkillOntologyService:
         return SkillOntologyPageResponse(items=items, page=page, page_size=page_size, total=total)
 
     def get_skill_detail(self, skill_id: UUID) -> SkillOntologyResponse:
+        if not self.cache_service:
+            return self._load_skill_detail(skill_id)
+        raw = self.cache_service.get_or_set(
+            skill_key(skill_id),
+            loader=lambda: self._load_skill_detail(skill_id).model_dump_json(),
+            ttl=settings.cache_skill_ttl_seconds,
+        )
+        return SkillOntologyResponse.model_validate_json(raw)
+
+    def _load_skill_detail(self, skill_id: UUID) -> SkillOntologyResponse:
         skill = self._get_skill_or_404(skill_id)
 
         parent_name = (
@@ -268,6 +323,7 @@ class SkillOntologyService:
 
             self.repository.update_skill(skill)
             self.repository.commit()
+            self._invalidate_skill_caches(skill.id)
             logger.info("Skill updated | skill_id=%s fields_changed=%s", skill.id, list(before.keys()))
         except Exception:
             self.repository.rollback()
@@ -318,6 +374,7 @@ class SkillOntologyService:
             )
             self.repository.create_skill(skill)
             self.repository.commit()
+            self._invalidate_skill_caches()
         except Exception:
             self.repository.rollback()
             logger.exception("Failed to create skill '%s'.", request.canonical_name)
@@ -440,6 +497,7 @@ class SkillOntologyService:
             )
 
             self.repository.commit()
+            self._invalidate_skill_caches(skill.id)
             logger.info(
                 "Skill status updated | skill_id=%s old_status=%s new_status=%s",
                 skill.id, old_status, new_status,
@@ -789,6 +847,7 @@ class SkillOntologyService:
                     logger.exception("Bulk import row failed | row=%s reason=%s", row_number, reason)
 
             self.repository.commit()
+            self._invalidate_skill_caches()
         except Exception:
             self.repository.rollback()
             logger.exception("Bulk import failed.")

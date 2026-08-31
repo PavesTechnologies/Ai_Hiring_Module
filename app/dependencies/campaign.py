@@ -25,6 +25,8 @@ from app.repositories.campaign_weight_preset_repository import (
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.upload_history.upload_history_service import UploadHistoryService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 
 def get_campaign_repository(
     db: Session = Depends(get_db),
@@ -59,8 +61,9 @@ def get_audit_repository(
 
 def get_audit_service(
     repository: AuditRepository = Depends(get_audit_repository),
+    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
 ) -> AuditService:
-    return AuditService(repository=repository)
+    return AuditService(repository=repository, campaign_repo=campaign_repo)
 
 
 def get_campaign_service(
@@ -71,6 +74,7 @@ def get_campaign_service(
     preset_repo: CampaignWeightPresetRepository = Depends(get_campaign_weight_preset_repository),
     db: Session = Depends(get_db),
     prompt_template_repo: PromptTemplateRepository = Depends(get_prompt_template_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> CampaignService:
     return CampaignService(
         campaign_repo=campaign_repo,
@@ -80,6 +84,7 @@ def get_campaign_service(
         preset_repo=preset_repo,
         db=db,
         prompt_template_repo=prompt_template_repo,
+        cache_service=cache_service,
     )
 
 def get_resume_repository_for_upload_history(

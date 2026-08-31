@@ -9,6 +9,9 @@ from fastapi.openapi.utils import get_openapi
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
+from app.api.routes import candidate_actions_routes
+from app.api.routes import export_routes
+from app.api.routes import dashboard_routes
 from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import campaign_routes
@@ -23,8 +26,15 @@ from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
 from app.api.routes.dead_letter_routes import router as dead_letter_router
+from app.api.routes.talent_pool_routes import filters_router as talent_pool_filters_router
 from app.api.routes.talent_pool_routes import router as talent_pool_router
-from app.api.routes.dashboard_routes import router as dashboard_router
+from app.api.routes.audit_log_routes import router as audit_log_router
+from app.api.routes.google_oauth_routes import router as google_oauth_router
+from app.api.routes.interview_feedback_routes import router as interview_feedback_router
+from app.api.routes.user_notification_preference_routes import router as user_notification_preference_router
+from app.api.routes.interview_routes import router as interview_router
+from app.api.routes.oauth_routes import router as oauth_router
+from app.websocket.router import router as websocket_router
 from app.middleware.jwt_middleware import JWTMiddleware
 from app.enums.constants import API_PREFIX
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
@@ -178,7 +188,17 @@ app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=[
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
-app.include_router(router=dashboard_router, prefix=API_PREFIX, tags=["Dashboard"])
+app.include_router(router=audit_log_router, prefix=API_PREFIX, tags=["Audit Log"])
+app.include_router(router=talent_pool_filters_router, prefix=API_PREFIX, tags=["Talent Pool"])
+app.include_router(router=dashboard_routes.router, prefix=API_PREFIX, tags=["Dashboard"])
+app.include_router(router=candidate_actions_routes.router, prefix=API_PREFIX, tags=["Candidate Actions"])
+app.include_router(router=interview_router, prefix=API_PREFIX, tags=["Interview Scheduling"])
+app.include_router(router=interview_feedback_router, prefix=API_PREFIX, tags=["Interview Feedback"])
+app.include_router(router=user_notification_preference_router, prefix=API_PREFIX, tags=["User Notification Preferences"])
+app.include_router(router=oauth_router, prefix=API_PREFIX, tags=["Microsoft OAuth"])
+app.include_router(router=google_oauth_router, prefix=API_PREFIX, tags=["Google OAuth"])
+app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["WebSocket"])
+app.include_router(router=export_routes.router, prefix=API_PREFIX, tags=["Exports"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

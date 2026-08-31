@@ -1,7 +1,9 @@
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
+from types import SimpleNamespace
 from uuid import UUID
 
 from rapidfuzz import fuzz, process
@@ -9,6 +11,9 @@ from rapidfuzz import fuzz, process
 from app.models.skills import JDSkillVerificationStatus, SkillOntology
 from app.repositories.skill_repository import SEMANTIC_SIMILARITY_THRESHOLD, SkillRepository
 from app.services.ai.embedding_service import EmbeddingService
+from app.core.config import settings
+from app.core.cache_keys import skill_catalog_key
+from app.services.cache_service import CacheService
 
 
 class SkillMatchTier(str, Enum):
@@ -81,6 +86,38 @@ class SkillMatchResult:
     # Cleaned form used for matching (unicode/whitespace-normalized) — also
     # what gets stored as UnknownSkill.normalized_key when unmatched.
     normalized_text: str = ""
+    # AI-classified "core"/"supporting" importance, required skills only —
+    # always None for preferred skills and for resume-side matches (resumes
+    # have no importance concept at all). See _skill_importance() below for
+    # how this is derived from the raw input item.
+    importance: str | None = None
+
+
+def load_cached_active_skills(skill_repository: SkillRepository, cache_service: CacheService | None) -> list:
+    """
+    The active-skill catalog (id/canonical_name/aliases only) behind
+    SkillNormalizationService's own matching tiers - factored out as a
+    module-level function so any other caller that only needs a cheap,
+    already-cached list of active skills (e.g. the RapidFuzz-based
+    unknown-skill suggestion methods, which otherwise reload the whole
+    table on every call) can reuse the exact same cache entry instead of
+    hitting PostgreSQL again.
+    """
+    if not cache_service:
+        return skill_repository.list_active_skills()
+
+    raw = cache_service.get_or_set(
+        skill_catalog_key(),
+        loader=lambda: json.dumps([
+            {"id": str(skill.id), "canonical_name": skill.canonical_name, "aliases": skill.aliases or []}
+            for skill in skill_repository.list_active_skills()
+        ]),
+        ttl=settings.cache_skill_catalog_ttl_seconds,
+    )
+    return [
+        SimpleNamespace(id=UUID(item["id"]), canonical_name=item["canonical_name"], aliases=item["aliases"])
+        for item in json.loads(raw)
+    ]
 
 
 class SkillNormalizationService:
@@ -96,52 +133,106 @@ class SkillNormalizationService:
 
     FUZZY_SCORE_THRESHOLD = 85.0
 
-    def __init__(self, skill_repository: SkillRepository, embedding_service: EmbeddingService):
+    def __init__(
+        self,
+        skill_repository: SkillRepository,
+        embedding_service: EmbeddingService,
+        cache_service: CacheService | None = None,
+    ):
         self.skill_repository = skill_repository
         self.embedding_service = embedding_service
+        self.cache_service = cache_service
 
-    def normalize_skills(self, required_skills: list[str], preferred_skills: list[str]) -> list[SkillMatchResult]:
-        catalog = self.skill_repository.list_active_skills()
-        results = [self._match_skill(raw, catalog, mandatory=True) for raw in required_skills]
-        results.extend(self._match_skill(raw, catalog, mandatory=False) for raw in preferred_skills)
+    def _load_catalog(self) -> list:
+        """
+        The active-skill catalog is reloaded from PostgreSQL on every single
+        normalize_skills() call (once per JD/resume processed) — cached
+        (see load_cached_active_skills) since only .id/.canonical_name/
+        .aliases are ever read off it (see _match_* below), so a
+        lightweight SimpleNamespace round-trips through JSON without
+        needing the full SkillOntology ORM object (embeddings are matched
+        separately via SkillRepository.find_by_embedding, not against this
+        in-memory list).
+        """
+        return load_cached_active_skills(self.skill_repository, self.cache_service)
+
+    def normalize_skills(self, required_skills: list, preferred_skills: list) -> list[SkillMatchResult]:
+        """
+        required_skills/preferred_skills accept either plain strings (the
+        resume-side call, which has no importance concept — see
+        resume_processing_pipeline.py) or objects/dicts with a `.name` (and,
+        for required skills only, `.importance`) attribute — the JD-side
+        call, post RequiredSkillItem/PreferredSkillItem. _skill_name/
+        _skill_importance below duck-type on either shape, so this method's
+        signature and this file's only caller-facing contract never needs
+        to know which schema class the JD pipeline uses.
+        """
+        catalog = self._load_catalog()
+        results = [
+            self._match_skill(
+                self._skill_name(item), catalog, mandatory=True, importance=self._skill_importance(item),
+            )
+            for item in required_skills
+        ]
+        results.extend(
+            self._match_skill(self._skill_name(item), catalog, mandatory=False, importance=None)
+            for item in preferred_skills
+        )
         return results
 
-    def _match_skill(self, raw_text: str, catalog: list[SkillOntology], mandatory: bool) -> SkillMatchResult:
+    @staticmethod
+    def _skill_name(item) -> str:
+        return item if isinstance(item, str) else item.name
+
+    @staticmethod
+    def _skill_importance(item) -> str | None:
+        return None if isinstance(item, str) else getattr(item, "importance", None)
+
+    def _match_skill(
+        self, raw_text: str, catalog: list[SkillOntology], mandatory: bool, importance: str | None = None,
+    ) -> SkillMatchResult:
         normalized_text = self._normalize(raw_text)
 
         exact = self._match_exact(normalized_text, catalog)
         if exact:
-            return SkillMatchResult(raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0, normalized_text)
+            return SkillMatchResult(
+                raw_text, mandatory, exact.id, SkillMatchTier.EXACT, 1.0, normalized_text, importance,
+            )
 
         alias = self._match_alias(normalized_text, catalog)
         if alias:
-            return SkillMatchResult(raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0, normalized_text)
+            return SkillMatchResult(
+                raw_text, mandatory, alias.id, SkillMatchTier.ALIAS, 1.0, normalized_text, importance,
+            )
 
         case_insensitive = self._match_case_insensitive(normalized_text, catalog)
         if case_insensitive:
             return SkillMatchResult(
-                raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0, normalized_text
+                raw_text, mandatory, case_insensitive.id, SkillMatchTier.CASE_INSENSITIVE, 1.0,
+                normalized_text, importance,
             )
 
         rule_based = self._match_rule_based(normalized_text, catalog)
         if rule_based:
             return SkillMatchResult(
-                raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0, normalized_text
+                raw_text, mandatory, rule_based.id, SkillMatchTier.RULE_BASED, 1.0, normalized_text, importance,
             )
 
         fuzzy_skill, fuzzy_score = self._match_fuzzy(normalized_text, catalog)
         if fuzzy_skill and fuzzy_score >= self.FUZZY_SCORE_THRESHOLD:
             return SkillMatchResult(
-                raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100, normalized_text
+                raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100,
+                normalized_text, importance,
             )
 
         semantic_skill, similarity = self._match_semantic(normalized_text)
         if semantic_skill and similarity >= SEMANTIC_SIMILARITY_THRESHOLD:
             return SkillMatchResult(
-                raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity, normalized_text
+                raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity,
+                normalized_text, importance,
             )
 
-        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None, normalized_text)
+        return SkillMatchResult(raw_text, mandatory, None, SkillMatchTier.UNKNOWN, None, normalized_text, importance)
 
     @staticmethod
     def _normalize(raw_text: str) -> str:

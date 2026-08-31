@@ -8,6 +8,9 @@ from .campaigns import HiringCampaign
 
 from .compliance import AuditLog
 
+
+from .candidate_notes import CandidateNote
+
 from .ai_pipeline import PromptVersion
 
 from .prompt_template import PromptTemplate, PromptTemplateStatus

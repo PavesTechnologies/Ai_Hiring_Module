@@ -79,6 +79,19 @@ class ActionType(enum.Enum):
     CANDIDATE_FLAGGED_FOR_REVIEW = "CANDIDATE_FLAGGED_FOR_REVIEW"
     REJECTION_REPORT_EXPORTED = "REJECTION_REPORT_EXPORTED"
     CAMPAIGN_SUMMARY_EXPORTED = "CAMPAIGN_SUMMARY_EXPORTED"
+    # M11-E04-S01 recruiter notes. Like the M05-E04 values below, the DB-side
+    # audit_action_type_enum does not contain these until the M11 migration
+    # (c1f4a7b93e20) is applied — writing one before then fails with an
+    # invalid-input-value error.
+    CANDIDATE_NOTE_ADDED = "CANDIDATE_NOTE_ADDED"
+    CANDIDATE_NOTE_UPDATED = "CANDIDATE_NOTE_UPDATED"
+    CANDIDATE_NOTE_DELETED = "CANDIDATE_NOTE_DELETED"
+    # M11-E05 exports. Same migration caveat as the note values above.
+    CANDIDATE_LIST_EXPORTED = "CANDIDATE_LIST_EXPORTED"
+    SCORECARD_EXPORTED = "SCORECARD_EXPORTED"
+    SHORTLIST_PACKAGE_EXPORTED = "SHORTLIST_PACKAGE_EXPORTED"
+    AUDIT_TRAIL_EXPORTED = "AUDIT_TRAIL_EXPORTED"
+    COMPLIANCE_REPORT_EXPORTED = "COMPLIANCE_REPORT_EXPORTED"
     # Epic 4 (M05-E04) Phase D0 — the DB-side audit_action_type_enum does NOT
     # yet contain these 4 values (this migration adds them in the same
     # phase). Writing an AuditLog row with any of these will fail with
@@ -133,6 +146,16 @@ class ActionType(enum.Enum):
     # DETERMINISTIC_SCORE_COMPUTED/SEMANTIC_SCORE_COMPUTED's convention of
     # logging every completed computation, not just rejections.
     AI_EVALUATION_COMPUTED = "AI_EVALUATION_COMPUTED"
+    # Epic 4 (M12) — interview scheduling. Paired migration
+    # (alembic/versions/429b9809bc63_epic4_interview_scheduling.py) adds
+    # these to the DB-side enum in the same change, so there is no gap
+    # between this Python addition and the live schema.
+    INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
+    INTERVIEW_RESCHEDULED = "INTERVIEW_RESCHEDULED"
+    INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED"
+    # M12 Step 3 — interview feedback. Paired migration adds this to the
+    # DB-side enum in the same change, same convention as the 3 above.
+    INTERVIEW_FEEDBACK_SUBMITTED = "INTERVIEW_FEEDBACK_SUBMITTED"
 
 class EntityType(enum.Enum):
     JOB_DESCRIPTION= "JOB_DESCRIPTION"

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.pipeline_transition_exceptions import (
+    ForbiddenPipelineRoleException,
     InvalidPipelineTransitionException,
     PipelineTransitionReasonRequiredException,
 )
@@ -16,22 +17,37 @@ from app.models.pipeline import (
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.CampaignRepository import CampaignRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
+
+# M12 cascading-cancellation follow-up: same constant, same reasoning as
+# StageTransitionService's own copy (see that file for the full
+# rationale) - duplicated, not imported, since this is the second of the
+# 3 places a candidate can leave INTERVIEW from (this one backs Pipeline
+# Board drag-and-drop, where INTERVIEW -> SHORTLISTED is only reachable
+# from in the first place - Epic 1's dedicated endpoints never expose it).
+_INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
+    {PipelineStage.SELECTED, PipelineStage.REJECTED, PipelineStage.SHORTLISTED},
+)
 
 
 class PipelineTransitionService:
     """
     Epic 3 (M05-E03) Phase C0 — the one generic, validated way to move a
-    campaign_candidate between pipeline stages. Nothing in the codebase
-    calls this yet (no existing code path transitions pipeline_stage at
-    all today); this is the foundation later phases (C5, C7) build on.
+    campaign_candidate between pipeline stages, backing both
+    move_pipeline_stage (Pipeline Board drag-and-drop) and
+    BulkStageMoveService. NOT a dead/unused class - the class docstring
+    used to claim "zero call sites anywhere in the codebase", which was
+    true when Epic 3 wrote it but went stale once those two real callers
+    landed; corrected here since that false claim is exactly what let the
+    Epic 4 INTERVIEW-entry hook below go missing from this class for as
+    long as it did (nobody checked back in on "still zero callers?").
 
     Decision-model-aware for consistency with StageTransitionService (the
     service actually wired into the 3 scoring Celery tasks today) - when a
     decision_type is supplied, the same decision_*/scores_snapshot fields
-    get written, so a future caller of this generic engine (e.g. a
-    recruiter shortlist/reject action) doesn't need its own copy of that
-    logic. Still zero call sites of its own.
+    get written, so a caller of this generic engine (e.g. a recruiter
+    shortlist/reject action) doesn't need its own copy of that logic.
     """
 
     def __init__(
@@ -39,11 +55,21 @@ class PipelineTransitionService:
         allowed_transition_repo: AllowedTransitionRepository,
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
+        interview_schedule_repo: InterviewScheduleRepository,
         campaign_repo: CampaignRepository | None = None,
     ):
         self.allowed_transition_repo = allowed_transition_repo
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
+        # Required, not optional-with-a-runtime-check - same discipline
+        # already applied to StageTransitionService.interview_schedule_repo
+        # after this exact class of gap was found live (a candidate moved
+        # to INTERVIEW via Pipeline Board drag-and-drop with no
+        # interview_schedules row at all, discovered mid frontend
+        # integration testing). This is the second of two generic
+        # transition engines that can reach to_stage=INTERVIEW - both must
+        # carry the same hook, not just the one Epic 4 originally touched.
+        self.interview_schedule_repo = interview_schedule_repo
         # Optional so pre-existing construction sites keep working; when it is
         # absent the openings cap simply isn't enforced by this service.
         self.campaign_repo = campaign_repo
@@ -66,9 +92,19 @@ class PipelineTransitionService:
         whenever a real actor (human or a specific automated trigger) is
         driving the transition: it's stored on the history row regardless,
         but the PIPELINE_STAGE_TRANSITIONED audit event is only written
-        when it's present, since AuditLog.actor_id is a required FK — an
-        unattributed SYSTEM transition still gets its history row, just
-        not an audit entry.
+        when it's present — an unattributed SYSTEM transition still gets
+        its history row, just not an audit entry.
+
+        Epic 3 Fix 2 note: the "since AuditLog.actor_id is a required FK"
+        reasoning this comment used to give for that choice was false -
+        actor_id is nullable (both model and live schema), and
+        StageTransitionService.transition() already logs SYSTEM-triggered
+        writes correctly with actor_id=None/actor_role=SYSTEM. Not changed
+        here to always log with actor_id=None instead of skipping, since
+        this method has zero real call sites anywhere in the codebase
+        (see the class docstring) - that's a behavior change with nothing
+        to verify it against, not a mis-attribution fix like the 4 real
+        call sites fixed elsewhere in Epic 3 Fix 2.
 
         decision_type/decision_source/decision_details are optional -
         when supplied, the unified decision model is written onto
@@ -84,12 +120,55 @@ class PipelineTransitionService:
 
         effective_role = actor_role or source.value
         if effective_role not in transition.allowed_roles:
-            raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
+            raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, [effective_role])
 
         if transition.requires_reason and not reason:
             raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)
 
         self.campaign_candidate_repo.update_pipeline_stage(campaign_candidate, to_stage)
+
+        if to_stage == PipelineStage.INTERVIEW:
+            # Same-transaction, same reasoning as
+            # StageTransitionService.transition()'s own hook: creating the
+            # PENDING interview_schedules row is a plain INSERT on this
+            # same session, and campaign_candidate_id's UNIQUE constraint
+            # is a hard invariant ("every candidate at INTERVIEW has
+            # exactly one row"), not a convention - a failure here must
+            # roll back the stage move too. get_or_create, not a blind
+            # insert, for the same re-entry reason (e.g. a fraud-review
+            # clear routed through this engine instead of the other one).
+            self.interview_schedule_repo.get_or_create_pending(campaign_candidate.id)
+
+        # M12 cascading-cancellation hook - opposite direction of the
+        # INTERVIEW-entry hook above, same transaction. Both of this
+        # class's real callers (move_pipeline_stage/BulkStageMoveService)
+        # always pass a real changed_by/actor_role - see
+        # _INTERVIEW_EXIT_CASCADE_STAGES's own comment for why none of
+        # these 3 target stages ever permit a SYSTEM-only actor anyway.
+        if from_stage == PipelineStage.INTERVIEW and to_stage in _INTERVIEW_EXIT_CASCADE_STAGES:
+            self.interview_schedule_repo.cancel_active_rounds(
+                campaign_candidate.id,
+                reason=f"Candidate outcome finalized: {to_stage.value}",
+                changed_by=changed_by,
+                changed_by_role=effective_role,
+            )
+
+        # Epic 5 follow-up - manual re-score trigger: arriving at
+        # SCREENING from anywhere other than UPLOADED cancels any still-
+        # active interview rounds, same transaction, same reasoning as
+        # the cascade-cancel hook above. The re-score itself is NOT
+        # enqueued here - this method never commits, and enqueueing a
+        # Celery task can't be rolled back with the DB transaction, so
+        # that part lives in this method's 3 real callers instead
+        # (move_pipeline_stage, BulkStageMoveService.bulk_move/move_one),
+        # post their own commit - see manual_candidate_rescore.py.
+        if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
+            self.interview_schedule_repo.cancel_active_rounds(
+                campaign_candidate.id,
+                reason="Candidate returned to SCREENING for re-evaluation",
+                changed_by=changed_by,
+                changed_by_role=effective_role,
+            )
 
         scores_snapshot = None
         if decision_type is not None:

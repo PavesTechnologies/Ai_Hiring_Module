@@ -18,15 +18,22 @@ email_templates' "one active row per trigger_event" partial unique index.
 Purely additive: no existing column altered, no existing row touched.
 
 Revision ID: 08655d0b0117
-Revises: 9a1c2f3e6b7d
+Revises: b6dda6ad1824
 Create Date: 2026-08-10
+
+down_revision updated 2026-08-11: the placeholder merge migration this
+chains onto was renamed from 9a1c2f3e6b7d to b6dda6ad1824 after that id
+turned out to collide with a teammate's real, unrelated migration - see
+b6dda6ad1824_placeholder_for_missing_revision.py's docstring and
+docs/known_issues.md's 2026-08-10 entry. This file's own content is
+otherwise unchanged.
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = "08655d0b0117"
-down_revision = "9a1c2f3e6b7d"
+down_revision = "b6dda6ad1824"
 branch_labels = None
 depends_on = None
 

@@ -8,6 +8,8 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
+from app.core.cache_keys import candidate_list_prefix, resume_key, resume_list_prefix
+from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ class ResumeCleanupService:
         dead_letter_queue_repo: DeadLetterQueueRepository,
         storage_service,
         audit_service: AuditService,
+        cache_service: CacheService | None = None,
     ):
         self.resume_repo = resume_repo
         self.campaign_candidate_repo = campaign_candidate_repo
@@ -46,6 +49,7 @@ class ResumeCleanupService:
         self.dead_letter_queue_repo = dead_letter_queue_repo
         self.storage_service = storage_service
         self.audit_service = audit_service
+        self.cache_service = cache_service
 
     def delete_resume(
         self,
@@ -108,6 +112,11 @@ class ResumeCleanupService:
         except Exception:
             self.resume_repo.rollback()
             raise
+
+        if self.cache_service:
+            self.cache_service.delete(resume_key(resume_id))
+            self.cache_service.delete_by_prefix(resume_list_prefix())
+            self.cache_service.delete_by_prefix(candidate_list_prefix())
 
     def _delete_resume_file(self, file_path: str) -> None:
         """Best-effort — same convention as CandidateErasureService._delete_resume_file."""

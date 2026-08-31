@@ -154,8 +154,15 @@ def _make_campaign_candidate(
     )
 
 
-def _make_campaign(status=CampaignStatus.ACTIVE, jd_id=None, deterministic_threshold=70.0):
-    return SimpleNamespace(id=uuid4(), status=status, jd_id=jd_id or uuid4(), deterministic_threshold=deterministic_threshold)
+def _make_campaign(
+    status=CampaignStatus.ACTIVE, jd_id=None, deterministic_threshold=70.0,
+    required_skill_coverage_threshold=0.0, max_missing_core_skills=3,
+):
+    return SimpleNamespace(
+        id=uuid4(), status=status, jd_id=jd_id or uuid4(), deterministic_threshold=deterministic_threshold,
+        required_skill_coverage_threshold=required_skill_coverage_threshold,
+        max_missing_core_skills=max_missing_core_skills,
+    )
 
 
 def _make_resume(parse_status=ParseStatus.PARSED, parsed_json=None):
@@ -224,6 +231,63 @@ def test_raises_when_job_description_not_found():
             calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
         h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
+
+
+def test_raises_when_transition_to_screening_fails_to_advance_past_uploaded():
+    """
+    Root-cause fix: transition_to_screening()'s return value used to be
+    discarded - a genuine failure to advance (e.g. no allowed_transitions
+    row for UPLOADED -> SCREENING) is a silent no-op exactly like the
+    benign "already past UPLOADED" case, and scoring used to proceed
+    anyway, persisting a real score against a candidate still stuck at
+    UPLOADED with the task marked SUCCESS and never retried (the exact bug
+    that left 2 real candidates permanently stuck in production). Checking
+    pipeline_stage after the call and raising if it's still UPLOADED routes
+    this through the task's normal failure handling instead.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=PipelineStage.UPLOADED)
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+        # No allowed_transitions row for UPLOADED -> SCREENING -
+        # transition_to_screening's own no-op branch.
+        h.allowed_transition_repo.is_transition_allowed.return_value = False
+
+        with pytest.raises(RuntimeError, match="did not advance"):
+            calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        assert cc.pipeline_stage == PipelineStage.UPLOADED
+        h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
+        h.task_log_repo.update.assert_called()  # mark_failure reached
+
+
+def test_scores_normally_when_transition_to_screening_succeeds_from_uploaded():
+    """
+    Companion to the test above - confirms the fix doesn't regress the
+    normal path: a genuine UPLOADED candidate whose transition succeeds
+    must still score exactly as before.
+    """
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=PipelineStage.UPLOADED)
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+        h.allowed_transition_repo.is_transition_allowed.return_value = True
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = _breakdown(
+            [_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True,
+        )
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        assert cc.pipeline_stage == PipelineStage.SCREENING
+        h.scoring_service_instance.calculate_and_store_score_breakdown.assert_called_once()
 
 
 def test_skips_gracefully_when_campaign_candidate_no_longer_exists():

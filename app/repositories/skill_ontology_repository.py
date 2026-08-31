@@ -142,6 +142,37 @@ class SkillOntologyRepository:
             .all()
         )
 
+    def get_skills_by_ids(self, skill_ids: list[UUID]) -> dict[UUID, SkillOntology]:
+        """Batch id -> SkillOntology lookup - avoids one get_skill_by_id call per skill."""
+        if not skill_ids:
+            return {}
+        rows = (
+            self.db.query(SkillOntology)
+            .filter(SkillOntology.id.in_(set(skill_ids)))
+            .all()
+        )
+        return {skill.id: skill for skill in rows}
+
+    def get_children_batch(self, parent_skill_ids: list[UUID]) -> dict[UUID, list[SkillOntology]]:
+        """
+        Batch parent_skill_id -> children lookup - avoids one get_children
+        call per parent (used to load CHILD/SIBLING/GRANDCHILD hierarchy
+        tiers for many mandatory skills in a fixed number of round trips
+        instead of one per skill/child).
+        """
+        if not parent_skill_ids:
+            return {}
+        rows = (
+            self.db.query(SkillOntology)
+            .filter(SkillOntology.parent_skill_id.in_(set(parent_skill_ids)))
+            .order_by(SkillOntology.canonical_name.asc())
+            .all()
+        )
+        children_by_parent: dict[UUID, list[SkillOntology]] = {}
+        for child in rows:
+            children_by_parent.setdefault(child.parent_skill_id, []).append(child)
+        return children_by_parent
+
     def get_by_canonical_name_exact(self, name: str) -> Optional[SkillOntology]:
         return self.db.query(SkillOntology).filter(SkillOntology.canonical_name == name).first()
 

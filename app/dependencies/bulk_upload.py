@@ -28,6 +28,8 @@ from app.repositories.stage_failure_log_repository import StageFailureLogReposit
 from app.services.audit_service import AuditService
 from app.services.bulk_upload.bulk_upload_monitoring_service import BulkUploadMonitoringService
 from app.services.bulk_upload.bulk_upload_service import BulkUploadService
+from app.dependencies.cache import get_cache_service
+from app.services.cache_service import CacheService
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 
 
@@ -81,6 +83,7 @@ def get_bulk_upload_monitoring_service(
     stage_repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
     stage_failure_log_repository: StageFailureLogRepository = Depends(get_stage_failure_log_repository),
     dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+    cache_service: CacheService = Depends(get_cache_service),
 ) -> BulkUploadMonitoringService:
     return BulkUploadMonitoringService(
         bulk_upload_job_repo=bulk_upload_job_repo,
@@ -92,4 +95,5 @@ def get_bulk_upload_monitoring_service(
         stage_repository=stage_repository,
         stage_failure_log_repository=stage_failure_log_repository,
         dead_letter_queue_repository=dead_letter_queue_repository,
+        cache_service=cache_service,
     )

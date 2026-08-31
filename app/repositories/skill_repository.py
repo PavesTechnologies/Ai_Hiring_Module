@@ -12,6 +12,7 @@ from app.models.jd.job_descriptions import JDVerificationStatus, JobDescription
 from app.models.skills import (
     CandidateSkill,
     JDSkill,
+    JDSkillImportance,
     JDSkillVerificationStatus,
     JDUnknownSkill,
     JDUnknownSkillStatus,
@@ -143,6 +144,27 @@ class SkillRepository:
                      SkillOntology.last_seen_at: datetime.now(timezone.utc)})
         )
 
+    def bump_occurrence_counts(self, skill_ids: list[UUID]) -> None:
+        """Batched bump_occurrence_count - one UPDATE for every matched skill in a JD/resume instead of one per skill."""
+        if not skill_ids:
+            return
+        (
+            self.db.query(SkillOntology)
+            .filter(SkillOntology.id.in_(set(skill_ids)))
+            .update(
+                {SkillOntology.occurrence_count: SkillOntology.occurrence_count + 1,
+                 SkillOntology.last_seen_at: datetime.now(timezone.utc)},
+                synchronize_session=False,
+            )
+        )
+
+    def bulk_create_jd_skills(self, jd_skills: list[JDSkill]) -> None:
+        """One flush for every matched JD skill instead of one create_jd_skill round trip each."""
+        if not jd_skills:
+            return
+        self.db.add_all(jd_skills)
+        self.db.flush()
+
     def create_jd_skill(
         self,
         jd_id: UUID,
@@ -152,12 +174,14 @@ class SkillRepository:
         verification_status: JDSkillVerificationStatus,
         confidence: float | None = None,
         weight: float | None = None,
+        importance: JDSkillImportance | None = None,
     ) -> JDSkill:
         jd_skill = JDSkill(
             jd_id=jd_id,
             canonical_skill_id=canonical_skill_id,
             mandatory=mandatory,
             weight=weight,
+            importance=importance,
             confidence=confidence,
             match_tier=match_tier,
             verification_status=verification_status,
@@ -723,6 +747,7 @@ class SkillRepository:
                 JDSkill.canonical_skill_id.label("canonical_skill_id"),
                 JDSkill.weight.label("weight"),
                 JDSkill.mandatory.label("mandatory"),
+                JDSkill.importance.label("importance"),
                 CandidateSkill.scoring_weight.label("candidate_scoring_weight"),
                 CandidateSkill.match_tier.label("match_tier"),
                 CandidateSkill.confidence.label("confidence"),

@@ -12,14 +12,37 @@ _MAX_HIERARCHY_DEPTH = 2
 
 _DEFAULT_GRANDCHILD_MULTIPLIER = 0.50
 
+# Skill-importance multipliers (core/supporting) - default to neutral 1.0
+# (no differentiation) so a JD with no importance-classified skills, or a
+# platform_config that hasn't set these keys yet, scores byte-for-byte the
+# same as before this feature existed. Never hardcode a differentiated
+# business value here - only platform_config may do that.
+_DEFAULT_CORE_IMPORTANCE_MULTIPLIER = 1.0
+_DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER = 1.0
+
+# Business rule (not a percentage, not proportional to required-skill
+# count): a candidate may be missing at most this many CORE required
+# skills, regardless of whether the JD has 10 or 100 required skills.
+DEFAULT_MAX_MISSING_CORE_SKILLS = 3
+
+# No prior concept of a coverage gate exists - 0.0 (always satisfied)
+# keeps every caller that doesn't pass this explicitly behaving exactly as
+# it did before this feature existed.
+DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD = 0.0
+
 # M07-E03 S01 T02: human-readable display names for
-# ExperienceEducationValidationService's internal degree-level names
-# (HIGH_SCHOOL/ASSOCIATE/BACHELOR/MASTER/DOCTORATE) - rejection_reason must
-# never surface an internal level code verbatim.
+# ExperienceEducationValidationService's internal degree-level names -
+# rejection_reason must never surface an internal level code verbatim.
+# Matches app.enums.education.DEGREE_LEVEL_RANK's keys (the only levels
+# ExperienceEducationValidationService can ever produce, now that it
+# sources degree_level from DegreeLevel/DEGREE_LEVEL_RANK - PROFESSIONAL/
+# OTHER/UNKNOWN are deliberately unranked there and never reach here).
 _DEGREE_LEVEL_DISPLAY_NAMES = {
-    "HIGH_SCHOOL": "High School",
+    "CERTIFICATE": "Certificate",
+    "DIPLOMA": "Diploma",
     "ASSOCIATE": "Associate's",
     "BACHELOR": "Bachelor's",
+    "POSTGRADUATE_DIPLOMA": "Postgraduate Diploma",
     "MASTER": "Master's",
     "DOCTORATE": "Doctorate",
 }
@@ -107,10 +130,60 @@ class CandidateScoringService:
     # M07-E01 S02: hierarchy-aware mandatory-skill coverage breakdown
     # ------------------------------------------------------------------
 
+    def load_mandatory_skill_hierarchy_for_jd(self, jd_id: UUID) -> dict:
+        """
+        Convenience wrapper for callers that only have a jd_id (not
+        already-fetched coverage_rows) - e.g. ResumeSelectionService
+        comparing several resume versions against the same JD, where the
+        hierarchy should be loaded once up front rather than once per
+        build_mandatory_skill_breakdown call.
+        """
+        mandatory_jd_skills = self.skill_repository.get_mandatory_jd_skills(jd_id)
+        return self.load_mandatory_skill_hierarchy(
+            [jd_skill.canonical_skill_id for jd_skill in mandatory_jd_skills]
+        )
+
+    def load_mandatory_skill_hierarchy(self, mandatory_skill_ids: list[UUID]) -> dict:
+        """
+        Batch-loads everything the CHILD/GRANDCHILD/SIBLING hierarchy tiers
+        need for a fixed set of mandatory skill ids, in 3 queries total
+        (skills-themselves, their children/siblings, their grandchildren)
+        instead of one get_skill_by_id + one-or-more get_children call per
+        skill. This data depends only on the JD's mandatory skills, never
+        on which resume/candidate is being scored - callers comparing
+        multiple resume versions against the same JD (e.g.
+        ResumeSelectionService._compare_and_select) should call this once
+        and pass the result to every build_mandatory_skill_breakdown call
+        for that JD, instead of letting each one reload it.
+        """
+        skills_by_id = self.skill_ontology_repository.get_skills_by_ids(mandatory_skill_ids)
+
+        parent_ids = {
+            skill.parent_skill_id for skill in skills_by_id.values() if skill.parent_skill_id is not None
+        }
+        children_by_parent = self.skill_ontology_repository.get_children_batch(
+            list(set(mandatory_skill_ids) | parent_ids)
+        )
+
+        child_ids = {
+            child.id
+            for skill_id in mandatory_skill_ids
+            for child in children_by_parent.get(skill_id, [])
+            if child.is_active
+        }
+        grandchildren_by_parent = self.skill_ontology_repository.get_children_batch(list(child_ids))
+
+        return {
+            "skills_by_id": skills_by_id,
+            "children_by_parent": children_by_parent,
+            "grandchildren_by_parent": grandchildren_by_parent,
+        }
+
     def build_mandatory_skill_breakdown(
         self,
         jd_id: UUID,
         resume_id: UUID,
+        hierarchy: dict | None = None,
     ) -> dict:
         """
         Per-mandatory-skill match breakdown in strict priority order:
@@ -122,6 +195,12 @@ class CandidateScoringService:
         config_repository (HIERARCHY_GRANDCHILD_MULTIPLIER /
         HIERARCHY_SEMANTIC_ONLY_THRESHOLD) - calculate_deterministic_score
         delegates here, so it requires both too.
+
+        `hierarchy` is the JD-only batch-loaded bundle from
+        load_mandatory_skill_hierarchy - pass it in when scoring multiple
+        resumes against the same JD (it never changes between them) to
+        avoid recomputing it per resume. Left None (the default) for the
+        common single-resume case, where it's loaded internally.
         """
         if self.skill_ontology_repository is None or self.config_repository is None:
             raise ValueError(
@@ -130,6 +209,11 @@ class CandidateScoringService:
             )
 
         coverage_rows = self.skill_repository.get_mandatory_skill_coverage(jd_id, resume_id)
+
+        if hierarchy is None:
+            hierarchy = self.load_mandatory_skill_hierarchy(
+                [row.canonical_skill_id for row in coverage_rows]
+            )
 
         # Candidate's own in-play normalized skills (scoring_weight > 0),
         # keyed by canonical_skill_id - the pool every hierarchy tier below
@@ -151,7 +235,10 @@ class CandidateScoringService:
         no_verified_skills = len(candidate_skills_by_id) == 0
 
         configs = self.config_repository.get_configs_by_keys(
-            ["HIERARCHY_GRANDCHILD_MULTIPLIER", "HIERARCHY_SEMANTIC_ONLY_THRESHOLD"]
+            [
+                "HIERARCHY_GRANDCHILD_MULTIPLIER", "HIERARCHY_SEMANTIC_ONLY_THRESHOLD",
+                "CORE_IMPORTANCE_WEIGHT_MULTIPLIER", "SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER",
+            ]
         )
         grandchild_multiplier = float(configs.get("HIERARCHY_GRANDCHILD_MULTIPLIER", _DEFAULT_GRANDCHILD_MULTIPLIER))
         # No safe default exists for this one (unlike grandchild's ticket-
@@ -162,12 +249,20 @@ class CandidateScoringService:
         semantic_threshold_raw = configs.get("HIERARCHY_SEMANTIC_ONLY_THRESHOLD")
         semantic_threshold = float(semantic_threshold_raw) if semantic_threshold_raw is not None else None
 
+        core_multiplier = float(
+            configs.get("CORE_IMPORTANCE_WEIGHT_MULTIPLIER", _DEFAULT_CORE_IMPORTANCE_MULTIPLIER)
+        )
+        supporting_multiplier = float(
+            configs.get("SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER", _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER)
+        )
+
         mandatory_skills = []
         matched_count = 0
 
         for row in coverage_rows:
             entry = self._score_one_mandatory_skill(
                 row, candidate_skills_by_id, grandchild_multiplier, semantic_threshold,
+                core_multiplier, supporting_multiplier, hierarchy,
             )
             if entry["match_type"] in _COVERED_MATCH_TYPE_VALUES:
                 matched_count += 1
@@ -176,7 +271,10 @@ class CandidateScoringService:
         total_mandatory = len(mandatory_skills)
         # mandatory_coverage_pct: display-only, a pure count-based coverage
         # metric ("how many mandatory skills matched at all, regardless of
-        # tier quality"). Never used as the deterministic score.
+        # tier quality"). Never used as the deterministic score - but IS
+        # reused as-is (never recalculated a second way) for the Part 5
+        # required-skill-coverage qualification check - see
+        # evaluate_skill_qualification.
         mandatory_coverage_pct = (
             round((matched_count / total_mandatory) * 100, 2) if total_mandatory > 0 else 100.0
         )
@@ -185,12 +283,15 @@ class CandidateScoringService:
         # mandatory contributions) x 100. The "max" contribution for a
         # skill is what it would have contributed on a perfect EXACT match
         # (hierarchy_multiplier=1.0, candidate_scoring_weight=1.0) - i.e.
-        # jd_skill.weight itself. This ratio is what makes the score a
-        # true 0-100 scale regardless of the actual magnitude JD skill
-        # weights happen to use (equal-weight auto-assignment or a future
-        # manual override) - no fixed point budget is assumed or required.
+        # effective_jd_weight itself (jd_skill.weight x its
+        # importance_multiplier - jd_skill.weight alone when the skill
+        # isn't core/supporting-classified, since that multiplier defaults
+        # to 1.0). This ratio is what makes the score a true 0-100 scale
+        # regardless of the actual magnitude JD skill weights happen to use
+        # (equal-weight auto-assignment or a future manual override) - no
+        # fixed point budget is assumed or required.
         actual_sum = sum(entry["skill_contribution"] or 0 for entry in mandatory_skills)
-        max_sum = sum(entry["configured_weight"] or 0 for entry in mandatory_skills)
+        max_sum = sum(entry["effective_jd_weight"] or 0 for entry in mandatory_skills)
         deterministic_score = (
             round((actual_sum / max_sum) * 100, 2) if max_sum > 0 else 100.0
         )
@@ -209,15 +310,33 @@ class CandidateScoringService:
         candidate_skills_by_id: dict,
         grandchild_multiplier: float,
         semantic_threshold: float | None,
+        core_multiplier: float = _DEFAULT_CORE_IMPORTANCE_MULTIPLIER,
+        supporting_multiplier: float = _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER,
+        hierarchy: dict | None = None,
     ) -> dict:
         canonical_skill_id = row.canonical_skill_id
         weight = float(row.weight) if row.weight is not None else None
         mandatory = bool(row.mandatory)
 
+        # getattr, not row.importance: some callers (older fixtures, any
+        # future row-like object) may not carry this attribute at all -
+        # absence must mean "not classified", identical to an explicit NULL.
+        importance_label = self._importance_label(getattr(row, "importance", None))
+        importance_multiplier = self._importance_multiplier_for_label(
+            importance_label, core_multiplier, supporting_multiplier,
+        )
+
+        # hierarchy is batch-loaded once for every mandatory skill on this
+        # JD (see load_mandatory_skill_hierarchy) - looked up here instead
+        # of a live get_skill_by_id/get_children call per skill.
+        skills_by_id = hierarchy["skills_by_id"]
+        children_by_parent = hierarchy["children_by_parent"]
+        grandchildren_by_parent = hierarchy["grandchildren_by_parent"]
+
         # Fetched once up front (not just for the SIBLING tier as before) -
         # every entry needs the JD skill's own canonical_name (T03), and
         # SIBLING/SEMANTIC still need target_skill itself below.
-        target_skill = self.skill_ontology_repository.get_skill_by_id(canonical_skill_id)
+        target_skill = skills_by_id.get(canonical_skill_id)
         canonical_name = target_skill.canonical_name if target_skill is not None else None
 
         # Tier 1: EXACT - already resolved by the T01 LEFT JOIN. The
@@ -228,13 +347,14 @@ class CandidateScoringService:
                 MandatorySkillMatchType.EXACT, 1.0,
                 float(row.candidate_scoring_weight), row.match_tier, row.confidence,
                 matched_candidate_skill_canonical_name=canonical_name,
+                importance=importance_label, importance_multiplier=importance_multiplier,
             )
 
         # Tier 2: CHILD (depth 1). Inactive (deactivated/deprecated) skills
         # are never valid hierarchy match targets (S03-T01), even if a
         # stale candidate_skills row still points at one.
         children = [
-            child for child in self.skill_ontology_repository.get_children(canonical_skill_id)
+            child for child in children_by_parent.get(canonical_skill_id, [])
             if child.is_active
         ]
         child_match = self._best_hierarchy_match(children, candidate_skills_by_id)
@@ -245,6 +365,7 @@ class CandidateScoringService:
                 MandatorySkillMatchType.CHILD, 0.7,
                 float(candidate_skill.scoring_weight), candidate_skill.match_tier, candidate_skill.confidence,
                 matched_candidate_skill_canonical_name=matched_ontology_skill.canonical_name,
+                importance=importance_label, importance_multiplier=importance_multiplier,
             )
 
         # Tier 3: GRANDCHILD (depth 2) - only reached because no direct
@@ -253,7 +374,7 @@ class CandidateScoringService:
             grandchildren = [
                 grandchild
                 for child in children
-                for grandchild in self.skill_ontology_repository.get_children(child.id)
+                for grandchild in grandchildren_by_parent.get(child.id, [])
                 if grandchild.is_active
             ]
             grandchild_match = self._best_hierarchy_match(grandchildren, candidate_skills_by_id)
@@ -264,6 +385,7 @@ class CandidateScoringService:
                     MandatorySkillMatchType.GRANDCHILD, grandchild_multiplier,
                     float(candidate_skill.scoring_weight), candidate_skill.match_tier, candidate_skill.confidence,
                     matched_candidate_skill_canonical_name=matched_ontology_skill.canonical_name,
+                    importance=importance_label, importance_multiplier=importance_multiplier,
                 )
 
         # Tier 4: SIBLING - only if no exact/child/grandchild match.
@@ -276,7 +398,7 @@ class CandidateScoringService:
         else:
             siblings = [
                 sibling
-                for sibling in self.skill_ontology_repository.get_children(target_skill.parent_skill_id)
+                for sibling in children_by_parent.get(target_skill.parent_skill_id, [])
                 if sibling.id != canonical_skill_id and sibling.is_active
             ]
             sibling_match = self._best_hierarchy_match(siblings, candidate_skills_by_id)
@@ -287,6 +409,7 @@ class CandidateScoringService:
                     MandatorySkillMatchType.SIBLING, 0.4,
                     float(candidate_skill.scoring_weight), candidate_skill.match_tier, candidate_skill.confidence,
                     matched_candidate_skill_canonical_name=matched_ontology_skill.canonical_name,
+                    importance=importance_label, importance_multiplier=importance_multiplier,
                 )
 
         # Tier 5: SEMANTIC - only if every higher tier failed, and only if
@@ -308,6 +431,7 @@ class CandidateScoringService:
                         matched_candidate_skill_canonical_name=(
                             matched_ontology_skill.canonical_name if matched_ontology_skill is not None else None
                         ),
+                        importance=importance_label, importance_multiplier=importance_multiplier,
                     )
                     entry["semantic_similarity"] = round(similarity, 4)
                     return entry
@@ -317,10 +441,37 @@ class CandidateScoringService:
             canonical_skill_id, canonical_name, mandatory, weight,
             MandatorySkillMatchType.MISSING, 0.0, None, None, None,
             matched_candidate_skill_canonical_name=None,
+            importance=importance_label, importance_multiplier=importance_multiplier,
         )
         if sibling_skip_reason is not None:
             entry["sibling_skip_reason"] = sibling_skip_reason
         return entry
+
+    @staticmethod
+    def _importance_label(raw_importance) -> str | None:
+        """
+        Normalizes a JDSkill.importance value (a JDSkillImportance enum
+        member, a plain "CORE"/"SUPPORTING" string, or None/missing) to a
+        lowercase "core"/"supporting" label, or None when not classified -
+        legacy JDSkill rows, preferred skills, or rows from a caller that
+        never queried this column at all.
+        """
+        if raw_importance is None:
+            return None
+        value = raw_importance.value if hasattr(raw_importance, "value") else str(raw_importance)
+        return value.lower()
+
+    @staticmethod
+    def _importance_multiplier_for_label(
+        importance_label: str | None, core_multiplier: float, supporting_multiplier: float,
+    ) -> float:
+        if importance_label == "core":
+            return core_multiplier
+        if importance_label == "supporting":
+            return supporting_multiplier
+        # Not classified - Part 21: NULL must be a neutral 1.0 multiplier,
+        # never guessed as either tier.
+        return 1.0
 
     @staticmethod
     def _best_hierarchy_match(ontology_skills: list, candidate_skills_by_id: dict):
@@ -351,24 +502,39 @@ class CandidateScoringService:
         match_tier: str | None,
         confidence: float | None,
         matched_candidate_skill_canonical_name: str | None = None,
+        importance: str | None = None,
+        importance_multiplier: float = 1.0,
     ) -> dict:
+        # effective_jd_weight = jd_skill.weight x importance_multiplier
+        # (Part 3) - jd_skills.weight itself is never mutated; this is a
+        # second, derived number computed fresh every time, same as
+        # hierarchy_score_multiplier already is. Computed unconditionally
+        # (including for MISSING) because build_mandatory_skill_breakdown's
+        # SUM(effective_jd_weight) denominator needs every mandatory
+        # skill's max-possible contribution, matched or not - exactly how
+        # configured_weight was already used in that denominator before.
+        effective_jd_weight = round(weight * importance_multiplier, 4) if weight is not None else None
+
         if match_type == MandatorySkillMatchType.MISSING:
             # Requirement: a final unmatched skill always contributes 0,
             # even when weight itself is unset.
             contribution = 0.0
-        elif weight is None or candidate_scoring_weight is None:
-            # Can't compute jd_skill.weight * candidate_skill.scoring_weight
+        elif effective_jd_weight is None or candidate_scoring_weight is None:
+            # Can't compute effective_jd_weight * candidate_skill.scoring_weight
             # * hierarchy_score_multiplier without both factors - reported
             # as unknown rather than silently defaulted.
             contribution = None
         else:
-            contribution = round(weight * candidate_scoring_weight * hierarchy_score_multiplier, 4)
+            contribution = round(effective_jd_weight * candidate_scoring_weight * hierarchy_score_multiplier, 4)
 
         return {
             "canonical_skill_id": str(canonical_skill_id),
             "canonical_name": canonical_name,
             "mandatory": mandatory,
             "configured_weight": weight,
+            "importance": importance,
+            "importance_multiplier": importance_multiplier,
+            "effective_jd_weight": effective_jd_weight,
             "match_type": match_type.value,
             "matched_candidate_skill_canonical_name": matched_candidate_skill_canonical_name,
             "hierarchy_score_multiplier": hierarchy_score_multiplier,
@@ -407,12 +573,15 @@ class CandidateScoringService:
         contribution = jd_skill.weight * candidate_skill.scoring_weight * 1.0
         """
         coverage_rows = self.skill_repository.get_mandatory_skill_coverage(jd_id, resume_id, mandatory=False)
+        skills_by_id = self.skill_ontology_repository.get_skills_by_ids(
+            [row.canonical_skill_id for row in coverage_rows]
+        )
 
         preferred_skills = []
         for row in coverage_rows:
             weight = float(row.weight) if row.weight is not None else None
             is_exact_match = row.candidate_scoring_weight is not None
-            target_skill = self.skill_ontology_repository.get_skill_by_id(row.canonical_skill_id)
+            target_skill = skills_by_id.get(row.canonical_skill_id)
             canonical_name = target_skill.canonical_name if target_skill is not None else None
             preferred_skills.append(self._breakdown_entry(
                 row.canonical_skill_id, canonical_name, bool(row.mandatory), weight,
@@ -428,6 +597,61 @@ class CandidateScoringService:
         return {
             "preferred_skills": preferred_skills,
             "preferred_skill_bonus": preferred_skill_bonus,
+        }
+
+    # ------------------------------------------------------------------
+    # Skill-stage qualification (core/supporting importance): three checks
+    # computed purely from the breakdown build_mandatory_skill_breakdown
+    # already produced - never a second, independent evaluation, never a
+    # second scoring path. Replaces the old "any missing mandatory skill
+    # -> automatic fail" gate.
+    # ------------------------------------------------------------------
+
+    def evaluate_skill_qualification(
+        self,
+        breakdown: dict,
+        skill_score: float,
+        deterministic_threshold: float,
+        required_skill_coverage_threshold: float = DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD,
+        max_missing_core_skills: int = DEFAULT_MAX_MISSING_CORE_SKILLS,
+    ) -> dict:
+        """
+        The skill stage passes only when ALL three hold:
+
+        1. required_skill_coverage (breakdown["mandatory_coverage_pct"],
+           reused as-is, never recalculated) >= required_skill_coverage_threshold
+        2. skill_score (the importance-weighted deterministic skill score)
+           >= deterministic_threshold - the SAME campaign.deterministic_threshold
+           every other deterministic comparison already uses, not a second
+           threshold.
+        3. missing CORE required skills <= max_missing_core_skills (a fixed
+           business limit, default 3 - never proportional to how many
+           required skills the JD has).
+
+        A required skill whose importance was never classified (NULL - a
+        legacy JDSkill row) never counts toward #3, but still counts
+        against #1 and #2 exactly as any other missing mandatory skill
+        would - it simply isn't eligible for the CORE-specific limit.
+        """
+        coverage_pct = breakdown["mandatory_coverage_pct"]
+        coverage_passed = coverage_pct >= required_skill_coverage_threshold
+
+        missing_core_skill_count = sum(
+            1 for skill in breakdown["mandatory_skills"]
+            if skill["match_type"] == MandatorySkillMatchType.MISSING.value and skill.get("importance") == "core"
+        )
+        core_gap_passed = missing_core_skill_count <= max_missing_core_skills
+
+        score_passed = skill_score >= float(deterministic_threshold)
+
+        return {
+            "required_skill_coverage_threshold": float(required_skill_coverage_threshold),
+            "coverage_passed": coverage_passed,
+            "score_passed": score_passed,
+            "missing_core_skill_count": missing_core_skill_count,
+            "max_missing_core_skills": max_missing_core_skills,
+            "core_gap_passed": core_gap_passed,
+            "skill_qualification_passed": coverage_passed and score_passed and core_gap_passed,
         }
 
     # ------------------------------------------------------------------
@@ -467,6 +691,20 @@ class CandidateScoringService:
             if missing_skill_names:
                 clauses.append(f"Missing required skills: {', '.join(missing_skill_names)}")
 
+        # Explainability for the three skill-qualification checks (Part
+        # 5-7) - only added when the corresponding check actually failed,
+        # since a candidate can now have missing skills and still pass.
+        if breakdown.get("core_gap_passed") is False:
+            clauses.append(
+                f"Missing core required skills: {breakdown['missing_core_skill_count']} "
+                f"exceeds the maximum allowed ({breakdown['max_missing_core_skills']})"
+            )
+        if breakdown.get("coverage_passed") is False:
+            clauses.append(
+                f"Required skill coverage {breakdown['mandatory_coverage_pct']}% is below "
+                f"the required threshold ({breakdown['required_skill_coverage_threshold']}%)"
+            )
+
         if experience_result is not None and not experience_result["passed"]:
             candidate_years = experience_result["candidate_years"]
             min_years = experience_result["min_years"]
@@ -503,6 +741,8 @@ class CandidateScoringService:
         experience_result: dict | None = None,
         education_result: dict | None = None,
         score_weights: dict | None = None,
+        required_skill_coverage_threshold: float = DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD,
+        max_missing_core_skills: int = DEFAULT_MAX_MISSING_CORE_SKILLS,
     ) -> dict:
         """
         Builds the hierarchy-aware mandatory-skill breakdown and persists it
@@ -537,11 +777,14 @@ class CandidateScoringService:
         something that was never evaluated). The pure skill-only score is
         preserved under score_breakdown.skill_deterministic_score.
 
-        deterministic_passed = (no mandatory skill is MISSING) AND
-        (deterministic_score >= deterministic_threshold). A campaign
-        requiring 3 mandatory skills must not pass a candidate missing one
-        of them just because the other two's weighted contribution clears
-        the threshold.
+        deterministic_passed's skill-stage component is now
+        evaluate_skill_qualification's three checks (required-skill
+        coverage, importance-weighted skill score vs. deterministic_threshold,
+        and missing-CORE-skill count vs. max_missing_core_skills) - NOT a
+        bare "no mandatory skill is MISSING" gate anymore. A candidate can
+        have missing required skills (core or supporting) and still pass,
+        provided coverage/score/core-gap are all within the configured
+        limits. See evaluate_skill_qualification for the full rule.
 
         Flushes via CampaignCandidateRepository.update() but deliberately
         does not commit - that belongs to whatever orchestrates this
@@ -560,19 +803,22 @@ class CandidateScoringService:
 
         breakdown = self.build_mandatory_skill_breakdown(jd_id, resume_id)
 
-        any_missing = any(
-            skill["match_type"] == MandatorySkillMatchType.MISSING.value
-            for skill in breakdown["mandatory_skills"]
-        )
         skill_score = breakdown["deterministic_score"]
-        # Mandatory-skill gate only - never compare skill_score to
-        # deterministic_threshold here. The threshold is validated exactly
-        # once (Step 5/6 of the ATS spec), against the FINAL combined score
-        # (skills + experience + education) below. Comparing skill_score to
-        # it here too would double-validate the same threshold and could
-        # fail a candidate whose skill sub-score alone is under threshold
-        # even though their blended score clears it.
-        mandatory_skills_passed = not any_missing
+        # Part 7: the skill stage passes on ALL THREE checks - required
+        # skill coverage, the importance-weighted skill score vs.
+        # deterministic_threshold, and the missing-CORE-skill limit - never
+        # on "no mandatory skill is missing" alone. A candidate CAN have
+        # missing required skills (core or supporting) and still pass here.
+        # This is the one and only place skill_score is compared against
+        # deterministic_threshold for the skill stage itself; the
+        # FINAL/blended score (skills + experience + education) below gets
+        # its own, separate threshold comparison, exactly as before -
+        # comparing skill_score here does not double-validate that one.
+        skill_qualification = self.evaluate_skill_qualification(
+            breakdown, skill_score, deterministic_threshold,
+            required_skill_coverage_threshold, max_missing_core_skills,
+        )
+        breakdown.update(skill_qualification)
 
         preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
         breakdown["preferred_skills"] = preferred_breakdown["preferred_skills"]
@@ -580,13 +826,26 @@ class CandidateScoringService:
 
         if experience_result is None and education_result is None:
             # No M07-E02 inputs supplied - skill_score IS the final score in
-            # this branch, so this is the one and only threshold comparison
-            # here, not a second one - identical to pre-M07-E02 behavior.
+            # this branch, so skill_qualification_passed (which already
+            # includes skill_score >= deterministic_threshold) fully
+            # determines final_passed - identical to pre-M07-E02 behavior
+            # whenever coverage/core-gap aren't configured to gate anything
+            # (their defaults are always-satisfied).
             final_score = skill_score
-            final_passed = mandatory_skills_passed and final_score >= float(deterministic_threshold)
+            final_passed = skill_qualification["skill_qualification_passed"]
         else:
+            # Coverage and core-gap are pure skill-stage structural checks
+            # (about which/how many required skills are missing) and still
+            # gate here regardless of blending. The score-vs-threshold
+            # check is deliberately EXCLUDED from this branch's gate -
+            # _combine_deterministic_score already validates the campaign
+            # threshold exactly once, against the FINAL blended score, per
+            # M07-E02's own invariant (a low skill sub-score must be able
+            # to clear the bar via a strong experience/education blend,
+            # never separately re-checked against skill_score here).
+            structural_passed = skill_qualification["coverage_passed"] and skill_qualification["core_gap_passed"]
             final_score, final_passed = self._combine_deterministic_score(
-                skill_score, mandatory_skills_passed, experience_result, education_result,
+                skill_score, structural_passed, experience_result, education_result,
                 score_weights, float(deterministic_threshold),
             )
             breakdown["skill_deterministic_score"] = skill_score

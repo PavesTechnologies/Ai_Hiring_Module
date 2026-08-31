@@ -173,6 +173,7 @@ class CampaignCandidateStageHistory(Base):
     transition_source: Mapped[TransitionSource] = mapped_column(SAEnum(TransitionSource, name="transition_source_enum"), nullable=False, default=TransitionSource.SYSTEM)
     scores_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class CampaignCandidateAIEvaluation(Base):

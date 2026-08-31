@@ -53,7 +53,26 @@ def decode_token(token: str) -> dict:
 
 # ── Middleware ────────────────────────────────────────────────────────────────
 
-_PUBLIC_PATHS = ["/docs", "/openapi.json", "/redoc", "/health"]
+_PUBLIC_PATHS = [
+    "/docs", "/openapi.json", "/redoc", "/health",
+    # Each OAuth provider redirects the user's browser here directly
+    # after consent - a plain top-level navigation, which never carries
+    # our Authorization header (the provider has no concept of it).
+    # Security for these specific endpoints comes from the signed,
+    # provider-bound `state` param instead (see app.core.oauth_state), not
+    # from our own bearer auth - the standard shape for any OAuth callback.
+    "/airs/oauth/microsoft/callback",
+    "/airs/oauth/google/callback",
+    # M12 Step 3 - interview feedback has no user account to authenticate
+    # at all (deliberate - interviewers were never given one); the signed,
+    # expiring token in the path is the entire access-control mechanism
+    # (see app.core.feedback_token), same shape as the OAuth exception
+    # above. A prefix, not an exact path, since the token varies -
+    # matches GET and POST /airs/interviews/feedback/{token} only, not
+    # the authenticated /airs/campaign-candidates/.../feedback endpoint
+    # (a different prefix entirely).
+    "/airs/interviews/feedback/",
+]
 
 
 class JWTMiddleware(BaseHTTPMiddleware):

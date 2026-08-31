@@ -811,6 +811,27 @@ class HrOverrideRequest(BaseModel):
         return value
 
 
+class RejectAtInterviewRequest(BaseModel):
+    """
+    Epic 1: HIRING_MANAGER rejects a candidate at INTERVIEW. decision_reason
+    is required and word-capped (not character-capped, unlike every other
+    reason field in this codebase - StageOverrideRequest/FlagReviewRequest/
+    HrOverrideRequest.override_reason all use Field(max_length=...)) since
+    this is candidate-facing rejection rationale, not an internal note.
+    """
+    decision_reason: str
+
+    @field_validator("decision_reason")
+    @classmethod
+    def _max_500_words(cls, value: str) -> str:
+        word_count = len(value.split())
+        if word_count == 0:
+            raise ValueError("decision_reason must not be empty.")
+        if word_count > 500:
+            raise ValueError(f"decision_reason must be 500 words or fewer (got {word_count}).")
+        return value
+
+
 class OverrideReportRow(BaseModel):
     """T03: one HR override event - never includes candidate name/email/phone/resume."""
 
@@ -914,6 +935,40 @@ class UpdateResumeResubmissionResponse(BaseModel):
     campaign_candidate: CampaignCandidateResponse
     new_resume_id: UUID
     task_id: UUID
+
+
+class SendRejectionEmailResponse(BaseModel):
+    """Manual "Send Rejection Email" action - human-driven rejections never auto-send, unlike the automated scoring paths."""
+    status: str = "queued"
+
+
+class SendSelectionEmailResponse(BaseModel):
+    """Manual "Send Selection Email" action - reaching SELECTED no longer auto-sends; a human explicitly triggers this once ready."""
+    status: str = "queued"
+
+
+class BulkSendRejectionEmailRequest(BaseModel):
+    """
+    Bulk follow-up to the single-candidate action above. No campaign_id -
+    unlike BulkStageMoveRequest, candidates here can span multiple
+    campaigns, since sending a rejection email has no shared-stage/
+    shared-campaign constraint the way a stage move does. Deliberately no
+    min_length (unlike BulkStageMoveRequest's own min_length=1) - an empty
+    list is a valid no-op here, not a client error.
+    """
+    campaign_candidate_ids: list[UUID] = Field(..., max_length=200)
+
+
+class BulkSendRejectionEmailResponse(BaseModel):
+    """
+    Per-id results, never all-or-nothing - mirrors BulkStageMoveResultResponse's
+    "never silently drop an id" principle, but genuinely partial-success
+    (unlike that endpoint's own all-or-nothing transition loop): one
+    candidate's failure (wrong stage, ownership, etc.) never blocks the rest.
+    """
+    queued: list[UUID] = []
+    failed: list[dict] = []
+    detail: str
 
 
 class CandidateCampaignHistoryEntryResponse(BaseModel):

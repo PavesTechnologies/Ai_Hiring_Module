@@ -11,7 +11,7 @@ from app.schemas.campaign.campaign_schema import CampaignCreateRequest, Campaign
 from app.schemas.campaign.campaign_detail_response import CampaignDetailResponse
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse
 from app.schemas.campaign.campaign_processing_status_response import (ProcessingStatusSummaryResponse,
-    DeadLetterQueueEntryResponse,
+    DeadLetterQueuePageResponse,
 )
 from app.schemas.campaign.campaign_processing_queue_response import (ProcessingQueueResponse,
     DLQReplayRequest,
@@ -460,17 +460,24 @@ def get_processing_status(campaign_id: UUID,
 
 
 @router.get("/{campaign_id}/dead-letter-queue",
-    response_model=APIResponse[list[DeadLetterQueueEntryResponse]],
+    response_model=APIResponse[DeadLetterQueuePageResponse],
     status_code=status.HTTP_200_OK,
     summary="Dead letter queue entries for this campaign",
-    description="Destination for the DEAD metric card click-through.",
+    description=(
+        "Destination for the DEAD metric card click-through. Paginated, and "
+        "narrowed to task_types that this campaign's replay endpoint can "
+        "actually re-enqueue - non-replayable dead-lettered tasks (e.g. "
+        "EMAIL_SEND) are excluded rather than shown disabled."
+    ),
 )
 def get_dead_letter_queue(campaign_id: UUID,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
-    entries = service.get_dead_letter_queue_for_campaign(campaign_id)
-    return APIResponse.ok(data=entries, message="Dead letter queue entries retrieved successfully.")
+    page = service.get_dead_letter_queue_for_campaign(campaign_id, limit=limit, offset=offset)
+    return APIResponse.ok(data=page, message="Dead letter queue entries retrieved successfully.")
 
 
 # ── View Campaign Processing Queue Status ─────────────────────────────
