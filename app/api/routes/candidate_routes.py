@@ -43,12 +43,16 @@ router = APIRouter(
 def list_candidates(
     email_hash: str | None = Query(default=None, description="Exact-match search by email hash."),
     jurisdiction: str | None = Query(default=None, max_length=10),
+    name: str | None = Query(
+        default=None,
+        description="Partial, case-insensitive search by candidate name (matched against the candidate's active resume).",
+    ),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     service: CandidateDirectoryService = Depends(get_candidate_directory_service),
 ):
     return APIResponse.ok(
-        data=service.list_candidates(email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size),
+        data=service.list_candidates(email_hash=email_hash, jurisdiction=jurisdiction, name=name, page=page, size=size),
         message="Candidates retrieved successfully.",
     )
 

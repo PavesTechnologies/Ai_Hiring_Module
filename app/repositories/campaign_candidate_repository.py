@@ -26,6 +26,11 @@ class CampaignCandidateRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        """Mirrors ResumeRepository._escape_like / CandidateRepository._escape_like — same escaping."""
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def create(
         self,
         campaign_candidate: CampaignCandidate,
@@ -712,6 +717,7 @@ class CampaignCandidateRepository:
         include_rejected: bool = True,
         include_fraud: bool = True,
         hr_override: bool | None = None,
+        candidate_name: str | None = None,
     ) -> tuple[list, int]:
         """
         M10-E03 Phase 1: the ranked candidate list's core query - one
@@ -774,10 +780,19 @@ class CampaignCandidateRepository:
                 filters.append(CampaignCandidate.decision_type == DecisionType.RESET)
             else:
                 filters.append(CampaignCandidate.decision_type.is_distinct_from(DecisionType.RESET))
+        if candidate_name is not None:
+            # full_name is encrypted on Candidate - matched instead against
+            # this campaign_candidate's own resume's parsed_json->>'full_name'
+            # (plaintext, extracted from the uploaded document), the same
+            # workaround CandidateRepository/TalentPoolService already use
+            # for the identical encrypted-column constraint.
+            pattern = f"%{self._escape_like(candidate_name)}%"
+            filters.append(Resume.parsed_json.op("->>")("full_name").ilike(pattern, escape="\\"))
 
         total = self.db.execute(
             select(func.count())
             .select_from(CampaignCandidate)
+            .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
             .outerjoin(CampaignCandidateAIEvaluation, CampaignCandidateAIEvaluation.campaign_candidate_id == CampaignCandidate.id)
             .where(*filters)
         ).scalar() or 0

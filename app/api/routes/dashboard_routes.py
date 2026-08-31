@@ -210,7 +210,7 @@ def get_dashboard_campaigns(
 )
 def get_nav_badges(
     service: DashboardService = Depends(get_dashboard_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     is_hr_admin = UserRole.HR_ADMIN.value in (user.roles or [])
     return APIResponse.ok(
@@ -234,7 +234,7 @@ def suggest_skills(
     q: str = Query(..., min_length=1, description="Partial skill name or alias."),
     limit: int = Query(default=10, ge=1, le=25),
     service: CandidateSearchService = Depends(get_candidate_search_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(
         data=service.suggest_skills(campaign_id, q, limit),
@@ -258,7 +258,7 @@ def filter_candidates_by_skill(
     skill_ids: list[UUID] = Query(..., description="Repeat for each skill; AND-combined."),
     q: str = Query(default="", description="Raw text typed, for search analytics."),
     service: CandidateSearchService = Depends(get_candidate_search_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     ids, tiers = service.resolve_skill_filter(
         campaign_id=campaign_id,
@@ -305,7 +305,7 @@ def filter_candidates(
     uploaded_to: str | None = Query(default=None, description="Blank means not set."),
     upload_type: str | None = Query(default=None, description="individual | bulk"),
     service: CandidateSearchService = Depends(get_candidate_search_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     ids = service.filter_candidates(
         campaign_id,
