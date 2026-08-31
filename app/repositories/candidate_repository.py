@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.candidates import Candidate
+from app.models.candidates import Candidate, Resume
 
 _SORT_COLUMNS = {
     "created_at": Candidate.created_at,
@@ -30,19 +30,42 @@ class CandidateRepository:
         stmt = select(Candidate).where(Candidate.id.in_(candidate_ids))
         return list(self.db.execute(stmt).scalars().all())
 
-    def _build_search_conditions(self, email_hash: str | None, jurisdiction: str | None) -> list:
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        """Mirrors ResumeRepository._escape_like / TalentPoolService._escape_like — same escaping."""
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def _build_search_conditions(self, email_hash: str | None, jurisdiction: str | None, name: str | None) -> list:
         """
         Global Candidates directory (GET /candidates) - full_name_encrypted/
         email_encrypted are encrypted at rest and can't be searched
         directly (same constraint ResumeRepository.search's email_hash
         filter already documents) - email_hash is the one exact-match
         identity lookup available; jurisdiction is a plain column.
+
+        name matches instead against the candidate's active resume's
+        parsed_json->>'full_name' (plaintext, extracted from the uploaded
+        document) - the same workaround Talent Pool's "Normal Search" box
+        already uses for the identical encrypted-column constraint. EXISTS
+        rather than a JOIN so a candidate with multiple resume versions
+        can't duplicate into multiple rows.
         """
         conditions = []
         if email_hash is not None:
             conditions.append(Candidate.email_hash == email_hash)
         if jurisdiction is not None:
             conditions.append(Candidate.jurisdiction == jurisdiction)
+        if name is not None:
+            pattern = f"%{self._escape_like(name)}%"
+            conditions.append(
+                select(Resume.id)
+                .where(
+                    Resume.candidate_id == Candidate.id,
+                    Resume.is_active_version.is_(True),
+                    Resume.parsed_json.op("->>")("full_name").ilike(pattern, escape="\\"),
+                )
+                .exists()
+            )
         return conditions
 
     def search(
@@ -50,13 +73,14 @@ class CandidateRepository:
         *,
         email_hash: str | None = None,
         jurisdiction: str | None = None,
+        name: str | None = None,
         page: int = 1,
         size: int = 20,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
     ) -> list[Candidate]:
         """Global Candidates directory - every candidate regardless of campaign/Talent Pool membership. Read-only."""
-        conditions = self._build_search_conditions(email_hash, jurisdiction)
+        conditions = self._build_search_conditions(email_hash, jurisdiction, name)
         sort_column = _SORT_COLUMNS.get(sort_by, Candidate.created_at)
         order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
 
@@ -69,8 +93,8 @@ class CandidateRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
-    def count_search(self, *, email_hash: str | None = None, jurisdiction: str | None = None) -> int:
-        conditions = self._build_search_conditions(email_hash, jurisdiction)
+    def count_search(self, *, email_hash: str | None = None, jurisdiction: str | None = None, name: str | None = None) -> int:
+        conditions = self._build_search_conditions(email_hash, jurisdiction, name)
         stmt = select(func.count()).select_from(Candidate).where(*conditions)
         return self.db.execute(stmt).scalar_one()
 

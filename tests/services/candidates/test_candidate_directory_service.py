@@ -154,8 +154,8 @@ def test_list_candidates_passes_through_email_hash_and_jurisdiction_filters():
 
     service.list_candidates(email_hash="abc123", jurisdiction="EU", page=2, size=10)
 
-    candidate_repo.search.assert_called_once_with(email_hash="abc123", jurisdiction="EU", page=2, size=10)
-    candidate_repo.count_search.assert_called_once_with(email_hash="abc123", jurisdiction="EU")
+    candidate_repo.search.assert_called_once_with(email_hash="abc123", jurisdiction="EU", name=None, page=2, size=10)
+    candidate_repo.count_search.assert_called_once_with(email_hash="abc123", jurisdiction="EU", name=None)
 
 
 def test_list_candidates_pagination_fields_reflected_in_response():

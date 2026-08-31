@@ -488,6 +488,25 @@ class BulkUploadService:
         items = self.bulk_upload_job_repo.list_by_campaign(campaign_id, offset=offset, limit=size)
         return items, total
 
+    def list_history_for_recruiter(
+        self,
+        recruiter_id: str,
+        page: int,
+        size: int,
+    ) -> tuple[list[tuple[BulkUploadJob, str]], int]:
+        """
+        Cross-campaign bulk-upload history for every campaign where
+        hiring_campaigns.recruiter_id == recruiter_id — spans every
+        uploader within those campaigns, not just this recruiter's own
+        uploads. No campaign-existence check needed (unlike list_history)
+        since recruiter_id isn't a single resource lookup key; zero
+        matching campaigns just yields an empty, valid result.
+        """
+        total = self.bulk_upload_job_repo.count_by_recruiter(recruiter_id)
+        offset = (page - 1) * size
+        items = self.bulk_upload_job_repo.list_by_recruiter(recruiter_id, offset=offset, limit=size)
+        return items, total
+
     def export_history(
         self,
         campaign_id: UUID,

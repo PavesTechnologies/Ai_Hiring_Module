@@ -114,6 +114,10 @@ def get_campaign_candidates(
     hr_override: bool | None = Query(
         default=None, description="If set, filters to only overridden (true) or only non-overridden (false) candidates.",
     ),
+    candidate_name: str | None = Query(
+        default=None,
+        description="Partial, case-insensitive search by candidate name (matched against this campaign_candidate's resume).",
+    ),
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
@@ -135,6 +139,7 @@ def get_campaign_candidates(
         include_rejected=include_rejected,
         include_fraud=include_fraud,
         hr_override=hr_override,
+        candidate_name=candidate_name,
     )
 
     return APIResponse.ok(

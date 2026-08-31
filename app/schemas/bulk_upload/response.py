@@ -87,6 +87,25 @@ class BulkUploadHistoryListResponse(BaseModel):
     items: list[BulkUploadJobSummary]
 
 
+class RecruiterBulkUploadJobSummary(BulkUploadJobSummary):
+    """
+    Cross-campaign variant of BulkUploadJobSummary — adds the fields a
+    single-campaign listing doesn't need (which campaign, who actually
+    uploaded it) since a recruiter-scoped view spans multiple campaigns
+    and, within each, potentially multiple uploaders.
+    """
+    campaign_id: UUID
+    campaign_name: str
+    uploaded_by: str
+
+
+class RecruiterBulkUploadHistoryResponse(BaseModel):
+    total: int
+    page: int
+    size: int
+    items: list[RecruiterBulkUploadJobSummary]
+
+
 class BulkUploadJobFileItem(BaseModel):
     id: UUID
     original_filename: str

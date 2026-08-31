@@ -49,10 +49,11 @@ class CandidateDirectoryService:
         *,
         email_hash: str | None = None,
         jurisdiction: str | None = None,
+        name: str | None = None,
         page: int = 1,
         size: int = 20,
     ) -> CandidateDirectoryResponse:
-        params = dict(email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size)
+        params = dict(email_hash=email_hash, jurisdiction=jurisdiction, name=name, page=page, size=size)
         if not self.cache_service:
             return self._load_candidates(**params)
         raw = self.cache_service.get_or_set(
@@ -67,13 +68,14 @@ class CandidateDirectoryService:
         *,
         email_hash: str | None,
         jurisdiction: str | None,
+        name: str | None,
         page: int,
         size: int,
     ) -> CandidateDirectoryResponse:
         candidates = self.candidate_repo.search(
-            email_hash=email_hash, jurisdiction=jurisdiction, page=page, size=size,
+            email_hash=email_hash, jurisdiction=jurisdiction, name=name, page=page, size=size,
         )
-        total = self.candidate_repo.count_search(email_hash=email_hash, jurisdiction=jurisdiction)
+        total = self.candidate_repo.count_search(email_hash=email_hash, jurisdiction=jurisdiction, name=name)
 
         # Batched over the whole page - one query for every candidate's
         # active resume, one more for every one of those resumes' skills -
