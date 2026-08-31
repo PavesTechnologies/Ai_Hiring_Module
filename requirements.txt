@@ -95,6 +95,7 @@ RapidFuzz==3.10.1
 realtime==2.31.0
 redis==8.0.1
 regex==2026.6.28
+reportlab==5.0.1
 requests==2.34.2
 rsa==4.9.1
 s3transfer==0.19.2
