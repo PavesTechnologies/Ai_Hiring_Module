@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.campaign.campaign_processing_queue_response import DLQReplayResultItem
+
 
 # ── Stalled candidates ─────────────────────────────────────────────────
 
@@ -45,6 +47,7 @@ class StalledActionResponse(BaseModel):
     from_stage: str | None = None
     to_stage: str | None = None
     replayed_count: int | None = None
+    results: list[DLQReplayResultItem] | None = None  # REPROCESSED only — per-task replay/skip reason
 
 
 # ── Rejection analytics ────────────────────────────────────────────────

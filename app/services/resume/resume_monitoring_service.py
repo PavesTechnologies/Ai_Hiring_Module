@@ -509,7 +509,27 @@ class ResumeMonitoringService:
     def get_parsed_json_by_campaign_candidate(self, campaign_candidate_id: UUID) -> ResumeParsedJsonResponse:
         campaign_candidate = self.campaign_candidate_repository.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
-            raise NotFoundError(f"Campaign candidate {campaign_candidate_id} not found.")
+            # Despite the {campaign_candidate_id} path param name, callers
+            # keep passing a plain candidate_id (candidates.id) here instead -
+            # easy to do, since a Candidate and its CampaignCandidate row
+            # share no visual distinction beyond the field name. Rather than
+            # a bare 404, try it as a candidate_id: if it resolves to exactly
+            # one campaign_candidate, serve that (unambiguous, so behavior
+            # for a genuinely-unknown id is unchanged); if it resolves to
+            # more than one (a candidate can be in several campaigns), refuse
+            # rather than silently guessing which campaign was meant.
+            by_candidate = self.campaign_candidate_repository.get_by_candidate_id(campaign_candidate_id)
+            if len(by_candidate) == 1:
+                campaign_candidate = by_candidate[0]
+            elif len(by_candidate) > 1:
+                options = ", ".join(str(cc.id) for cc in by_candidate)
+                raise BadRequestError(
+                    f"{campaign_candidate_id} is a candidate_id, not a campaign_candidate_id, and this "
+                    f"candidate has {len(by_candidate)} campaign_candidate rows ({options}) - pass one of "
+                    "those ids instead of the candidate_id to disambiguate which campaign you mean."
+                )
+            else:
+                raise NotFoundError(f"Campaign candidate {campaign_candidate_id} not found.")
 
         resume = self.resume_repository.get_by_id(campaign_candidate.resume_id)
         if resume is None or resume.candidate_id != campaign_candidate.candidate_id:

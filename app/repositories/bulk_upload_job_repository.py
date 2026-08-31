@@ -5,6 +5,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import BulkUploadJob, BulkUploadStatus
+from app.models.campaigns import HiringCampaign
 
 
 class BulkUploadJobRepository:
@@ -117,6 +118,33 @@ class BulkUploadJobRepository:
         if campaign_id is not None:
             conditions.append(BulkUploadJob.campaign_id == campaign_id)
         stmt = select(func.count()).select_from(BulkUploadJob).where(*conditions)
+        return self.db.execute(stmt).scalar_one()
+
+    def list_by_recruiter(self, recruiter_id: str, offset: int, limit: int) -> list[tuple[BulkUploadJob, str]]:
+        """
+        Cross-campaign bulk-upload history for one recruiter — every job
+        in every campaign where hiring_campaigns.recruiter_id matches,
+        regardless of who actually uploaded_by each individual job.
+        Returns (job, campaign_name) pairs so a cross-campaign listing can
+        show which campaign each job belongs to without a second lookup.
+        """
+        stmt = (
+            select(BulkUploadJob, HiringCampaign.name)
+            .join(HiringCampaign, HiringCampaign.id == BulkUploadJob.campaign_id)
+            .where(HiringCampaign.recruiter_id == recruiter_id)
+            .order_by(BulkUploadJob.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(self.db.execute(stmt).all())
+
+    def count_by_recruiter(self, recruiter_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(BulkUploadJob)
+            .join(HiringCampaign, HiringCampaign.id == BulkUploadJob.campaign_id)
+            .where(HiringCampaign.recruiter_id == recruiter_id)
+        )
         return self.db.execute(stmt).scalar_one()
 
     def get_all_by_campaign(self, campaign_id: UUID) -> list[BulkUploadJob]:

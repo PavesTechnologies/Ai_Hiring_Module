@@ -781,6 +781,7 @@ class CampaignCandidateService:
         include_rejected: bool = True,
         include_fraud: bool = True,
         hr_override: bool | None = None,
+        candidate_name: str | None = None,
     ) -> RankedCampaignCandidatesResponse:
         """
         M10-E03 Phase 1: the ranked, filtered, paginated candidate list -
@@ -823,6 +824,7 @@ class CampaignCandidateService:
             include_rejected=include_rejected,
             include_fraud=include_fraud,
             hr_override=hr_override,
+            candidate_name=candidate_name,
         )
 
         first_rank_on_page = (page - 1) * page_size + 1

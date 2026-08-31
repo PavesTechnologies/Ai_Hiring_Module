@@ -1871,6 +1871,7 @@ class CampaignService:
             action="REPROCESSED",
             detail=f"Replayed {replay.replayed_count} task(s), skipped {replay.skipped_count}.",
             replayed_count=replay.replayed_count,
+            results=replay.results,
         )
 
     def escalate_stalled_candidate(self, campaign_id: UUID, campaign_candidate_id: UUID,

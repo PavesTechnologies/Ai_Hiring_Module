@@ -28,6 +28,8 @@ from app.schemas.bulk_upload.response import (
     BulkUploadJobFileItem,
     BulkUploadJobSummary,
     BulkUploadProgressResponse,
+    RecruiterBulkUploadHistoryResponse,
+    RecruiterBulkUploadJobSummary,
 )
 from app.schemas.response import APIResponse
 from app.services.bulk_upload.bulk_upload_monitoring_service import BulkUploadMonitoringService
@@ -162,6 +164,68 @@ def export_bulk_upload_history(
         excel_file,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/by-recruiter",
+    response_model=APIResponse[RecruiterBulkUploadHistoryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_bulk_uploads_by_recruiter(
+    recruiter_id: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    service: BulkUploadService = Depends(get_bulk_upload_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    """
+    Cross-campaign bulk-upload history, scoped to every campaign where
+    hiring_campaigns.recruiter_id matches — every job in those campaigns,
+    regardless of who actually uploaded it. Registered before
+    /{bulk_upload_job_id} so "by-recruiter" isn't swallowed as a job id
+    path parameter — mirrors /export's own ordering.
+
+    A caller with only the RECRUITER role is always scoped to their own
+    id (recruiter_id, if supplied, is ignored) — this endpoint spans
+    every campaign a recruiter is assigned to, so letting one recruiter
+    pass another's id would leak a different recruiter's bulk-upload
+    activity. HR_ADMIN may pass any recruiter_id to look up any recruiter;
+    omitting it defaults to the caller's own id.
+    """
+    is_recruiter_only = UserRole.HR_ADMIN.value not in user.roles
+    target_recruiter_id = user.user_id if is_recruiter_only else (recruiter_id or user.user_id)
+
+    items, total = service.list_history_for_recruiter(
+        recruiter_id=target_recruiter_id, page=page, size=size,
+    )
+
+    return APIResponse.ok(
+        data=RecruiterBulkUploadHistoryResponse(
+            total=total,
+            page=page,
+            size=size,
+            items=[
+                RecruiterBulkUploadJobSummary(
+                    id=job.id,
+                    campaign_id=job.campaign_id,
+                    campaign_name=campaign_name,
+                    uploaded_by=job.uploaded_by,
+                    original_filename=job.original_filename,
+                    status=job.status.value,
+                    total_files=job.total_files,
+                    queued_count=job.queued_count,
+                    processed_count=job.processed_count,
+                    failed_count=job.failed_count,
+                    duplicate_count=job.duplicate_count,
+                    created_at=job.created_at,
+                    completed_at=job.completed_at,
+                    error_summary=job.error_summary,
+                )
+                for job, campaign_name in items
+            ],
+        ),
+        message="Recruiter bulk upload history retrieved successfully.",
     )
 
 

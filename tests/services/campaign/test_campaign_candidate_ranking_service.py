@@ -188,6 +188,7 @@ def test_passes_all_filters_through_to_repository():
         pipeline_stage=PipelineStage.SHORTLISTED, composite_score_min=10, composite_score_max=90,
         ai_recommendation=AIRecommendation.SHORTLIST, ai_evaluation_status=AIEvaluationStatus.COMPLETED,
         include_pending=False, include_rejected=False, include_fraud=False, hr_override=True,
+        candidate_name=None,
     )
 
 
