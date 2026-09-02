@@ -41,8 +41,22 @@ having actually been applied for real, not just referenced. All 3 merge
 parents' effects are independently confirmed live, same "verify every
 branch tip before merging" methodology as every prior recurrence.
 
+2026-08-31 update: the third merge parent, 9a1c2f3e6b7d, no longer exists
+as a file anywhere in this checkout (not in alembic/versions/, confirmed by
+grep) - the real 9a1c2f3e6b7d_add_rejection_composite_trigger.py described
+above must have been renamed again at some later point (its schema effect,
+composite_score_trigger_source_enum's 'REJECTION' value, now ships instead
+via 9b2e4c7a1f38_add_rejection_composite_trigger.py, down_revision
+d3a86f21c9e4 - a completely different branch position, not a sibling of
+this merge). Keeping a down_revision entry for a nonexistent id breaks
+alembic's revision map for every command, not just ones touching this
+migration ("Revision 9a1c2f3e6b7d ... is not present"). Dropped back to
+the original 2-way merge; the REJECTION enum value is unaffected since
+9b2e4c7a1f38 sits on its own already-merged branch and doesn't need this
+merge point to be reachable.
+
 Revision ID: b6dda6ad1824
-Revises: 09f831e39061, e686c750b7b4, 9a1c2f3e6b7d
+Revises: 09f831e39061, e686c750b7b4
 Create Date: 2026-08-10
 """
 from typing import Sequence, Union
@@ -52,7 +66,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'b6dda6ad1824'
-down_revision: Union[str, Sequence[str], None] = ('09f831e39061', 'e686c750b7b4', '9a1c2f3e6b7d')
+down_revision: Union[str, Sequence[str], None] = ('09f831e39061', 'e686c750b7b4')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

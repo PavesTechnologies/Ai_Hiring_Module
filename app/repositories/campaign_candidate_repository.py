@@ -17,6 +17,7 @@ from app.models.pipeline import (
     CampaignCandidateStageHistory,
     DecisionType,
     PipelineStage,
+    StageTransitionLog,
     TransitionSource,
 )
 
@@ -179,6 +180,36 @@ class CampaignCandidateRepository:
         self.db.flush()
         self.db.refresh(history)
         return history
+
+    def create_transition_log(
+        self,
+        campaign_candidate_id: UUID,
+        from_stage: PipelineStage,
+        to_stage: PipelineStage,
+        role_used: str,
+        previous_stage: PipelineStage | None = None,
+        reason: str | None = None,
+        performed_by: str | None = None,
+    ) -> StageTransitionLog:
+        """
+        Governance model (2026-08-31): append-only audit row, written
+        alongside (never instead of) create_stage_history/
+        create_stage_history_idempotent - see StageTransitionLog's own
+        docstring for why this is a separate table.
+        """
+        log = StageTransitionLog(
+            campaign_candidate_id=campaign_candidate_id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used=role_used,
+            reason=reason,
+            performed_by=performed_by,
+        )
+        self.db.add(log)
+        self.db.flush()
+        self.db.refresh(log)
+        return log
 
     def get_stage_history_by_campaign_candidate_id(
         self,

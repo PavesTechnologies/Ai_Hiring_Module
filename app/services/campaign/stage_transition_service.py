@@ -117,11 +117,12 @@ class StageTransitionService:
         """
         from_stage = campaign_candidate.pipeline_stage
         to_stage = PipelineStage.SCREENING
+        previous_stage = campaign_candidate.previous_stage
 
         if from_stage != PipelineStage.UPLOADED:
             return False
 
-        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):
             logger.error(
                 "Stage transition blocked - no allowed_transitions entry | "
                 "campaign_candidate_id=%s from_stage=%s to_stage=%s",
@@ -130,6 +131,7 @@ class StageTransitionService:
             return False
 
         now = datetime.now(timezone.utc)
+        campaign_candidate.previous_stage = from_stage
         campaign_candidate.pipeline_stage = to_stage
         campaign_candidate.updated_at = now
         self.campaign_candidate_repo.update(campaign_candidate)
@@ -142,6 +144,13 @@ class StageTransitionService:
             change_reason="Automated screening started",
             transition_source=TransitionSource.SYSTEM,
             scores_snapshot=None,
+        )
+        self.campaign_candidate_repo.create_transition_log(
+            campaign_candidate_id=campaign_candidate.id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used="SYSTEM",
         )
         return True
 
@@ -172,8 +181,9 @@ class StageTransitionService:
         evaluation runs at all - rejected at an earlier layer otherwise).
         """
         from_stage = campaign_candidate.pipeline_stage
+        previous_stage = campaign_candidate.previous_stage
 
-        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):
             logger.error(
                 "Stage transition blocked - no allowed_transitions entry | "
                 "campaign_candidate_id=%s from_stage=%s to_stage=%s",
@@ -184,6 +194,7 @@ class StageTransitionService:
         effective_decision_reason = decision_reason if decision_reason is not None else change_reason
 
         now = datetime.now(timezone.utc)
+        campaign_candidate.previous_stage = from_stage
         campaign_candidate.pipeline_stage = to_stage
         campaign_candidate.decision_type = decision_type
         campaign_candidate.decision_source = DecisionSource.AI
@@ -207,6 +218,13 @@ class StageTransitionService:
                 "decision_reason": effective_decision_reason,
                 "decision_details": decision_details,
             },
+        )
+        self.campaign_candidate_repo.create_transition_log(
+            campaign_candidate_id=campaign_candidate.id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used="SYSTEM",
         )
         return True
 
@@ -236,8 +254,9 @@ class StageTransitionService:
         """
         from_stage = campaign_candidate.pipeline_stage
         to_stage = PipelineStage.REJECTED
+        previous_stage = campaign_candidate.previous_stage
 
-        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):
             logger.error(
                 "Stage transition blocked - no allowed_transitions entry | "
                 "campaign_candidate_id=%s from_stage=%s to_stage=%s",
@@ -248,6 +267,7 @@ class StageTransitionService:
         effective_decision_reason = decision_reason if decision_reason is not None else change_reason
 
         now = datetime.now(timezone.utc)
+        campaign_candidate.previous_stage = from_stage
         campaign_candidate.pipeline_stage = to_stage
         campaign_candidate.decision_type = DecisionType.REJECTED
         campaign_candidate.decision_source = decision_source
@@ -272,6 +292,15 @@ class StageTransitionService:
                 "decision_details": decision_details,
             },
         )
+        self.campaign_candidate_repo.create_transition_log(
+            campaign_candidate_id=campaign_candidate.id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used=decision_source.value,
+            reason=effective_decision_reason,
+            performed_by=decision_by_user_id,
+        )
         return True
 
     def apply_hr_override(
@@ -283,13 +312,17 @@ class StageTransitionService:
     ) -> bool:
         """
         M07-E03 S04 T02: moves campaign_candidate.pipeline_stage from
-        REJECTED back to SCREENING for an HR_ADMIN override, and inserts
+        REJECTED back to SCREENING for a manual override, and inserts
         the matching stage-history row - same validate-then-apply shape as
-        transition_to_rejected, but MANUAL/HR_ADMIN-attributed instead of
-        SYSTEM/anonymous. Only if allowed_transitions has a
-        (REJECTED, SCREENING) entry; otherwise a no-op (pipeline_stage and
-        history are left untouched) and the caller must treat the override
-        as failed.
+        transition_to_rejected, but MANUAL/RECRUITER-attributed instead of
+        SYSTEM/anonymous. Reassigned from HR_ADMIN to RECRUITER as part of
+        the 2026-08-31 governance model (HR_ADMIN removed from every
+        transition-permission check) - the method/route names ("hr_override"/
+        "apply_hr_override") are unchanged for now, kept as the existing
+        public contract rather than a rename bundled into this change. Only
+        if allowed_transitions has a (REJECTED, SCREENING) entry; otherwise a
+        no-op (pipeline_stage and history are left untouched) and the caller
+        must treat the override as failed.
 
         Captures the decision being overridden (whatever campaign_candidate.
         decision_type/decision_source/decision_reason currently hold, i.e.
@@ -306,8 +339,9 @@ class StageTransitionService:
         """
         from_stage = campaign_candidate.pipeline_stage
         to_stage = PipelineStage.SCREENING
+        previous_stage = campaign_candidate.previous_stage
 
-        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage):
+        if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):
             logger.error(
                 "HR override blocked - no allowed_transitions entry | "
                 "campaign_candidate_id=%s from_stage=%s to_stage=%s",
@@ -331,9 +365,10 @@ class StageTransitionService:
             ),
         }
 
+        campaign_candidate.previous_stage = from_stage
         campaign_candidate.pipeline_stage = to_stage
         campaign_candidate.decision_type = DecisionType.RESET
-        campaign_candidate.decision_source = DecisionSource.HR_ADMIN
+        campaign_candidate.decision_source = DecisionSource.RECRUITER
         campaign_candidate.decision_reason = effective_decision_reason
         campaign_candidate.decision_details = decision_details
         campaign_candidate.decision_by_user_id = changed_by
@@ -349,10 +384,19 @@ class StageTransitionService:
             transition_source=TransitionSource.MANUAL,
             scores_snapshot={
                 "decision_type": DecisionType.RESET.value,
-                "decision_source": DecisionSource.HR_ADMIN.value,
+                "decision_source": DecisionSource.RECRUITER.value,
                 "decision_reason": effective_decision_reason,
                 "decision_details": decision_details,
             },
+        )
+        self.campaign_candidate_repo.create_transition_log(
+            campaign_candidate_id=campaign_candidate.id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used=DecisionSource.RECRUITER.value,
+            reason=effective_decision_reason,
+            performed_by=changed_by,
         )
         return True
 
@@ -387,11 +431,14 @@ class StageTransitionService:
             raise NotFoundError("Campaign candidate not found.")
 
         from_stage = candidate.pipeline_stage
+        previous_stage = candidate.previous_stage
 
         # 1. Existence check. AllowedTransitionRepository.get() (not
         # is_transition_allowed()) - the role/reason checks below need
-        # allowed_roles/requires_reason off this same row.
-        transition_row = self.allowed_transition_repo.get(from_stage, to_stage)
+        # allowed_roles/requires_reason off this same row. Resolves the
+        # previous_stage-specific row first (e.g. HM_REVIEW ownership
+        # flips), falling back to the wildcard row - see get()'s docstring.
+        transition_row = self.allowed_transition_repo.get(from_stage, to_stage, previous_stage=previous_stage)
         if transition_row is None:
             raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
 
@@ -442,6 +489,7 @@ class StageTransitionService:
 
         # 6. Apply the stage move + audit log, same uncommitted transaction
         # as the history insert above.
+        locked_candidate.previous_stage = from_stage
         locked_candidate.pipeline_stage = to_stage
         self.campaign_candidate_repo.update(locked_candidate)
 
@@ -515,6 +563,16 @@ class StageTransitionService:
                 "reason": reason,
                 "stage_history_id": str(history.id),
             },
+        )
+
+        self.campaign_candidate_repo.create_transition_log(
+            campaign_candidate_id=locked_candidate.id,
+            previous_stage=previous_stage,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            role_used=resolved_role,
+            reason=reason,
+            performed_by=changed_by,
         )
 
         self.campaign_candidate_repo.commit()

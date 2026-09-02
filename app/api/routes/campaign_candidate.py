@@ -384,10 +384,11 @@ def export_override_report(
     status_code=status.HTTP_200_OK,
     summary="Apply HR Override",
     description=(
-        "HR_ADMIN override of a deterministic rejection - re-enters the candidate into "
-        "SCREENING. HR_ADMIN only."
+        "RECRUITER override of a deterministic rejection - re-enters the candidate into "
+        "SCREENING. RECRUITER only (reassigned from HR_ADMIN by the 2026-08-31 governance "
+        "model, which removed HR_ADMIN from every transition-permission check)."
     ),
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.RECRUITER))],
 )
 def apply_hr_override(
     campaign_candidate_id: UUID,

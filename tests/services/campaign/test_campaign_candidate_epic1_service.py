@@ -33,6 +33,7 @@ def _make_campaign_candidate(pipeline_stage, campaign_id=None):
         candidate_id=uuid4(),
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
+        previous_stage=None,
         decision_type=None,
         decision_source=None,
         decision_reason=None,
@@ -74,7 +75,7 @@ def _make_service(campaign_candidate, campaign, allowed_rows=None):
 
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.get.side_effect = (
-        lambda from_stage, to_stage: allowed_rows.get((from_stage, to_stage))
+        lambda from_stage, to_stage, previous_stage=None: allowed_rows.get((from_stage, to_stage))
     )
 
     audit_service = MagicMock()
