@@ -1,0 +1,10 @@
+# Files that are consumed by Linux inside the container MUST stay LF, no
+# matter what core.autocrlf is set to on a contributor's Windows machine.
+# A CRLF docker-entrypoint.sh makes the kernel read the shebang as
+# "/usr/bin/env bash\r" and the container dies at start with a bare
+# "no such file or directory".
+arm.Dockerfile          text eol=lf
+.dockerignore           text eol=lf
+*.sh                    text eol=lf
+requirements*.txt       text eol=lf
+Jenkinsfile*            text eol=lf

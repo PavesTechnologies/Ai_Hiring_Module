@@ -1,0 +1,36 @@
+/*
+ * AIRS - CI pipeline (runs on pull requests).
+ *
+ * Mirrors User_Management_System/Jenkinsfile.ci. Calls
+ * buildPythonCIPipeline from the shared library, which does:
+ *   checkout -> notify Teams -> python venv -> pip install -> pull the
+ *   AWS Secrets Manager secret into an .env -> run the quality script.
+ *
+ * It never builds or pushes an image; that is Jenkinsfile.cd's job.
+ *
+ * requirementsPath is requirements-ci.txt, NOT requirements.txt, and that
+ * matters. The pipeline runs a bare `pip install -r <path>` with no index
+ * flags, and plain requirements.txt would (a) resolve torch to the aarch64
+ * CUDA build - several GB of nvidia-* wheels on the build agent for every
+ * PR - and (b) try to build psycopg2 from source, which needs pg_config on
+ * the agent. requirements-ci.txt pins the CPU torch and carries its own
+ * --extra-index-url line so a flagless pip install still does the right
+ * thing. See the comments in that file.
+ *
+ * envSecret 'dev-airs' must exist in AWS Secrets Manager (ap-south-1) as a
+ * flat JSON object of KEY -> value; the pipeline converts it with jq into
+ * envOutputPath. AIRS reads .env from the repo root (Settings.model_config
+ * in app/core/config.py), not from a Backend/ subdirectory the way UMS does.
+ */
+
+@Library('shared-lib') _
+
+buildPythonCIPipeline(
+    serviceName:       'airs-service',
+    requirementsPath:  'requirements-ci.txt',
+    qualityScriptPath: 'scripts/quality_check.sh',
+    envSecret:         'dev-airs',
+    envOutputPath:     '.env',
+    webhookUrl:        env.TEAMS_WEBHOOK_URL,
+    awsRegion:         'ap-south-1'
+)

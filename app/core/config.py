@@ -1,8 +1,12 @@
-import json
-from typing import Annotated
-
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, NoDecode
+from pydantic_settings import BaseSettings
+
+
+def _split_cors_origins(value: str) -> list[str]:
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    return value.split(",")
 
 
 class Settings(BaseSettings):
@@ -98,8 +102,10 @@ class Settings(BaseSettings):
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
 
-    # CORS — list explicit origins; credentials require non-wildcard origins
-    cors_origins: Annotated[list[str], NoDecode]
+    # CORS — a single comma-separated string of explicit origins; credentials
+    # require non-wildcard origins.
+    # e.g. CORS_ORIGINS=http://localhost:5173,https://app.example.com
+    cors_origins: str
 
     # App
     app_env: str = "development"
@@ -115,26 +121,16 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, list):
-            return value
+    def parse_cors_origins(cls, value: str | list[str]) -> str:
+        """Normalise CORS_ORIGINS into a bare comma-separated string.
 
-        value = value.strip()
-        if not value:
-            return []
+        Tolerates the bracketed/quoted list forms this variable used to be
+        set to ('["a","b"]', '[a, b]') so an existing .env keeps working.
+        """
+        origins = value if isinstance(value, list) else _split_cors_origins(str(value))
 
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            parsed = None
-
-        if isinstance(parsed, list):
-            return [str(origin).strip() for origin in parsed if str(origin).strip()]
-
-        if value.startswith("[") and value.endswith("]"):
-            value = value[1:-1]
-
-        return [origin.strip().strip('"').strip("'") for origin in value.split(",") if origin.strip()]
+        cleaned = (str(origin).strip().strip('"').strip("'") for origin in origins)
+        return ",".join(origin for origin in cleaned if origin)
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -148,6 +144,11 @@ class Settings(BaseSettings):
         if value in {"development", "dev", "local"}:
             return True
         return value
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """`cors_origins` split back out for consumers that want a sequence."""
+        return [origin for origin in self.cors_origins.split(",") if origin]
 
     @property
     def database_url(self) -> str:

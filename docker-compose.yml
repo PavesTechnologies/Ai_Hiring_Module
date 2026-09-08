@@ -1,0 +1,189 @@
+# ==============================================================================
+# AIRS - local stack.
+#
+#     docker compose up -d          start api + worker + beat + redis
+#     docker compose logs -f api    follow the API
+#     docker compose down           stop everything
+#
+# ⚠ READ THIS BEFORE THE FIRST `up`.
+# .env points DB_HOST at the live AWS RDS instance (postgress-db-new...rds
+# .amazonaws.com, database `airs`) and carries real AWS SES credentials. So:
+#
+#   * The api container WRITES to that database at boot -
+#     recover_stalled_resume_uploads runs as a FastAPI startup hook.
+#   * The beat container fires real scheduled jobs against it, and several
+#     SEND REAL EMAIL through SES to real recipients - evaluate-campaign-
+#     health-alerts, detect-stalled-candidates, evaluate-resubmission-alerts,
+#     and request-interview-feedback-for-ended-rounds (hourly).
+#
+# If you only want the API up, leave beat out - nothing else depends on it:
+#
+#     docker compose up -d redis api worker
+#
+# Point .env at a scratch database before bringing up the full stack.
+#
+# Config comes from .env, which is read at RUNTIME (env_file) and never baked
+# into the image - .dockerignore keeps it out of the build context. The same
+# arrangement the k8s manifests use with `envFrom: secretRef`.
+#
+# Three app services from ONE image, because AIRS is three processes: the API,
+# the Celery worker, and Celery beat. See docker-entrypoint.sh.
+#
+# ARCHITECTURE: no service pins `platform:`, deliberately. Each just runs
+# whatever architecture the local airs:v1 happens to be, so the same file works
+# for both builds below without edits.
+#
+# Pinning `platform: linux/arm64` here actively breaks a native build: compose
+# looks for an arm64 airs:v1, does not find one locally, and falls back to
+# pulling from Docker Hub - which fails with "pull access denied for airs,
+# repository does not exist" because the image only ever existed locally. That
+# error is a platform mismatch, not an auth problem.
+#
+#   Native amd64 - fast, for local work (~seconds to boot):
+#     docker build -f arm.Dockerfile -t airs:v1 .
+#
+#   arm64 - matches what ships to ECR; runs here under QEMU emulation, where
+#   importing torch alone takes ~5 minutes, so `up` is slow and the first
+#   healthcheck stays amber for a while (that is emulation, not the image):
+#     docker buildx build --platform linux/arm64 -f arm.Dockerfile -t airs:v1 --load .
+#
+# Either way, follow a rebuild with `docker compose up -d --force-recreate`.
+# The generous start_period values below are sized for the emulated case.
+# ==============================================================================
+
+services:
+
+  # ── Redis: Celery broker + result backend, app cache, WebSocket pub/sub ────
+  # Deliberately NOT publishing 6379 to the host: the existing `airs-redis`
+  # container from start-project.bat already holds that port, and nothing here
+  # needs host access - the app services reach it over the compose network.
+  redis:
+    image: redis:7-alpine
+    container_name: airs-compose-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [airs]
+
+  # ── FastAPI ───────────────────────────────────────────────────────────────
+  api:
+    image: airs:v1
+    container_name: airs-api
+    restart: unless-stopped
+    command: ["api"]
+    env_file: [.env]
+    environment:
+      # OVERRIDES .env, which says REDIS_HOST=localhost. Inside a container
+      # localhost is the container itself, so the app would find no broker.
+      # `redis` is this compose file's service name.
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # DB_HOST in .env points at AWS RDS, which is reachable from here, so it
+      # is intentionally left alone.
+      OMP_NUM_THREADS: "1"
+    ports:
+      - "8002:8002"
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Generous because boot imports torch and runs two DB-touching startup
+    # hooks - and under emulation that is minutes, not seconds.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/docker-entrypoint.sh", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 480s
+    networks: [airs]
+
+  # ── Celery worker ─────────────────────────────────────────────────────────
+  worker:
+    image: airs:v1
+    container_name: airs-worker
+    restart: unless-stopped
+    command: ["worker"]
+    env_file: [.env]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      OMP_NUM_THREADS: "1"
+      # Each prefork child holds its own SQLAlchemy engine, and settings
+      # db_pool_size=1 / max_overflow=2 is per-process - so PostgreSQL
+      # connections are roughly CELERY_CONCURRENCY x 3. Keep this low against
+      # a shared RDS instance.
+      CELERY_CONCURRENCY: "2"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/docker-entrypoint.sh", "healthcheck"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 480s
+    networks: [airs]
+
+  # ── Celery beat ───────────────────────────────────────────────────────────
+  # EXACTLY ONE REPLICA, ALWAYS. beat is a scheduler, not a worker: a second
+  # instance double-fires all 10 entries in celery_app.conf.beat_schedule
+  # (auto-close campaigns, health alerts, stalled-upload recovery, ...).
+  # Never `docker compose up --scale beat=N`.
+  beat:
+    image: airs:v1
+    container_name: airs-beat
+    restart: unless-stopped
+    command: ["beat"]
+    env_file: [.env]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      OMP_NUM_THREADS: "1"
+    volumes:
+      # Persists the schedule across restarts so beat does not re-fire a job
+      # it already ran. /var/run/celery is the writable dir the image creates
+      # for the `airs` user; /app is root-owned and read-only to it.
+      - beat-schedule:/var/run/celery
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [airs]
+
+  # ── Alembic migrations (one-shot, opt-in) ─────────────────────────────────
+  # Not part of `up`: it is in a profile, so it only runs when asked:
+  #
+  #     docker compose run --rm migrate
+  #
+  # A profile rather than a depends_on init step on purpose - concurrent
+  # alembic runs race on the alembic_version row, so this must be one-shot and
+  # run BEFORE the app services, never once per replica.
+  #
+  # WARNING: this FAILS on the repo as it stands. The alembic graph is broken -
+  # revision 7b3f6a92e1c4 is defined in two files
+  # (7b3f6a92e1c4_audit_log_immutability_trigger.py and
+  # 7b3f6a92e1c4_placeholder_for_missing_revision.py), and b6dda6ad1824 lists a
+  # merge parent 9a1c2f3e6b7d that no file defines. Wired up and ready for when
+  # that is repaired.
+  migrate:
+    image: airs:v1
+    container_name: airs-migrate
+    profiles: ["migrate"]
+    command: ["migrate"]
+    env_file: [.env]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    networks: [airs]
+
+networks:
+  airs:
+    driver: bridge
+
+volumes:
+  redis-data:
+  beat-schedule:
