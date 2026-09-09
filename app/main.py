@@ -60,9 +60,14 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="AI Resume Screening Platform (AIRS)",
     description="Secure API with JWT & RBAC",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # Served under API_PREFIX, not at the root. The shared nginx ingress (and
+    # the CloudFront behaviour in front of it) route only /airs/* to this
+    # service, so root-mounted docs are unreachable from outside the cluster:
+    # https://<host>/docs lands on the frontend origin instead. Every route
+    # here is already under /airs, so the docs belong there too.
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 
