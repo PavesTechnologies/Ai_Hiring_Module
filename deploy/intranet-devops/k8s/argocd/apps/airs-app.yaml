@@ -1,0 +1,28 @@
+# Copy to intranet-devops at:  k8s/argocd/apps/airs-app.yaml
+# Then apply it once by hand (or let your app-of-apps pick it up):
+#     kubectl apply -f k8s/argocd/apps/airs-app.yaml
+# After that ArgoCD owns the deployment, and every CD run is just a commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: paves-airs
+  namespace: argocd
+  labels:
+    team: paves
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/PavesTechnologies/intranet-devops
+    targetRevision: dev
+    path: k8s/backend/airs
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

@@ -1,0 +1,77 @@
+# ==============================================================================
+# Build context exclusions.
+#
+# Keeps the context small (project_structure.txt alone is 1.7MB) and, more
+# importantly, keeps secrets out of the image: .env holds live DB, Supabase,
+# Gemini, AWS and OAuth credentials plus the two data-encryption keys. Those
+# are injected at runtime with --env-file, never baked into a layer.
+# ==============================================================================
+
+# Secrets - never copy these into an image.
+.env
+.env.*
+.envrc
+!.env.example
+
+# Local virtualenv - Linux/arm64 cannot use Windows/amd64 site-packages, and
+# it is ~2GB of build context.
+.venv/
+venv/
+
+# VCS and tooling
+.git/
+.gitignore
+.claude/
+.idea/
+.vscode/
+
+# Tests and docs are not needed at runtime.
+tests/
+docs/
+*.md
+!README.md
+
+# Python bytecode / caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Celery beat state - the container writes its own to /var/run/celery.
+celerybeat-schedule
+celerybeat-schedule.*
+celerybeat.pid
+
+# Dev-only entry point (Windows batch script).
+start-project.bat
+
+# Generated dumps and scratch files committed to the repo root.
+project_structure.txt
+migration_history.txt
+migration_history.txtfindstr
+scratch_*.txtw
+tmp_check_alembic.py
+*.log
+
+# Stray zero-byte files created by mistyped shell commands, committed to the
+# repo root. `docker` in particular must be excluded or it collides with any
+# future docker/ directory.
+docker
+cls
+dir
+where
+-r
+
+# Docker's own files - the Dockerfile is read by the builder, not COPYed.
+arm.Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# OS noise
+.DS_Store
+Thumbs.db
