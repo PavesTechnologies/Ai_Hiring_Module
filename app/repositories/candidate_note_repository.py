@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.candidate_notes import CandidateNote
@@ -22,6 +22,23 @@ class CandidateNoteRepository:
             .order_by(CandidateNote.created_at.desc())
             .all()
         )
+
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """
+        Candidate erasure — hard-removes every note for one
+        campaign_candidate, soft-deleted ones included.
+
+        This class otherwise never returns soft-deleted rows, but erasure
+        is the one caller that must not respect that: a soft-deleted note
+        still physically holds the recruiter's text about this person, and
+        its FK to campaign_candidates would block the parent delete
+        regardless of any is_deleted flag.
+        """
+        self.db.execute(
+            delete(CandidateNote)
+            .where(CandidateNote.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
 
     def get_by_id(self, note_id: UUID) -> CandidateNote | None:
         return (

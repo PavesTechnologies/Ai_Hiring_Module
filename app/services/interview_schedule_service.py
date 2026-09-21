@@ -36,6 +36,7 @@ from app.services.notifications.interview_interviewer_lifecycle_emails import (
     queue_interview_interviewer_cancelled_email,
     queue_interview_interviewer_invitation_email,
     queue_interview_interviewer_removed_email,
+    queue_interview_interviewer_rescheduled_email,
 )
 
 
@@ -147,14 +148,6 @@ class InterviewScheduleService:
             int((schedule.end_at - schedule.start_at).total_seconds() // 60) if has_time else None
         )
 
-        # Timezone-discrepancy fix: start_at/end_at are stored as a real
-        # UTC instant - converting back to schedule.timezone here (not
-        # raw UTC) means the date/start_time/end_time this response
-        # returns match what was actually typed into schedule()/
-        # reschedule(), not a UTC-shifted version of it.
-        local_start = schedule.start_at.astimezone(ZoneInfo(schedule.timezone)) if has_time else None
-        local_end = schedule.end_at.astimezone(ZoneInfo(schedule.timezone)) if has_time else None
-
         return InterviewScheduleResponse(
             id=schedule.id,
             campaign_candidate_id=schedule.campaign_candidate_id,
@@ -162,12 +155,10 @@ class InterviewScheduleService:
             status=schedule.status.value,
             interview_type=schedule.interview_type,
             interviewers=[
-                InterviewerResponse(id=i.id, name=i.name, email=i.email) for i in interviewers
+                InterviewerResponse(id=i.id, name=i.name, email=i.email, timezone=i.timezone) for i in interviewers
             ],
-            date=local_start.date() if has_time else None,
-            start_time=local_start.time() if has_time else None,
-            end_time=local_end.time() if has_time else None,
-            timezone=schedule.timezone if has_time else None,
+            start_at=schedule.start_at,
+            end_at=schedule.end_at,
             duration_minutes=duration_minutes,
             platform=schedule.platform,
             location=schedule.location,
@@ -313,16 +304,19 @@ class InterviewScheduleService:
                 start_at=schedule.start_at,
                 end_at=schedule.end_at,
                 timezone=schedule.timezone,
+                candidate_timezone=schedule.candidate_timezone,
                 platform=schedule.platform,
                 interviewers=[
-                    InterviewerResponse(id=i.id, name=i.name, email=i.email)
+                    InterviewerResponse(id=i.id, name=i.name, email=i.email, timezone=i.timezone)
                     for i in interviewers_by_interview_id.get(schedule.id, [])
                 ],
             )
             for schedule in schedules
         ]
 
-    def _queue_interviewer_lifecycle_emails(self, campaign_candidate, schedule, active_interviewers, removed_interviewers) -> None:
+    def _queue_interviewer_lifecycle_emails(
+        self, campaign_candidate, schedule, active_interviewers, removed_interviewers, is_reschedule_event=False,
+    ) -> None:
         """
         Interviewer lifecycle follow-up - called after schedule()/
         reschedule() commit. Invitation is queued for every currently-
@@ -334,10 +328,22 @@ class InterviewScheduleService:
         tracking "who's genuinely new" itself, and a genuinely new
         interviewer added on a later reschedule still gets their first
         invitation correctly.
+
+        Reschedule-notification gap fix: is_reschedule_event is only ever
+        True from reschedule() (never schedule()). queue_interview_
+        interviewer_invitation_email's own return value (True = a fresh
+        invitation was actually queued, False = skipped as already
+        invited) is what distinguishes "genuinely new this call" from
+        "already on the round" - a brand-new interviewer gets the new time
+        via their first invitation and nothing else; an already-invited
+        one gets the dedicated RESCHEDULED notice instead, since their
+        invitation is (correctly) skipped as a duplicate.
         """
         db = self.campaign_candidate_repo.db
         for interviewer in active_interviewers:
-            queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer)
+            newly_invited = queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer)
+            if is_reschedule_event and not newly_invited:
+                queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer)
         for interviewer in removed_interviewers:
             queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, interviewer)
 
@@ -360,6 +366,7 @@ class InterviewScheduleService:
         schedule.start_at = start_at
         schedule.end_at = end_at
         schedule.timezone = request.timezone
+        schedule.candidate_timezone = request.candidate_timezone
         schedule.platform = request.platform
         schedule.location = request.location
         schedule.notes = request.notes
@@ -544,6 +551,7 @@ class InterviewScheduleService:
         schedule.start_at = start_at
         schedule.end_at = end_at
         schedule.timezone = request.timezone
+        schedule.candidate_timezone = request.candidate_timezone
         schedule.platform = request.platform
         schedule.location = request.location
         schedule.notes = request.notes
@@ -619,7 +627,9 @@ class InterviewScheduleService:
         self.interview_schedule_repo.commit()
         if is_reschedule_event:
             queue_interview_rescheduled_email(self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers)
-        self._queue_interviewer_lifecycle_emails(campaign_candidate, schedule, interviewers, removed_interviewers)
+        self._queue_interviewer_lifecycle_emails(
+            campaign_candidate, schedule, interviewers, removed_interviewers, is_reschedule_event=is_reschedule_event,
+        )
         history = self.interview_schedule_repo.get_history(schedule.id)
         return self._to_response(schedule, interviewers, history)
 

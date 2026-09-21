@@ -82,6 +82,12 @@ class InterviewSchedule(Base):
     # predate this column - not a claim that they were genuinely scheduled
     # in UTC (there's no way to recover what they actually meant).
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    # Per-recipient timezone fix - `timezone` above is the zone the
+    # SCHEDULER declared, not necessarily the candidate's own. Nullable:
+    # unset means "candidate is in the same zone as the scheduler",
+    # preserving today's behavior; when set, notification emails localize
+    # for the candidate using this zone instead of `timezone`.
+    candidate_timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     platform: Mapped[Optional[InterviewPlatform]] = mapped_column(
         SAEnum(InterviewPlatform, name="interview_platform_enum"), nullable=True,
     )
@@ -123,6 +129,13 @@ class InterviewInterviewer(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Per-recipient timezone fix - this interviewer's own IANA zone, e.g.
+    # "America/New_York". Nullable: unset means "same zone as the round's
+    # scheduler" (InterviewSchedule.timezone), preserving today's
+    # behavior for callers that don't send one. There's deliberately no
+    # account resolution for interviewers (see this class's own docstring),
+    # so this is the only place their timezone can ever be captured.
+    timezone: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Interviewer lifecycle follow-up - soft-remove, always, regardless of
     # whether the row is referenced by interview_feedback/email_notifications:
     # replace_interviewers() used to hard-delete an unreferenced removed row

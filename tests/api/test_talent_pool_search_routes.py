@@ -43,9 +43,11 @@ def test_search_route_is_still_registered_at_the_existing_path():
     assert route.path == _SEARCH_PATH
 
 
-def test_search_route_allows_only_hr_admin():
+def test_search_route_allows_hr_admin_recruiter_and_hiring_manager():
     allowed = _allowed_roles(_get_route(_SEARCH_PATH, "GET"))
-    assert allowed == frozenset({UserRole.HR_ADMIN.value})
+    assert allowed == frozenset(
+        {UserRole.HR_ADMIN.value, UserRole.RECRUITER.value, UserRole.HIRING_MANAGER.value}
+    )
 
 
 def test_search_response_model_is_unchanged():

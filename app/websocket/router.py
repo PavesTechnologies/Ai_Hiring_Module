@@ -1,9 +1,12 @@
+import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
+from app.dependencies.resume import get_resume_processing_status_service
 from app.middleware.rbac import TokenUser
+from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
 from app.webcore.redis import campaign_board_channel, jd_channel, resume_processing_channel
 from app.websocket.auth import (
     ALL_REALTIME_ROLES,
@@ -12,6 +15,7 @@ from app.websocket.auth import (
     authenticate_websocket,
     require_websocket_role,
 )
+from app.websocket.events import WebSocketEvent
 from app.websocket.manager import manager
 from app.websocket.subscriber import redis_subscriber
 
@@ -24,6 +28,7 @@ async def _run_websocket_session(
     websocket: WebSocket,
     channel: str,
     log_context: dict,
+    snapshot_fn=None,
 ) -> None:
     """
     Shared lifecycle for every AIRS realtime WebSocket route, once the
@@ -32,6 +37,7 @@ async def _run_websocket_session(
         Register with ConnectionManager
             -> Start the channel's Redis subscriber (idempotent - a no-op
                if another client already opened it)
+            -> Unicast snapshot_events (if given) to just this connection
             -> Keep the socket open until the client disconnects
             -> Always clean up the connection, and stop the Redis
                subscriber once this was the last client on the channel.
@@ -40,6 +46,18 @@ async def _run_websocket_session(
     for the 3 helpers that build these) - it MUST match exactly what the
     publishing side (app/websocket/publisher.py) writes to, or events are
     silently dropped.
+
+    snapshot_fn: bug fix - Redis Pub/Sub has no backlog, so any event
+    published before this client subscribed is gone forever (see
+    ResumeProcessingStatusService.get_status_as_events's own docstring for
+    why this reliably bites a resume upload that finishes in well under a
+    minute). A lazy async callable, not an already-fetched list: it must
+    only run AFTER redis_subscriber.subscribe() below has taken effect, or
+    the same gap just reopens between "fetch the snapshot" and "start
+    listening live" - calling it here instead leaves only the negligible
+    residual race between subscribing and this DB read, where the worst
+    case is a harmless duplicate of an already-delivered event, never a
+    lost one.
     """
 
     connected = False
@@ -47,6 +65,10 @@ async def _run_websocket_session(
         await manager.connect(channel, websocket)
         connected = True
         await redis_subscriber.subscribe(channel)
+
+        if snapshot_fn is not None:
+            for event in await snapshot_fn():
+                await websocket.send_json(event.model_dump(mode="json"))
 
         logger.info("WebSocket connected. channel=%s %s", channel, log_context)
 
@@ -147,13 +169,34 @@ async def campaign_board_updates(websocket: WebSocket, campaign_id: UUID) -> Non
 # ================================================================
 
 @router.websocket("/resumes/processing-status/{task_id}")
-async def resume_processing_updates(websocket: WebSocket, task_id: str) -> None:
-    """Allowed: RECRUITER only (narrower than the HTTP endpoint, which also allows HR_ADMIN)."""
+async def resume_processing_updates(
+    websocket: WebSocket,
+    task_id: str,
+    status_service: ResumeProcessingStatusService = Depends(get_resume_processing_status_service),
+) -> None:
+    """
+    Allowed: RECRUITER only (narrower than the HTTP endpoint, which also
+    allows HR_ADMIN).
+
+    Bug fix: a client necessarily opens this socket only after it already
+    has task_id back from the upload response - by definition strictly
+    later than when the pipeline started, and a resume pipeline can fully
+    finish in well under a minute. Every task.linked/stage.completed event
+    already published before this client subscribes is otherwise lost for
+    good (Redis Pub/Sub, no backlog) and the client is left rendering
+    "queued, 0%" forever. get_status_as_events replays that missed history
+    in the same wire shape as the live events, so the client catches up
+    immediately regardless of how far the task has already progressed.
+    """
     user = await _authenticate_and_authorize(websocket, RECRUITER_ONLY)
     if user is None:
         return
 
+    async def snapshot_fn() -> list[WebSocketEvent]:
+        return await asyncio.to_thread(status_service.get_status_as_events, task_id)
+
     channel = resume_processing_channel(task_id)
     await _run_websocket_session(
         websocket, channel, {"user_id": user.user_id, "task_id": task_id},
+        snapshot_fn=snapshot_fn,
     )

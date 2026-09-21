@@ -66,6 +66,25 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # Gemini transport resilience (see GeminiExtractionService). These
+    # govern retries of the HTTP call itself, inside the SDK — distinct
+    # from retry_policy.py, which re-runs whole pipeline stages. The
+    # transport layer is where a 503/429 blip belongs: it retries only the
+    # failed request, seconds apart, instead of redoing text extraction,
+    # cleaning and PII detection for a hiccup that clears in two seconds.
+    gemini_retry_attempts: int = 5
+    gemini_retry_initial_delay: float = 1.0
+    gemini_retry_max_delay: float = 30.0
+    gemini_retry_exp_base: float = 2.0
+    # Non-zero jitter is deliberate: without it every concurrent worker
+    # retries in lockstep and re-hits an already-overloaded endpoint at the
+    # same instant, which is how a brief outage becomes a sustained one.
+    gemini_retry_jitter: float = 1.0
+    # Milliseconds. Unset previously, which meant a hung call could hold a
+    # worker slot indefinitely — and on Windows the pool is "solo", so one
+    # hung call blocks every other task on that worker.
+    gemini_timeout_ms: int = 120_000
+
     # Encryption
     candidate_pii_key: str = ""
 

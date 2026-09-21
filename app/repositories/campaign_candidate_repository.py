@@ -298,6 +298,29 @@ class CampaignCandidateRepository:
         )
         self.db.flush()
 
+    def delete_stage_transition_log(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """
+        Candidate erasure — removes stage_transition_log rows for one
+        campaign_candidate.
+
+        Separate from delete_stage_history above because these are two
+        different tables: campaign_candidate_stage_history records which
+        pipeline stage the candidate occupied, stage_transition_log records
+        each individual transition between stages. Both carry an FK to
+        campaign_candidates with no ON DELETE rule, so both must be cleared
+        explicitly before the parent row can go — omitting this one is what
+        made DELETE /candidates/{id} fail with a ForeignKeyViolation for
+        any candidate that had ever moved pipeline stage.
+        """
+        self.db.execute(
+            delete(StageTransitionLog)
+            .where(StageTransitionLog.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
     def get_by_resume_id(
         self,
         resume_id: UUID,

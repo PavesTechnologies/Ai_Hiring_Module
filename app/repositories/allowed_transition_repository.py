@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.pipeline import AllowedTransition, PipelineStage
@@ -57,3 +57,33 @@ class AllowedTransitionRepository:
         get().
         """
         return self.get(from_stage, to_stage, previous_stage=previous_stage) is not None
+
+    def list_eligible(
+        self,
+        from_stage: PipelineStage,
+        previous_stage: PipelineStage | None = None,
+    ) -> list[AllowedTransition]:
+        """
+        Every transition configured out of from_stage for a candidate that
+        arrived there from previous_stage - the list form of get(), with the
+        same exact-then-wildcard resolution applied per to_stage (an exact
+        previous_stage row shadows the NULL/wildcard row for that same
+        to_stage, so a target is never returned twice with two different
+        allowed_roles). Read-only; the role filter is a caller concern,
+        not this repository's - it returns what the table configures.
+        """
+        rows = self.db.execute(
+            select(AllowedTransition).where(
+                AllowedTransition.from_stage == from_stage,
+                or_(
+                    AllowedTransition.previous_stage.is_(None),
+                    AllowedTransition.previous_stage == previous_stage,
+                ),
+            )
+        ).scalars().all()
+
+        resolved: dict[PipelineStage, AllowedTransition] = {}
+        for row in rows:
+            if row.previous_stage is not None or row.to_stage not in resolved:
+                resolved[row.to_stage] = row
+        return list(resolved.values())

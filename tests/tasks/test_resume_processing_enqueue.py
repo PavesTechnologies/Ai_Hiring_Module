@@ -4,7 +4,10 @@ from uuid import uuid4
 
 from app.models.async_tasks import TaskStatus
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.tasks.resume_processing_tasks import _enqueue_deterministic_scoring
+from app.tasks.resume_processing_tasks import (
+    _enqueue_deterministic_scoring,
+    _publish_board_updates_for_parsed_resume,
+)
 
 MODULE = "app.tasks.resume_processing_tasks"
 
@@ -78,6 +81,58 @@ def test_no_campaign_candidates_for_resume_enqueues_nothing():
         _enqueue_deterministic_scoring(MagicMock(), uuid4(), task_log_service)
 
     mock_task.apply_async.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# Bug fix: extraction finishing (parse_status -> PARSED) must push a live
+# board update - the campaign board's Uploaded column splits into
+# Parsing/Parsed sub-tabs by parse_status, and nothing else publishes on
+# the board channel until scoring runs later, leaving the candidate
+# looking stuck in "processing/queued" over WebSocket even though
+# parse_status is already correct in the database.
+# ----------------------------------------------------------------------
+
+def test_publishes_board_update_for_every_campaign_candidate_on_the_resume():
+    resume_id = uuid4()
+    campaign_id_a, campaign_id_b = uuid4(), uuid4()
+    cc_a = SimpleNamespace(id=uuid4(), campaign_id=campaign_id_a)
+    cc_b = SimpleNamespace(id=uuid4(), campaign_id=campaign_id_b)
+
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = [cc_a, cc_b]
+
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.publish_board_candidate_updated") as mock_publish:
+        _publish_board_updates_for_parsed_resume(MagicMock(), resume_id)
+
+    assert mock_publish.call_count == 2
+    published = {(c.args[0], c.args[1]) for c in mock_publish.call_args_list}
+    assert published == {(campaign_id_a, cc_a.id), (campaign_id_b, cc_b.id)}
+
+
+def test_publish_failure_for_one_campaign_candidate_is_logged_not_raised():
+    resume_id = uuid4()
+    cc = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = [cc]
+
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.publish_board_candidate_updated", side_effect=Exception("redis down")) as mock_publish:
+        _publish_board_updates_for_parsed_resume(MagicMock(), resume_id)  # must not raise
+
+    mock_publish.assert_called_once()
+
+
+def test_no_campaign_candidates_for_resume_publishes_nothing():
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = []
+
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.publish_board_candidate_updated") as mock_publish:
+        _publish_board_updates_for_parsed_resume(MagicMock(), uuid4())
+
+    mock_publish.assert_not_called()
 
 
 # ----------------------------------------------------------------------

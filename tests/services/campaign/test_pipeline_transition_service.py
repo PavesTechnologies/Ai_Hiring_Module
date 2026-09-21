@@ -28,9 +28,9 @@ def _allowed_row(allowed_roles, requires_reason=False):
     return SimpleNamespace(allowed_roles=allowed_roles, requires_reason=requires_reason)
 
 
-def _make_candidate(pipeline_stage):
+def _make_candidate(pipeline_stage, previous_stage=None):
     return SimpleNamespace(
-        id=uuid4(), campaign_id=uuid4(), pipeline_stage=pipeline_stage,
+        id=uuid4(), campaign_id=uuid4(), pipeline_stage=pipeline_stage, previous_stage=previous_stage,
         decision_type=None, decision_source=None, decision_reason=None,
         decision_details=None, decision_by_user_id=None, decision_at=None,
     )
@@ -59,6 +59,50 @@ def test_pipeline_transition_service_construction_requires_interview_schedule_re
     """
     with pytest.raises(TypeError):
         PipelineTransitionService(MagicMock(), MagicMock(), MagicMock())
+
+
+# ----------------------------------------------------------------------
+# Bug fix: transition_stage() used to call allowed_transition_repo.get()
+# without previous_stage, so it only ever resolved the NULL/wildcard row.
+# Every "from HM_REVIEW" row is previous_stage-specific with no wildcard,
+# so ANY move out of HM_REVIEW through this engine (Pipeline Board
+# drag-and-drop / BulkStageMoveService.move_one) always raised
+# InvalidPipelineTransitionException - reproduced live as
+# "INVALID_TRANSITION: No transition exists from HM_REVIEW to INTERVIEW."
+# even though allowed_transitions had a matching previous_stage-scoped
+# row. This also never advanced previous_stage on a successful move,
+# which would have broken the *next* move's lookup too.
+# ----------------------------------------------------------------------
+
+def test_transition_stage_passes_the_candidates_previous_stage_to_the_lookup():
+    candidate = _make_candidate(PipelineStage.HM_REVIEW, previous_stage=PipelineStage.SCREENING)
+    row = _allowed_row(["HIRING_MANAGER"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo = _make_env(row)
+    interview_schedule_repo.get_or_create_pending.return_value = (SimpleNamespace(id=uuid4()), True)
+
+    service.transition_stage(
+        candidate, to_stage=PipelineStage.INTERVIEW, changed_by="hm-1", actor_role="HIRING_MANAGER",
+        source=TransitionSource.MANUAL,
+    )
+
+    allowed_transition_repo.get.assert_called_once_with(
+        PipelineStage.HM_REVIEW, PipelineStage.INTERVIEW, previous_stage=PipelineStage.SCREENING,
+    )
+
+
+def test_transition_stage_advances_previous_stage_to_the_stage_just_left():
+    candidate = _make_candidate(PipelineStage.HM_REVIEW, previous_stage=PipelineStage.SCREENING)
+    row = _allowed_row(["HIRING_MANAGER"], requires_reason=False)
+    service, allowed_transition_repo, campaign_candidate_repo, audit_service, interview_schedule_repo = _make_env(row)
+    interview_schedule_repo.get_or_create_pending.return_value = (SimpleNamespace(id=uuid4()), True)
+
+    service.transition_stage(
+        candidate, to_stage=PipelineStage.INTERVIEW, changed_by="hm-1", actor_role="HIRING_MANAGER",
+        source=TransitionSource.MANUAL,
+    )
+
+    assert candidate.previous_stage == PipelineStage.HM_REVIEW
+    campaign_candidate_repo.update_pipeline_stage.assert_called_once_with(candidate, PipelineStage.INTERVIEW)
 
 
 def test_transition_stage_to_interview_creates_pending_interview_schedule():

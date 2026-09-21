@@ -156,10 +156,10 @@ def get_campaign_candidates(
     description=(
         "Every candidate in the campaign, bucketed by pipeline_stage into "
         "Kanban board columns (Uploaded, Screening, Shortlisted, Hold, "
-        "Interview, Selected, Rejected). Reuses the exact same enriched "
-        "candidate data the Candidate Listing endpoint returns - no "
-        "separate scoring or ranking. HM_REVIEW/FRAUD_REVIEW candidates "
-        "aren't part of this board; other_count accounts for them."
+        "HM Review, Interview, Selected, Rejected). Reuses the exact same "
+        "enriched candidate data the Candidate Listing endpoint returns - "
+        "no separate scoring or ranking. FRAUD_REVIEW candidates aren't "
+        "part of this board; other_count accounts for them."
     ),
 )
 def get_campaign_board(

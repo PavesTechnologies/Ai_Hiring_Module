@@ -42,8 +42,19 @@ class DuplicateFileWarningResponse(BaseModel):
 class StageProgress(BaseModel):
     stage: str
     status: str
+    # User-facing copy (see error_presenter); error_detail keeps the raw
+    # exception string for support. Both are None when the stage is fine.
     error_message: str | None
+    error_detail: str | None = None
     duration_ms: int | None
+    # Retry visibility. attempt_number is the *pipeline* attempt this row
+    # was recorded on (not a per-stage counter) - on attempt 5 every
+    # already-done stage is re-listed as SKIPPED with attempt_number=5.
+    # retries_remaining is non-null only on a FAILED row; see
+    # stage_summary.stage_retries_remaining for why.
+    attempt_number: int
+    max_attempts: int
+    retries_remaining: int | None
 
 
 class ResumeProcessingStatusResponse(BaseModel):
@@ -53,6 +64,10 @@ class ResumeProcessingStatusResponse(BaseModel):
     stages: list[StageProgress]
     resume_id: UUID | None
     error_message: str | None
+    error_detail: str | None = None
+    retry_count: int = 0
+    max_attempts: int = 0
+    retries_remaining: int = 0
 
 
 class ResumeVersionCampaignUsage(BaseModel):

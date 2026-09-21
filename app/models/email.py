@@ -51,6 +51,14 @@ class EmailTriggerEvent(enum.Enum):
     INTERVIEW_INTERVIEWER_INVITATION = "INTERVIEW_INTERVIEWER_INVITATION"
     INTERVIEW_INTERVIEWER_REMOVED = "INTERVIEW_INTERVIEWER_REMOVED"
     INTERVIEW_INTERVIEWER_CANCELLED = "INTERVIEW_INTERVIEWER_CANCELLED"
+    # Reschedule-notification gap fix - an interviewer who stays on a round
+    # through a reschedule previously got nothing (INVITATION is deduped
+    # per (interview_schedule_id, interviewer_id), so it never fires again
+    # for someone already invited on this round). Distinct from INVITATION
+    # since it's sent to already-invited interviewers specifically, and
+    # from the candidate-facing INTERVIEW_RESCHEDULED for the same
+    # tone/content reason CANCELLED already has its own interviewer variant.
+    INTERVIEW_INTERVIEWER_RESCHEDULED = "INTERVIEW_INTERVIEWER_RESCHEDULED"
 
 
 class EmailNotificationStatus(enum.Enum):

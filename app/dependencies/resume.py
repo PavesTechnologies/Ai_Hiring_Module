@@ -21,6 +21,7 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
+from app.repositories.candidate_note_repository import CandidateNoteRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.circuit_breaker_repository import CircuitBreakerRepository
@@ -29,6 +30,7 @@ from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
@@ -245,6 +247,10 @@ def get_candidate_erasure_service(
     composite_score_history_repo: CandidateCompositeScoreHistoryRepository = Depends(
         get_candidate_composite_score_history_repository
     ),
+    # Constructed inline from the session rather than via providers: neither
+    # repository has one, and candidate_actions.py / export.py already build
+    # CandidateNoteRepository(db) this same way.
+    db: Session = Depends(get_db),
 ) -> CandidateErasureService:
     return CandidateErasureService(
         candidate_repo=candidate_repo,
@@ -257,6 +263,8 @@ def get_candidate_erasure_service(
         storage_service=storage_service,
         audit_service=audit_service,
         composite_score_history_repo=composite_score_history_repo,
+        candidate_note_repo=CandidateNoteRepository(db),
+        interview_schedule_repo=InterviewScheduleRepository(db),
     )
 
 

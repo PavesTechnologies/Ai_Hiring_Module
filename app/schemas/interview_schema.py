@@ -11,12 +11,29 @@ from app.models.interview import InterviewPlatform
 class InterviewerInput(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     email: str = Field(..., min_length=1, max_length=255)
+    # Per-recipient timezone fix - this interviewer's own IANA zone, if
+    # known. Optional: omitted means "same zone as the round's own
+    # `timezone`" (today's behavior), since there's no account to look a
+    # default up from (interviewers are free-text name/email only).
+    timezone: Optional[str] = Field(default=None, description='IANA timezone name, e.g. "America/New_York".')
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_iana_timezone(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"'{value}' is not a recognized IANA timezone name.") from exc
+        return value
 
 
 class InterviewerResponse(BaseModel):
     id: UUID
     name: str
     email: str
+    timezone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,14 +64,24 @@ class ScheduleInterviewRequest(BaseModel):
     start_time: time_type
     end_time: time_type
     timezone: str = Field(..., description='IANA timezone name, e.g. "Asia/Kolkata".')
+    # Per-recipient timezone fix - the CANDIDATE's own IANA zone, if known
+    # and different from `timezone` above (which is the scheduler's own
+    # zone). Optional: omitted means "candidate is in the same zone as the
+    # scheduler" (today's behavior). When set, notification emails to the
+    # candidate localize using this zone instead of `timezone`.
+    candidate_timezone: Optional[str] = Field(
+        default=None, description='IANA timezone name for the candidate, e.g. "America/New_York".',
+    )
     duration_minutes: Optional[int] = None
     platform: Optional[InterviewPlatform] = None
     location: Optional[str] = None
     notes: Optional[str] = None
 
-    @field_validator("timezone")
+    @field_validator("timezone", "candidate_timezone")
     @classmethod
-    def _valid_iana_timezone(cls, value: str) -> str:
+    def _valid_iana_timezone(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
         try:
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
@@ -108,14 +135,25 @@ class InterviewHistoryEntryResponse(BaseModel):
 class InterviewScheduleResponse(BaseModel):
     """
     Shared response shape for schedule/reschedule/cancel and the read-only
-    GET .../interviews endpoint. date/start_time/end_time/duration_minutes
-    are Optional specifically for the GET endpoint's PENDING case (reached
+    GET .../interviews endpoint. start_at/end_at/duration_minutes are
+    Optional specifically for the GET endpoint's PENDING case (reached
     INTERVIEW, nothing scheduled yet) - InterviewSchedule.start_at/end_at
     are genuinely null on the model until the first successful schedule()
     call, and GET must be able to return that state cleanly rather than
     erroring. schedule/reschedule/cancel never produce a PENDING response
     themselves (each only ever runs after start_at/end_at are set), so
-    these 4 fields are effectively always populated outside of GET.
+    these fields are effectively always populated outside of GET.
+
+    Frontend-conversion fix: deliberately UTC-only, no date/start_time/
+    end_time/timezone/candidate_timezone - those were relative to
+    whichever zone the scheduler happened to type the round in, and a
+    frontend rendering them as-is (rather than re-deriving the viewer's
+    own local time from a raw UTC instant) is exactly what caused a
+    scheduler in one zone to show the wrong wall-clock time to a viewer
+    in another. A client that needs to pre-fill a reschedule form with
+    "what was originally typed" should derive it from start_at/end_at
+    using its own timezone picker, not assume there's a single relevant
+    zone.
     """
     id: UUID
     campaign_candidate_id: UUID
@@ -123,14 +161,8 @@ class InterviewScheduleResponse(BaseModel):
     status: str
     interview_type: Optional[str]
     interviewers: list[InterviewerResponse]
-    date: Optional[date_type]
-    start_time: Optional[time_type]
-    end_time: Optional[time_type]
-    # The IANA zone date/start_time/end_time are already expressed in -
-    # these 3 fields are converted back from the stored UTC instant into
-    # this zone, not raw UTC, so what you scheduled is what you get back.
-    # Null only for the PENDING/never-scheduled case, same as the 3 above.
-    timezone: Optional[str]
+    start_at: Optional[datetime]
+    end_at: Optional[datetime]
     duration_minutes: Optional[int]
     platform: Optional[InterviewPlatform]
     location: Optional[str]
@@ -163,5 +195,6 @@ class CampaignInterviewEntry(BaseModel):
     # is the zone the round was actually scheduled in, for display
     # purposes (e.g. "2:00 PM IST" alongside a UTC-converted local time).
     timezone: str
+    candidate_timezone: Optional[str]
     platform: Optional[InterviewPlatform]
     interviewers: list[InterviewerResponse]

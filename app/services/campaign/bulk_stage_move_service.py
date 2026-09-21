@@ -5,7 +5,9 @@ from app.exceptions.campaign_exceptions import CampaignException
 from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.campaign.bulk_stage_move_schema import (
+    AllowedTransitionResponse,
     BulkStageMoveResultResponse,
+    CandidateAllowedTransitionsResponse,
     SingleStageMoveResultResponse,
 )
 from app.services.audit_service import AuditService
@@ -161,7 +163,7 @@ class BulkStageMoveService:
         campaign_id: UUID,
         campaign_candidate_id: UUID,
         target_stage: str,
-        reason: str,
+        reason: str | None,
         actor_id: str,
         actor_role: str | None,
     ) -> SingleStageMoveResultResponse:
@@ -254,4 +256,47 @@ class BulkStageMoveService:
             reason=reason,
             actor_id=actor_id,
             actor_role=actor_role,
+        )
+
+    def get_allowed_transitions(
+        self,
+        *,
+        campaign_id: UUID,
+        campaign_candidate_id: UUID,
+        actor_role: str | None,
+    ) -> CandidateAllowedTransitionsResponse:
+        """
+        The read side of move_one - what the UI must call before offering any
+        stage action. Resolved from the candidate's own (previous_stage,
+        pipeline_stage) pair against allowed_transitions, exactly the pair
+        the move itself is validated against, so a target listed here is a
+        target that will be accepted.
+
+        Returns only what this caller can actually do: rows whose
+        allowed_roles doesn't contain actor_role are dropped, as are
+        SYSTEM-only rows (automated scoring transitions, never a button).
+        Read-only - never audited, nothing is written.
+        """
+        cc = self._load_in_campaign(campaign_id, campaign_candidate_id)
+
+        rows = self.pipeline_transition_service.allowed_transition_repo.list_eligible(
+            cc.pipeline_stage, previous_stage=cc.previous_stage,
+        )
+
+        allowed = [
+            AllowedTransitionResponse(
+                to_stage=row.to_stage.value,
+                requires_reason=row.requires_reason,
+                notes=row.notes,
+            )
+            for row in rows
+            if actor_role is not None and actor_role in (row.allowed_roles or [])
+        ]
+        allowed.sort(key=lambda t: t.to_stage)
+
+        return CandidateAllowedTransitionsResponse(
+            campaign_candidate_id=cc.id,
+            current_stage=cc.pipeline_stage.value,
+            previous_stage=cc.previous_stage.value if cc.previous_stage else None,
+            allowed_transitions=allowed,
         )

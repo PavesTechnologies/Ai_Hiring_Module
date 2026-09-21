@@ -89,6 +89,14 @@ def process_jd_document(
             audit_service=audit_service,
             storage_service=StorageService(),
             prompt_template_repository=PromptTemplateRepository(db),
+            # Without this the JD never appears in the list until the cache
+            # expires on its own. Persistence runs here, in the worker, and
+            # calls JDService._invalidate_jd_caches — which is a no-op when
+            # cache_service is None. The API process had already cached the
+            # JD list/search responses, so a newly-created JD stayed hidden
+            # for the full cache_jd_list_ttl_seconds (120s): refresh once
+            # and it is missing, refresh again after the TTL and it appears.
+            cache_service=CacheService(get_redis_client()),
         )
 
         # One EmbeddingService instance shared by the pipeline's own JD-level

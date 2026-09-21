@@ -211,6 +211,42 @@ _TRANSITIONS = [
         "requires_reason": True,
         "notes": "Exception.",
     },
+    # Gap-filled: HM_REVIEW reached straight from SCREENING (skipping
+    # SHORTLISTED) previously had no outbound row at all - same target set
+    # as the SHORTLISTED-arrival rows above, since SCREENING is the same
+    # RECRUITER-owned pre-HM_REVIEW stage one hop earlier.
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next. Gap-filled: HM_REVIEW reached directly from SCREENING previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception. Gap-filled.",
+    },
     {
         "previous_stage": PipelineStage.INTERVIEW,
         "from_stage": PipelineStage.HM_REVIEW,

@@ -31,6 +31,21 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     broker_connection_retry_on_startup=True,
     broker_connection_max_retries=3,
+    # Redis has no real server-side ack: a task handed to a worker is moved
+    # to an "unacked" set and only returned to the queue once
+    # visibility_timeout elapses. Celery's default is 3600s, so a worker
+    # killed mid-task (a dev auto-reload, a deploy, a crash) leaves that
+    # task invisible for a full hour — celery_task_log says RUNNING, the
+    # queue reads empty, the worker sits idle, and it looks permanently
+    # stuck. Observed live: 4 resume tasks parked this way for 25-37
+    # minutes with no way to tell they were still pending.
+    #
+    # 300s trades a faster recovery for the constraint that no single task
+    # may run longer than this without risking a duplicate delivery. The
+    # longest stage here is AI_EXTRACTION, bounded by the Gemini client's
+    # own 120s timeout, so a whole pipeline attempt stays well inside 5
+    # minutes. Raise this if any task ever legitimately runs longer.
+    broker_transport_options={"visibility_timeout": 300},
 )
 
 # ── Worker pool: Windows dev vs. Linux production ────────────────────────────

@@ -87,6 +87,67 @@ class CeleryTaskLogRepository:
         self.db.commit()
         return result.rowcount == 1
 
+    def get_stalled_in_flight(self, task_type: str, stale_before: datetime) -> list[CeleryTaskLog]:
+        """
+        Rows stuck mid-flight: status RUNNING or RETRY, last touched before
+        `stale_before`, with no completion.
+
+        These are the orphans get_queued_dispatch_failed above deliberately
+        never sees. Two ways a task lands here, both observed live:
+
+        - RUNNING with a dead worker. Redis has no server-side ack, so the
+          message sits in the broker's "unacked" set until
+          visibility_timeout returns it. That is now 300s (see
+          celery_app.broker_transport_options), so the broker usually
+          recovers these itself — this scan is the backstop for when the
+          broker entry is gone entirely.
+
+        - RETRY with a countdown. A retry scheduled with an ETA lives in
+          the *worker's own memory*, not in the broker. If that worker dies
+          before the countdown elapses, nothing anywhere holds the task and
+          no visibility_timeout will ever bring it back. Without this scan
+          such a row stays RETRY forever.
+
+        Ordering by the most recent timestamp the row has (completed_at is
+        always NULL here, so started_at, falling back to queued_at for a
+        RETRY row whose started_at was cleared).
+        """
+        last_touched = func.coalesce(CeleryTaskLog.started_at, CeleryTaskLog.queued_at)
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(
+                CeleryTaskLog.task_type == task_type,
+                CeleryTaskLog.status.in_([TaskStatus.RUNNING, TaskStatus.RETRY]),
+                CeleryTaskLog.completed_at.is_(None),
+                last_touched < stale_before,
+            )
+            .all()
+        )
+
+    def claim_in_flight_for_redispatch(self, task_log_id: UUID) -> bool:
+        """
+        Atomic compare-and-swap for a stalled RUNNING/RETRY row, mirroring
+        claim_for_redispatch's contract: the caller may only call
+        apply_async if this returns True.
+
+        The WHERE clause re-checks the status rather than trusting the row
+        the scan read, so a task that came back to life between the scan
+        and this call (the broker redelivered it, or another recovery run
+        got there first) fails the swap and is left alone. Sets the row
+        back to QUEUED so it reads honestly while it waits for a worker.
+        """
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(
+                CeleryTaskLog.id == task_log_id,
+                CeleryTaskLog.status.in_([TaskStatus.RUNNING, TaskStatus.RETRY]),
+                CeleryTaskLog.completed_at.is_(None),
+            )
+            .values(status=TaskStatus.QUEUED, started_at=None, worker_hostname=None),
+        )
+        self.db.commit()
+        return result.rowcount == 1
+
     def get_by_task_id(self, task_id: str) -> CeleryTaskLog | None:
         return (
             self.db.query(CeleryTaskLog)
