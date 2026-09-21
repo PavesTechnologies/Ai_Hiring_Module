@@ -324,9 +324,12 @@ class TalentPoolService:
         never ResumeSelectionService's logic.
 
         `search` is the Normal Search box: a candidate matches if EITHER
-        their name contains the whole search string, OR every
-        whitespace-separated token matches a distinct skill (AND) - e.g.
-        "Python AWS" requires both skills, "Ajay" matches on name. `skills`
+        their name matches (the whole search string as one substring - a
+        single partial term like "Jo" matches "John" - OR every
+        whitespace-separated token individually found in the name, so word
+        order doesn't matter - "Doe John" still matches "John Doe"), OR
+        every whitespace-separated token matches a distinct skill (AND) -
+        e.g. "Python AWS" requires both skills. `skills`
         (repeatable) and singular `skill` (kept for backward compatibility)
         remain an independent OR'd-together skill filter. `designation`/
         `designations` and `location`/`locations` fold into one OR'd,

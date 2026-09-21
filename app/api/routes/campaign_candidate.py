@@ -156,10 +156,10 @@ def get_campaign_candidates(
     description=(
         "Every candidate in the campaign, bucketed by pipeline_stage into "
         "Kanban board columns (Uploaded, Screening, Shortlisted, Hold, "
-        "Interview, Selected, Rejected). Reuses the exact same enriched "
-        "candidate data the Candidate Listing endpoint returns - no "
-        "separate scoring or ranking. HM_REVIEW/FRAUD_REVIEW candidates "
-        "aren't part of this board; other_count accounts for them."
+        "HM Review, Interview, Selected, Rejected). Reuses the exact same "
+        "enriched candidate data the Candidate Listing endpoint returns - "
+        "no separate scoring or ranking. FRAUD_REVIEW candidates aren't "
+        "part of this board; other_count accounts for them."
     ),
 )
 def get_campaign_board(
@@ -384,10 +384,11 @@ def export_override_report(
     status_code=status.HTTP_200_OK,
     summary="Apply HR Override",
     description=(
-        "HR_ADMIN override of a deterministic rejection - re-enters the candidate into "
-        "SCREENING. HR_ADMIN only."
+        "RECRUITER override of a deterministic rejection - re-enters the candidate into "
+        "SCREENING. RECRUITER only (reassigned from HR_ADMIN by the 2026-08-31 governance "
+        "model, which removed HR_ADMIN from every transition-permission check)."
     ),
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.RECRUITER))],
 )
 def apply_hr_override(
     campaign_candidate_id: UUID,

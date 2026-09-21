@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.email import EmailNotification
 from app.models.interview import (
+    InterviewFeedback,
     InterviewHistoryEventType,
     InterviewInterviewer,
     InterviewSchedule,
@@ -188,6 +190,46 @@ class InterviewScheduleRepository:
             cancelled.append(round_)
         return cancelled
 
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """
+        Candidate erasure — removes every interview round for one
+        campaign_candidate, and the four tables that reference those rounds.
+
+        Children are cleared first because none of these FKs carry an
+        ON DELETE rule: interview_interviewers, interview_schedule_history
+        and interview_feedback all point at interview_schedules.id, as do
+        any email_notifications sent about the interview. Those
+        notifications are cleared here by interview_schedule_id rather than
+        left to EmailNotificationRepository.delete_by_candidate, which
+        filters on recipient_type=CANDIDATE and so would leave an
+        interviewer-addressed row behind holding the FK.
+
+        Ordering matters only between children and parent; the four child
+        deletes are independent of each other.
+        """
+        interview_ids = list(
+            self.db.execute(
+                select(InterviewSchedule.id)
+                .where(InterviewSchedule.campaign_candidate_id == campaign_candidate_id)
+            ).scalars()
+        )
+        if not interview_ids:
+            return
+
+        for model, column in (
+            (EmailNotification, EmailNotification.interview_schedule_id),
+            (InterviewFeedback, InterviewFeedback.interview_schedule_id),
+            (InterviewScheduleHistory, InterviewScheduleHistory.interview_id),
+            (InterviewInterviewer, InterviewInterviewer.interview_id),
+        ):
+            self.db.execute(delete(model).where(column.in_(interview_ids)))
+
+        self.db.execute(
+            delete(InterviewSchedule)
+            .where(InterviewSchedule.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
     def get_by_id(self, interview_id: UUID) -> InterviewSchedule | None:
         return self.db.get(InterviewSchedule, interview_id)
 
@@ -350,10 +392,12 @@ class InterviewScheduleRepository:
             if existing is not None:
                 if existing.name != i["name"]:
                     existing.name = i["name"]
+                existing.timezone = i.get("timezone")
                 result.append(existing)
             else:
                 new_row = InterviewInterviewer(
                     interview_id=interview_id, name=i["name"], email=i["email"], is_active=True,
+                    timezone=i.get("timezone"),
                 )
                 self.db.add(new_row)
                 result.append(new_row)

@@ -5,283 +5,949 @@ from app.models.pipeline import AllowedTransition, PipelineStage
 
 db = SessionLocal()
 
-# Epic 3 (M05-E03) Phase C0 fraud-review edges (C5/C7) plus the M07-E03
-# rejection-handling edges - StageTransitionService.transition_to_rejected
-# checks this table before ever moving a candidate to REJECTED, so without
-# those rows every deterministic/semantic/AI rejection would hit the
-# "abort" branch.
+# Governance model (2026-08-31): replaces the old flat (from_stage, to_stage)
+# edge table. Every row is now scoped by previous_stage too - None means "any
+# previous_stage" (a wildcard), a specific PipelineStage means the row only
+# governs a candidate arriving at from_stage from exactly that stage (e.g.
+# HM_REVIEW ownership flipping to HIRING_MANAGER, or a role differing by
+# where a FRAUD_REVIEW/HOLD pause was entered from).
 #
-# M12 addition: the rest of the "normal" pipeline graph
-# (UPLOADED->SCREENING->SHORTLISTED->HM_REVIEW->INTERVIEW->SELECTED/REJECTED)
-# plus fraud-review edges from the later stages (SHORTLISTED/HM_REVIEW/
-# INTERVIEW -> FRAUD_REVIEW, and their "cleared" edges back).
+# Ownership rule applied throughout: the role that owns the *current* stage
+# (from_stage) owns the transition out of it. RECRUITER owns SCREENING /
+# SHORTLISTED / INTERVIEW / SELECTED / HOLD / REJECTED / FRAUD_REVIEW by
+# default - except wherever previous_stage = HM_REVIEW, which flips
+# ownership to HIRING_MANAGER. FRAUD_REVIEW *resolution* is always
+# HIRING_MANAGER regardless of previous_stage. HR_ADMIN has no transition-
+# permission role anywhere in this table (removed 2026-08-31) - it retains
+# permissions elsewhere in the app (exports, campaign management, etc.),
+# just not here.
+#
+# _TRANSITIONS entries are dicts keyed exactly like AllowedTransition's
+# columns; previous_stage omitted (or None) means the wildcard row.
 _TRANSITIONS = [
+    # ---- UPLOADED (current) ----
     {
+        "previous_stage": None,
         "from_stage": PipelineStage.UPLOADED,
         "to_stage": PipelineStage.SCREENING,
         "allowed_roles": ["SYSTEM"],
         "requires_reason": False,
-        "notes": "Automated: deterministic scoring starting moves the candidate into screening (StageTransitionService.transition_to_screening).",
+        "notes": "Automated: deterministic scoring starting moves the candidate into screening.",
     },
     {
+        "previous_stage": None,
+        "from_stage": PipelineStage.UPLOADED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["SYSTEM"],
+        "requires_reason": True,
+        "notes": "Exception: automated fraud-pattern detection flags a freshly uploaded resume.",
+    },
+
+    # ---- SCREENING (current) ----
+    {
+        "previous_stage": None,
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.SHORTLISTED,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
         "requires_reason": False,
-        "notes": "Automated: AI evaluation SHORTLIST recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+        "notes": "Next: composite scoring shortlists a candidate; RECRUITER can also force it manually.",
     },
     {
+        "previous_stage": None,
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.HOLD,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["RECRUITER"],
         "requires_reason": False,
-        "notes": "Automated: AI evaluation HOLD recommendation (StageTransitionService.transition_on_ai_success); also reachable via manual stage override.",
+        "notes": "Pause.",
     },
     {
-        "from_stage": PipelineStage.UPLOADED,
-        "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
-        "requires_reason": True,
-        "notes": "Automated fraud-pattern detection (near-duplicate / keyword-stuffed) flags a freshly uploaded resume (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
-    },
-    {
-        "from_stage": PipelineStage.SCREENING,
-        "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
-        "requires_reason": True,
-        "notes": "Automated fraud-pattern detection flags a resume already in screening (M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
-    },
-    {
-        "from_stage": PipelineStage.FRAUD_REVIEW,
-        "to_stage": PipelineStage.REJECTED,
-        "allowed_roles": ["HR_ADMIN"],
-        "requires_reason": True,
-        "notes": "HR_ADMIN confirms a fraud flag and rejects the candidate (M05-E03 S06).",
-    },
-    {
-        "from_stage": PipelineStage.FRAUD_REVIEW,
-        "to_stage": PipelineStage.SCREENING,
-        "allowed_roles": ["HR_ADMIN"],
-        "requires_reason": True,
-        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to screening (M05-E03 S06).",
-    },
-    {
+        "previous_stage": None,
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.REJECTED,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
-        "requires_reason": False,
-        "notes": "Hard rejection from the deterministic/semantic/AI screening layers (M07-E03).",
-    },
-    {
-        "from_stage": PipelineStage.REJECTED,
-        "to_stage": PipelineStage.SCREENING,
-        "allowed_roles": ["HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
         "requires_reason": True,
-        "notes": "Override of a deterministic rejection, re-entering the candidate into the pipeline (M07-E03 S04); RECRUITER/HIRING_MANAGER added alongside HR_ADMIN.",
+        "notes": "Reject: hard rejection from the deterministic/semantic/AI screening layers, or a manual RECRUITER reject.",
     },
-    # Epic 3 (M05-E03) Phase C5 — "update resume" resubmission re-trigger.
-    # Deliberately not seeded: SELECTED/REJECTED/FRAUD_REVIEW -> UPLOADED —
-    # resubmitting for a candidate already selected, rejected, or under
-    # fraud review is a different, not-yet-defined business process, not a
-    # straight "update resume."
     {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SCREENING,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
+        "requires_reason": True,
+        "notes": "Exception: automated fraud-pattern detection, or a manual RECRUITER flag.",
+    },
+    {
+        "previous_stage": None,
         "from_stage": PipelineStage.SCREENING,
         "to_stage": PipelineStage.UPLOADED,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
-        "requires_reason": False,
-        "notes": "Resume update before SHORTLISTED — straight re-trigger, no extra confirmation gate (M05-E03 S03).",
-    },
-    {
-        "from_stage": PipelineStage.SHORTLISTED,
-        "to_stage": PipelineStage.UPLOADED,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["RECRUITER"],
         "requires_reason": True,
-        "notes": "Resume update once SHORTLISTED — requires HR_ADMIN confirmation (M05-E03 S03).",
+        "notes": "Reset: resume update before SHORTLISTED.",
     },
-    {
-        "from_stage": PipelineStage.HOLD,
-        "to_stage": PipelineStage.UPLOADED,
-        "allowed_roles": ["HR_ADMIN"],
-        "requires_reason": True,
-        "notes": "Resume update once on HOLD — requires HR_ADMIN confirmation (M05-E03 S03).",
-    },
-    {
-        "from_stage": PipelineStage.HM_REVIEW,
-        "to_stage": PipelineStage.UPLOADED,
-        "allowed_roles": ["HR_ADMIN"],
-        "requires_reason": True,
-        "notes": "Resume update once in HM_REVIEW — requires HR_ADMIN confirmation (M05-E03 S03).",
-    },
-    {
-        "from_stage": PipelineStage.INTERVIEW,
-        "to_stage": PipelineStage.UPLOADED,
-        "allowed_roles": ["HR_ADMIN"],
-        "requires_reason": True,
-        "notes": "Resume update once in INTERVIEW — requires HR_ADMIN confirmation (M05-E03 S03).",
-    },
-    # M12 — normal pipeline progression.
-    {
-        "from_stage": PipelineStage.UPLOADED,
-        "to_stage": PipelineStage.SCREENING,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER"],
 
-        "requires_reason": False,
-        "notes": "Initial resume screening kickoff after upload; SYSTEM-driven in the normal flow, HR_ADMIN/RECRUITER can force it manually (M12).",
-    },
+    # ---- SHORTLISTED (current) ----
+    # Default (RECRUITER) ownership - wildcard row.
     {
-        "from_stage": PipelineStage.SCREENING,
-        "to_stage": PipelineStage.SHORTLISTED,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
-        "requires_reason": False,
-        "notes": "Composite scoring (M10) shortlists a candidate; HR_ADMIN/RECRUITER/HIRING_MANAGER can force it manually (M12).",
-    },
-    {
+        "previous_stage": None,
         "from_stage": PipelineStage.SHORTLISTED,
         "to_stage": PipelineStage.HM_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["RECRUITER"],
         "requires_reason": False,
-        "notes": "Candidate handed to hiring manager for review; HR_ADMIN/RECRUITER/HIRING_MANAGER can force it manually (M12).",
+        "notes": "Next - Optional: candidate handed to hiring manager for review. HM_REVIEW is optional, not every candidate passes through it.",
     },
     {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Next - Optional: skips HM_REVIEW directly to interview.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
+        "requires_reason": True,
+        "notes": "Exception: automated fraud-pattern detection, or a manual RECRUITER flag.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reset: resume update once SHORTLISTED.",
+    },
+    # Ownership flip: candidate's previous_stage was HM_REVIEW (sent back to
+    # SHORTLISTED, now moving again) - HIRING_MANAGER owns these instead.
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next (back into review).",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SHORTLISTED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+
+    # ---- HM_REVIEW (current) - always HIRING_MANAGER ----
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
         "from_stage": PipelineStage.HM_REVIEW,
         "to_stage": PipelineStage.INTERVIEW,
-        "allowed_roles": ["HIRING_MANAGER", "HR_ADMIN"],
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": False,
-        "notes": "Hiring manager approves candidate to move to interview (M12); HR_ADMIN retains stalled-candidate override capability.",
+        "notes": "Next.",
     },
     {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
         "from_stage": PipelineStage.HM_REVIEW,
         "to_stage": PipelineStage.REJECTED,
         "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "Hiring manager rejects candidate after review (M12) — terminal human decision, reason required.",
+        "notes": "Reject.",
     },
     {
-        "from_stage": PipelineStage.INTERVIEW,
-        "to_stage": PipelineStage.SELECTED,
-        "allowed_roles": ["HIRING_MANAGER", "HR_ADMIN"],
-        "requires_reason": False,
-        "notes": "Hiring manager selects candidate after interview (M12); HR_ADMIN retains stalled-candidate override capability.",
-    },
-    # INTERVIEW -> REJECTED deliberately NOT defined here: it used to be
-    # ["HIRING_MANAGER"]-only, reason-required, but that duplicated the
-    # (from_stage, to_stage) pair _BOARD_TRANSITIONS also defines below with
-    # a broader role list - and this seeding loop only inserts a row when
-    # none exists yet for a pair, so whichever definition appears first in
-    # _TRANSITIONS silently wins and the other is dropped with no error.
-    # This entry, appearing first, was winning - which meant HR_ADMIN/
-    # RECRUITER got a 403 from the shared transition-engine check on every
-    # route that rejects a candidate out of INTERVIEW (candidate_actions_
-    # routes.py's manual_reject, and the Pipeline Board's own drag-and-drop,
-    # despite _BOARD_TRANSITIONS' own comment stating board moves are meant
-    # to be frictionless for HR_ADMIN/RECRUITER/HIRING_MANAGER alike).
-    # Removed so the _BOARD_TRANSITIONS definition (all 3 roles, no reason)
-    # is the only one seeded for this pair. reject_at_interview (Epic 1)
-    # keeps enforcing HIRING_MANAGER via its own route-level role gate
-    # instead of this table.
-    # M12 — extend automated fraud detection to later stages, matching
-    # the existing UPLOADED/SCREENING -> FRAUD_REVIEW pattern (M05-E03 S06).
-    {
-        "from_stage": PipelineStage.SHORTLISTED,
-        "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
-        "requires_reason": True,
-        "notes": "Automated fraud-pattern detection flags a shortlisted candidate (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
-    },
-    {
+        "previous_stage": PipelineStage.SHORTLISTED,
         "from_stage": PipelineStage.HM_REVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "Automated fraud-pattern detection flags a candidate in HM review (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
+        "notes": "Exception.",
+    },
+    # Gap-filled: HM_REVIEW reached straight from SCREENING (skipping
+    # SHORTLISTED) previously had no outbound row at all - same target set
+    # as the SHORTLISTED-arrival rows above, since SCREENING is the same
+    # RECRUITER-owned pre-HM_REVIEW stage one hop earlier.
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next. Gap-filled: HM_REVIEW reached directly from SCREENING previously had no outbound row.",
     },
     {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back / Continue.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Confirm.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject (re-reject).",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next. Gap-filled: HM_REVIEW reached via a cleared FRAUD_REVIEW previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.HM_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject. Gap-filled.",
+    },
+
+    # ---- INTERVIEW (current) ----
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Optional Review.",
+    },
+    {
+        "previous_stage": None,
         "from_stage": PipelineStage.INTERVIEW,
         "to_stage": PipelineStage.FRAUD_REVIEW,
-        "allowed_roles": ["SYSTEM", "HR_ADMIN", "RECRUITER", "HIRING_MANAGER"],
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
         "requires_reason": True,
-        "notes": "Automated fraud-pattern detection flags a candidate in interview (M12 extension of M05-E03 S06); HR_ADMIN/RECRUITER/HIRING_MANAGER can also manually flag, reason required.",
+        "notes": "Exception.",
     },
     {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Pause.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.INTERVIEW,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER", "SYSTEM"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+
+    # ---- SELECTED (current) ----
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Cancel Selection.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsideration: SELECTED can be walked back to HM_REVIEW, never to an earlier pipeline stage directly.",
+    },
+    {
+        "previous_stage": None,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["RECRUITER", "SYSTEM"],
+        "requires_reason": True,
+        "notes": "Exception.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Cancel Selection. Gap-filled: SELECTED reached via HM_REVIEW previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Back. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.SELECTED,
+        "to_stage": PipelineStage.FRAUD_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Exception. Gap-filled.",
+    },
+
+    # ---- HOLD (current) ----
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Resume.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reset.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Resume - Optional.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Resume - Optional.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reset.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": False,
+        "notes": "Resume.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reset.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": False,
+        "notes": "Resume.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.UPLOADED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reset.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back. Gap-filled: HOLD reached via a cleared FRAUD_REVIEW previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.HOLD,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject. Gap-filled.",
+    },
+
+    # ---- REJECTED (current) ----
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["RECRUITER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.FRAUD_REVIEW,
+        "from_stage": PipelineStage.REJECTED,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider. Gap-filled: REJECTED reached via FRAUD_REVIEW previously had no outbound row.",
+    },
+
+    # ---- FRAUD_REVIEW (current) - resolution always HIRING_MANAGER ----
+    {
+        "previous_stage": PipelineStage.UPLOADED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Return.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.SCREENING,
         "from_stage": PipelineStage.FRAUD_REVIEW,
         "to_stage": PipelineStage.SHORTLISTED,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to SHORTLISTED (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+        "notes": "Next.",
     },
     {
+        "previous_stage": PipelineStage.SCREENING,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.SHORTLISTED,
         "from_stage": PipelineStage.FRAUD_REVIEW,
         "to_stage": PipelineStage.HM_REVIEW,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to HM_REVIEW (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+        "notes": "Next - Optional.",
     },
     {
+        "previous_stage": PipelineStage.SHORTLISTED,
         "from_stage": PipelineStage.FRAUD_REVIEW,
         "to_stage": PipelineStage.INTERVIEW,
-        "allowed_roles": ["HR_ADMIN"],
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN clears a false-positive fraud flag, returning the candidate to INTERVIEW (M12, mirrors FRAUD_REVIEW -> SCREENING).",
+        "notes": "Next - Optional.",
     },
     {
-        "from_stage": PipelineStage.REJECTED,
-        "to_stage": PipelineStage.SHORTLISTED,
-        "allowed_roles": ["HR_ADMIN"],
+        "previous_stage": PipelineStage.SHORTLISTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
         "requires_reason": True,
-        "notes": "HR_ADMIN override of a deterministic/semantic/AI rejection, re-entering the candidate directly at SHORTLISTED (Epic 2 pre-work).",
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.HM_REVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Next.",
+    },
+    {
+        "previous_stage": PipelineStage.INTERVIEW,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SELECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back / Confirm.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.HM_REVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider.",
+    },
+    {
+        "previous_stage": PipelineStage.SELECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.HOLD,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Back. Gap-filled: FRAUD_REVIEW reached from HOLD previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.HOLD,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SCREENING,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider. Gap-filled: FRAUD_REVIEW reached from REJECTED previously had no outbound row.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.SHORTLISTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.INTERVIEW,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reconsider. Gap-filled.",
+    },
+    {
+        "previous_stage": PipelineStage.REJECTED,
+        "from_stage": PipelineStage.FRAUD_REVIEW,
+        "to_stage": PipelineStage.REJECTED,
+        "allowed_roles": ["HIRING_MANAGER"],
+        "requires_reason": True,
+        "notes": "Reject (re-reject). Gap-filled.",
     },
 ]
-
-# Pipeline Board drag-and-drop - frictionless (no reason) forward/lateral
-# moves among the board's 7 columns (Uploaded/Screening/Shortlisted/Hold/
-# Interview/Selected/Rejected), for the same roles that can view the board
-# (get_ranked_campaign_candidates' RBAC). REJECTED<->SCREENING is
-# deliberately left as the existing HR_ADMIN-only, reason-required rows
-# above - not duplicated or loosened here.
-_BOARD_ROLES = ["HR_ADMIN", "RECRUITER", "HIRING_MANAGER"]
-_BOARD_TRANSITIONS = [
-    (PipelineStage.UPLOADED, PipelineStage.SCREENING),
-    (PipelineStage.SCREENING, PipelineStage.SHORTLISTED),
-    (PipelineStage.SCREENING, PipelineStage.HOLD),
-    (PipelineStage.SCREENING, PipelineStage.INTERVIEW),
-    (PipelineStage.SHORTLISTED, PipelineStage.SCREENING),
-    (PipelineStage.SHORTLISTED, PipelineStage.INTERVIEW),
-    (PipelineStage.SHORTLISTED, PipelineStage.HOLD),
-    (PipelineStage.SHORTLISTED, PipelineStage.REJECTED),
-    (PipelineStage.HOLD, PipelineStage.SCREENING),
-    (PipelineStage.HOLD, PipelineStage.SHORTLISTED),
-    (PipelineStage.HOLD, PipelineStage.INTERVIEW),
-    (PipelineStage.INTERVIEW, PipelineStage.SHORTLISTED),
-    (PipelineStage.INTERVIEW, PipelineStage.SELECTED),
-    (PipelineStage.INTERVIEW, PipelineStage.HOLD),
-    (PipelineStage.INTERVIEW, PipelineStage.REJECTED),
-    (PipelineStage.SELECTED, PipelineStage.REJECTED),
-]
-for _from_stage, _to_stage in _BOARD_TRANSITIONS:
-    _TRANSITIONS.append({
-        "from_stage": _from_stage,
-        "to_stage": _to_stage,
-        "allowed_roles": _BOARD_ROLES,
-        "requires_reason": False,
-        "notes": f"Pipeline Board drag-and-drop: {_from_stage.value} -> {_to_stage.value}.",
-    })
 
 try:
     for transition in _TRANSITIONS:
         existing = (
             db.query(AllowedTransition)
             .filter(
+                AllowedTransition.previous_stage == transition["previous_stage"],
                 AllowedTransition.from_stage == transition["from_stage"],
                 AllowedTransition.to_stage == transition["to_stage"],
             )
             .first()
         )
         if existing:
-            print(f"Transition already exists: {transition['from_stage'].value} -> {transition['to_stage'].value}")
+            print(
+                f"Transition already exists: "
+                f"{transition['previous_stage'].value if transition['previous_stage'] else 'ANY'} -> "
+                f"{transition['from_stage'].value} -> {transition['to_stage'].value}"
+            )
             continue
 
         db.add(AllowedTransition(id=uuid.uuid4(), **transition))
-        print(f"Added transition: {transition['from_stage'].value} -> {transition['to_stage'].value}")
+        print(
+            f"Added transition: "
+            f"{transition['previous_stage'].value if transition['previous_stage'] else 'ANY'} -> "
+            f"{transition['from_stage'].value} -> {transition['to_stage'].value}"
+        )
 
     db.commit()
     print("\nAllowed transitions seeded successfully")

@@ -3,7 +3,20 @@ from uuid import UUID
 from app.exception_handler.exceptions import NotFoundError
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
-from app.schemas.jd.response import JDProcessingStatusResponse, JDUploadSummary, StageProgress
+from app.schemas.jd.response import (
+    JDProcessingStatusResponse,
+    JDUploadStageProgress,
+    JDUploadSummary,
+    StageProgress,
+)
+from app.services.document_processing.error_presenter import to_user_message
+from app.services.document_processing.retry_policy import get_max_attempts
+from app.services.document_processing.stage_summary import (
+    collapse_to_latest_attempt,
+    retry_budget,
+    stage_retries_remaining,
+)
+
 
 
 class JDProcessingStatusService:
@@ -22,9 +35,10 @@ class JDProcessingStatusService:
         self.stage_repository = stage_repository
 
     @staticmethod
-    def _build_stages(executions) -> list[StageProgress]:
+    def _build_history_stages(executions) -> list[JDUploadStageProgress]:
+        """Upload history: raw rows, raw error text — unchanged behaviour."""
         return [
-            StageProgress(
+            JDUploadStageProgress(
                 stage=execution.stage.value,
                 status=execution.status.value,
                 error_message=execution.error_message,
@@ -33,20 +47,48 @@ class JDProcessingStatusService:
             for execution in executions
         ]
 
-    def get_status(self, task_id: UUID) -> JDProcessingStatusResponse:
+    @staticmethod
+    def _build_stages(executions) -> list[StageProgress]:
+        return [
+            StageProgress(
+                stage=execution.stage.value,
+                status=execution.status.value,
+                error_message=to_user_message(execution.error_message),
+                error_detail=execution.error_message,
+                duration_ms=execution.duration_ms,
+                attempt_number=execution.attempt_number,
+                max_attempts=get_max_attempts(execution.stage),
+                retries_remaining=stage_retries_remaining(execution),
+            )
+            for execution in executions
+        ]
+
+
+    def get_status(self, task_id: UUID, include_attempts: bool = False) -> JDProcessingStatusResponse:
         task_log = self.task_log_repository.get_by_task_id(str(task_id))
         if not task_log:
             raise NotFoundError(f"No processing task found for task_id {task_id}.")
 
-        stages = self._build_stages(self.stage_repository.get_by_task_id(str(task_id)))
+        executions = self.stage_repository.get_by_task_id(str(task_id))
+        collapsed = collapse_to_latest_attempt(executions)
+        stages = self._build_stages(executions if include_attempts else collapsed)
+        max_attempts, retries_remaining = retry_budget(task_log, collapsed)
 
         return JDProcessingStatusResponse(
             task_id=task_id,
             overall_status=task_log.status.value,
-            current_stage=stages[-1].stage if stages else None,
+            # Always from the collapsed list: its last element is the
+            # furthest stage in STAGE_ORDER the task actually reached, so
+            # current_stage means the same thing whether or not the caller
+            # asked for the full attempt history.
+            current_stage=collapsed[-1].stage.value if collapsed else None,
             stages=stages,
             jd_id=task_log.jd_id,
-            error_message=task_log.error_message,
+            retry_count=task_log.retry_count or 0,
+            max_attempts=max_attempts,
+            retries_remaining=retries_remaining,
+            error_message=to_user_message(task_log.error_message),
+            error_detail=task_log.error_message,
         )
 
     def get_recent_uploads(self, created_by: str, limit: int = 50) -> list[JDUploadSummary]:
@@ -66,7 +108,12 @@ class JDProcessingStatusService:
 
         summaries = []
         for log in task_logs:
-            stages = self._build_stages(executions_by_task.get(log.task_id, []))
+            # Upload history renders the raw attempt-by-attempt list and the
+            # raw error string, exactly as it always has. Stage collapsing
+            # and the friendly-error mapping are deliberately confined to
+            # the processing view (get_status) so this tab's existing UI is
+            # untouched.
+            stages = self._build_history_stages(executions_by_task.get(log.task_id, []))
             summaries.append(
                 JDUploadSummary(
                     task_id=UUID(log.task_id),

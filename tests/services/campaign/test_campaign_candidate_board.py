@@ -25,7 +25,8 @@ transition rules). These tests verify only the new orchestration.
 
 _BOARD_STAGES = [
     PipelineStage.UPLOADED, PipelineStage.SCREENING, PipelineStage.SHORTLISTED,
-    PipelineStage.HOLD, PipelineStage.INTERVIEW, PipelineStage.SELECTED, PipelineStage.REJECTED,
+    PipelineStage.HOLD, PipelineStage.HM_REVIEW, PipelineStage.INTERVIEW,
+    PipelineStage.SELECTED, PipelineStage.REJECTED,
 ]
 
 
@@ -83,7 +84,7 @@ def test_get_campaign_board_buckets_by_stage():
     assert result.other_count == 0
 
 
-def test_get_campaign_board_includes_all_seven_columns_even_when_empty():
+def test_get_campaign_board_includes_all_eight_columns_even_when_empty():
     service = make_service()
     with patch.object(service, "get_campaign_candidates", return_value=[]):
         result = service.get_campaign_board(uuid4())
@@ -92,18 +93,32 @@ def test_get_campaign_board_includes_all_seven_columns_even_when_empty():
     assert all(col.count == 0 and col.candidates == [] for col in result.columns)
 
 
-def test_get_campaign_board_counts_hm_review_and_fraud_review_as_other():
-    """HM_REVIEW/FRAUD_REVIEW aren't board columns - candidates in them must still be accounted for, not silently dropped."""
+def test_get_campaign_board_includes_hm_review_as_its_own_column():
     service = make_service()
     items = [
         _candidate_response(PipelineStage.HM_REVIEW),
+        _candidate_response(PipelineStage.HM_REVIEW),
+        _candidate_response(PipelineStage.SCREENING),
+    ]
+    with patch.object(service, "get_campaign_candidates", return_value=items):
+        result = service.get_campaign_board(uuid4())
+
+    by_stage = {col.stage: col for col in result.columns}
+    assert by_stage[PipelineStage.HM_REVIEW].count == 2
+    assert result.other_count == 0
+
+
+def test_get_campaign_board_counts_fraud_review_as_other():
+    """FRAUD_REVIEW isn't a board column - candidates in it must still be accounted for, not silently dropped."""
+    service = make_service()
+    items = [
         _candidate_response(PipelineStage.FRAUD_REVIEW),
         _candidate_response(PipelineStage.SCREENING),
     ]
     with patch.object(service, "get_campaign_candidates", return_value=items):
         result = service.get_campaign_board(uuid4())
 
-    assert result.other_count == 2
+    assert result.other_count == 1
     assert sum(col.count for col in result.columns) == 1
 
 

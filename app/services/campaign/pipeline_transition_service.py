@@ -113,8 +113,21 @@ class PipelineTransitionService:
         stage-history scores_snapshot alongside the transition itself.
         """
         from_stage = campaign_candidate.pipeline_stage
+        previous_stage = campaign_candidate.previous_stage
 
-        transition = self.allowed_transition_repo.get(from_stage, to_stage)
+        # Bug fix: this lookup used to omit previous_stage entirely, which
+        # made AllowedTransitionRepository.get() resolve only the
+        # NULL/wildcard row (see its docstring) - fine for stages that have
+        # one, but every "from HM_REVIEW" row is previous_stage-specific
+        # (SHORTLISTED/INTERVIEW/SELECTED/HOLD/REJECTED/FRAUD_REVIEW/
+        # SCREENING) with no wildcard fallback, so this call always raised
+        # InvalidPipelineTransitionException for a move out of HM_REVIEW
+        # (e.g. HM_REVIEW -> INTERVIEW), regardless of what the candidate's
+        # actual previous_stage was or what allowed_transitions configures.
+        # StageTransitionService.transition() already did this correctly -
+        # this brings the Pipeline Board / BulkStageMoveService path (this
+        # class's real callers) in line with it.
+        transition = self.allowed_transition_repo.get(from_stage, to_stage, previous_stage=previous_stage)
         if transition is None:
             raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
 
@@ -125,6 +138,13 @@ class PipelineTransitionService:
         if transition.requires_reason and not reason:
             raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)
 
+        # Bug fix (same governance model as above): previous_stage must
+        # advance to from_stage on every successful move, or the *next*
+        # move's exact-previous_stage lookup keeps resolving against a
+        # stale value forever - this class never did this at all.
+        # update_pipeline_stage() flushes the row, so setting this first
+        # (like decision_type/etc. below) persists it in the same write.
+        campaign_candidate.previous_stage = from_stage
         self.campaign_candidate_repo.update_pipeline_stage(campaign_candidate, to_stage)
 
         if to_stage == PipelineStage.INTERVIEW:

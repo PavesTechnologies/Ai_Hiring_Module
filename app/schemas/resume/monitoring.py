@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.campaign.campaign_candidate_schema import AiSummaryDetail
+
 
 class StageExecutionDetail(BaseModel):
     stage: str
@@ -185,3 +187,35 @@ class ResumeParsedJsonResponse(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     download_url: str | None
+
+    # Identity / linking - campaign_candidate_id is the campaign-scoped id
+    # the URL param, notes, and override endpoints all key off (distinct
+    # from candidate_id above, which is global).
+    campaign_candidate_id: UUID
+    campaign_id: UUID
+
+    # Contact (header + Summary tab), decrypted the same way every other
+    # candidate-detail view in this codebase does.
+    email: str | None = None
+    phone: str | None = None
+
+    # Pipeline state (header badge, override panel logic) - read straight
+    # off the CampaignCandidate row, never recalculated.
+    pipeline_stage: str
+    hr_override: bool = False
+    override_reason: str | None = None
+    decision_type: str | None = None
+    decision_source: str | None = None
+    decision_reason: str | None = None
+    decision_at: datetime | None = None
+
+    # Scores - same stored values the score tabs fetch independently via
+    # their own endpoints, surfaced here too for the header/summary view.
+    deterministic_score: float | None = None
+    semantic_score: float | None = None
+    ai_ats_score: float | None = None
+    composite_score: float | None = None
+
+    # AI-generated recommendation blurb - distinct from parsed_json's own
+    # resume summary field. Null until AI evaluation has actually run.
+    ai_candidate_summary: AiSummaryDetail | None = None

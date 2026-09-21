@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
@@ -40,10 +41,18 @@ from app.core.storage_service import StorageService
 from app.core.redis_client import get_redis_client
 from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
+from app.websocket.publisher import publish_board_candidate_updated
 
 logger = logging.getLogger(__name__)
 
 RESUME_DOCUMENT_PROCESSING_TASK_TYPE = "RESUME_DOCUMENT_PROCESSING"
+
+# How long a RUNNING/RETRY row must sit untouched before the recovery scan
+# treats it as orphaned. Several times the broker's own visibility_timeout
+# (300s, see celery_app.broker_transport_options) on purpose: Redis
+# redelivering the message itself is the preferred recovery, and this scan
+# should only ever act on tasks the broker is never going to bring back.
+STALLED_IN_FLIGHT_MINUTES = 15
 
 # Resume.file_format (FileFormat) also allows PNG/JPEG for scanned/image
 # resumes — out of scope here, same as the rest of this pipeline: no OCR
@@ -53,6 +62,35 @@ _FILE_FORMAT_TO_SOURCE_FORMAT = {
     FileFormat.PDF: ResumeSourceFormat.PDF,
     FileFormat.DOCX: ResumeSourceFormat.DOCX,
 }
+
+
+def _publish_board_updates_for_parsed_resume(db, resume_id) -> None:
+    """
+    Bug fix: parse_status flipping to PARSED (persist_processed_resume,
+    committed inside pipeline.run() above) never published anything on the
+    campaign board channel - only the scoring tasks
+    (deterministic/semantic/AI-evaluation/composite) call
+    publish_board_candidate_updated, all of which run later and only once
+    a worker actually picks them up. Until then, a Kanban board driven live
+    by WebSocket events (its Uploaded column split into
+    Parsing/Parsed sub-tabs by each item's parse_status - see
+    CampaignCandidateService.get_campaign_board) never learns extraction
+    finished and keeps showing the candidate as still processing/queued,
+    even though parse_status is already PARSED in the database and a REST
+    refetch would show it correctly. Publishing here, immediately after the
+    parse itself succeeds (not tied to scoring), closes that gap. Never
+    allowed to fail the pipeline - same pattern as the embedding/scoring
+    enqueue calls around this one.
+    """
+    campaign_candidate_repo = CampaignCandidateRepository(db)
+    for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
+        try:
+            publish_board_candidate_updated(campaign_candidate.campaign_id, campaign_candidate.id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board.candidate_updated after parse for campaign_candidate_id=%s resume_id=%s",
+                campaign_candidate.id, resume_id,
+            )
 
 
 def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLogService) -> None:
@@ -221,6 +259,16 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         task_log_repo.commit()
         task_log_service.mark_success(task_log, summary=f"Resume {processed_resume_id} parsed.")
 
+        # Live board update the instant parsing itself finishes - see
+        # _publish_board_updates_for_parsed_resume's own docstring. Must
+        # never affect the already-committed parse success below.
+        try:
+            _publish_board_updates_for_parsed_resume(db, processed_resume_id)
+        except Exception:
+            logger.exception(
+                "Failed to publish board updates after resume %s parsed.", processed_resume_id,
+            )
+
         # M08-E01: enqueued BEFORE deterministic scoring, not after -
         # calculate_deterministic_score_task's own auto-trigger calls
         # _enqueue_semantic_scoring internally as soon as it finishes, and
@@ -382,10 +430,124 @@ def recover_stalled_resume_uploads(db=None) -> int:
                 )
                 task_log_service.mark_dispatch_failed(task_log, str(exc))
 
+        recovered += _recover_stalled_in_flight(
+            task_log_repo, campaign_candidate_repo, campaign_repo,
+        )
         return recovered
     finally:
         if owns_session:
             db.close()
+
+
+def _live_task_ids() -> set[str] | None:
+    """
+    task_ids the workers currently hold (executing, prefetched, or waiting
+    on a retry countdown). None means "could not ask" — no workers
+    answered, or the control channel failed.
+
+    Distinguishing None from an empty set matters: an empty set is a
+    definite "nothing is running, redispatching is safe", while None is
+    "unknown", and redispatching a task that might still be executing
+    would parse the same resume twice (process_resume_document has no
+    SUCCESS-shortcut). Callers treat None as "skip this sweep entirely".
+    """
+    try:
+        inspector = celery_app.control.inspect(timeout=5)
+        replies = [inspector.active(), inspector.reserved(), inspector.scheduled()]
+    except Exception:
+        logger.exception("Stalled in-flight scan: worker inspection failed")
+        return None
+
+    if all(reply is None for reply in replies):
+        return None
+
+    live: set[str] = set()
+    for reply in replies:
+        for entries in (reply or {}).values():
+            for entry in entries:
+                # scheduled() nests the real message under "request";
+                # active()/reserved() carry the id at the top level.
+                request = entry.get("request", entry)
+                task_id = request.get("id")
+                if task_id:
+                    live.add(task_id)
+    return live
+
+
+def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_repo) -> int:
+    """
+    Redispatches RESUME_DOCUMENT_PROCESSING rows orphaned mid-flight —
+    RUNNING under a worker that died, or RETRY whose countdown died with
+    the worker that held it (see get_stalled_in_flight for why the latter
+    can never recover on its own).
+
+    Two independent guards stop this from ever double-processing a resume
+    that is merely slow:
+
+    1. Age. Only rows untouched for STALLED_IN_FLIGHT_MINUTES are
+       considered, which is deliberately several times the broker's
+       visibility_timeout so the broker's own redelivery gets first refusal.
+    2. Liveness. Any task_id a worker currently holds is skipped outright,
+       and if the workers cannot be reached at all the sweep does nothing
+       rather than guess.
+
+    Both must pass. claim_in_flight_for_redispatch then re-checks the
+    status atomically, so a row that recovered between the scan and the
+    claim is left alone.
+    """
+    live_task_ids = _live_task_ids()
+    if live_task_ids is None:
+        logger.info("Stalled in-flight scan skipped | reason=worker_state_unknown")
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALLED_IN_FLIGHT_MINUTES)
+    stalled = task_log_repo.get_stalled_in_flight(RESUME_DOCUMENT_PROCESSING_TASK_TYPE, cutoff)
+
+    recovered = 0
+    for task_log in stalled:
+        if task_log.task_id in live_task_ids:
+            continue
+
+        campaign_candidates = campaign_candidate_repo.get_by_resume_id(task_log.resume_id)
+        campaign = (
+            campaign_repo.get_by_id(campaign_candidates[0].campaign_id)
+            if campaign_candidates else None
+        )
+        if campaign is None:
+            logger.error(
+                "Stalled in-flight recovery failed | task_id=%s resume_id=%s reason=campaign_not_found",
+                task_log.task_id, task_log.resume_id,
+            )
+            continue
+
+        # Claimed last, immediately before dispatch, to keep the window
+        # between "this row is mine" and apply_async as small as possible.
+        if not task_log_repo.claim_in_flight_for_redispatch(task_log.id):
+            logger.info(
+                "Stalled in-flight recovery skipped | task_id=%s reason=already_claimed", task_log.task_id,
+            )
+            continue
+
+        try:
+            process_resume_document.apply_async(
+                kwargs={
+                    "resume_id": str(task_log.resume_id),
+                    "prompt_template_id": str(campaign.prompt_template_id),
+                },
+                task_id=task_log.task_id,
+            )
+            recovered += 1
+            logger.warning(
+                "Stalled in-flight task redispatched | task_id=%s resume_id=%s previous_status=%s",
+                task_log.task_id, task_log.resume_id, task_log.status.value,
+            )
+        except Exception:
+            logger.exception(
+                "Stalled in-flight recovery failed | task_id=%s resume_id=%s reason=queue_unavailable",
+                task_log.task_id, task_log.resume_id,
+            )
+
+    return recovered
 
 
 @celery_app.task(name="resume.recover_stalled_uploads")

@@ -28,6 +28,7 @@ from .pipeline import (
     CampaignCandidateAIEvaluation,
     AllowedTransition,
     CampaignCandidateStageHistory,
+    StageTransitionLog,
 )
 
 from .async_tasks import (

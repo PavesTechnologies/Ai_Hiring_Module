@@ -16,6 +16,7 @@ from app.dependencies.jd import (
     get_celery_task_log_service,
     get_hash_service,
     get_jd_processing_status_service,
+    get_jd_retry_service,
     get_jd_repository,
     get_jd_service,
     get_prompt_template_repository,
@@ -42,6 +43,7 @@ from app.services.document_processing.stage_execution_service import StageExecut
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_status_service import JDProcessingStatusService
 from app.services.jd.jd_service import JDReprocessRequired, JDService
+from app.services.jd.jd_retry_service import JDRetryService
 from app.tasks.jd_processing_tasks import process_jd_document
 from app.schemas.response import APIResponse
 from app.models.identity import UserRole
@@ -269,9 +271,17 @@ def get_jd_processing_status(
     task_id: UUID,
     service: JDProcessingStatusService = Depends(get_jd_processing_status_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    include_attempts: bool = Query(
+        default=False,
+        description=(
+            "Return every attempt's stage rows instead of one row per stage. "
+            "Off by default: each retry re-records the whole pipeline prefix, "
+            "so the raw list is mostly SKIPPED repeats. Turn on for an audit trail."
+        ),
+    ),
 ):
     return APIResponse.ok(
-        data=service.get_status(task_id),
+        data=service.get_status(task_id, include_attempts=include_attempts),
         message="Processing status retrieved successfully.",
     )
 
@@ -295,6 +305,44 @@ def get_my_jd_uploads(
     return APIResponse.ok(
         data=service.get_recent_uploads(user.user_id),
         message="Recent uploads retrieved successfully.",
+    )
+
+
+@router.post(
+    "/my-uploads/{task_id}/retry",
+    response_model=APIResponse[JDProcessingAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def retry_failed_jd_upload(
+    task_id: UUID,
+    service: JDRetryService = Depends(get_jd_retry_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    """
+    Re-runs a FAILED upload from the first stage, on the same task_id.
+
+    Deletes only that run's tracking rows (stage executions, checkpoint,
+    stage failure logs) and re-queues the original submission, rebuilt
+    from the checkpoint snapshot - the uploaded file is kept, since it is
+    the input the replay needs, and the celery_task_log row is reset in
+    place so the upload keeps its identity in /my-uploads rather than
+    reappearing as a separate entry.
+
+    Refused (409) unless the task has genuinely finished failing
+    (FAILURE/DEAD): a QUEUED or RUNNING task would race the worker still
+    holding it, and a RETRY task is already going to run again by itself.
+    Refused (403) for a task the caller did not upload.
+
+    Subscribers of ws /airs/job-descriptions/my-uploads receive
+    `task.reset` at this point and should clear the run's stage list - the
+    replay re-emits `stage.completed` from VALIDATION onward, which would
+    otherwise look like extra attempts appended to the failed run.
+    """
+    task_log = service.retry_from_start(str(task_id), user.user_id)
+    return APIResponse.ok(
+        data=JDProcessingAcceptedResponse(task_id=UUID(task_log.task_id), status=task_log.status.value),
+        message="Upload re-queued from the first stage.",
     )
 
 
@@ -356,7 +404,7 @@ def get_all_active_jds(
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
 
 
-@router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
+@router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER))])
 def get_job_description_by_id(
     jd_id: str,
     service: JDService = Depends(get_jd_service),

@@ -92,11 +92,17 @@ def _interview_email_context(schedule, interviewers: list) -> dict | None:
     previous bare strftime on a UTC value with no timezone indicator at
     all - the exact discrepancy between this email and the calendar
     invite (which a calendar client always localizes for its viewer).
+
+    Per-recipient timezone fix: schedule.candidate_timezone (if set) is
+    the candidate's OWN zone, which can differ from schedule.timezone
+    (the scheduler's zone) - e.g. a scheduler in India booking a call for
+    a candidate in the US. Falls back to schedule.timezone when unset, so
+    a round with no candidate_timezone behaves exactly as before.
     """
     if schedule.start_at is None:
         return None
     interviewer_names = ", ".join(i.name for i in interviewers) if interviewers else "the hiring team"
-    local_start = schedule.start_at.astimezone(ZoneInfo(schedule.timezone))
+    local_start = schedule.start_at.astimezone(ZoneInfo(schedule.candidate_timezone or schedule.timezone))
     return {
         "interview_date": local_start.strftime("%B %d, %Y"),
         "interview_time": local_start.strftime("%I:%M %p %Z").lstrip("0"),

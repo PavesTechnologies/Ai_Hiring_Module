@@ -76,7 +76,7 @@ def submit_feedback(
         "HR_ADMIN, same ownership rules as every other interview "
         "endpoint."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
+    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN, UserRole.RECRUITER))],
 )
 def get_interview_feedback(
     campaign_candidate_id: UUID, interview_id: UUID,

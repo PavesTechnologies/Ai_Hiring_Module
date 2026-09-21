@@ -48,6 +48,10 @@ def _make_schedule(status=InterviewStatus.PENDING, campaign_candidate_id=None, *
         # unchanged. Dedicated tests elsewhere exercise a real non-UTC
         # zone to prove _combine_to_utc's actual conversion math.
         timezone="UTC",
+        # Per-recipient timezone fix - None means "same as timezone above"
+        # (today's behavior); a real value is exercised in its own
+        # dedicated tests.
+        candidate_timezone=None,
         platform=None,
         location=None,
         notes=None,
@@ -63,8 +67,8 @@ def _make_schedule(status=InterviewStatus.PENDING, campaign_candidate_id=None, *
     return SimpleNamespace(**defaults)
 
 
-def _make_interviewer(interview_id, name="Alice", email="alice@example.com"):
-    return SimpleNamespace(id=uuid4(), interview_id=interview_id, name=name, email=email)
+def _make_interviewer(interview_id, name="Alice", email="alice@example.com", timezone=None):
+    return SimpleNamespace(id=uuid4(), interview_id=interview_id, name=name, email=email, timezone=timezone)
 
 
 def _schedule_request(**overrides):
@@ -179,8 +183,8 @@ def test_schedule_converts_a_non_utc_timezone_to_a_real_utc_instant():
     assert schedule.timezone == "Asia/Kolkata"
 
 
-def test_to_response_converts_the_stored_utc_instant_back_to_the_original_timezone():
-    """Round-trip fidelity: what you scheduled (2:00 PM IST) is what you get back, not a UTC-shifted number."""
+def test_to_response_converts_the_stored_utc_instant_correctly():
+    """2:00-3:00 PM IST (Asia/Kolkata, UTC+5:30) must round-trip to the correct UTC instant, not a UTC-shifted number."""
     campaign_candidate = _make_campaign_candidate()
     schedule = _make_schedule(status=InterviewStatus.PENDING, campaign_candidate_id=campaign_candidate.id)
     service, cc_repo, campaign_repo, repo, audit_service, _ = _make_env(
@@ -194,10 +198,8 @@ def test_to_response_converts_the_stored_utc_instant_back_to_the_original_timezo
         ),
     )
 
-    assert result.date == date(2026, 8, 20)
-    assert result.start_time == time(14, 0)
-    assert result.end_time == time(15, 0)
-    assert result.timezone == "Asia/Kolkata"
+    assert result.start_at == datetime(2026, 8, 20, 8, 30, tzinfo=timezone.utc)
+    assert result.end_at == datetime(2026, 8, 20, 9, 30, tzinfo=timezone.utc)
 
 
 def test_reschedule_converts_and_round_trips_a_non_utc_timezone_too():
@@ -214,22 +216,21 @@ def test_reschedule_converts_and_round_trips_a_non_utc_timezone_too():
             ),
         )
 
-    # 9:00 AM EDT (UTC-4 in August) -> 1:00 PM UTC.
+    # 9:00-10:00 AM EDT (UTC-4 in August) -> 1:00-2:00 PM UTC.
     assert schedule.start_at == datetime(2026, 8, 21, 13, 0, tzinfo=timezone.utc)
     assert schedule.timezone == "America/New_York"
-    assert result.date == date(2026, 8, 21)
-    assert result.start_time == time(9, 0)
-    assert result.timezone == "America/New_York"
+    assert result.start_at == datetime(2026, 8, 21, 13, 0, tzinfo=timezone.utc)
+    assert result.end_at == datetime(2026, 8, 21, 14, 0, tzinfo=timezone.utc)
 
 
-def test_get_rounds_response_timezone_is_null_for_a_pending_never_scheduled_round():
+def test_get_rounds_response_start_end_are_null_for_a_pending_never_scheduled_round():
     schedule = _make_schedule(status=InterviewStatus.PENDING, start_at=None, end_at=None)
     service, *_rest = _make_env(schedule=schedule)
 
     result = service.get_rounds(schedule.campaign_candidate_id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert result[0].timezone is None
-    assert result[0].date is None
+    assert result[0].start_at is None
+    assert result[0].end_at is None
 
 
 def test_schedule_happy_path_from_pending_sets_fields_and_returns_scheduled():
@@ -251,7 +252,47 @@ def test_schedule_happy_path_from_pending_sets_fields_and_returns_scheduled():
     assert result.status == "SCHEDULED"
     assert result.history == []
     assert result.duration_minutes == 60
+    # Frontend-conversion fix: raw UTC exposed alongside the pre-localized
+    # date/start_time/end_time, so a viewer's own client can convert to
+    # its own local zone instead of trusting `timezone` (the scheduler's).
+    assert result.start_at == datetime(2026, 8, 20, 15, 0, tzinfo=timezone.utc)
+    assert result.end_at == datetime(2026, 8, 20, 16, 0, tzinfo=timezone.utc)
     repo.commit.assert_called_once()
+
+
+def test_schedule_persists_candidate_timezone_and_interviewer_timezone():
+    """
+    Per-recipient timezone fix: candidate_timezone on the request is
+    persisted onto the schedule row (used by candidate notification
+    emails - see candidate_notification_emails.py) distinct from the
+    scheduler's own `timezone`, and each interviewer's declared timezone
+    is passed through to replace_interviewers. Neither is surfaced on
+    InterviewScheduleResponse itself (frontend-conversion fix: that
+    response is UTC-only now), so this only asserts the persisted model
+    state and the interviewer round-trip, not a response field.
+    """
+    campaign_candidate = _make_campaign_candidate()
+    schedule = _make_schedule(status=InterviewStatus.PENDING, campaign_candidate_id=campaign_candidate.id)
+    interviewer = _make_interviewer(schedule.id, timezone="America/New_York")
+    service, cc_repo, campaign_repo, repo, audit_service, _ = _make_env(
+        campaign_candidate=campaign_candidate, schedule=schedule, interviewers=[interviewer],
+    )
+
+    result = service.schedule(
+        campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"],
+        request=_schedule_request(
+            timezone="Asia/Kolkata",
+            candidate_timezone="America/New_York",
+            interviewers=[InterviewerInput(name="Alice", email="alice@example.com", timezone="America/New_York")],
+        ),
+    )
+
+    assert schedule.timezone == "Asia/Kolkata"
+    assert schedule.candidate_timezone == "America/New_York"
+    repo.replace_interviewers.assert_called_once_with(
+        schedule.id, [{"name": "Alice", "email": "alice@example.com", "timezone": "America/New_York"}],
+    )
+    assert result.interviewers[0].timezone == "America/New_York"
 
 
 # ----------------------------------------------------------------------
@@ -591,7 +632,7 @@ def test_reschedule_with_unchanged_time_and_only_interviewer_change_is_a_quiet_e
     audit_service.log.assert_not_called()
     mock_email.assert_not_called()
     repo.replace_interviewers.assert_called_once_with(
-        schedule.id, [{"name": "New Interviewer", "email": "new@example.com"}],
+        schedule.id, [{"name": "New Interviewer", "email": "new@example.com", "timezone": None}],
     )
     assert result.status == "SCHEDULED"
 
@@ -667,7 +708,7 @@ def test_reschedule_with_both_time_and_interviewers_changed_writes_exactly_one_h
     audit_service.log.assert_called_once()
     mock_email.assert_called_once()
     repo.replace_interviewers.assert_called_once_with(
-        schedule.id, [{"name": "Brand New Interviewer", "email": "brandnew@example.com"}],
+        schedule.id, [{"name": "Brand New Interviewer", "email": "brandnew@example.com", "timezone": None}],
     )
 
 
@@ -1390,8 +1431,8 @@ def test_get_rounds_returns_a_scheduled_interview_matching_the_schedule_response
     assert result[0].round_number == 1
     assert result[0].status == "SCHEDULED"
     assert result[0].interview_type == "Technical Interview"
-    assert result[0].date.isoformat() == "2026-08-25"
-    assert result[0].start_time.isoformat() == "15:00:00"
+    assert result[0].start_at == datetime(2026, 8, 25, 15, 0, tzinfo=timezone.utc)
+    assert result[0].end_at == datetime(2026, 8, 25, 16, 0, tzinfo=timezone.utc)
     assert result[0].duration_minutes == 60
     assert result[0].interviewers[0].email == "alice@example.com"
     assert result[0].history == []
@@ -1430,9 +1471,8 @@ def test_get_rounds_returns_pending_row_cleanly_not_an_error():
     result = service.get_rounds(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
     assert result[0].status == "PENDING"
-    assert result[0].date is None
-    assert result[0].start_time is None
-    assert result[0].end_time is None
+    assert result[0].start_at is None
+    assert result[0].end_at is None
     assert result[0].duration_minutes is None
     assert result[0].meeting_link is None
     assert result[0].history == []
@@ -1535,7 +1575,10 @@ def _make_stateful_env(campaign_candidate=None, campaign=None):
 
     def _replace_interviewers(interview_id, interviewers):
         rows = [
-            SimpleNamespace(id=uuid4(), interview_id=interview_id, name=i["name"], email=i["email"], is_active=True)
+            SimpleNamespace(
+                id=uuid4(), interview_id=interview_id, name=i["name"], email=i["email"], is_active=True,
+                timezone=i.get("timezone"),
+            )
             for i in interviewers
         ]
         interviewers_by_round_id[interview_id] = rows

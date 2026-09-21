@@ -40,10 +40,14 @@ from app.repositories.campaign_candidate_repository import (
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
+from app.repositories.candidate_note_repository import CandidateNoteRepository
 from app.repositories.candidate_repository import CandidateRepository
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
@@ -134,7 +138,7 @@ _RESUBMISSION_FORMAT_TO_EXTENSION = {
 # which owns its own AI_EVALUATE_TASK_TYPE constant).
 SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 
-_HR_OVERRIDE_CHANGE_REASON = "HR_ADMIN override of deterministic rejection"
+_HR_OVERRIDE_CHANGE_REASON = "RECRUITER override of deterministic rejection"
 _OVERRIDE_RATE_ALERT_THRESHOLD_KEY = "OVERRIDE_RATE_ALERT_THRESHOLD"
 _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
 _OVERRIDE_RECOMMENDATION = "Review campaign JD skills or thresholds."
@@ -237,6 +241,11 @@ class CampaignCandidateService:
         file_validation_service: FileValidationService | None = None,
         storage_service: StorageService | None = None,
         composite_score_history_repo: CandidateCompositeScoreHistoryRepository | None = None,
+        email_notification_repo: EmailNotificationRepository | None = None,
+        candidate_note_repo: CandidateNoteRepository | None = None,
+        interview_schedule_repo: InterviewScheduleRepository | None = None,
+        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
+        celery_task_log_repo: CeleryTaskLogRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
@@ -277,6 +286,27 @@ class CampaignCandidateService:
         self.celery_task_log_service = celery_task_log_service
         # M07-E03 S05: optional, additive - same reasoning as above.
         self.skill_repo = skill_repo
+        # Bug fix: delete_campaign_candidate used to call
+        # campaign_candidate_repo.delete() directly with none of these,
+        # which raised a raw ForeignKeyViolation the moment any of these
+        # tables held a row for that campaign_candidate (stage history,
+        # any transition at all, a note, an interview round, a queued/
+        # completed processing task, a dead-lettered failure) - i.e. any
+        # candidate that wasn't still sitting untouched at UPLOADED.
+        # Optional + lazily defaulted from campaign_candidate_repo.db, same
+        # convention as composite_score_history_repo above, so no existing
+        # call site needs to change.
+        self.email_notification_repo = email_notification_repo or EmailNotificationRepository(
+            campaign_candidate_repo.db,
+        )
+        self.candidate_note_repo = candidate_note_repo or CandidateNoteRepository(campaign_candidate_repo.db)
+        self.interview_schedule_repo = interview_schedule_repo or InterviewScheduleRepository(
+            campaign_candidate_repo.db,
+        )
+        self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(
+            campaign_candidate_repo.db,
+        )
+        self.celery_task_log_repo = celery_task_log_repo or CeleryTaskLogRepository(campaign_candidate_repo.db)
 
     def check_no_existing_campaign_membership(
         self,
@@ -724,13 +754,15 @@ class CampaignCandidateService:
             for campaign_candidate, candidate, resume in rows
         ]
 
-    # Pipeline Board's 7 columns - HM_REVIEW/FRAUD_REVIEW aren't part of
-    # this board (a candidate can still be in either; see other_count).
+    # Pipeline Board's 8 columns - FRAUD_REVIEW isn't part of this board (a
+    # candidate can still be in it; see other_count). HM_REVIEW sits between
+    # HOLD and INTERVIEW, matching where it falls in the pipeline flow.
     _BOARD_STAGES = (
         PipelineStage.UPLOADED,
         PipelineStage.SCREENING,
         PipelineStage.SHORTLISTED,
         PipelineStage.HOLD,
+        PipelineStage.HM_REVIEW,
         PipelineStage.INTERVIEW,
         PipelineStage.SELECTED,
         PipelineStage.REJECTED,
@@ -3110,7 +3142,27 @@ class CampaignCandidateService:
         actor_role: str | None = None,
     ) -> None:
         """
-        Delete a campaign candidate.
+        Delete a campaign candidate - scoped to this one campaign
+        application only (see test_campaign_candidate_delete.py for the
+        guarantee that this never reaches the shared Candidate/Resume rows
+        or any other campaign that candidate is also in - contrast with
+        the deliberately global DELETE /candidates/{id} GDPR erasure).
+
+        Bug fix: every one of these tables carries an FK to
+        campaign_candidates.id with no ON DELETE rule, so a bare
+        campaign_candidate_repo.delete() raised a raw
+        psycopg2.errors.ForeignKeyViolation - not the 404/409 this method's
+        callers expect - for any candidate that wasn't still sitting
+        untouched at UPLOADED (i.e. had ever recorded a stage, a note, an
+        interview round, or a processing task). Same set of tables
+        CandidateErasureService.erase_candidate already clears per
+        candidate, here scoped to campaign_candidate_id alone so a
+        candidate present in another campaign is never touched. Order
+        matters only where noted (DLQ before celery_task_log;
+        campaign_candidate_ai_evaluations needs no explicit call - it
+        cascades via cascade="all, delete-orphan" on
+        CampaignCandidate.ai_evaluation when the parent row is deleted
+        below).
         """
 
         try:
@@ -3136,6 +3188,20 @@ class CampaignCandidateService:
             deleted_campaign_id = candidate.campaign_id
             deleted_candidate_id = candidate.candidate_id
             deleted_resume_id = candidate.resume_id
+
+            self.email_notification_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.campaign_candidate_repo.delete_stage_history(deleted_id)
+            self.campaign_candidate_repo.delete_stage_transition_log(deleted_id)
+            self.candidate_note_repo.delete_by_campaign_candidate_id(deleted_id)
+            # Also clears interview_interviewers/interview_schedule_history/
+            # interview_feedback/interview-round email_notifications - see
+            # its own docstring.
+            self.interview_schedule_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.composite_score_history_repo.delete_by_campaign_candidate_id(deleted_id)
+            # DLQ before celery_task_log - dead_letter_queue.original_task_id
+            # is a NOT NULL FK to celery_task_log.task_id.
+            self.dead_letter_queue_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.celery_task_log_repo.delete_by_campaign_candidate_id(deleted_id)
 
             self.campaign_candidate_repo.delete(candidate)
 

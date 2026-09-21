@@ -122,9 +122,9 @@ class CampaignBoardResponse(BaseModel):
     """
     Pipeline Board - every candidate in the campaign (the same enriched
     rows get_campaign_candidates already returns), bucketed by
-    pipeline_stage into columns. HM_REVIEW/FRAUD_REVIEW candidates aren't
-    among this board's columns; other_count accounts for them so the
-    total is never silently short.
+    pipeline_stage into columns. FRAUD_REVIEW candidates aren't among this
+    board's columns; other_count accounts for them so the total is never
+    silently short.
     """
     campaign_id: UUID
     columns: list[CampaignBoardColumn]

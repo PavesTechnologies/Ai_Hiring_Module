@@ -38,14 +38,23 @@ def _reason_block(reason: str | None) -> str:
     return f"\n\nReason: {reason}" if reason else ""
 
 
-def _round_context(schedule) -> dict:
+def _round_context(schedule, interviewer) -> dict:
     """
     Timezone-discrepancy fix: start_at is a real UTC instant now - convert
-    back to the round's own schedule.timezone before formatting, with the
-    zone abbreviation appended (e.g. "2:00 PM IST"), same fix as
+    back to a declared zone before formatting, with the zone abbreviation
+    appended (e.g. "2:00 PM IST"), same fix as
     candidate_notification_emails.py's _interview_email_context.
+
+    Per-recipient timezone fix: localizes to THIS interviewer's own zone
+    (interviewer.timezone) when set, rather than always the round's
+    schedule.timezone (the scheduler's zone) - an interviewer in a
+    different zone than whoever scheduled the round otherwise sees the
+    wrong local time. Falls back to schedule.timezone when the
+    interviewer has none set, so behavior is unchanged until one is
+    captured for them.
     """
-    local_start = schedule.start_at.astimezone(ZoneInfo(schedule.timezone)) if schedule.start_at else None
+    zone_name = interviewer.timezone or schedule.timezone
+    local_start = schedule.start_at.astimezone(ZoneInfo(zone_name)) if schedule.start_at else None
     return {
         "interview_date": local_start.strftime("%B %d, %Y") if local_start else "TBD",
         "interview_time": local_start.strftime("%I:%M %p %Z").lstrip("0") if local_start else "TBD",
@@ -104,7 +113,25 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
 def queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer) -> bool:
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_INVITATION,
-        {**_round_context(schedule), "notes_block": _notes_block(schedule)},
+        {**_round_context(schedule, interviewer), "notes_block": _notes_block(schedule)},
+    )
+
+
+def queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer) -> bool:
+    """
+    Reschedule-notification gap fix - sent to an interviewer who was
+    already invited to this round and stays on it through a reschedule.
+    INVITATION won't fire again for them (deduped per (interview_
+    schedule_id, interviewer_id)), so without this they'd never learn the
+    time changed. The caller (InterviewScheduleService.reschedule(), via
+    _queue_interviewer_lifecycle_emails) is responsible for only calling
+    this for interviewers whose invitation call returned False (already
+    invited) - a genuinely new interviewer gets the new time via their
+    first INVITATION instead, not both.
+    """
+    return _queue_interviewer_email(
+        db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_RESCHEDULED,
+        _round_context(schedule, interviewer),
     )
 
 
@@ -117,5 +144,5 @@ def queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, 
 def queue_interview_interviewer_cancelled_email(db, campaign_candidate, schedule, interviewer, reason: str | None = None) -> bool:
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_CANCELLED,
-        {**_round_context(schedule), "reason_block": _reason_block(reason)},
+        {**_round_context(schedule, interviewer), "reason_block": _reason_block(reason)},
     )

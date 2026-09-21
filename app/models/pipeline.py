@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Enum as SAEnum,
-    ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func,
+    ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -108,6 +108,14 @@ class CampaignCandidate(Base):
     resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     pipeline_stage: Mapped[PipelineStage] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=False, default=PipelineStage.UPLOADED)
+    # Governance model (2026-08-31): the stage the candidate was in
+    # immediately before pipeline_stage - NULL until the candidate's first
+    # transition. Updated by StageTransitionService on every successful
+    # transition (previous_stage = pipeline_stage's value just before the
+    # move) - never touched anywhere else. Read by AllowedTransitionRepository
+    # to resolve context-aware rows (e.g. HM_REVIEW ownership flips depending
+    # on where the candidate is coming from).
+    previous_stage: Mapped[Optional[PipelineStage]] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=True)
     screened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deterministic_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2), nullable=True)
     deterministic_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
@@ -150,15 +158,61 @@ class CampaignCandidate(Base):
 
 
 class AllowedTransition(Base):
+    """
+    Governance model (2026-08-31): previous_stage makes a row context-aware -
+    NULL means "applies regardless of previous_stage" (a wildcard), a
+    specific stage means the row only governs candidates arriving at
+    from_stage from exactly that previous_stage (e.g. HM_REVIEW ownership
+    flipping to HIRING_MANAGER). AllowedTransitionRepository.get() resolves
+    an exact (previous_stage, from_stage, to_stage) match first, falling
+    back to the NULL-wildcard row for that (from_stage, to_stage) pair.
+
+    Two constraints enforce "at most one row per (previous_stage, from_stage,
+    to_stage)": the compound unique constraint covers non-NULL previous_stage
+    (Postgres does treat two non-NULL-equal tuples as duplicates), and the
+    partial unique index covers the NULL/wildcard case separately, since
+    Postgres unique constraints never consider two NULLs equal to each other.
+    """
     __tablename__ = "allowed_transitions"
-    __table_args__ = (UniqueConstraint("from_stage", "to_stage"),)
+    __table_args__ = (
+        UniqueConstraint("previous_stage", "from_stage", "to_stage", name="uq_allowed_transitions_previous_from_to"),
+        Index(
+            "uq_allowed_transitions_from_to_no_previous",
+            "from_stage", "to_stage",
+            unique=True,
+            postgresql_where=text("previous_stage IS NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    previous_stage: Mapped[Optional[PipelineStage]] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=True)
     from_stage: Mapped[PipelineStage] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=False)
     to_stage: Mapped[PipelineStage] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=False)
     allowed_roles = mapped_column(ARRAY(String), nullable=False)
     requires_reason: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class StageTransitionLog(Base):
+    """
+    Governance model (2026-08-31): append-only audit trail, separate from the
+    permission system (AllowedTransition) and from campaign_candidate_stage_
+    history (which existed first and still drives the UI's rejection-history/
+    timeline views). Never updated or deleted - StageTransitionService writes
+    exactly one row per successful transition, alongside (not instead of) the
+    existing stage-history insert.
+    """
+    __tablename__ = "stage_transition_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaign_candidates.id"), nullable=False)
+    previous_stage: Mapped[Optional[PipelineStage]] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=True)
+    from_stage: Mapped[PipelineStage] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=False)
+    to_stage: Mapped[PipelineStage] = mapped_column(SAEnum(PipelineStage, name="pipeline_stage_enum"), nullable=False)
+    role_used: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    performed_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey(_USERS_FK), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class CampaignCandidateStageHistory(Base):

@@ -1,7 +1,8 @@
 import logging
 from uuid import UUID
 
-from app.models.async_tasks import DocumentType
+from app.models.async_tasks import DocumentType, StageExecutionStatus, TaskStatus
+from app.services.document_processing.retry_policy import get_max_attempts, get_retries_remaining
 from app.webcore.redis import (
     campaign_board_channel,
     create_pubsub_client,
@@ -102,6 +103,22 @@ def publish_stage_completed(
             "status": execution.status.value,
             "error_message": execution.error_message,
             "duration_ms": execution.duration_ms,
+            # Retry visibility, same numbers (and same semantics) as
+            # /my-uploads, so a UI driven by this event never has to
+            # re-poll REST just to tell "failed, retrying (2 of 5)" apart
+            # from "failed for good". Derived from retry_policy, so
+            # AI_EXTRACTION's larger budget is reflected without the
+            # client knowing the rule. retries_remaining is non-null only
+            # on a FAILED row - see StageProgress for why a SKIPPED row's
+            # pipeline-wide attempt_number must not be scored against
+            # that stage's own ceiling.
+            "attempt_number": execution.attempt_number,
+            "max_attempts": get_max_attempts(execution.stage),
+            "retries_remaining": (
+                get_retries_remaining(execution.stage, execution.attempt_number)
+                if execution.status == StageExecutionStatus.FAILED
+                else None
+            ),
         },
     )
     publish_event(channel, event)
@@ -188,6 +205,48 @@ def publish_board_candidate_updated(campaign_id, campaign_candidate_id) -> None:
         data={
             "campaign_id": str(campaign_id),
             "campaign_candidate_id": str(campaign_candidate_id),
+        },
+    )
+    publish_event(channel, event)
+
+
+def publish_task_reset(
+    task_id: str,
+    document_type: DocumentType | None,
+    created_by: str | None = None,
+    new_task_id: str | None = None,
+) -> None:
+    """
+    Publishes `task.reset` once a failed task's tracking rows have been
+    deleted and it has been re-queued from the first stage (see
+    JDRetryService.retry_from_start). Must be called after that delete has
+    committed, same ordering rule as publish_stage_completed.
+
+    A client that has the old run on screen cannot infer this from the
+    stage.completed stream alone: the fresh run re-emits VALIDATION,
+    STORAGE, ... and without a reset marker those look like additional
+    attempts appended to the failed run rather than a new run replacing
+    it. Carries no stage data on purpose — the receiver should clear and
+    wait for the new stage events.
+    """
+    channel = _processing_channel(document_type, task_id, created_by)
+    if channel is None:
+        return
+
+    event = WebSocketEvent(
+        event=WebSocketEventType.TASK_RESET,
+        data={
+            "task_id": task_id,
+            "document_type": document_type.value if document_type else None,
+            "status": TaskStatus.QUEUED.value,
+            "retry_count": 0,
+            # Resume retries re-dispatch under a NEW task_id (see
+            # ResumeUploadService.retry_parse), and resume sockets are
+            # per-task — so a client watching the failed task_id must be
+            # told where the replay actually is, or it sits on a channel
+            # that will never speak again. Null for JD, which replays on
+            # the same task_id and whose socket is per-user anyway.
+            "new_task_id": new_task_id,
         },
     )
     publish_event(channel, event)

@@ -1,3 +1,4 @@
+import html
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -34,6 +35,31 @@ EMAIL_SEND_TASK_TYPE = "EMAIL_SEND"
 # + CeleryTaskLogService.mark_retry/mark_dead this codebase already uses
 # for retry-then-dead-letter handling elsewhere.
 _EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
+
+
+def _html_escape_context(context: dict) -> dict:
+    """
+    HTML template design fix: EmailTemplate.body_template is HTML now, but
+    every value in `context` (candidate/interviewer names, notes, cancel/
+    reschedule reasons, filenames, error reasons, ...) ultimately traces
+    back to free-text user input. Escaping before formatting into the
+    HTML body prevents a stray '<'/'&' in someone's interview notes from
+    breaking the markup or, worse, injecting markup into an email
+    rendered in the recipient's mail client. Only applied to the body,
+    never the subject (a plain SES text field, not HTML - escaping there
+    would incorrectly show literal "&amp;" to the recipient).
+
+    Newlines are converted to <br> after escaping: several context values
+    (meeting_info, notes_block, reason_block, ...) are plain-text
+    fragments built with literal "\\n\\n" for readability in the old
+    plain-text template - HTML collapses raw whitespace, so without this
+    those fragments would run together on one line inside the new HTML
+    card.
+    """
+    return {
+        key: html.escape(value).replace("\n", "<br>") if isinstance(value, str) else value
+        for key, value in context.items()
+    }
 
 # TODO(future story): if/when a daily rejection-email digest is specified,
 # it belongs here as a separate Celery-beat task reading EmailNotification
@@ -140,9 +166,9 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
             **(notification.template_context or {}),
         }
         subject = template.subject.format(**context)
-        body = template.body_template.format(**context)
+        body = template.body_template.format(**_html_escape_context(context))
 
-        SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body)
+        SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body, is_html=True)
 
         notification.status = EmailNotificationStatus.SENT
         notification.sent_at = datetime.now(timezone.utc)

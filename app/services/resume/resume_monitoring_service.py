@@ -8,6 +8,7 @@ from app.core.storage_service import StorageService
 from app.exceptions.storage_exception import StorageException
 from app.exception_handler.exceptions import BadRequestError, NotFoundError
 from app.models.candidates import ParseStatus
+from app.models.pipeline import CampaignCandidate, DecisionType
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
@@ -17,6 +18,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.repositories.user_repository import UserRepository
+from app.schemas.campaign.campaign_candidate_schema import AiSummaryDetail
 from app.core.config import settings
 from app.core.cache_keys import resume_key, resume_list_key
 from app.services.cache_service import CacheService
@@ -548,6 +550,9 @@ class ResumeMonitoringService:
                 resume.id, resume.file_path,
             )
 
+        candidate = self.candidate_repository.get_by_id(campaign_candidate.candidate_id)
+        is_overridden = getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET
+
         return ResumeParsedJsonResponse(
             resume_id=resume.id,
             candidate_id=resume.candidate_id,
@@ -560,6 +565,64 @@ class ResumeMonitoringService:
             created_at=resume.created_at,
             updated_at=resume.updated_at,
             download_url=download_url,
+            campaign_candidate_id=campaign_candidate.id,
+            campaign_id=campaign_candidate.campaign_id,
+            email=self._decrypt_candidate_field(candidate, "email_encrypted"),
+            phone=self._decrypt_candidate_field(candidate, "phone_encrypted"),
+            pipeline_stage=campaign_candidate.pipeline_stage.value,
+            hr_override=is_overridden,
+            override_reason=campaign_candidate.decision_reason if is_overridden else None,
+            decision_type=(
+                campaign_candidate.decision_type.value if campaign_candidate.decision_type else None
+            ),
+            decision_source=(
+                campaign_candidate.decision_source.value if campaign_candidate.decision_source else None
+            ),
+            decision_reason=campaign_candidate.decision_reason,
+            decision_at=campaign_candidate.decision_at,
+            deterministic_score=(
+                float(campaign_candidate.deterministic_score)
+                if campaign_candidate.deterministic_score is not None else None
+            ),
+            semantic_score=(
+                float(campaign_candidate.semantic_score)
+                if campaign_candidate.semantic_score is not None else None
+            ),
+            ai_ats_score=(
+                float(campaign_candidate.ai_evaluation.effective_ai_score)
+                if campaign_candidate.ai_evaluation and campaign_candidate.ai_evaluation.effective_ai_score is not None
+                else None
+            ),
+            composite_score=(
+                float(campaign_candidate.composite_score)
+                if campaign_candidate.composite_score is not None else None
+            ),
+            ai_candidate_summary=self._build_ai_candidate_summary(campaign_candidate),
+        )
+
+    def _decrypt_candidate_field(self, candidate, encrypted_attr: str) -> str | None:
+        if candidate is None or not getattr(candidate, encrypted_attr, None):
+            return None
+        try:
+            return self.encryption_service.decrypt(getattr(candidate, encrypted_attr), candidate.encryption_key_id)
+        except DecryptionError:
+            logger.exception(
+                "Failed to decrypt candidate.%s for candidate_id=%s", encrypted_attr, candidate.id,
+            )
+            return None
+
+    @staticmethod
+    def _build_ai_candidate_summary(campaign_candidate: CampaignCandidate) -> AiSummaryDetail | None:
+        ai_evaluation = getattr(campaign_candidate, "ai_evaluation", None)
+        recommendation = getattr(ai_evaluation, "ai_recommendation", None) if ai_evaluation else None
+        strengths = getattr(ai_evaluation, "ai_strengths", None) if ai_evaluation else None
+        weaknesses = getattr(ai_evaluation, "ai_weaknesses", None) if ai_evaluation else None
+        if recommendation is None and not strengths and not weaknesses:
+            return None
+        return AiSummaryDetail(
+            recommendation=recommendation.value if recommendation is not None else None,
+            strengths=strengths,
+            weaknesses=weaknesses,
         )
 
     def get_version_history(self, candidate_id: UUID) -> ResumeVersionHistoryResponse:

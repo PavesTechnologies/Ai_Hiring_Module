@@ -133,3 +133,39 @@ def test_delete_by_candidate_binds_the_candidate_type_enum_value_and_the_given_i
     compiled_sql = str(compiled)
     assert "'CANDIDATE'" in compiled_sql
     assert candidate_id.hex in compiled_sql.replace("-", "")
+
+
+# ----------------------------------------------------------------------
+# Bug fix: delete_campaign_candidate (single-campaign removal) had no way
+# to clear email_notifications scoped to one campaign_candidate_id -
+# reusing delete_by_candidate would have reached into that candidate's
+# OTHER campaigns too, exactly what a single-campaign delete must never
+# do. Unlike delete_by_candidate, this filters on campaign_candidate_id
+# alone - no recipient_type guard, since a campaign_candidate_id is
+# already unique to one campaign application regardless of recipient.
+# ----------------------------------------------------------------------
+
+def test_delete_by_campaign_candidate_id_filters_on_campaign_candidate_id_only():
+    repo, db = _repo()
+    campaign_candidate_id = uuid4()
+
+    repo.delete_by_campaign_candidate_id(campaign_candidate_id)
+
+    db.execute.assert_called_once()
+    statement = db.execute.call_args.args[0]
+    compiled = statement.compile(compile_kwargs={"literal_binds": True})
+    compiled_sql = str(compiled)
+    assert "email_notifications.campaign_candidate_id" in compiled_sql
+    assert campaign_candidate_id.hex in compiled_sql.replace("-", "")
+    db.flush.assert_called_once()
+
+
+def test_delete_by_campaign_candidate_id_does_not_filter_on_recipient_type():
+    """Deliberately no recipient_type guard here, unlike delete_by_candidate - a campaign_candidate_id row belongs to exactly one campaign application regardless of who the recipient was."""
+    repo, db = _repo()
+
+    repo.delete_by_campaign_candidate_id(uuid4())
+
+    statement = db.execute.call_args.args[0]
+    compiled_sql = str(statement.compile(compile_kwargs={"literal_binds": False}))
+    assert "recipient_type" not in compiled_sql

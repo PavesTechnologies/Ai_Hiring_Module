@@ -6,7 +6,7 @@ REM Startup order:
 REM     Redis Ready -> Celery Ready -> FastAPI Ready -> Application Ready
 REM
 REM Auto Reload:
-REM     Celery  : ENABLED via watchmedo
+REM     Celery  : ENABLED via watchmedo (hard restart; see notes below)
 REM     FastAPI : ENABLED via uvicorn --reload
 REM
 REM Infrastructure:
@@ -44,6 +44,31 @@ set "CELERY_APP=app.core.celery_app"
 set "CELERY_LOGLEVEL=info"
 set "CELERY_WATCH_DIR=%PROJECT_DIR%app"
 
+REM Auto-reload restarts are NOT graceful on Windows, and cannot be made so
+REM here. watchmedo stops the worker with a bare os.kill(pid, signal), and on
+REM Windows os.kill only honours CTRL_C_EVENT/CTRL_BREAK_EVENT - every other
+REM signal (SIGINT, its default, and SIGTERM alike) becomes TerminateProcess,
+REM an unconditional kill. So --signal/--kill-after buy nothing on this
+REM platform: a task mid-flight is always killed outright, never warm-shut.
+REM
+REM With task_acks_late that task's message stays in Redis "unacked" rather
+REM than being lost, and two things now bring it back quickly:
+REM   1. broker_transport_options visibility_timeout = 300s
+REM      (app/core/celery_app.py) - the broker redelivers within 5 minutes
+REM      instead of Celery's default hour.
+REM   2. the stalled in-flight recovery sweep in
+REM      app/tasks/resume_processing_tasks.py - the backstop for a RETRY
+REM      whose countdown died with the worker, which no broker timeout can
+REM      recover because that countdown lives in worker memory.
+REM
+REM DEBOUNCE is genuinely useful regardless: one restart per burst of saves
+REM instead of one restart per file, so saving three files no longer kills
+REM the worker three times.
+REM
+REM For a long batch run where restarts are unacceptable, start the worker
+REM without watchmedo: celery -A app.core.celery_app worker --pool=solo
+set "CELERY_DEBOUNCE_INTERVAL=2"
+
 REM ----------------------------------------------------------------------------
 REM FastAPI
 REM ----------------------------------------------------------------------------
@@ -59,7 +84,14 @@ REM ----------------------------------------------------------------------------
 set "READY_TIMEOUT_SECONDS=60"
 set "POLL_INTERVAL_SECONDS=2"
 
-set "_FASTAPI_CHECK_URL=http://%FASTAPI_HOST%:%FASTAPI_PORT%/openapi.json"
+REM Bug fix: app.main serves openapi.json/docs under API_PREFIX (see
+REM app/enums/constants.py), not at the bare root - this check used to hit
+REM the root path, which always 404s, so the script always timed out after
+REM READY_TIMEOUT_SECONDS and reported startup as FAILED even when uvicorn
+REM had already logged "Application startup complete" and was serving
+REM requests fine.
+set "API_PREFIX=/airs"
+set "_FASTAPI_CHECK_URL=http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%/openapi.json"
 set "_HTTP_CODE_FILE=%TEMP%\airs_startup_http_code.txt"
 
 cd /d "%PROJECT_DIR%"
@@ -116,8 +148,8 @@ echo ============================================================
 echo  Redis   : READY (docker://%REDIS_CONTAINER%)
 echo  Celery  : READY + AUTO-RELOAD
 echo  FastAPI : READY + AUTO-RELOAD
-echo  API     : http://%FASTAPI_HOST%:%FASTAPI_PORT%
-echo  Docs    : http://%FASTAPI_HOST%:%FASTAPI_PORT%/docs
+echo  API     : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%
+echo  Docs    : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%/docs
 echo ============================================================
 echo.
 
@@ -316,6 +348,8 @@ REM ----------------------------------------------------------------------------
 
 echo   [START] Starting Celery worker with AUTO-RELOAD...
 echo   [WATCH] Watching: %CELERY_WATCH_DIR%
+echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
+echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
 
 start "AIRS - Celery Worker" cmd /k ^
 call "%VENV_ACTIVATE%" ^&^& ^
@@ -323,6 +357,7 @@ watchmedo auto-restart ^
 --directory="%CELERY_WATCH_DIR%" ^
 --pattern="*.py" ^
 --recursive ^
+--debounce-interval %CELERY_DEBOUNCE_INTERVAL% ^
 -- ^
 celery -A %CELERY_APP% worker ^
 --loglevel=%CELERY_LOGLEVEL% ^
