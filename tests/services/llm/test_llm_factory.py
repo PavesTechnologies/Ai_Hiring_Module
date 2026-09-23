@@ -123,3 +123,31 @@ _GEMINI_BAD_KEY = (
 ])
 def test_error_reason_detection(status, message, expected):
     assert status_error(status, message).reason == expected
+
+
+# Real Gemini free-tier reply: worded as "exceeded your current quota ...
+# billing", but it's a per-minute limit that clears in seconds.
+_GEMINI_PER_MINUTE = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, "
+    "please check your plan and billing details. * Quota exceeded for metric: "
+    "generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-3.8-flash"
+    "\nPlease retry in 8.394106022s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'quotaId': "
+    "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'}]}}"
+)
+_GEMINI_PER_DAY = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'message': 'You exceeded your current quota, please check your plan "
+    "and billing details.', 'details': [{'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]}}"
+)
+
+
+def test_gemini_per_minute_limit_is_rate_limiting_and_retried():
+    error = status_error(429, _GEMINI_PER_MINUTE)
+    assert error.reason == LLMErrorReason.RATE_LIMITED
+    assert isinstance(error, LLMTransientError)
+    assert classify(error) is FailureClassification.TRANSIENT
+
+
+def test_gemini_per_day_limit_is_exhausted_quota():
+    error = status_error(429, _GEMINI_PER_DAY)
+    assert error.reason == LLMErrorReason.QUOTA_EXHAUSTED
+    assert isinstance(error, LLMPermanentError)

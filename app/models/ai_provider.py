@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import BYTEA, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,11 +11,12 @@ from app.db.database import Base
 
 class AIProviderConfig(Base):
     """
-    Admin-selected LLM provider used by every AI step (JD/resume extraction,
-    AI evaluation). At most one row is active (partial unique index below);
-    saving a new config updates that row in place, and history lives in the
-    audit log. `provider` is a plain varchar (see LLMProviderName), same
-    reasoning as UserOAuthToken.provider. The API key is encrypted at rest
+    AI providers registered in Settings - at most one row per provider
+    (unique constraint below). Exactly one row is active (partial unique
+    index below): that's the provider every AI step (JD/resume extraction,
+    AI evaluation) uses. History of changes lives in the audit log.
+    `provider` is a plain varchar (see LLMProviderName), same reasoning as
+    UserOAuthToken.provider. The API key is encrypted at rest
     with the same BYTEA + encryption_key_id convention as oauth tokens;
     api_key_last4 exists only so the UI can show which key is saved.
     """
@@ -40,6 +41,7 @@ class AIProviderConfig(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("provider", name="uq_ai_provider_config_provider"),
         Index(
             "uq_ai_provider_config_single_active",
             "is_active",

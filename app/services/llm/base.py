@@ -126,12 +126,29 @@ def _contains_any(message: str, markers: tuple[str, ...]) -> bool:
     return any(marker.lower() in lowered for marker in markers)
 
 
+# Gemini words a per-minute limit exactly like a spent quota ("You exceeded
+# your current quota, please check your plan and billing details") - the
+# difference is only in the quota id / retry hint, e.g.
+#   quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier
+#   "Please retry in 8.39s."
+# Those clear on their own within seconds, so they're rate limiting, not
+# exhausted quota. Per-day limits stay "exhausted" (they last until tomorrow).
+_SHORT_TERM_LIMIT_MARKERS = (
+    "PerMinute",
+    "per minute",
+    "retry in",
+    "retryDelay",
+)
+
+
 def is_quota_exhausted(message: str) -> bool:
     """
     Every provider returns 429 for both short-term rate limiting (transient)
     and spent quota/billing (permanent until someone changes the plan); only
     the message tells them apart.
     """
+    if _contains_any(message, _SHORT_TERM_LIMIT_MARKERS) and "PerDay" not in message:
+        return False
     return _contains_any(message, _QUOTA_EXHAUSTED_MARKERS)
 
 
