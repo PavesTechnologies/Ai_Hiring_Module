@@ -5,6 +5,7 @@ from google.genai.errors import ServerError as GenAIServerError
 from sqlalchemy.exc import OperationalError
 
 from app.models.async_tasks import FailureClassification
+from app.services.llm.base import LLMPermanentError, LLMTransientError
 
 # Gemini returns 429 for two different things, and only one is worth
 # retrying:
@@ -33,7 +34,15 @@ _TRANSIENT_SES_ERROR_CODES = {"Throttling", "ThrottlingException", "ServiceUnava
 
 
 def classify(exc: Exception) -> FailureClassification:
-    # Gemini first: GenAIServerError (5xx — 503 UNAVAILABLE when the model
+    # Every LLM provider adapter (app/services/llm/) already maps its own
+    # SDK's errors - including the 429 rate-limit vs quota-exhausted split
+    # below - onto these two provider-neutral classes.
+    if isinstance(exc, LLMTransientError):
+        return FailureClassification.TRANSIENT
+    if isinstance(exc, LLMPermanentError):
+        return FailureClassification.PERMANENT
+
+    # Raw genai errors (anything still calling the SDK directly) next: GenAIServerError (5xx — 503 UNAVAILABLE when the model
     # is overloaded, the single most common failure in this pipeline) is
     # unambiguously transient. Previously these fell through to UNKNOWN,
     # which happened to retry (RetryDriver only dead-letters on PERMANENT)

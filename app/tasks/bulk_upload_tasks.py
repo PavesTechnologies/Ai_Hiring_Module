@@ -49,7 +49,8 @@ from app.services.compliance.consent_service import ConsentService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
@@ -345,7 +346,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         candidate_service = CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
         file_validation_service = FileValidationService(config_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
-        extraction_service = GeminiExtractionService()
+        extraction_service = LLMExtractionService(resolve_active_provider(db))
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)

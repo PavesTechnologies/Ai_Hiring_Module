@@ -12,7 +12,7 @@ from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.jd import context_serializer
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_context import JDProcessingContext
@@ -49,7 +49,7 @@ class JDProcessingPipeline:
         self,
         *,
         preprocessing_service: PreprocessingService,
-        extraction_service: GeminiExtractionService,
+        extraction_service: LLMExtractionService,
         hash_service: HashService,
         storage_service: StorageService,
         skill_normalization_service: SkillNormalizationService,

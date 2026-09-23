@@ -9,7 +9,7 @@ from app.repositories.skill_repository import SkillRepository
 from app.schemas.ai.resume_extraction_response import ResumeExtractionGenerationSchema, ResumeExtractionResponse
 from app.services.ai.preprocessing_service import PreprocessingService
 from app.services.document_processing.stage_execution_service import StageExecutionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
@@ -63,7 +63,7 @@ class ResumeProcessingPipeline:
         self,
         *,
         preprocessing_service: PreprocessingService,
-        extraction_service: GeminiExtractionService,
+        extraction_service: LLMExtractionService,
         storage_service: StorageService,
         skill_normalization_service: SkillNormalizationService,
         resume_service: ResumeService,

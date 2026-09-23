@@ -31,7 +31,8 @@ from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
@@ -227,7 +228,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
 
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=PreprocessingService(),
-            extraction_service=GeminiExtractionService(),
+            extraction_service=LLMExtractionService(resolve_active_provider(db)),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(
                 skill_repo, embedding_service, cache_service=CacheService(get_redis_client())

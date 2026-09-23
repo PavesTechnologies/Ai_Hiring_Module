@@ -85,6 +85,16 @@ class Settings(BaseSettings):
     # hung call blocks every other task on that worker.
     gemini_timeout_ms: int = 120_000
 
+    # Admin-selected LLM provider (Settings -> AI model, ai_provider_config
+    # table). gemini_api_key/gemini_model above remain the fallback used
+    # when no verified provider is saved. gemini_timeout_ms is the timeout
+    # for every provider's processing calls; SDK-level retries for the
+    # non-Gemini SDKs use llm_max_retries.
+    llm_max_retries: int = 3
+    # The Settings "Check" button's test call - short, since an admin is
+    # waiting on it and it only sends a one-line prompt.
+    llm_verify_timeout_seconds: float = 30.0
+
     # Encryption
     candidate_pii_key: str = ""
 

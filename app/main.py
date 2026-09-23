@@ -25,6 +25,7 @@ from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
+from app.api.routes.ai_provider_config_routes import router as ai_provider_config_router
 from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.api.routes.talent_pool_routes import filters_router as talent_pool_filters_router
 from app.api.routes.talent_pool_routes import router as talent_pool_router
@@ -191,6 +192,7 @@ app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monit
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
+app.include_router(router=ai_provider_config_router, prefix=API_PREFIX, tags=["AI Provider Config"])
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=audit_log_router, prefix=API_PREFIX, tags=["Audit Log"])

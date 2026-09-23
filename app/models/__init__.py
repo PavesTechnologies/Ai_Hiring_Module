@@ -15,6 +15,8 @@ from .ai_pipeline import PromptVersion
 
 from .prompt_template import PromptTemplate, PromptTemplateStatus
 
+from .ai_provider import AIProviderConfig
+
 from app.models.config import *
 
 from .candidates import (
