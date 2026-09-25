@@ -481,3 +481,87 @@ def test_matching_or_unrecognised_keys_are_sent_to_the_provider(provider, key):
         result = service.verify(VerifyRequest(provider=provider, model_name="m", api_key=key))
     build.assert_called_once()
     assert result.verified is True
+
+
+# ── Save skips its own test call right after a passed Check ───────────────
+
+class _FakeCache:
+    """In-memory stand-in for CacheService (get/set only, TTL recorded)."""
+
+    def __init__(self):
+        self.store, self.ttls = {}, {}
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def set(self, key, value, ttl=None):
+        self.store[key], self.ttls[key] = value, ttl
+        return True
+
+
+def _with_cache(rows=()):
+    service, repo, encryption, audit, rows = _make_service(rows)
+    cache = _FakeCache()
+    service.cache_service = cache
+    return service, repo, cache, rows
+
+
+def test_save_right_after_passed_check_skips_the_provider_call():
+    service, _, cache, _ = _with_cache()
+    with patch(_BUILD, return_value=_working()) as build:
+        service.verify(VerifyRequest(provider="GROQ", model_name="openai/gpt-oss-120b", api_key="gsk_abc"))
+        service.create(CreateAIProviderRequest(provider="GROQ", model_name="openai/gpt-oss-120b", api_key="gsk_abc"),
+                       updated_by="u1", actor_role="HR_ADMIN")
+    assert build.call_count == 1  # the Check only
+    assert list(cache.ttls.values()) == [300]
+
+
+def test_save_with_different_values_than_the_check_calls_the_provider():
+    service, *_ = _with_cache()
+    with patch(_BUILD, return_value=_working()) as build:
+        service.verify(VerifyRequest(provider="GROQ", model_name="openai/gpt-oss-120b", api_key="gsk_abc"))
+        service.create(CreateAIProviderRequest(provider="GROQ", model_name="openai/gpt-oss-20b", api_key="gsk_abc"),
+                       updated_by="u1", actor_role="HR_ADMIN")
+    assert build.call_count == 2
+
+
+def test_save_without_a_prior_check_still_verifies():
+    service, *_ = _with_cache()
+    with patch(_BUILD, return_value=_working()) as build:
+        service.create(_create_request(), updated_by="u1", actor_role="HR_ADMIN")
+    assert build.call_count == 1
+
+
+def test_a_failed_check_is_not_remembered():
+    service, _, cache, _ = _with_cache()
+    with patch(_BUILD, return_value=_failing(LLMTransientError("Rate limit reached", status_code=429))):
+        service.verify(VerifyRequest(provider="GROQ", model_name="m", api_key="gsk_abc"))
+    assert cache.store == {}
+
+
+def test_edit_with_blank_key_after_blank_key_check_skips_the_provider_call():
+    existing = _row("ANTHROPIC", is_active=True)
+    service, *_ = _with_cache([existing])
+    with patch(_BUILD, return_value=_working()) as build:
+        service.verify(VerifyRequest(provider="ANTHROPIC", model_name="claude-sonnet-5"))
+        service.update(existing.id, UpdateAIProviderRequest(model_name="claude-sonnet-5"),
+                       updated_by="u1", actor_role="HR_ADMIN")
+    assert build.call_count == 1
+
+
+def test_verified_marker_never_contains_the_api_key():
+    service, _, cache, _ = _with_cache()
+    with patch(_BUILD, return_value=_working()):
+        service.verify(VerifyRequest(provider="ANTHROPIC", model_name="claude-opus-5", api_key="sk-ant-secret-1234"))
+    (key, value), = cache.store.items()
+    assert "sk-ant-secret" not in key and "sk-ant-secret" not in value
+
+
+def test_cache_miss_or_redis_down_falls_back_to_checking():
+    service, *_ = _with_cache()
+    service.cache_service.get = lambda key: None  # CacheService returns None when Redis is unavailable
+    with patch(_BUILD, return_value=_working()) as build:
+        service.verify(VerifyRequest(provider="GROQ", model_name="m", api_key="gsk_abc"))
+        service.create(CreateAIProviderRequest(provider="GROQ", model_name="m", api_key="gsk_abc"),
+                       updated_by="u1", actor_role="HR_ADMIN")
+    assert build.call_count == 2

@@ -90,6 +90,15 @@ def campaign_platform_defaults_key() -> str:
     return f"{PREFIX}:campaign:platform-defaults"
 
 
+def ai_provider_verified_key(provider: str, model_name: str, api_key: str) -> str:
+    """
+    Marks a recent successful Settings "Check". Hashed with SHA-256, so
+    neither the key nor its value ever holds the API key itself.
+    """
+    digest = hashlib.sha256(f"{provider}\x00{model_name}\x00{api_key}".encode()).hexdigest()
+    return f"{PREFIX}:ai-provider:verified:{digest}"
+
+
 def campaign_weight_presets_key(org_id: Any) -> str:
     return f"{PREFIX}:campaign:weight-presets:{org_id}"
 

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
+from app.core.cache_keys import ai_provider_verified_key
 from app.core.config import settings
 from app.core.encryption_service import EncryptionService
 from app.enums.constants import ActionType, EntityType
@@ -31,6 +32,7 @@ from app.schemas.ai_provider.ai_provider_schema import (
     VerifyResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.cache_service import CacheService
 from app.services.llm.base import LLMError, LLMErrorReason, LLMProviderName
 from app.services.llm.factory import AI_PROVIDER_KEY_PURPOSE, build_provider
 
@@ -65,6 +67,8 @@ _FRIENDLY_MESSAGES = {
 }
 _FALLBACK_MESSAGE = "Something went wrong while contacting the provider. Try again, or pick another model."
 _SAVE_FAILED = "Couldn't save the AI provider right now. Please try again."
+# How long a passed Check lets Save skip its own test call.
+_VERIFIED_TTL_SECONDS = 300
 
 
 def _wait_phrase(seconds: float | None) -> str:
@@ -178,10 +182,15 @@ class AIProviderConfigService:
         repository: AIProviderConfigRepository,
         encryption_service: EncryptionService,
         audit_service: AuditService,
+        cache_service: CacheService | None = None,
     ):
         self.repository = repository
         self.encryption_service = encryption_service
         self.audit_service = audit_service
+        # Remembers recent successful Checks so Save doesn't spend another
+        # provider request re-checking the exact same values. Optional: with
+        # no cache (or Redis down) Save simply checks again.
+        self.cache_service = cache_service
 
     # ── Reads ─────────────────────────────────────────────────────────
 
@@ -237,7 +246,10 @@ class AIProviderConfigService:
 
     def verify(self, request: VerifyRequest) -> VerifyResponse:
         api_key = self._resolve_api_key(request.provider, request.api_key)
-        return self._verify_with_key(request.provider, request.model_name, api_key)
+        result = self._verify_with_key(request.provider, request.model_name, api_key)
+        if result.verified:
+            self._remember_verified(request.provider, request.model_name, api_key)
+        return result
 
     # ── Writes ────────────────────────────────────────────────────────
 
@@ -392,9 +404,32 @@ class AIProviderConfigService:
             )
 
     def _require_verified(self, provider: str, model_name: str, api_key: str) -> None:
+        """
+        Save never trusts the browser's "Check passed" state. But if *this
+        server* saw a Check pass for exactly these values within the last few
+        minutes, it doesn't call the provider again - on free-tier keys that
+        extra call is often what trips the per-minute limit. The marker
+        expires after _VERIFIED_TTL_SECONDS, so an old Check never counts.
+        """
+        if self._recently_verified(provider, model_name, api_key):
+            return
         result = self._verify_with_key(provider, model_name, api_key)
         if not result.verified:
             raise UnprocessableError(_with_code(result.message, result.error_code))
+
+    def _remember_verified(self, provider: str, model_name: str, api_key: str) -> None:
+        if self.cache_service is None:
+            return
+        self.cache_service.set(
+            ai_provider_verified_key(provider, model_name, api_key),
+            "1",
+            ttl=_VERIFIED_TTL_SECONDS,
+        )
+
+    def _recently_verified(self, provider: str, model_name: str, api_key: str) -> bool:
+        if self.cache_service is None:
+            return False
+        return self.cache_service.get(ai_provider_verified_key(provider, model_name, api_key)) is not None
 
     def _audit(
         self, action: ActionType, row: AIProviderConfig, actor_id: str, actor_role: str | None, details: dict,
