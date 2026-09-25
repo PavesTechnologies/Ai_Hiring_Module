@@ -58,8 +58,6 @@ _FRIENDLY_MESSAGES = {
     LLMErrorReason.INVALID_KEY: "The API key is invalid. Check the key and try again.",
     LLMErrorReason.NO_ACCESS: "This API key doesn't have permission to use this provider or model.",
     LLMErrorReason.MODEL_NOT_FOUND: "This model isn't available for this API key. Pick another model.",
-    LLMErrorReason.QUOTA_EXHAUSTED: "This API key has run out of quota or credits. Check the billing on the provider's account.",
-    LLMErrorReason.RATE_LIMITED: "The provider is limiting how often this key can be used (free-tier keys allow only a few requests per minute). Wait a minute and try again.",
     LLMErrorReason.UNAVAILABLE: "The provider couldn't be reached or is busy. Try again in a moment.",
     LLMErrorReason.BAD_OUTPUT: "This model couldn't return the structured results AIRS needs. Pick another model.",
     LLMErrorReason.REFUSED: "This model declined the test request. Pick another model.",
@@ -69,13 +67,98 @@ _FALLBACK_MESSAGE = "Something went wrong while contacting the provider. Try aga
 _SAVE_FAILED = "Couldn't save the AI provider right now. Please try again."
 
 
-def _friendly_error(exc: Exception, *, provider: str, action: str) -> str:
-    reason = getattr(exc, "reason", None) if isinstance(exc, LLMError) else None
+def _wait_phrase(seconds: float | None) -> str:
+    if seconds is None:
+        return "a minute"
+    seconds = max(1, round(seconds))
+    return f"about {seconds} second{'s' if seconds != 1 else ''}"
+
+
+def _describe_error(exc: Exception, *, provider: str, model: str | None, action: str) -> tuple[str, str]:
+    """
+    (error_code, plain-English message) for any provider failure. The
+    message names the provider/model and uses the limit and retry hint the
+    provider sent; the raw reply only goes to the log.
+    """
+    reason = exc.reason if isinstance(exc, LLMError) else LLMErrorReason.UNKNOWN
     logger.warning(
-        "AI provider %s failed (provider=%s reason=%s): %s",
-        action, provider, reason or type(exc).__name__, exc,
+        "AI provider %s failed (provider=%s model=%s reason=%s): %s",
+        action, provider, model, reason if isinstance(exc, LLMError) else type(exc).__name__, exc,
     )
-    return _FRIENDLY_MESSAGES.get(reason, _FALLBACK_MESSAGE)
+
+    label = LLMProviderName.LABELS.get(provider, "The provider")
+    model_part = f" for {model}" if model else ""
+    limit = getattr(exc, "quota_limit", None)
+
+    if reason == LLMErrorReason.RATE_LIMITED:
+        limit_part = f" (limit: {limit} requests per minute)" if limit else ""
+        message = (
+            f"{label} is limiting how often this key can be used{model_part}{limit_part}. "
+            f"Wait {_wait_phrase(getattr(exc, 'retry_after_seconds', None))} and try again. "
+            "Free-tier keys allow only a few requests per minute."
+        )
+    elif reason == LLMErrorReason.DAILY_LIMIT:
+        limit_part = f" ({limit} requests per day)" if limit else ""
+        message = (
+            f"This key has used up its daily {label} limit{model_part}{limit_part}. "
+            "Try again tomorrow, pick a different model, or enable billing on the provider account for higher limits."
+        )
+    elif reason == LLMErrorReason.CREDITS_EXHAUSTED:
+        message = (
+            f"The {label} account for this key has no credits left or has reached its spending limit. "
+            "Add credits or raise the limit in the provider's billing settings, then try again."
+        )
+    elif reason == LLMErrorReason.QUOTA_EXHAUSTED:
+        message = (
+            f"This key has used up its {label} quota{model_part}. "
+            "Check the plan and billing on the provider account, or try again later."
+        )
+    else:
+        message = _FRIENDLY_MESSAGES.get(reason, _FALLBACK_MESSAGE)
+    return reason, message
+
+
+def _with_code(message: str, code: str) -> str:
+    return f"{message} (Error code: {code})"
+
+
+# Well-known key prefixes. Checked before calling the provider so a key
+# pasted under the wrong provider gets "this is a Groq key" instead of the
+# provider's generic "invalid key". Anthropic's prefix must be tested before
+# OpenAI's, since both start with "sk-".
+KEY_PROVIDER_MISMATCH = "KEY_PROVIDER_MISMATCH"
+_KEY_PREFIXES = (
+    (LLMProviderName.ANTHROPIC, "sk-ant-"),
+    (LLMProviderName.GROQ, "gsk_"),
+    (LLMProviderName.GOOGLE, "AIza"),
+    (LLMProviderName.OPENAI, "sk-"),
+)
+
+
+def _article(label: str) -> str:
+    return "an" if label[:1].lower() in "aeiou" else "a"
+
+
+def _key_owner(api_key: str) -> tuple[str, str] | None:
+    for provider, prefix in _KEY_PREFIXES:
+        if api_key.startswith(prefix):
+            return provider, prefix
+    return None
+
+
+def _key_mismatch_message(selected: str, api_key: str) -> str | None:
+    """A message when the key clearly belongs to a different provider; None if it fits or is unrecognised."""
+    owner = _key_owner(api_key)
+    if owner is None or owner[0] == selected:
+        return None
+    owner_label = LLMProviderName.LABELS[owner[0]]
+    selected_label = LLMProviderName.LABELS.get(selected, selected)
+    expected = next((prefix for provider, prefix in _KEY_PREFIXES if provider == selected), None)
+    expected_part = f' (those start with "{expected}")' if expected else ""
+    return (
+        f'This looks like {_article(owner_label)} {owner_label} API key (it starts with "{owner[1]}"), but the selected provider is '
+        f"{selected_label}. Select {owner_label} as the provider, or paste {_article(selected_label)} {selected_label} key{expected_part}."
+    )
 
 
 def _already_registered(provider: str) -> ConflictError:
@@ -136,6 +219,9 @@ class AIProviderConfigService:
 
     def list_models(self, request: ListModelsRequest) -> list[ModelOptionResponse]:
         api_key = self._resolve_api_key(request.provider, request.api_key)
+        mismatch = _key_mismatch_message(request.provider, api_key)
+        if mismatch:
+            raise BadRequestError(_with_code(f"Couldn't load models. {mismatch}", KEY_PROVIDER_MISMATCH))
         try:
             provider = build_provider(
                 request.provider, api_key, model="",
@@ -145,9 +231,8 @@ class AIProviderConfigService:
         except Exception as exc:
             # Exception, not just LLMError: SDK client construction can raise
             # its own errors (e.g. genai rejects an empty key with ValueError).
-            raise BadRequestError(
-                f"Couldn't load models. {_friendly_error(exc, provider=request.provider, action='model list')}"
-            )
+            code, message = _describe_error(exc, provider=request.provider, model=None, action="model list")
+            raise BadRequestError(_with_code(f"Couldn't load models. {message}", code))
         return [ModelOptionResponse(id=m.id, display_name=m.display_name) for m in models]
 
     def verify(self, request: VerifyRequest) -> VerifyResponse:
@@ -309,7 +394,7 @@ class AIProviderConfigService:
     def _require_verified(self, provider: str, model_name: str, api_key: str) -> None:
         result = self._verify_with_key(provider, model_name, api_key)
         if not result.verified:
-            raise UnprocessableError(result.message)
+            raise UnprocessableError(_with_code(result.message, result.error_code))
 
     def _audit(
         self, action: ActionType, row: AIProviderConfig, actor_id: str, actor_role: str | None, details: dict,
@@ -331,6 +416,10 @@ class AIProviderConfigService:
 
     @staticmethod
     def _verify_with_key(provider_key: str, model_name: str, api_key: str) -> VerifyResponse:
+        mismatch = _key_mismatch_message(provider_key, api_key)
+        if mismatch:
+            return VerifyResponse(verified=False, message=mismatch, error_code=KEY_PROVIDER_MISMATCH)
+
         started = time.monotonic()
         try:
             provider = build_provider(
@@ -340,10 +429,8 @@ class AIProviderConfigService:
             result = provider.generate_json(_VERIFY_PROMPT, _VerifySchema)
             _VerifySchema.model_validate(result)
         except Exception as exc:
-            return VerifyResponse(
-                verified=False,
-                message=_friendly_error(exc, provider=provider_key, action="check"),
-            )
+            code, message = _describe_error(exc, provider=provider_key, model=model_name, action="check")
+            return VerifyResponse(verified=False, message=message, error_code=code)
 
         latency_ms = int((time.monotonic() - started) * 1000)
         return VerifyResponse(

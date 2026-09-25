@@ -117,3 +117,6 @@ class VerifyResponse(BaseModel):
     verified: bool
     message: str
     latency_ms: Optional[int] = None
+    # Set when verified is False - a stable LLMErrorReason code
+    # (e.g. RATE_LIMITED, DAILY_LIMIT, CREDITS_EXHAUSTED, INVALID_KEY).
+    error_code: Optional[str] = None

@@ -57,6 +57,26 @@ def _build_http_options(timeout_ms: int) -> types.HttpOptions:
     )
 
 
+# Gemini's /models lists every public model regardless of the key's tier,
+# including ones that advertise generateContent but can't do what AIRS needs
+# (text in, schema-shaped JSON out): speech, image/video generation, live
+# audio, embeddings, robotics/computer-use agents, and Gemma (no JSON mode on
+# the Gemini API).
+_GEMINI_NON_TEXT_MARKERS = (
+    "tts", "image", "imagen", "veo", "audio", "live", "embedding", "aqa",
+    "robotics", "computer-use", "gemma", "learnlm", "nano-banana",
+)
+
+
+def _is_usable_gemini_model(model_id: str, actions: list[str], display_name: str) -> bool:
+    if "generateContent" not in actions:
+        return False
+    lowered = f"{model_id} {display_name}".lower()
+    if "deprecated" in lowered:
+        return False
+    return not any(marker in lowered for marker in _GEMINI_NON_TEXT_MARKERS)
+
+
 class GeminiProvider:
     provider_name = LLMProviderName.GOOGLE
 
@@ -89,10 +109,9 @@ class GeminiProvider:
         try:
             models = []
             for m in self.client.models.list():
-                actions = m.supported_actions or []
-                if "generateContent" not in actions:
-                    continue
                 model_id = (m.name or "").removeprefix("models/")
+                if not _is_usable_gemini_model(model_id, m.supported_actions or [], m.display_name or ""):
+                    continue
                 models.append(ModelInfo(id=model_id, display_name=m.display_name or model_id))
             return models
         except genai_errors.APIError as exc:

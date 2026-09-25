@@ -12,10 +12,25 @@ from app.services.llm.base import (
     status_error,
 )
 
-# OpenAI's /models lists embeddings, audio, image, moderation etc. too;
-# only these prefixes are chat models that support structured output.
+# OpenAI's /models lists every model the key can see - embeddings, audio,
+# image, moderation, and models that only work on other endpoints. Only
+# chat-completions models that support structured output are usable here.
 _CHAT_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4", "chatgpt-")
-_NON_CHAT_MARKERS = ("audio", "realtime", "transcribe", "tts", "image", "search", "embedding")
+_NON_CHAT_MARKERS = (
+    "audio", "realtime", "transcribe", "tts", "image", "search", "embedding",
+    "moderation", "instruct",      # instruct = legacy completions endpoint only
+    "codex", "deep-research",      # Responses-API-only models
+    "computer-use",
+)
+# "-pro" variants (o1-pro, o3-pro, gpt-5-pro) are Responses-API only.
+_RESPONSES_ONLY_SUFFIXES = ("-pro",)
+
+# Groq: speech (whisper, orpheus/playai text-to-speech) and safety-classifier
+# (guard/safeguard) models can't do text extraction.
+_GROQ_NON_TEXT_MARKERS = ("whisper", "tts", "orpheus", "playai", "guard")
+# A resume plus the extraction prompt and JSON schema needs far more than a
+# 4K window; smaller models fail on real documents even if Check passes.
+_MIN_CONTEXT_WINDOW = 16_000
 
 
 class OpenAIProvider:
@@ -64,7 +79,7 @@ class OpenAIProvider:
 
     def list_models(self) -> list[ModelInfo]:
         try:
-            ids = sorted(m.id for m in self.client.models.list() if self._is_chat_model(m.id))
+            ids = sorted(m.id for m in self.client.models.list() if self._is_usable(m))
         except openai.APIStatusError as exc:
             raise self._map_status_error(exc) from exc
         except openai.APIConnectionError as exc:
@@ -79,8 +94,13 @@ class OpenAIProvider:
         return status_error(exc.status_code, f"{self._label} API error: {exc}")
 
     @staticmethod
-    def _is_chat_model(model_id: str) -> bool:
-        return model_id.startswith(_CHAT_MODEL_PREFIXES) and not any(m in model_id for m in _NON_CHAT_MARKERS)
+    def _is_usable(model) -> bool:
+        model_id = model.id
+        return (
+            model_id.startswith(_CHAT_MODEL_PREFIXES)
+            and not any(m in model_id for m in _NON_CHAT_MARKERS)
+            and not any(model_id.endswith(s) or f"{s}-" in model_id for s in _RESPONSES_ONLY_SUFFIXES)
+        )
 
 
 class GroqProvider(OpenAIProvider):
@@ -131,6 +151,12 @@ class GroqProvider(OpenAIProvider):
             raise LLMPermanentError(f"Groq returned invalid JSON: {e}", reason=LLMErrorReason.BAD_OUTPUT) from e
 
     @staticmethod
-    def _is_chat_model(model_id: str) -> bool:
-        # Groq's catalogue is chat models plus a few speech/guard models.
-        return not any(m in model_id for m in ("whisper", "tts", "guard", "prompt-guard"))
+    def _is_usable(model) -> bool:
+        # Groq's /models carries `active` and `context_window` (not part of
+        # the OpenAI SDK type, so read defensively).
+        if getattr(model, "active", True) is False:
+            return False
+        context_window = getattr(model, "context_window", None)
+        if isinstance(context_window, int) and context_window < _MIN_CONTEXT_WINDOW:
+            return False
+        return not any(m in model.id for m in _GROQ_NON_TEXT_MARKERS)

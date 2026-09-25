@@ -142,7 +142,7 @@ def test_register_is_blocked_when_check_fails_with_friendly_reason():
             pytest.raises(HTTPException) as err:
         service.create(_create_request("GOOGLE", "gemini-2.5-pro", "bad"), updated_by="u1", actor_role="HR_ADMIN")
     assert err.value.status_code == 422
-    assert err.value.detail == "The API key is invalid. Check the key and try again."
+    assert err.value.detail == "The API key is invalid. Check the key and try again. (Error code: INVALID_KEY)"
     repo.create.assert_not_called()
 
 
@@ -202,13 +202,13 @@ def test_edit_with_new_key_replaces_it():
 
 
 def test_edit_is_blocked_when_check_fails():
-    existing = _row("OPENAI", model="gpt-5")
+    existing = _row("OPENAI", "sk-proj-1234", model="gpt-5")
     service, repo, *_ = _make_service([existing])
     with patch(_BUILD, return_value=_failing(LLMPermanentError("model_not_found", status_code=404))), \
             pytest.raises(HTTPException) as err:
         service.update(existing.id, UpdateAIProviderRequest(model_name="gpt-9"), updated_by="u1", actor_role="HR_ADMIN")
     assert err.value.status_code == 422
-    assert err.value.detail == "This model isn't available for this API key. Pick another model."
+    assert err.value.detail == "This model isn't available for this API key. Pick another model. (Error code: MODEL_NOT_FOUND)"
     assert existing.model_name == "gpt-5"
     repo.commit.assert_not_called()
 
@@ -332,24 +332,67 @@ def test_blank_key_is_never_reused_across_providers():
     build.assert_not_called()
 
 
-@pytest.mark.parametrize("error,expected", [
-    (LLMPermanentError(_RAW_GEMINI_ERROR, status_code=400), "The API key is invalid. Check the key and try again."),
-    (LLMPermanentError("permission denied", status_code=403), "This API key doesn't have permission to use this provider or model."),
-    (LLMPermanentError("insufficient_quota", status_code=429), "This API key has run out of quota or credits. Check the billing on the provider's account."),
-    (LLMTransientError("Rate limit reached", status_code=429), "The provider is limiting how often this key can be used (free-tier keys allow only a few requests per minute). Wait a minute and try again."),
-    (LLMTransientError("upstream connect error", status_code=503), "The provider couldn't be reached or is busy. Try again in a moment."),
-    (LLMPermanentError("Groq returned invalid JSON: Expecting value", reason=LLMErrorReason.BAD_OUTPUT), "This model couldn't return the structured results AIRS needs. Pick another model."),
-    (LLMPermanentError("declined", reason=LLMErrorReason.REFUSED), "This model declined the test request. Pick another model."),
-    (ValueError("No API key was provided."), "Something went wrong while contacting the provider. Try again, or pick another model."),
-    (RuntimeError("httpx.ReadTimeout"), "Something went wrong while contacting the provider. Try again, or pick another model."),
+_GEMINI_PER_MINUTE = (
+    "Gemini API error: 429 RESOURCE_EXHAUSTED. {'error': {'message': 'You exceeded your current quota, please "
+    "check your plan and billing details. Quota exceeded for metric: generate_content_free_tier_requests, "
+    "limit: 5, model: gemini-3.8-flash Please retry in 8.394106022s.', 'details': [{'quotaId': "
+    "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'}]}}"
+)
+_GEMINI_PER_DAY = (
+    "Gemini API error: 429 RESOURCE_EXHAUSTED. {'error': {'message': 'You exceeded your current quota, please "
+    "check your plan and billing details. Quota exceeded for metric: generate_content_free_tier_requests, "
+    "limit: 20, model: gemini-3.8-flash', 'details': [{'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]}}"
+)
+
+
+@pytest.mark.parametrize("error,code,expected", [
+    (LLMPermanentError(_RAW_GEMINI_ERROR, status_code=400), "INVALID_KEY",
+     "The API key is invalid. Check the key and try again."),
+    (LLMPermanentError("permission denied", status_code=403), "NO_ACCESS",
+     "This API key doesn't have permission to use this provider or model."),
+    (LLMPermanentError(_GEMINI_PER_MINUTE, status_code=429), "RATE_LIMITED",
+     "Google Gemini is limiting how often this key can be used for gemini-3.8-flash (limit: 5 requests per minute). "
+     "Wait about 8 seconds and try again. Free-tier keys allow only a few requests per minute."),
+    (LLMTransientError("Rate limit reached", status_code=429), "RATE_LIMITED",
+     "Google Gemini is limiting how often this key can be used for gemini-3.8-flash. "
+     "Wait a minute and try again. Free-tier keys allow only a few requests per minute."),
+    (LLMPermanentError(_GEMINI_PER_DAY, status_code=429), "DAILY_LIMIT",
+     "This key has used up its daily Google Gemini limit for gemini-3.8-flash (20 requests per day). "
+     "Try again tomorrow, pick a different model, or enable billing on the provider account for higher limits."),
+    (LLMPermanentError("You exceeded your current quota. code: insufficient_quota", status_code=429), "CREDITS_EXHAUSTED",
+     "The Google Gemini account for this key has no credits left or has reached its spending limit. "
+     "Add credits or raise the limit in the provider's billing settings, then try again."),
+    (LLMPermanentError("RESOURCE_EXHAUSTED", status_code=429), "QUOTA_EXHAUSTED",
+     "This key has used up its Google Gemini quota for gemini-3.8-flash. "
+     "Check the plan and billing on the provider account, or try again later."),
+    (LLMTransientError("upstream connect error", status_code=503), "UNAVAILABLE",
+     "The provider couldn't be reached or is busy. Try again in a moment."),
+    (LLMPermanentError("Groq returned invalid JSON: Expecting value", reason=LLMErrorReason.BAD_OUTPUT), "BAD_OUTPUT",
+     "This model couldn't return the structured results AIRS needs. Pick another model."),
+    (LLMPermanentError("declined", reason=LLMErrorReason.REFUSED), "REFUSED",
+     "This model declined the test request. Pick another model."),
+    (ValueError("No API key was provided."), "UNKNOWN",
+     "Something went wrong while contacting the provider. Try again, or pick another model."),
+    (RuntimeError("httpx.ReadTimeout"), "UNKNOWN",
+     "Something went wrong while contacting the provider. Try again, or pick another model."),
 ])
-def test_check_failures_are_plain_english(error, expected):
+def test_check_failures_have_a_specific_code_and_plain_english(error, code, expected):
     service, *_ = _make_service()
     with patch(_BUILD, return_value=_failing(error)):
-        result = service.verify(VerifyRequest(provider="GOOGLE", model_name="m", api_key="k"))
+        result = service.verify(VerifyRequest(provider="GOOGLE", model_name="gemini-3.8-flash", api_key="k"))
     assert result.verified is False
+    assert result.error_code == code
     assert result.message == expected
     _assert_friendly(result.message)
+
+
+def test_anthropic_low_credit_balance_is_credits_exhausted():
+    service, *_ = _make_service()
+    error = LLMPermanentError("Anthropic API error: Your credit balance is too low to access the Anthropic API.", status_code=400)
+    with patch(_BUILD, return_value=_failing(error)):
+        result = service.verify(VerifyRequest(provider="ANTHROPIC", model_name="claude-opus-5", api_key="k"))
+    assert result.error_code == "CREDITS_EXHAUSTED"
+    assert result.message.startswith("The Anthropic Claude account for this key has no credits left")
 
 
 def test_model_list_failure_is_friendly_400():
@@ -358,7 +401,7 @@ def test_model_list_failure_is_friendly_400():
             pytest.raises(HTTPException) as err:
         service.list_models(ListModelsRequest(provider="GOOGLE", api_key="bad"))
     assert err.value.status_code == 400
-    assert err.value.detail == "Couldn't load models. The API key is invalid. Check the key and try again."
+    assert err.value.detail == "Couldn't load models. The API key is invalid. Check the key and try again. (Error code: INVALID_KEY)"
 
 
 def test_model_list_client_construction_error_is_friendly():
@@ -393,3 +436,48 @@ def test_model_is_required():
 def test_unknown_provider_is_rejected():
     with pytest.raises(ValidationError):
         CreateAIProviderRequest(provider="MISTRAL", model_name="m", api_key="k")
+
+
+# ── Key pasted under the wrong provider ───────────────────────────────────
+
+def test_groq_key_under_anthropic_is_caught_before_calling_anthropic():
+    service, *_ = _make_service()
+    with patch(_BUILD) as build:
+        result = service.verify(VerifyRequest(provider="ANTHROPIC", model_name="claude-opus-5", api_key="gsk_fakeKey123"))
+    build.assert_not_called()
+    assert result.verified is False
+    assert result.error_code == "KEY_PROVIDER_MISMATCH"
+    assert result.message == (
+        'This looks like a Groq API key (it starts with "gsk_"), but the selected provider is Anthropic Claude. '
+        'Select Groq as the provider, or paste an Anthropic Claude key (those start with "sk-ant-").'
+    )
+
+
+def test_anthropic_key_under_openai_is_caught():
+    service, *_ = _make_service()
+    with patch(_BUILD) as build:
+        result = service.verify(VerifyRequest(provider="OPENAI", model_name="gpt-5", api_key="sk-ant-api03-fake"))
+    build.assert_not_called()
+    assert result.error_code == "KEY_PROVIDER_MISMATCH"
+
+
+def test_model_list_with_mismatched_key_is_a_friendly_400():
+    service, *_ = _make_service()
+    with patch(_BUILD) as build, pytest.raises(HTTPException) as err:
+        service.list_models(ListModelsRequest(provider="GOOGLE", api_key="gsk_fakeKey123"))
+    build.assert_not_called()
+    assert err.value.status_code == 400
+    assert "This looks like a Groq API key" in err.value.detail
+    assert err.value.detail.endswith("(Error code: KEY_PROVIDER_MISMATCH)")
+
+
+@pytest.mark.parametrize("provider,key", [
+    ("GROQ", "gsk_realLooking"), ("ANTHROPIC", "sk-ant-api03-x"), ("OPENAI", "sk-proj-x"),
+    ("GOOGLE", "AIzaSyX"), ("GOOGLE", "unrecognised-format"),
+])
+def test_matching_or_unrecognised_keys_are_sent_to_the_provider(provider, key):
+    service, *_ = _make_service()
+    with patch(_BUILD, return_value=_working()) as build:
+        result = service.verify(VerifyRequest(provider=provider, model_name="m", api_key=key))
+    build.assert_called_once()
+    assert result.verified is True

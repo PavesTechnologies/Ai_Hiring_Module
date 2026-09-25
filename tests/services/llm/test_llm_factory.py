@@ -147,7 +147,74 @@ def test_gemini_per_minute_limit_is_rate_limiting_and_retried():
     assert classify(error) is FailureClassification.TRANSIENT
 
 
-def test_gemini_per_day_limit_is_exhausted_quota():
+def test_gemini_per_day_limit_is_daily_limit_and_not_retried():
     error = status_error(429, _GEMINI_PER_DAY)
-    assert error.reason == LLMErrorReason.QUOTA_EXHAUSTED
+    assert error.reason == LLMErrorReason.DAILY_LIMIT
     assert isinstance(error, LLMPermanentError)
+    assert classify(error) is FailureClassification.PERMANENT
+
+
+def test_gemini_per_minute_details_are_extracted():
+    error = status_error(429, _GEMINI_PER_MINUTE)
+    assert error.retry_after_seconds == pytest.approx(8.394106022)
+    assert error.quota_limit == 5
+
+
+@pytest.mark.parametrize("status,message,expected", [
+    (429, "You exceeded your current quota. code: insufficient_quota", LLMErrorReason.CREDITS_EXHAUSTED),  # OpenAI
+    (400, "Your credit balance is too low to access the Anthropic API.", LLMErrorReason.CREDITS_EXHAUSTED),  # Anthropic
+    (429, "Rate limit reached on tokens per minute (TPM). Please try again in 2.5s.", LLMErrorReason.RATE_LIMITED),  # Groq/OpenAI
+    (429, "Rate limit reached on requests per day (RPD).", LLMErrorReason.DAILY_LIMIT),  # Groq
+    (429, "RESOURCE_EXHAUSTED", LLMErrorReason.QUOTA_EXHAUSTED),  # no window stated
+])
+def test_quota_errors_get_a_specific_code(status, message, expected):
+    assert status_error(status, message).reason == expected
+
+
+# ── Model lists only offer models AIRS can actually use ───────────────────
+
+from app.services.llm.gemini_provider import _is_usable_gemini_model  # noqa: E402
+
+
+@pytest.mark.parametrize("model_id,display,usable", [
+    ("gemini-3.8-flash", "Gemini 3.8 Flash", True),
+    ("gemini-2.5-pro", "Gemini 2.5 Pro", True),
+    ("gemini-2.5-flash-preview-tts", "Gemini 2.5 Flash Preview TTS", False),
+    ("gemini-2.5-flash-image", "Nano Banana", False),
+    ("gemini-live-2.5-flash", "Gemini Live", False),
+    ("gemini-2.5-flash-native-audio", "Native Audio", False),
+    ("gemma-3-27b-it", "Gemma 3 27B", False),
+    ("gemini-robotics-er-1.5-preview", "Robotics", False),
+    ("gemini-1.5-pro", "Gemini 1.5 Pro (deprecated)", False),
+])
+def test_gemini_model_filter(model_id, display, usable):
+    assert _is_usable_gemini_model(model_id, ["generateContent"], display) is usable
+
+
+def test_gemini_models_without_generate_content_are_hidden():
+    assert _is_usable_gemini_model("text-embedding-004", ["embedContent"], "Embedding") is False
+
+
+@pytest.mark.parametrize("model_id,usable", [
+    ("gpt-5", True), ("gpt-5-mini", True), ("o4-mini", True), ("gpt-4.1", True),
+    ("gpt-5-pro", False), ("o3-pro", False), ("gpt-5-codex", False), ("o3-deep-research", False),
+    ("gpt-3.5-turbo-instruct", False), ("gpt-4o-audio-preview", False), ("gpt-4o-realtime-preview", False),
+    ("gpt-image-1", False), ("text-embedding-3-large", False), ("omni-moderation-latest", False),
+    ("dall-e-3", False), ("whisper-1", False),
+])
+def test_openai_model_filter(model_id, usable):
+    assert OpenAIProvider._is_usable(SimpleNamespace(id=model_id)) is usable
+
+
+@pytest.mark.parametrize("model,usable", [
+    (SimpleNamespace(id="openai/gpt-oss-120b", active=True, context_window=131072), True),
+    (SimpleNamespace(id="qwen/qwen3.8-27b", active=True, context_window=131072), True),
+    (SimpleNamespace(id="allam-2-7b", active=True, context_window=4096), False),          # window too small
+    (SimpleNamespace(id="llama-old", active=False, context_window=131072), False),        # inactive
+    (SimpleNamespace(id="whisper-large-v3", active=True, context_window=448), False),
+    (SimpleNamespace(id="canopylabs/orpheus-v1-english", active=True, context_window=4000), False),
+    (SimpleNamespace(id="openai/gpt-oss-safeguard-20b", active=True, context_window=131072), False),
+    (SimpleNamespace(id="meta-llama/llama-prompt-guard-2-86m", active=True, context_window=512), False),
+])
+def test_groq_model_filter(model, usable):
+    assert GroqProvider._is_usable(model) is usable
