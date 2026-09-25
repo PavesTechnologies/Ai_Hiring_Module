@@ -438,8 +438,11 @@ IMPORTANCE CLASSIFICATION (REQUIRED SKILLS ONLY)
 -------------------------------------------------
 Split required skills into required_skills.core and required_skills.supporting.
 
-- core — ONLY the role's primary platform, primary programming language, and primary framework: the few technologies the role cannot be done without. Typically 2 to 5 skills.
-- supporting — every other required skill: platform features and artifacts, build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling.
+- core — ONLY the few technologies the role cannot be done without, typically 2 to 5 skills:
+  - the primary platform or product the role is built on;
+  - the primary programming language(s) the role writes code in (e.g. JavaScript for ServiceNow development, Java for a Spring Boot backend);
+  - the primary framework or the platform's primary scripting API (e.g. Spring Boot for a Java backend, Glide APIs for ServiceNow).
+- supporting — every other required skill: individual platform features and artifacts configured on top of the platform (e.g. Business Rules, Script Includes, Flow Designer), build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling.
 
 Being listed under "Mandatory Skills" / "Must Have" is NOT evidence of core - it only makes a skill required. Repetition in the text is NOT evidence of core. Domain capabilities are never core.
 
