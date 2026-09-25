@@ -63,7 +63,9 @@ from app.core.cache_keys import (
     campaign_scoring_key,
     campaign_weight_presets_key,
 )
+from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.repositories.campaign_weight_preset_repository import (CampaignWeightPresetRepository,
 )
 from app.schemas.campaign.campaign_detail_response import (CampaignDetailResponse,
@@ -531,8 +533,7 @@ class CampaignService:
             )
 
             self.campaign_repo.commit()
-            if self.cache_service:
-                self.cache_service.delete_by_prefix(campaign_list_prefix())
+            CacheInvalidator(self.cache_service).campaign()
 
 
             hiring_manager_name = request.hiring_manager_id
@@ -573,12 +574,10 @@ class CampaignService:
             raise
 
     def _invalidate_campaign_caches(self, campaign_id: UUID, org_id: UUID | None = None) -> None:
-        if not self.cache_service:
-            return
-        self.cache_service.delete(campaign_key(campaign_id), campaign_scoring_key(campaign_id))
-        self.cache_service.delete_by_prefix(campaign_list_prefix())
-        if org_id is not None:
-            self.cache_service.delete(campaign_weight_presets_key(org_id))
+        CacheInvalidator(self.cache_service).campaign(campaign_id, org_id)
+
+    def _candidate_notifier(self) -> CandidateChangeNotifier:
+        return CandidateChangeNotifier(CacheInvalidator(self.cache_service))
 
     def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
         if not self.cache_service:
@@ -2017,6 +2016,7 @@ class CampaignService:
         if target == PipelineStage.SELECTED:
             self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
+        self._candidate_notifier().stage_changed(campaign_id, cc)
 
         # Selection email is no longer sent automatically here - see
         # CampaignCandidateService.send_selection_email (manual send
@@ -2062,6 +2062,7 @@ class CampaignService:
             },
         )
         self.campaign_repo.commit()
+        self._candidate_notifier().stage_changed(campaign_id, cc)
         return StalledActionResponse(campaign_candidate_id=cc.id,
             action="FLAGGED_FOR_REVIEW",
             detail=f"Moved from {from_stage.value} to FRAUD_REVIEW.",

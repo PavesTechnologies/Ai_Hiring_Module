@@ -74,6 +74,12 @@ def make_service(
     skill_ontology_repository = MagicMock()
     skill_ontology_repository.get_children.side_effect = lambda skill_id: children_map.get(skill_id, [])
     skill_ontology_repository.get_skill_by_id.side_effect = lambda skill_id: skill_by_id_map.get(skill_id)
+    skill_ontology_repository.get_skills_by_ids.side_effect = lambda skill_ids: {
+        skill_id: skill_by_id_map[skill_id] for skill_id in skill_ids if skill_id in skill_by_id_map
+    }
+    skill_ontology_repository.get_children_batch.side_effect = lambda skill_ids: {
+        skill_id: children_map.get(skill_id, []) for skill_id in skill_ids
+    }
 
     config_repository = MagicMock()
     config_repository.get_configs_by_keys.return_value = config or {}
@@ -1045,12 +1051,11 @@ def test_no_preferred_skills_configured_yields_zero_bonus():
     assert breakdown["preferred_skill_bonus"] == 0.0
 
 
-def test_preferred_skill_bonus_is_stored_separately_and_never_added_to_deterministic_score():
+def test_matched_preferred_skill_keeps_technical_score_at_full_marks():
     """
-    M07: preferred skills must NOT contribute to deterministic_score.
-    A large preferred_skill_bonus must have zero effect on the mandatory
-    ratio-based score - it's stored in score_breakdown.preferred_skill_bonus
-    purely for a future Composite Score to consume.
+    Preferred skills now hold a fixed share of technical_score
+    (PREFERRED_SKILL_SHARE, default 0.10). A fully matched mandatory +
+    preferred set still scores exactly 100.
     """
     mandatory_id, preferred_id = uuid4(), uuid4()
     mandatory_rows = [_coverage_row(mandatory_id, weight=80.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0)]
@@ -1069,7 +1074,7 @@ def test_preferred_skill_bonus_is_stored_separately_and_never_added_to_determini
     assert campaign_candidate.deterministic_score == 100.0
 
 
-def test_preferred_bonus_does_not_affect_mandatory_coverage_score_or_passed_decision():
+def test_matched_preferred_skill_raises_technical_score_but_not_mandatory_coverage():
     mandatory_id, missing_id, preferred_id = uuid4(), uuid4(), uuid4()
     mandatory_rows = [
         _coverage_row(mandatory_id, weight=50.0, candidate_scoring_weight=1.0, match_tier="EXACT", confidence=1.0),
@@ -1084,20 +1089,16 @@ def test_preferred_bonus_does_not_affect_mandatory_coverage_score_or_passed_deci
     campaign_candidate = SimpleNamespace(id=uuid4(), score_breakdown=None, deterministic_score=None, deterministic_passed=None)
     campaign_candidate_repository.get_by_id.return_value = campaign_candidate
 
-    # Mandatory: actual=50 / max=100 * 100 = 50.0. A huge preferred bonus
-    # (100.0) exists alongside it but must have NO effect whatsoever on
-    # deterministic_score, mandatory_coverage_pct, or deterministic_passed -
-    # no addition, no clamping, nothing. The missing mandatory skill here
-    # is uncategorized (importance=None), so with default qualification
-    # thresholds it no longer force-fails the candidate either (Part 7) -
-    # the 50% weighted score alone clears the 40% threshold.
+    # Required score 50 / 100 = 50%, preferred score 100%:
+    # 0.9 x 50 + 0.1 x 100 = 55.0. mandatory_coverage_pct is unaffected.
     breakdown = service.calculate_and_store_score_breakdown(campaign_candidate.id, JD_ID, RESUME_ID, deterministic_threshold=40.0)
 
     assert breakdown["mandatory_coverage_pct"] == 50.0
-    assert breakdown["deterministic_score"] == 50.0
+    assert breakdown["mandatory_skill_score"] == 50.0
+    assert breakdown["technical_score"] == 55.0
+    assert breakdown["deterministic_score"] == 55.0
     assert breakdown["preferred_skill_bonus"] == 100.0
     assert breakdown["deterministic_passed"] is True
-    assert campaign_candidate.deterministic_score == 50.0
     assert campaign_candidate.deterministic_passed is True
 
 

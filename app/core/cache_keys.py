@@ -163,3 +163,9 @@ def processing_status_key(kind: str, document_id: Any) -> str:
 
 def lock_key(cache_key: str) -> str:
     return f"{PREFIX}:lock:{cache_key}"
+
+
+# --- Invalidation tombstones (see CacheService) ---
+
+def tombstone_key(key_or_prefix: str) -> str:
+    return f"{PREFIX}:tomb:{key_or_prefix}"

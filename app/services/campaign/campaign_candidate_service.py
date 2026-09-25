@@ -112,7 +112,7 @@ from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
-from app.websocket.publisher import publish_board_candidate_removed, publish_board_stage_changed
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,7 @@ _DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD = 40.0
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
 _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY = "HIERARCHY_SEMANTIC_ONLY_THRESHOLD"
 _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY = "HIERARCHY_GRANDCHILD_MULTIPLIER"
 # Not seeded/present in PlatformConfig today (CHILD=0.7/SIBLING=0.4/
@@ -580,13 +581,7 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
-        try:
-            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
 
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
 
@@ -656,13 +651,7 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
-        try:
-            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
 
         candidate = (
             self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
@@ -1554,13 +1543,16 @@ class CampaignCandidateService:
         preferred_skills_raw = breakdown.get("preferred_skills") or []
         experience = breakdown.get("experience_validation")
         education = breakdown.get("education_validation")
+        domain = breakdown.get("domain_capability_validation")
 
         mandatory_skills = [
             MandatorySkillBreakdownItem(
                 jd_skill=entry.get("canonical_name"),
                 candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
                 mandatory=entry.get("mandatory"),
+                importance=entry.get("importance"),
                 match_type=entry.get("match_type"),
+                matched_via_alias=bool(entry.get("matched_via_alias")),
                 configured_weight=entry.get("configured_weight"),
                 normalization_discount=entry.get("candidate_scoring_weight"),
                 hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
@@ -1636,6 +1628,7 @@ class CampaignCandidateService:
                 _DETERMINISTIC_WEIGHT_SKILLS_KEY,
                 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
                 _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+                _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
                 _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY,
                 _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
                 _HIERARCHY_CHILD_MULTIPLIER_KEY,
@@ -1672,6 +1665,9 @@ class CampaignCandidateService:
                 status="PASSED" if breakdown.get("deterministic_passed") else "FAILED",
                 threshold=breakdown.get("deterministic_threshold"),
                 mandatory_coverage_pct=breakdown.get("mandatory_coverage_pct"),
+                core_coverage_pct=breakdown.get("core_coverage_pct"),
+                gate_skill_scope=breakdown.get("gate_skill_scope"),
+                missing_core_skill_count=breakdown.get("missing_core_skill_count"),
                 mandatory_skills_matched=mandatory_matched,
                 mandatory_skills_total=len(mandatory_skills_raw),
                 preferred_skills_matched=preferred_matched,
@@ -1718,12 +1714,16 @@ class CampaignCandidateService:
             ),
             score_calculation=ScoreCalculationDetail(
                 skills_score=skills_score,
+                functional_score=(domain.get("score") if domain and domain.get("applicable") else None),
                 experience_score=experience.get("score") if experience else None,
                 education_score=education.get("score") if education else None,
                 final_score=breakdown.get("deterministic_score"),
+                required_domain_capabilities=(domain or {}).get("required") or [],
+                preferred_domain_capabilities=(domain or {}).get("preferred") or [],
             ),
             configuration=ScoreConfigurationDetail(
                 skills_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_SKILLS_KEY),
+                functional_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY),
                 experience_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY),
                 education_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EDUCATION_KEY),
                 deterministic_threshold=breakdown.get("deterministic_threshold"),
@@ -2228,12 +2228,14 @@ class CampaignCandidateService:
         method.
         """
         try:
-            self.stage_transition_service.transition(
+            campaign_candidate, changed = self.stage_transition_service.transition(
                 campaign_candidate_id=campaign_candidate_id,
                 to_stage=to_stage,
                 actor=actor,
                 reason=reason,
             )
+            if changed:
+                CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
         except InvalidPipelineTransitionException as exc:
             self.campaign_candidate_repo.rollback()
             raise CampaignException(str(exc), 409) from exc
@@ -3207,13 +3209,7 @@ class CampaignCandidateService:
 
             self.campaign_candidate_repo.commit()
 
-            try:
-                publish_board_candidate_removed(deleted_campaign_id, deleted_id)
-            except Exception:
-                logger.exception(
-                    "Failed to publish board.candidate_removed for campaign_candidate_id=%s",
-                    deleted_id,
-                )
+            CandidateChangeNotifier().removed(deleted_campaign_id, deleted_id, [deleted_resume_id])
 
             # Audit Log
             self.audit_service.log(

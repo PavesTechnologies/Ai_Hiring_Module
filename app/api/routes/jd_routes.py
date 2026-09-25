@@ -32,6 +32,7 @@ from app.services.prompt_template_validation import validate_prompt_template_sel
 from app.schemas.jd.DuplicateJDInfo import DuplicateJDInfo, ExistingJDInfo
 from app.schemas.jd.request import CreateJDRequest, EducationCriteria, UpdateJDRequest, JDSearchRequest
 from app.schemas.jd.response import (
+    EducationOptionsResponse,
     GetJDResponse,
     JDProcessingAcceptedResponse,
     JDProcessingStatusResponse,
@@ -402,6 +403,30 @@ def get_all_active_jds(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_all_jds(is_active_version=True), message="Active Job Descriptions retrieved successfully.")
+
+
+# Must stay above GET /{jd_id}, which would otherwise capture this path.
+@router.get(
+    "/education-options",
+    response_model=APIResponse[EducationOptionsResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_education_options(
+    q: Optional[str] = Query(default=None, max_length=100, description="Case-insensitive substring filter."),
+    limit: int = Query(default=50, ge=1, le=200),
+    service: JDService = Depends(get_jd_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    """
+    Distinct education degree and field values already used across JDs
+    (recruiter-entered and AI-extracted), de-duplicated case- and
+    whitespace-insensitively, most-used first - for the JD form's
+    education_criteria.degree / .field suggestions.
+    """
+    return APIResponse.ok(
+        data=service.get_education_options(search=q, limit=limit),
+        message="Education options retrieved successfully.",
+    )
 
 
 @router.get("/{jd_id}", response_model=APIResponse,dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER))])

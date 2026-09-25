@@ -67,7 +67,7 @@ def test_delete_campaign_candidate_deletes_only_the_targeted_row():
     campaign_candidate_repo.get_by_id.return_value = cc
     service = make_service(campaign_candidate_repo=campaign_candidate_repo)
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     campaign_candidate_repo.delete.assert_called_once_with(cc)
@@ -92,7 +92,7 @@ def test_delete_campaign_candidate_never_touches_candidate_or_resume_repos():
         resume_repo=resume_repo,
     )
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     candidate_repo.delete.assert_not_called()
@@ -111,7 +111,7 @@ def test_delete_campaign_candidate_only_looks_up_by_its_own_id_not_by_candidate_
     campaign_candidate_repo.get_by_id.return_value = cc
     service = make_service(campaign_candidate_repo=campaign_candidate_repo)
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     campaign_candidate_repo.get_by_id.assert_called_once_with(cc.id)
@@ -138,7 +138,7 @@ def test_delete_campaign_candidate_logs_audit_entry_scoped_to_its_own_campaign()
     audit_service = MagicMock()
     service = make_service(campaign_candidate_repo=campaign_candidate_repo, audit_service=audit_service)
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1", actor_role="HR_ADMIN")
 
     _, kwargs = audit_service.log.call_args
@@ -164,7 +164,7 @@ def test_delete_campaign_candidate_clears_every_dependent_table_before_the_paren
     campaign_candidate_repo.get_by_id.return_value = cc
     service = make_service_with_dependent_repo_mocks(campaign_candidate_repo=campaign_candidate_repo)
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     service.email_notification_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
@@ -194,7 +194,7 @@ def test_delete_campaign_candidate_clears_dead_letter_queue_before_celery_task_l
         celery_task_log_repo=celery_task_log_repo,
     )
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     call_order = [call[0] for call in manager.mock_calls]
@@ -214,7 +214,7 @@ def test_delete_campaign_candidate_clears_dependents_before_deleting_the_parent_
         candidate_note_repo=candidate_note_repo,
     )
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     call_order = [call[0] for call in manager.mock_calls]
@@ -229,7 +229,7 @@ def test_delete_campaign_candidate_dependent_cleanup_is_scoped_to_this_campaign_
     campaign_candidate_repo.get_by_id.return_value = cc
     service = make_service_with_dependent_repo_mocks(campaign_candidate_repo=campaign_candidate_repo)
 
-    with patch("app.services.campaign.campaign_candidate_service.publish_board_candidate_removed"):
+    with patch("app.services.campaign.campaign_candidate_service.CandidateChangeNotifier"):
         service.delete_campaign_candidate(cc.id, actor_id="user-1")
 
     for mock_call in (

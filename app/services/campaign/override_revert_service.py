@@ -14,6 +14,7 @@ from app.models.pipeline import (
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.campaign.override_revert_schema import OverrideRevertResultResponse
 from app.services.audit_service import AuditService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,12 @@ class OverrideRevertService:
         campaign_candidate_repo: CampaignCandidateRepository,
         audit_service: AuditService,
         ai_evaluation_repo=None,
+        notifier: CandidateChangeNotifier | None = None,
     ):
         self.campaign_candidate_repo = campaign_candidate_repo
         self.audit_service = audit_service
         self.ai_evaluation_repo = ai_evaluation_repo
+        self.notifier = notifier or CandidateChangeNotifier()
 
     def revert_override(
         self,
@@ -169,6 +172,8 @@ class OverrideRevertService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+        self.notifier.stage_changed(cc.campaign_id, cc)
 
         return OverrideRevertResultResponse(
             campaign_candidate_id=cc.id,

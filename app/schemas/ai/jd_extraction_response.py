@@ -1,59 +1,74 @@
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from app.enums.education import DegreeLevel, EducationField
 
 
-def _clean_string_list(values: list[str]) -> list[str]:
-    seen = set()
+def _clean_string_list(values: list[str] | None) -> list[str]:
+    """Strip, drop empties, and drop case-insensitive duplicates (first spelling wins)."""
+    seen: set[str] = set()
     cleaned = []
     for value in values or []:
-        normalized = value.strip()
-        if not normalized or normalized in seen:
+        normalized = (value or "").strip() if isinstance(value, str) else ""
+        if not normalized or normalized.casefold() in seen:
             continue
-        seen.add(normalized)
+        seen.add(normalized.casefold())
         cleaned.append(normalized)
     return cleaned
 
 
-class RequiredSkillItem(BaseModel):
+@dataclass(frozen=True)
+class JDSkillSpec:
     """
-    A required (mandatory) JD skill plus its AI-classified importance.
-    `importance` is required here (not Optional) — the JD_PARSE prompt is
-    instructed to fall back to "supporting" itself whenever it's unsure,
-    so an ambiguous case never reaches this schema as a missing value.
-    """
-    name: str
-    importance: Literal["core", "supporting"]
-
-    @field_validator("name")
-    @classmethod
-    def clean_name(cls, value: str) -> str:
-        value = (value or "").strip()
-        if not value:
-            raise ValueError("required skill name cannot be empty")
-        return value
-
-
-class PreferredSkillItem(BaseModel):
-    """
-    A preferred (non-scoring) JD skill. Deliberately has no `importance`
-    field — preferred skills never participate in the required-skill
-    qualification score, so there is nothing for the AI to classify.
+    Flat view of one extracted JD skill, as consumed by
+    SkillNormalizationService (duck-typed on .name/.importance/.aliases).
+    importance is None for preferred skills.
     """
     name: str
+    importance: Literal["core", "supporting"] | None
+    aliases: tuple[str, ...] = dataclass_field(default_factory=tuple)
 
-    @field_validator("name")
+
+class RequiredSkills(BaseModel):
+    core: list[str] = Field(default_factory=list)
+    supporting: list[str] = Field(default_factory=list)
+
+    @field_validator("core", "supporting", mode="before")
     @classmethod
-    def clean_name(cls, value: str) -> str:
-        value = (value or "").strip()
-        if not value:
-            raise ValueError("preferred skill name cannot be empty")
-        return value
+    def clean_lists(cls, values: list[str] | None) -> list[str]:
+        return _clean_string_list(values)
+
+
+class DomainCapabilities(BaseModel):
+    # Business processes / functional areas (e.g. "Demand Management",
+    # "Financial Planning") - never skills and never a hard gate; scored
+    # against resume experience text by DomainCapabilityMatchingService.
+    required: list[str] = Field(default_factory=list)
+    preferred: list[str] = Field(default_factory=list)
+
+    @field_validator("required", "preferred", mode="before")
+    @classmethod
+    def clean_lists(cls, values: list[str] | None) -> list[str]:
+        return _clean_string_list(values)
+
+
+class SkillAliasEntry(BaseModel):
+    """
+    Generation-only form of one `aliases` entry. Gemini's Developer API
+    rejects open-ended dict fields in a response_schema, so the model emits
+    a list of these and JDExtractionResponse folds it into the
+    {"skill": [aliases]} map that gets stored.
+    """
+    skill: str
+    aliases: list[str] = Field(default_factory=list)
 
 
 class Experience(BaseModel):
+    # Declared float (this is also the LLM response_schema - keep it a plain
+    # number type); whole values are stored as int so extracted_json reads
+    # 6, not 6.0.
     min_experience_years: float | None = None
     max_experience_years: float | None = None
 
@@ -62,6 +77,12 @@ class Experience(BaseModel):
     def validate_years(cls, value: float | None) -> float | None:
         if value is not None and value < 0:
             raise ValueError("experience years cannot be negative")
+        return value
+
+    @field_serializer("min_experience_years", "max_experience_years")
+    def serialize_years(self, value: float | None) -> float | int | None:
+        if value is not None and float(value).is_integer():
+            return int(value)
         return value
 
     @model_validator(mode="after")
@@ -115,9 +136,60 @@ class Education(BaseModel):
             return EducationField.UNKNOWN.value
 
 
+def _coerce_legacy_shapes(data: dict) -> dict:
+    """
+    Accepts the pre-2026-09 list-of-objects skill shape
+    ([{"name", "importance", "aliases"?}]) and the generation-time aliases
+    list ([{"skill", "aliases"}]), and rewrites both into the stored shape.
+    """
+    data = dict(data)
+    aliases: dict[str, list[str]] = {}
+
+    raw_aliases = data.get("aliases")
+    if isinstance(raw_aliases, dict):
+        aliases.update({key: list(value or []) for key, value in raw_aliases.items()})
+    elif isinstance(raw_aliases, list):
+        for entry in raw_aliases:
+            entry = entry.model_dump() if isinstance(entry, BaseModel) else entry
+            if isinstance(entry, dict) and entry.get("skill"):
+                aliases.setdefault(entry["skill"], []).extend(entry.get("aliases") or [])
+
+    def _item_name(item) -> str | None:
+        if isinstance(item, str):
+            return item
+        if isinstance(item, dict):
+            if item.get("aliases") and item.get("name"):
+                aliases.setdefault(item["name"], []).extend(item["aliases"])
+            return item.get("name")
+        return None
+
+    raw_required = data.get("required_skills")
+    if isinstance(raw_required, list):
+        core, supporting = [], []
+        for item in raw_required:
+            name = _item_name(item)
+            if not name:
+                continue
+            is_core = isinstance(item, dict) and item.get("importance") == "core"
+            (core if is_core else supporting).append(name)
+        data["required_skills"] = {"core": core, "supporting": supporting}
+
+    raw_preferred = data.get("preferred_skills")
+    if isinstance(raw_preferred, list):
+        data["preferred_skills"] = [name for name in map(_item_name, raw_preferred) if name]
+
+    data["aliases"] = aliases
+    return data
+
+
 class JDExtractionResponse(BaseModel):
-    required_skills: list[RequiredSkillItem] = Field(default_factory=list)
-    preferred_skills: list[PreferredSkillItem] = Field(default_factory=list)
+    required_skills: RequiredSkills = Field(default_factory=RequiredSkills)
+    preferred_skills: list[str] = Field(default_factory=list)
+    # {skill name: [former names / alternative names the JD gives for it]}
+    # e.g. {"ServiceNow SPM": ["ITBM", "PPM"]}. Keys are always an extracted
+    # skill's exact name.
+    aliases: dict[str, list[str]] = Field(default_factory=dict)
+    domain_capabilities: DomainCapabilities = Field(default_factory=DomainCapabilities)
     # Non-technical/behavioral skills (e.g. "Communication", "Leadership"),
     # kept separate from required_skills/preferred_skills so they never
     # reach SkillNormalizationService's skill-ontology matching/scoring
@@ -132,9 +204,14 @@ class JDExtractionResponse(BaseModel):
     location: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("soft_skills", "responsibilities", "certifications")
+    @model_validator(mode="before")
     @classmethod
-    def clean_lists(cls, values: list[str]) -> list[str]:
+    def coerce_input_shapes(cls, data: Any) -> Any:
+        return _coerce_legacy_shapes(data) if isinstance(data, dict) else data
+
+    @field_validator("preferred_skills", "soft_skills", "responsibilities", "certifications", mode="before")
+    @classmethod
+    def clean_lists(cls, values: list[str] | None) -> list[str]:
         return _clean_string_list(values)
 
     @field_validator("employment_type", "work_mode", "location")
@@ -148,43 +225,83 @@ class JDExtractionResponse(BaseModel):
     @model_validator(mode="after")
     def dedupe_skill_lists(self) -> "JDExtractionResponse":
         """
-        Required wins: a skill named in both lists is kept only under
-        required_skills (with whatever importance the AI gave it there).
-        Also drops same-list duplicate names, first occurrence wins -
-        replaces the old _clean_string_list dedupe, which only worked on
-        plain strings.
+        Enforces the invariants the matching layer relies on (all
+        comparisons case-insensitive):
+        - one skill appears once: core > supporting > preferred.
+        - a term that is another skill's alias is never a separate skill.
+        - a term extracted as a domain capability is never also a skill.
+        - aliases keys are extracted skills; values exclude the key itself.
+        - a required domain capability is never repeated as preferred.
         """
-        seen_required: set[str] = set()
-        deduped_required: list[RequiredSkillItem] = []
-        for item in self.required_skills:
-            if item.name in seen_required:
-                continue
-            seen_required.add(item.name)
-            deduped_required.append(item)
-        self.required_skills = deduped_required
+        capability_keys = {
+            value.casefold()
+            for value in self.domain_capabilities.required + self.domain_capabilities.preferred
+        }
+        alias_owner = {
+            alias.casefold(): owner.casefold()
+            for owner, values in self.aliases.items()
+            for alias in values
+            if alias.casefold() != owner.casefold()
+        }
+        seen: set[str] = set()
 
-        seen_preferred: set[str] = set()
-        deduped_preferred: list[PreferredSkillItem] = []
-        for item in self.preferred_skills:
-            if item.name in seen_required or item.name in seen_preferred:
+        def _keep(name: str) -> bool:
+            key = name.casefold()
+            owner = alias_owner.get(key)
+            if key in seen or key in capability_keys or (owner is not None and owner != key):
+                return False
+            seen.add(key)
+            return True
+
+        self.required_skills.core = [name for name in self.required_skills.core if _keep(name)]
+        self.required_skills.supporting = [name for name in self.required_skills.supporting if _keep(name)]
+        self.preferred_skills = [name for name in self.preferred_skills if _keep(name)]
+
+        skill_by_key = {name.casefold(): name for name in self._all_skill_names()}
+        cleaned_aliases: dict[str, list[str]] = {}
+        for owner, values in self.aliases.items():
+            skill_name = skill_by_key.get(owner.strip().casefold())
+            if skill_name is None:
                 continue
-            seen_preferred.add(item.name)
-            deduped_preferred.append(item)
-        self.preferred_skills = deduped_preferred
+            merged = _clean_string_list(cleaned_aliases.get(skill_name, []) + list(values))
+            merged = [alias for alias in merged if alias.casefold() != skill_name.casefold()]
+            if merged:
+                cleaned_aliases[skill_name] = merged
+        self.aliases = cleaned_aliases
+
+        required_capability_keys = {value.casefold() for value in self.domain_capabilities.required}
+        self.domain_capabilities.preferred = [
+            value for value in self.domain_capabilities.preferred
+            if value.casefold() not in required_capability_keys
+        ]
         return self
+
+    def _all_skill_names(self) -> list[str]:
+        return self.required_skills.core + self.required_skills.supporting + self.preferred_skills
+
+    def required_skill_specs(self) -> list[JDSkillSpec]:
+        return [
+            JDSkillSpec(name, importance, tuple(self.aliases.get(name, [])))
+            for importance, names in (("core", self.required_skills.core), ("supporting", self.required_skills.supporting))
+            for name in names
+        ]
+
+    def preferred_skill_specs(self) -> list[JDSkillSpec]:
+        return [JDSkillSpec(name, None, tuple(self.aliases.get(name, []))) for name in self.preferred_skills]
 
 
 class JDExtractionGenerationSchema(BaseModel):
     """
-    Same shape as JDExtractionResponse minus `metadata` - Gemini's Developer
-    API mode rejects open-ended dict fields (they compile to a JSON Schema
-    `additionalProperties`, which that mode doesn't support) when used as a
-    response_schema for structured output. metadata is always {} per the
-    prompt anyway, and JDExtractionResponse.metadata defaults to {} when the
-    key is absent, so dropping it here only affects generation, not parsing.
+    Structured-output schema sent to the LLM. Same shape as
+    JDExtractionResponse except: no `metadata`, and `aliases` is a list of
+    SkillAliasEntry instead of a map - Gemini's Developer API mode rejects
+    open-ended dict fields (they compile to JSON Schema
+    `additionalProperties`). JDExtractionResponse converts both back.
     """
-    required_skills: list[RequiredSkillItem] = Field(default_factory=list)
-    preferred_skills: list[PreferredSkillItem] = Field(default_factory=list)
+    required_skills: RequiredSkills = Field(default_factory=RequiredSkills)
+    preferred_skills: list[str] = Field(default_factory=list)
+    aliases: list[SkillAliasEntry] = Field(default_factory=list)
+    domain_capabilities: DomainCapabilities = Field(default_factory=DomainCapabilities)
     soft_skills: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)

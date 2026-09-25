@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from celery.exceptions import Retry
 
+from app.core.cache_invalidation import CacheInvalidator
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
@@ -362,6 +363,8 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
             vector_action = "VECTOR_GENERATED" if was_created else "VECTOR_REUSED"
 
         resume_repo.commit()
+        # Resume detail shows embedding_status.
+        CacheInvalidator.default().resumes([resume.id])
 
         # TEMPORARY DIAGNOSTIC LOGGING (enqueue-trigger investigation) -
         # remove once the missing-SEMANTIC_SCORE-row issue is confirmed

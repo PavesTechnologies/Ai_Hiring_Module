@@ -188,13 +188,38 @@ class SemanticScoringService:
         resume_json = (resume.parsed_json if resume else None) or {}
 
         jd_terms = {
-            str(term).strip().lower()
-            for term in (jd_json.get("required_skills") or []) + (jd_json.get("preferred_skills") or [])
-            if term
+            term.strip().lower()
+            for term in self._jd_skill_names(jd_json)
+            if term and term.strip()
         }
         resume_terms = {str(term).strip().lower() for term in (resume_json.get("skills") or []) if term}
 
         return sorted(jd_terms & resume_terms)
+
+    @staticmethod
+    def _jd_skill_names(jd_json: dict) -> list[str]:
+        """
+        Skill names from either extracted_json shape: current
+        ({"required_skills": {"core": [...], "supporting": [...]}, "preferred_skills": [...],
+        "aliases": {...}}) or legacy (lists of {"name": ...} objects).
+        """
+        def _names(values) -> list[str]:
+            if isinstance(values, dict):
+                return [name for group in values.values() for name in _names(group)]
+            if isinstance(values, list):
+                return [
+                    item if isinstance(item, str) else item.get("name")
+                    for item in values
+                    if isinstance(item, str) or (isinstance(item, dict) and isinstance(item.get("name"), str))
+                ]
+            return []
+
+        aliases = jd_json.get("aliases") if isinstance(jd_json.get("aliases"), dict) else {}
+        return (
+            _names(jd_json.get("required_skills"))
+            + _names(jd_json.get("preferred_skills"))
+            + [alias for values in aliases.values() for alias in _names(values)]
+        )
 
     @staticmethod
     def _build_explanation(similarity: float, threshold: float, passed: bool) -> str:

@@ -40,6 +40,8 @@ def _campaign(weight_deterministic=30.0, weight_semantic=40.0, deterministic_thr
         weight_semantic=weight_semantic,
         deterministic_threshold=deterministic_threshold,
         semantic_threshold=semantic_threshold,
+        required_skill_coverage_threshold=0.0,
+        max_missing_core_skills=3,
     )
 
 

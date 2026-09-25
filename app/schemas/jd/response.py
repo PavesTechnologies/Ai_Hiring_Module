@@ -127,3 +127,9 @@ class JDUploadSummary(BaseModel):
     jd_id: UUID | None
     error_message: str | None
     queued_at: datetime
+
+
+class EducationOptionsResponse(BaseModel):
+    """Distinct education values already used across JDs - JD form suggestions."""
+    degrees: list[str]
+    fields: list[str]

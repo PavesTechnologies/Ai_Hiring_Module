@@ -46,6 +46,10 @@ celery_app.conf.update(
     # own 120s timeout, so a whole pipeline attempt stays well inside 5
     # minutes. Raise this if any task ever legitimately runs longer.
     broker_transport_options={"visibility_timeout": 300},
+    # Nothing reads Celery results (task state lives in celery_task_log),
+    # so don't write a celery-task-meta key per task into the shared Redis.
+    task_ignore_result=True,
+    result_expires=3600,
 )
 
 # ── Worker pool: Windows dev vs. Linux production ────────────────────────────

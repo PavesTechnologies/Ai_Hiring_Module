@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     redis_username: str = ""
     redis_password: str = ""
     redis_db: int = 3
+    # Optional separate DB index for the application cache, so cache SCANs
+    # never walk Celery's broker keys and a cache flush never touches the
+    # queue. Unset = share redis_db.
+    redis_cache_db: int | None = None
 
     # Application cache (cache-aside layer over the same Redis instance)
     cache_key_prefix: str = "airs"
@@ -187,12 +191,19 @@ class Settings(BaseSettings):
             f"?sslmode={self.db_sslmode}"
         )
 
-    @property
-    def redis_url(self) -> str:
+    def _redis_url_for_db(self, db: int) -> str:
         auth = ""
         if self.redis_username or self.redis_password:
             auth = f"{self.redis_username}:{self.redis_password}@"
-        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{db}"
+
+    @property
+    def redis_url(self) -> str:
+        return self._redis_url_for_db(self.redis_db)
+
+    @property
+    def cache_redis_url(self) -> str:
+        return self._redis_url_for_db(self.redis_cache_db if self.redis_cache_db is not None else self.redis_db)
 
     @property
     def CELERY_BROKER_URL(self) -> str:

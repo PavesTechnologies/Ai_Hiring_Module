@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app.core.cache_invalidation import CacheInvalidator
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
@@ -15,10 +16,12 @@ class CampaignSchedulerService:
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
         config_repo: ConfigRepository,
+        invalidator: CacheInvalidator | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.audit_service = audit_service
         self.config_repo = config_repo
+        self.invalidator = invalidator or CacheInvalidator.default()
 
     def auto_close_expired_campaigns(self, batch_size: int = 100) -> int:
         """
@@ -76,6 +79,8 @@ class CampaignSchedulerService:
                     total_closed += 1
 
                 self.campaign_repo.commit()
+                for campaign in batch:
+                    self.invalidator.campaign(campaign.id)
 
                 if len(batch) < batch_size:
                     break

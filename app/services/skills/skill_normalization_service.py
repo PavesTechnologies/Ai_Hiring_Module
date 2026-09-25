@@ -1,7 +1,7 @@
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from types import SimpleNamespace
 from uuid import UUID
@@ -91,6 +91,10 @@ class SkillMatchResult:
     # have no importance concept at all). See _skill_importance() below for
     # how this is derived from the raw input item.
     importance: str | None = None
+    # Canonical ids the JD skill's aliases resolved to (excluding
+    # canonical_skill_id itself). A candidate holding any of these satisfies
+    # this skill exactly as if they held canonical_skill_id.
+    alias_skill_ids: list[UUID] = field(default_factory=list)
 
 
 def load_cached_active_skills(skill_repository: SkillRepository, cache_service: CacheService | None) -> list:
@@ -160,25 +164,50 @@ class SkillNormalizationService:
         """
         required_skills/preferred_skills accept either plain strings (the
         resume-side call, which has no importance concept — see
-        resume_processing_pipeline.py) or objects/dicts with a `.name` (and,
-        for required skills only, `.importance`) attribute — the JD-side
-        call, post RequiredSkillItem/PreferredSkillItem. _skill_name/
-        _skill_importance below duck-type on either shape, so this method's
-        signature and this file's only caller-facing contract never needs
-        to know which schema class the JD pipeline uses.
+        resume_processing_pipeline.py) or objects with a `.name` (and
+        optionally `.importance` / `.aliases`) attribute — the JD-side call,
+        which passes JDSkillSpec. _skill_name/_skill_importance/_skill_aliases
+        duck-type on either shape.
         """
         catalog = self._load_catalog()
         results = [
-            self._match_skill(
-                self._skill_name(item), catalog, mandatory=True, importance=self._skill_importance(item),
-            )
+            self._match_with_aliases(item, catalog, mandatory=True, importance=self._skill_importance(item))
             for item in required_skills
         ]
         results.extend(
-            self._match_skill(self._skill_name(item), catalog, mandatory=False, importance=None)
+            self._match_with_aliases(item, catalog, mandatory=False, importance=None)
             for item in preferred_skills
         )
         return results
+
+    def _match_with_aliases(self, item, catalog: list, mandatory: bool, importance: str | None) -> SkillMatchResult:
+        """
+        Matches the skill name, then each alias. If the name itself is
+        UNKNOWN but an alias resolves, the first resolved alias becomes the
+        canonical skill. Unresolved aliases are ignored - they never create
+        unknown-skill rows of their own.
+        """
+        result = self._match_skill(self._skill_name(item), catalog, mandatory=mandatory, importance=importance)
+        aliases = self._skill_aliases(item)
+        if not aliases:
+            return result
+
+        resolved_ids: list[UUID] = []
+        for alias in aliases:
+            alias_result = self._match_skill(alias, catalog, mandatory=mandatory, importance=importance)
+            if alias_result.canonical_skill_id is None:
+                continue
+            if result.canonical_skill_id is None:
+                result = replace(
+                    alias_result, raw_text=result.raw_text, normalized_text=result.normalized_text,
+                )
+                continue
+            resolved_ids.append(alias_result.canonical_skill_id)
+
+        result.alias_skill_ids = list(dict.fromkeys(
+            skill_id for skill_id in resolved_ids if skill_id != result.canonical_skill_id
+        ))
+        return result
 
     @staticmethod
     def _skill_name(item) -> str:
@@ -187,6 +216,10 @@ class SkillNormalizationService:
     @staticmethod
     def _skill_importance(item) -> str | None:
         return None if isinstance(item, str) else getattr(item, "importance", None)
+
+    @staticmethod
+    def _skill_aliases(item) -> list[str]:
+        return [] if isinstance(item, str) else list(getattr(item, "aliases", None) or [])
 
     def _match_skill(
         self, raw_text: str, catalog: list[SkillOntology], mandatory: bool, importance: str | None = None,

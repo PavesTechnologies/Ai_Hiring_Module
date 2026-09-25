@@ -103,7 +103,9 @@ Examples:
 - "Maven or Gradle" → ["Maven", "Gradle"]
 - "Basic understanding of Docker and Linux" → ["Docker", "Linux"]
 - "Unit Testing (PyTest)" → ["Unit Testing", "PyTest"]
-- "Object-Oriented Programming (OOP)" → ["Object-Oriented Programming", "OOP"]
+- "Object-Oriented Programming (OOP)" → "Object-Oriented Programming"
+
+A term in parentheses that abbreviates or restates the preceding term is the same skill - keep only the preceding term. A parenthetical that names a different technology (e.g. "Unit Testing (PyTest)") is still split.
 
 If multiple technologies appear in a single phrase, extract each as a separate skill.
 
@@ -310,16 +312,18 @@ GENERAL RULES
 
 TECHNICAL SKILLS
 ----------------
-Extract only explicit technical skills mentioned in the Job Description.
+A technical skill is a named technology: something a candidate would list by name on a resume and that can be matched by name.
 
 A technical skill includes, but is not limited to:
 
 - Programming Languages
 - Frameworks
 - Libraries
-- APIs
+- Named APIs (e.g. "Glide APIs", "REST APIs")
 - Databases
 - Cloud Platforms
+- Software Platforms and their named modules or products (e.g. "ServiceNow", "ServiceNow SPM")
+- Named platform features or artifacts (e.g. "Business Rules", "Script Includes", "Flow Designer")
 - DevOps Tools
 - CI/CD Tools
 - Build Tools
@@ -333,7 +337,6 @@ A technical skill includes, but is not limited to:
 - Package Managers
 - Container Technologies
 - Infrastructure Technologies
-- Technical Methodologies explicitly listed as skills
 
 Extract skills from all relevant sections including:
 
@@ -348,9 +351,23 @@ Extract skills from all relevant sections including:
 - Qualifications
 - Job Summary
 
+DOMAIN CAPABILITIES
+-------------------
+A domain capability is a business process, functional area, or domain activity - what the work is about rather than the technology used to do it.
+
+Examples: Demand Management, Portfolio Planning, Portfolio Hierarchy, Investment Funding, Financial Planning, Resource Management, Project Management, Data Modelling, Application Portfolio Management, Enterprise Architecture, Order Management, Payments, Claims Processing.
+
+Rules:
+
+- Domain capabilities go ONLY into domain_capabilities, never into required_skills or preferred_skills - even when the Job Description lists them under "Mandatory Skills", "Must Have", or any other skills heading.
+- Capabilities listed as required / mandatory / must have go into domain_capabilities.required. Capabilities listed as preferred / good to have / nice to have / exposure / familiarity go into domain_capabilities.preferred.
+- If it is unclear whether a term is a technical skill or a domain capability, put it in domain_capabilities, not in skills.
+- Drop a trailing parenthetical acronym: "Application Portfolio Management (APM)" → "Application Portfolio Management".
+- A domain capability is never "core" and never receives an importance.
+
 SKILL EXTRACTION RULES
 ----------------------
-Extract only the core technical skill.
+Extract only the technical skill itself.
 
 Remove descriptive or proficiency qualifiers that do not change the identity of the technology.
 
@@ -363,23 +380,48 @@ Examples:
 - "Maven or Gradle" → ["Maven", "Gradle"]
 - "Basic understanding of Docker and Linux" → ["Docker", "Linux"]
 - "Unit Testing (JUnit)" → ["Unit Testing", "JUnit"]
-- "Object-Oriented Programming (OOP)" → ["Object-Oriented Programming", "OOP"]
+
+Parenthetical abbreviations: a term in parentheses that abbreviates or restates the preceding term is the SAME skill, not a second one. Keep the preceding term only.
+
+- "Object-Oriented Programming (OOP)" → "Object-Oriented Programming"
+- "Continuous Integration (CI)" → "Continuous Integration"
+
+A parenthetical that names a DIFFERENT technology (e.g. "Unit Testing (JUnit)") is still split into separate skills.
+
+Splitting on "/", "or", "and", ",": when the parts share a trailing noun, distribute that noun to every part.
+
+- "REST / SOAP APIs" → ["REST APIs", "SOAP APIs"]
+- "Client and Server Scripts" → ["Client Scripts", "Server Scripts"]
+
+Generic fragments: never extract a generic word on its own as a skill. Never extract any of these alone: "APIs", "integrations", "development", "scripting", "configuration", "customization", "workspaces", "tools", "platform".
+
+- If a phrase names a platform plus a generic word, extract only the platform: "ServiceNow development" → "ServiceNow", "ServiceNow integrations" → "ServiceNow".
+- If the phrase names no specific technology (e.g. "APIs", "integrations"), extract nothing from it.
 
 If multiple technologies appear in a single phrase, extract each as a separate skill.
 
 Do NOT:
 
 - Infer technologies.
-- Rename technologies.
-- Map aliases.
+- Rename technologies (except the parenthetical, shared-noun, and generic-fragment rules above).
 - Normalize to ontology.
 - Extract company names.
 - Extract project names.
 - Extract departments.
 - Extract responsibilities as skills.
 - Extract soft skills as technical skills.
+- Extract domain capabilities as technical skills.
 
 Return each technical skill only once.
+
+ALIASES
+-------
+When the Job Description presents several names for the SAME technology - as alternatives, former names, or a product and its sub-application - extract ONE skill and record the other names in aliases instead of extracting them as separate skills.
+
+- "ServiceNow SPM / ITBM / PPM" → skill "ServiceNow SPM", aliases ["ITBM", "PPM"]
+- "Strategic Portfolio Management (formerly ITBM)" → skill "Strategic Portfolio Management", aliases ["ITBM"]
+
+Only add aliases that appear in the Job Description. Never invent aliases. Keep the name used most prominently in the Job Description as the skill; do not rename it. Each aliases entry refers to a skill that appears in required_skills or preferred_skills. Skills without aliases get no entry.
 
 REQUIRED SKILLS
 ---------------
@@ -394,16 +436,16 @@ If a skill appears as both required and preferred, include it only in required_s
 
 IMPORTANCE CLASSIFICATION (REQUIRED SKILLS ONLY)
 -------------------------------------------------
-For every skill in required_skills, classify its importance as exactly one of:
+Split required skills into required_skills.core and required_skills.supporting.
 
-- "core" — a skill that is central to the role and directly needed to perform its primary responsibilities (e.g. the main programming language, the primary framework/platform the role is built on).
-- "supporting" — a skill that is useful and expected but secondary to the role's primary capabilities (e.g. build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling).
+- core — ONLY the role's primary platform, primary programming language, and primary framework: the few technologies the role cannot be done without. Typically 2 to 5 skills.
+- supporting — every other required skill: platform features and artifacts, build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling.
 
-Infer core vs. supporting from the Job Description's wording, responsibilities, qualifications, technical stack, how often the skill is repeated, and its role in context. Do not ask the recruiter to assign this and do not invent an importance that isn't grounded in the text.
+Being listed under "Mandatory Skills" / "Must Have" is NOT evidence of core - it only makes a skill required. Repetition in the text is NOT evidence of core. Domain capabilities are never core.
 
-If a required skill's importance is genuinely ambiguous, classify it as "supporting" — the safer default.
+If a required skill's importance is ambiguous, classify it as supporting.
 
-preferred_skills never receive an importance classification — they are not part of required-skill qualification.
+preferred_skills never receive an importance classification.
 
 PREFERRED SKILLS
 ----------------
@@ -545,12 +587,18 @@ OUTPUT FORMAT
 Return ONLY the following JSON.
 
 {
-    "required_skills": [
-        {"name": "...", "importance": "core"}
+    "required_skills": {
+        "core": [],
+        "supporting": []
+    },
+    "preferred_skills": [],
+    "aliases": [
+        {"skill": "...", "aliases": []}
     ],
-    "preferred_skills": [
-        {"name": "..."}
-    ],
+    "domain_capabilities": {
+        "required": [],
+        "preferred": []
+    },
     "soft_skills": [],
     "responsibilities": [],
     "certifications": [],

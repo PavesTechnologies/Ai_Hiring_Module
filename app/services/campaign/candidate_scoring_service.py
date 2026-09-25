@@ -20,6 +20,18 @@ _DEFAULT_GRANDCHILD_MULTIPLIER = 0.50
 _DEFAULT_CORE_IMPORTANCE_MULTIPLIER = 1.0
 _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER = 1.0
 
+# Fixed share of technical_score that preferred skills control
+# (platform_config PREFERRED_SKILL_SHARE overrides). A fixed share, not a
+# per-skill weight, so a long nice-to-have list can never dominate the
+# score: missing every preferred skill costs at most this share x 100.
+_DEFAULT_PREFERRED_SKILL_SHARE = 0.10
+
+# gate_skill_scope values: which mandatory skills the coverage gate counts.
+# CORE for AI-classified JDs; ALL_MANDATORY for legacy JDs whose skills
+# were never classified (preserves their pre-existing behavior).
+GATE_SCOPE_CORE = "CORE"
+GATE_SCOPE_ALL_MANDATORY = "ALL_MANDATORY"
+
 # Business rule (not a percentage, not proportional to required-skill
 # count): a candidate may be missing at most this many CORE required
 # skills, regardless of whether the JD has 10 or 100 required skills.
@@ -118,11 +130,11 @@ class CandidateScoringService:
         """
         breakdown = self.build_mandatory_skill_breakdown(jd_id, resume_id)
 
-        any_missing = any(
+        any_gate_skill_missing = any(
             skill["match_type"] == MandatorySkillMatchType.MISSING.value
-            for skill in breakdown["mandatory_skills"]
+            for skill in self._gate_skills(breakdown["mandatory_skills"])
         )
-        passed = not any_missing and breakdown["deterministic_score"] >= float(deterministic_threshold)
+        passed = not any_gate_skill_missing and breakdown["deterministic_score"] >= float(deterministic_threshold)
 
         return breakdown["deterministic_score"], passed
 
@@ -256,13 +268,15 @@ class CandidateScoringService:
             configs.get("SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER", _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER)
         )
 
+        alias_names = self._load_alias_names(coverage_rows)
+
         mandatory_skills = []
         matched_count = 0
 
         for row in coverage_rows:
             entry = self._score_one_mandatory_skill(
                 row, candidate_skills_by_id, grandchild_multiplier, semantic_threshold,
-                core_multiplier, supporting_multiplier, hierarchy,
+                core_multiplier, supporting_multiplier, hierarchy, alias_names,
             )
             if entry["match_type"] in _COVERED_MATCH_TYPE_VALUES:
                 matched_count += 1
@@ -296,13 +310,57 @@ class CandidateScoringService:
             round((actual_sum / max_sum) * 100, 2) if max_sum > 0 else 100.0
         )
 
+        # The coverage gate counts CORE skills only (supporting skills are
+        # scored, never gated) - except on legacy JDs with no classified
+        # skills at all, which keep gating on every mandatory skill.
+        gate_skills = self._gate_skills(mandatory_skills)
+        gate_covered = sum(1 for entry in gate_skills if entry["match_type"] in _COVERED_MATCH_TYPE_VALUES)
+        core_coverage_pct = round((gate_covered / len(gate_skills)) * 100, 2) if gate_skills else 100.0
+
         return {
             "mandatory_skills": mandatory_skills,
             "mandatory_coverage_pct": mandatory_coverage_pct,
+            "core_coverage_pct": core_coverage_pct,
+            "gate_skill_scope": self._gate_scope(mandatory_skills),
             "deterministic_score": deterministic_score,
             "semantic_tier_available": semantic_threshold is not None,
             "NO_VERIFIED_SKILLS": no_verified_skills,
         }
+
+    @staticmethod
+    def _gate_scope(mandatory_skills: list[dict]) -> str:
+        is_classified = any(entry.get("importance") in ("core", "supporting") for entry in mandatory_skills)
+        return GATE_SCOPE_CORE if is_classified else GATE_SCOPE_ALL_MANDATORY
+
+    @classmethod
+    def _gate_skills(cls, mandatory_skills: list[dict]) -> list[dict]:
+        if cls._gate_scope(mandatory_skills) == GATE_SCOPE_ALL_MANDATORY:
+            return list(mandatory_skills)
+        return [entry for entry in mandatory_skills if entry.get("importance") == "core"]
+
+    def _load_alias_names(self, coverage_rows) -> dict:
+        """canonical_name for every alias skill id on these rows - one query, skipped when no row has aliases."""
+        alias_ids = list(dict.fromkeys(
+            alias_id for row in coverage_rows for alias_id in (getattr(row, "alias_skill_ids", None) or [])
+        ))
+        if not alias_ids:
+            return {}
+        return {
+            skill_id: skill.canonical_name
+            for skill_id, skill in self.skill_ontology_repository.get_skills_by_ids(alias_ids).items()
+        }
+
+    @staticmethod
+    def _best_alias_match(row, candidate_skills_by_id: dict):
+        """(alias_skill_id, CandidateSkill) for the candidate's highest-weighted alias of this JD skill, or None."""
+        matches = [
+            (alias_id, candidate_skills_by_id[alias_id])
+            for alias_id in (getattr(row, "alias_skill_ids", None) or [])
+            if alias_id in candidate_skills_by_id
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda pair: float(pair[1].scoring_weight))
 
     def _score_one_mandatory_skill(
         self,
@@ -313,6 +371,7 @@ class CandidateScoringService:
         core_multiplier: float = _DEFAULT_CORE_IMPORTANCE_MULTIPLIER,
         supporting_multiplier: float = _DEFAULT_SUPPORTING_IMPORTANCE_MULTIPLIER,
         hierarchy: dict | None = None,
+        alias_names: dict | None = None,
     ) -> dict:
         canonical_skill_id = row.canonical_skill_id
         weight = float(row.weight) if row.weight is not None else None
@@ -349,6 +408,22 @@ class CandidateScoringService:
                 matched_candidate_skill_canonical_name=canonical_name,
                 importance=importance_label, importance_multiplier=importance_multiplier,
             )
+
+        # Tier 1b: EXACT via one of the JD's aliases for this skill (e.g. a
+        # candidate listing "ITBM" for a "ServiceNow SPM" requirement) -
+        # full credit, same as a direct match.
+        alias_match = self._best_alias_match(row, candidate_skills_by_id)
+        if alias_match is not None:
+            alias_id, candidate_skill = alias_match
+            entry = self._breakdown_entry(
+                canonical_skill_id, canonical_name, mandatory, weight,
+                MandatorySkillMatchType.EXACT, 1.0,
+                float(candidate_skill.scoring_weight), candidate_skill.match_tier, candidate_skill.confidence,
+                matched_candidate_skill_canonical_name=(alias_names or {}).get(alias_id),
+                importance=importance_label, importance_multiplier=importance_multiplier,
+            )
+            entry["matched_via_alias"] = True
+            return entry
 
         # Tier 2: CHILD (depth 1). Inactive (deactivated/deprecated) skills
         # are never valid hierarchy match targets (S03-T01), even if a
@@ -577,20 +652,48 @@ class CandidateScoringService:
             [row.canonical_skill_id for row in coverage_rows]
         )
 
+        alias_names = self._load_alias_names(coverage_rows)
+        candidate_skills_by_id = {}
+        if alias_names:
+            candidate_skills_by_id = {
+                skill.canonical_skill_id: skill
+                for skill in self.skill_repository.get_candidate_normalized_skills(resume_id)
+                if skill.canonical_skill_id is not None and skill.scoring_weight and skill.scoring_weight > 0
+            }
+
         preferred_skills = []
         for row in coverage_rows:
             weight = float(row.weight) if row.weight is not None else None
-            is_exact_match = row.candidate_scoring_weight is not None
             target_skill = skills_by_id.get(row.canonical_skill_id)
             canonical_name = target_skill.canonical_name if target_skill is not None else None
-            preferred_skills.append(self._breakdown_entry(
+
+            alias_match = None if row.candidate_scoring_weight is not None else self._best_alias_match(
+                row, candidate_skills_by_id,
+            )
+            if row.candidate_scoring_weight is not None:
+                candidate_weight, match_tier, confidence, matched_name = (
+                    float(row.candidate_scoring_weight), row.match_tier, row.confidence, canonical_name,
+                )
+            elif alias_match is not None:
+                alias_id, candidate_skill = alias_match
+                candidate_weight, match_tier, confidence, matched_name = (
+                    float(candidate_skill.scoring_weight), candidate_skill.match_tier,
+                    candidate_skill.confidence, alias_names.get(alias_id),
+                )
+            else:
+                candidate_weight, match_tier, confidence, matched_name = None, row.match_tier, row.confidence, None
+
+            is_exact_match = candidate_weight is not None
+            entry = self._breakdown_entry(
                 row.canonical_skill_id, canonical_name, bool(row.mandatory), weight,
                 MandatorySkillMatchType.EXACT if is_exact_match else MandatorySkillMatchType.MISSING,
                 1.0 if is_exact_match else 0.0,
-                float(row.candidate_scoring_weight) if is_exact_match else None,
-                row.match_tier, row.confidence,
-                matched_candidate_skill_canonical_name=canonical_name if is_exact_match else None,
-            ))
+                candidate_weight, match_tier, confidence,
+                matched_candidate_skill_canonical_name=matched_name,
+            )
+            if alias_match is not None:
+                entry["matched_via_alias"] = True
+            preferred_skills.append(entry)
 
         preferred_skill_bonus = round(sum(entry["skill_contribution"] or 0 for entry in preferred_skills), 4)
 
@@ -598,6 +701,52 @@ class CandidateScoringService:
             "preferred_skills": preferred_skills,
             "preferred_skill_bonus": preferred_skill_bonus,
         }
+
+    def compute_technical_score(self, mandatory_breakdown: dict, preferred_breakdown: dict | None) -> float:
+        """
+        technical_score (0-100) =
+            (1 - share) x required score + share x preferred score
+        where share = PREFERRED_SKILL_SHARE (default 0.10), and each score
+        is weighted SUM(contribution)/SUM(max) x 100 over its skills.
+
+        The required score covers non-core required skills (supporting +
+        unclassified legacy). Core skills are gated (see
+        evaluate_skill_qualification), not scored here - unless the JD has
+        no non-core required skills, in which case every mandatory skill
+        is scored so the component never becomes empty. When one side has
+        no skills at all, the other side counts 100%.
+        """
+        mandatory_entries = mandatory_breakdown["mandatory_skills"]
+        scored_entries = [entry for entry in mandatory_entries if entry.get("importance") != "core"]
+        if not scored_entries:
+            scored_entries = list(mandatory_entries)
+        preferred_entries = (preferred_breakdown or {}).get("preferred_skills") or []
+
+        required_score = self._weighted_ratio(scored_entries)
+        preferred_score = self._weighted_ratio(preferred_entries)
+        if required_score is None and preferred_score is None:
+            return 100.0
+        if preferred_score is None:
+            return round(required_score, 2)
+        if required_score is None:
+            return round(preferred_score, 2)
+
+        share = _DEFAULT_PREFERRED_SKILL_SHARE
+        if self.config_repository is not None:
+            configured = self.config_repository.get_configs_by_keys(["PREFERRED_SKILL_SHARE"])
+            if configured.get("PREFERRED_SKILL_SHARE") is not None:
+                share = float(configured["PREFERRED_SKILL_SHARE"])
+
+        return round((1 - share) * required_score + share * preferred_score, 2)
+
+    @staticmethod
+    def _weighted_ratio(entries: list[dict]) -> float | None:
+        """SUM(contribution)/SUM(max) x 100, or None when there is nothing to score."""
+        max_sum = sum(entry["effective_jd_weight"] or 0 for entry in entries)
+        if max_sum <= 0:
+            return None
+        actual_sum = sum(entry["skill_contribution"] or 0 for entry in entries)
+        return (actual_sum / max_sum) * 100
 
     # ------------------------------------------------------------------
     # Skill-stage qualification (core/supporting importance): three checks
@@ -618,22 +767,22 @@ class CandidateScoringService:
         """
         The skill stage passes only when ALL three hold:
 
-        1. required_skill_coverage (breakdown["mandatory_coverage_pct"],
-           reused as-is, never recalculated) >= required_skill_coverage_threshold
-        2. skill_score (the importance-weighted deterministic skill score)
-           >= deterministic_threshold - the SAME campaign.deterministic_threshold
-           every other deterministic comparison already uses, not a second
-           threshold.
+        1. core skill coverage (breakdown["core_coverage_pct"] - CORE
+           required skills only; supporting skills are scored, never gated)
+           >= required_skill_coverage_threshold
+        2. skill_score (technical_score) >= deterministic_threshold - the
+           SAME campaign.deterministic_threshold every other deterministic
+           comparison already uses, not a second threshold.
         3. missing CORE required skills <= max_missing_core_skills (a fixed
            business limit, default 3 - never proportional to how many
            required skills the JD has).
 
-        A required skill whose importance was never classified (NULL - a
-        legacy JDSkill row) never counts toward #3, but still counts
-        against #1 and #2 exactly as any other missing mandatory skill
-        would - it simply isn't eligible for the CORE-specific limit.
+        Legacy JDs whose required skills were never classified (NULL
+        importance) have no CORE skills; for them #1 falls back to every
+        mandatory skill (gate_skill_scope = ALL_MANDATORY) and #3 is always
+        satisfied - their pre-existing behavior.
         """
-        coverage_pct = breakdown["mandatory_coverage_pct"]
+        coverage_pct = breakdown.get("core_coverage_pct", breakdown["mandatory_coverage_pct"])
         coverage_passed = coverage_pct >= required_skill_coverage_threshold
 
         missing_core_skill_count = sum(
@@ -700,8 +849,10 @@ class CandidateScoringService:
                 f"exceeds the maximum allowed ({breakdown['max_missing_core_skills']})"
             )
         if breakdown.get("coverage_passed") is False:
+            is_core_scope = breakdown.get("gate_skill_scope") == GATE_SCOPE_CORE
+            coverage_pct = breakdown.get("core_coverage_pct", breakdown["mandatory_coverage_pct"])
             clauses.append(
-                f"Required skill coverage {breakdown['mandatory_coverage_pct']}% is below "
+                f"{'Core' if is_core_scope else 'Required'} skill coverage {coverage_pct}% is below "
                 f"the required threshold ({breakdown['required_skill_coverage_threshold']}%)"
             )
 
@@ -743,11 +894,20 @@ class CandidateScoringService:
         score_weights: dict | None = None,
         required_skill_coverage_threshold: float = DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD,
         max_missing_core_skills: int = DEFAULT_MAX_MISSING_CORE_SKILLS,
+        domain_result: dict | None = None,
     ) -> dict:
         """
         Builds the hierarchy-aware mandatory-skill breakdown and persists it
         onto campaign_candidates.score_breakdown, deterministic_score and
         deterministic_passed.
+
+        Final score = renormalized blend of
+            w_skills     x technical_score  (supporting + preferred skills)
+          + w_functional x functional score (domain_result, DomainCapabilityMatchingService)
+          + w_experience x experience score
+          + w_education  x education score
+        Core skills never enter the blend - they only gate (core coverage
+        and missing-core limit). Domain capabilities never gate.
 
         deterministic_score = (SUM mandatory contributions / SUM max
         mandatory contributions) x 100 - computed entirely in
@@ -802,8 +962,11 @@ class CandidateScoringService:
             raise ValueError(f"CampaignCandidate '{campaign_candidate_id}' not found.")
 
         breakdown = self.build_mandatory_skill_breakdown(jd_id, resume_id)
+        preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
 
-        skill_score = breakdown["deterministic_score"]
+        breakdown["mandatory_skill_score"] = breakdown["deterministic_score"]
+        skill_score = self.compute_technical_score(breakdown, preferred_breakdown)
+        breakdown["technical_score"] = skill_score
         # Part 7: the skill stage passes on ALL THREE checks - required
         # skill coverage, the importance-weighted skill score vs.
         # deterministic_threshold, and the missing-CORE-skill limit - never
@@ -820,11 +983,10 @@ class CandidateScoringService:
         )
         breakdown.update(skill_qualification)
 
-        preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
         breakdown["preferred_skills"] = preferred_breakdown["preferred_skills"]
         breakdown["preferred_skill_bonus"] = preferred_breakdown["preferred_skill_bonus"]
 
-        if experience_result is None and education_result is None:
+        if experience_result is None and education_result is None and domain_result is None:
             # No M07-E02 inputs supplied - skill_score IS the final score in
             # this branch, so skill_qualification_passed (which already
             # includes skill_score >= deterministic_threshold) fully
@@ -846,13 +1008,16 @@ class CandidateScoringService:
             structural_passed = skill_qualification["coverage_passed"] and skill_qualification["core_gap_passed"]
             final_score, final_passed = self._combine_deterministic_score(
                 skill_score, structural_passed, experience_result, education_result,
-                score_weights, float(deterministic_threshold),
+                score_weights, float(deterministic_threshold), domain_result=domain_result,
             )
             breakdown["skill_deterministic_score"] = skill_score
             if experience_result is not None:
                 breakdown["experience_validation"] = experience_result
             if education_result is not None:
                 breakdown["education_validation"] = education_result
+            if domain_result is not None:
+                breakdown["domain_capability_validation"] = domain_result
+                breakdown["functional_score"] = domain_result.get("score")
 
         breakdown["deterministic_threshold"] = float(deterministic_threshold)
         breakdown["deterministic_score"] = final_score
@@ -869,15 +1034,20 @@ class CandidateScoringService:
     # education are "applicable" (see ExperienceEducationValidationService
     # docstring for what SKIPPED/DATA_MISSING mean) - skills is always
     # applicable (it has no such concept), so this never divides by zero.
-    _DEFAULT_SCORE_WEIGHTS = {"skills": 0.70, "experience": 0.15, "education": 0.15}
+    # "functional" (domain capabilities) sits outside the original 1.0
+    # budget on purpose: renormalization means a JD with no domain
+    # capabilities (every legacy JD) blends exactly as before.
+    _DEFAULT_SCORE_WEIGHTS = {"skills": 0.70, "functional": 0.15, "experience": 0.15, "education": 0.15}
 
     def _combine_deterministic_score(
         self, skill_score, mandatory_skills_passed, experience_result, education_result,
-        score_weights, deterministic_threshold,
+        score_weights, deterministic_threshold, domain_result=None,
     ) -> tuple[float, bool]:
-        weights = score_weights or self._DEFAULT_SCORE_WEIGHTS
+        weights = {**self._DEFAULT_SCORE_WEIGHTS, **(score_weights or {})}
 
         components = [(skill_score, weights["skills"])]
+        if domain_result is not None and domain_result["applicable"]:
+            components.append((domain_result["score"], weights["functional"]))
         if experience_result is not None and experience_result["applicable"]:
             components.append((experience_result["score"], weights["experience"]))
         if education_result is not None and education_result["applicable"]:

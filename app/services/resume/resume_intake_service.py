@@ -20,7 +20,7 @@ from app.tasks.resume_processing_tasks import (
     RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
     process_resume_document,
 )
-from app.websocket.publisher import publish_board_candidate_added
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -144,13 +144,7 @@ class ResumeIntakeService:
         # insert (CampaignCandidateService itself never commits this branch;
         # it shares this request's session, and this is the first commit
         # reached after that insert). Never allowed to fail the upload.
-        try:
-            publish_board_candidate_added(campaign_id, campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.candidate_added for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().added(campaign_id, campaign_candidate)
 
         logger.info("Resume stored | resume_id=%s campaign_id=%s", resume.id, campaign_id)
 

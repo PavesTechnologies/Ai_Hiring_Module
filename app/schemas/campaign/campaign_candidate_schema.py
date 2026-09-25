@@ -276,6 +276,11 @@ class DeterministicScoreSummary(BaseModel):
     status: str | None = None
     threshold: float | None = None
     mandatory_coverage_pct: float | None = None
+    # Coverage the hard gate actually checks: CORE skills only, or every
+    # mandatory skill on legacy unclassified JDs (see gate_skill_scope).
+    core_coverage_pct: float | None = None
+    gate_skill_scope: str | None = None
+    missing_core_skill_count: int | None = None
     mandatory_skills_matched: int | None = None
     mandatory_skills_total: int | None = None
     preferred_skills_matched: int | None = None
@@ -312,7 +317,9 @@ class MandatorySkillBreakdownItem(BaseModel):
     jd_skill: str | None = None
     candidate_skill: str | None = None
     mandatory: bool | None = None
+    importance: str | None = None
     match_type: str | None = None
+    matched_via_alias: bool = False
     configured_weight: float | None = None
     # candidate_scoring_weight from the skill-normalization step (e.g. a
     # FUZZY/SEMANTIC text match is scored below 1.0) - named for the UI's
@@ -382,15 +389,27 @@ class EducationValidationDetail(BaseModel):
     passed: bool | None = None
 
 
+class DomainCapabilityMatchItem(BaseModel):
+    capability: str
+    score: float
+    evidence: str | None = None
+
+
 class ScoreCalculationDetail(BaseModel):
     skills_score: float | None = None
+    # Domain-capability (functional) component; null when the JD has no
+    # domain capabilities or the breakdown predates this component.
+    functional_score: float | None = None
     experience_score: float | None = None
     education_score: float | None = None
     final_score: float | None = None
+    required_domain_capabilities: list[DomainCapabilityMatchItem] = []
+    preferred_domain_capabilities: list[DomainCapabilityMatchItem] = []
 
 
 class ScoreConfigurationDetail(BaseModel):
     skills_weight: float | None = None
+    functional_weight: float | None = None
     experience_weight: float | None = None
     education_weight: float | None = None
     deterministic_threshold: float | None = None

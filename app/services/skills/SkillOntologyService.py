@@ -51,13 +51,11 @@ from app.services.embedding_queue_service import EmbeddingQueueError, EmbeddingQ
 from app.utils.excel.skill_excel_reader import SkillExcelReader
 from app.utils.excel_export import ExcelExport
 from app.core.config import settings
+from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import (
-    skill_alias_catalog_key,
-    skill_catalog_key,
     skill_categories_key,
     skill_dashboard_summary_key,
     skill_key,
-    skill_prefix,
 )
 from app.services.cache_service import CacheService
 
@@ -99,17 +97,7 @@ class SkillOntologyService:
         self.cache_service = cache_service
 
     def _invalidate_skill_caches(self, skill_id: UUID | None = None) -> None:
-        if not self.cache_service:
-            return
-        if skill_id is not None:
-            self.cache_service.delete(skill_key(skill_id))
-        self.cache_service.delete(
-            skill_dashboard_summary_key(),
-            skill_categories_key(),
-            skill_catalog_key(),
-            skill_alias_catalog_key(),
-        )
-        self.cache_service.delete_by_prefix(skill_prefix())
+        CacheInvalidator(self.cache_service).skills(skill_id)
 
     def get_dashboard_summary(self) -> SkillOntologySummaryResponse:
         if not self.cache_service:
