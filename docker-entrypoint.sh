@@ -85,14 +85,26 @@ case "${ROLE}" in
         require_env
         echo "worker" > "${ROLE_FILE}"
         # No --pool flag: celery_app.py already selects the pool by platform
-        # (solo on Windows, prefork elsewhere), and this image is Linux, so it
-        # correctly gets prefork. Concurrency is capped low because each
-        # prefork child holds its own engine - PostgreSQL connections are
-        # roughly CELERY_CONCURRENCY x 3.
-        log "starting celery worker (concurrency=${CELERY_CONCURRENCY})"
+        # (solo on Windows, prefork elsewhere; CELERY_WORKER_POOL overrides),
+        # and this image is Linux, so it correctly gets prefork. Concurrency is
+        # capped low because each prefork child holds its own engine -
+        # PostgreSQL connections are roughly CELERY_CONCURRENCY x 3.
+        #
+        # CELERY_QUEUES (optional, comma-separated) picks which queues this
+        # container consumes. Unset = every declared queue, i.e. one worker
+        # runs everything. To isolate LLM traffic, run two worker containers:
+        #   CELERY_QUEUES=llm     CELERY_CONCURRENCY=2  (caps concurrent LLM requests)
+        #   CELERY_QUEUES=celery  CELERY_CONCURRENCY=4  (scoring, embeddings, email, beat jobs)
+        # Queue names follow CELERY_LLM_QUEUE / CELERY_DEFAULT_QUEUE.
+        queue_args=()
+        if [ -n "${CELERY_QUEUES:-}" ]; then
+            queue_args=(--queues "${CELERY_QUEUES}")
+        fi
+        log "starting celery worker (concurrency=${CELERY_CONCURRENCY}, queues=${CELERY_QUEUES:-all})"
         exec celery -A "${CELERY_APP}" worker \
             --concurrency "${CELERY_CONCURRENCY}" \
             --loglevel "${CELERY_LOGLEVEL}" \
+            ${queue_args[@]+"${queue_args[@]}"} \
             --without-gossip \
             --without-mingle
         ;;

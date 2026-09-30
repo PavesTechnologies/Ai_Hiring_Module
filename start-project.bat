@@ -69,6 +69,28 @@ REM For a long batch run where restarts are unacceptable, start the worker
 REM without watchmedo: celery -A app.core.celery_app worker --pool=solo
 set "CELERY_DEBOUNCE_INTERVAL=2"
 
+REM Pool, concurrency and queues are read from .env (CELERY_WORKER_POOL,
+REM CELERY_CONCURRENCY, CELERY_QUEUES) so this script and the app share one
+REM source of truth. Empty or missing = solo pool, one task at a time, all
+REM queues. For parallel tasks on Windows set CELERY_WORKER_POOL=threads and
+REM CELERY_CONCURRENCY=4 (and DB_POOL_SIZE at least that high).
+set "CELERY_POOL="
+set "CELERY_CONC="
+set "CELERY_QUEUE_LIST="
+if exist "%PROJECT_DIR%.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%PROJECT_DIR%.env") do (
+        if /i "%%A"=="CELERY_WORKER_POOL" set "CELERY_POOL=%%B"
+        if /i "%%A"=="CELERY_CONCURRENCY" set "CELERY_CONC=%%B"
+        if /i "%%A"=="CELERY_QUEUES" set "CELERY_QUEUE_LIST=%%B"
+    )
+)
+if not defined CELERY_POOL set "CELERY_POOL=solo"
+if not defined CELERY_CONC set "CELERY_CONC=1"
+if /i "%CELERY_POOL%"=="solo" set "CELERY_CONC=1"
+set "CELERY_QUEUE_ARG="
+if defined CELERY_QUEUE_LIST set "CELERY_QUEUE_ARG=--queues=%CELERY_QUEUE_LIST%"
+if defined CELERY_QUEUE_LIST (set "CELERY_QUEUE_LABEL=%CELERY_QUEUE_LIST%") else (set "CELERY_QUEUE_LABEL=all")
+
 REM ----------------------------------------------------------------------------
 REM FastAPI
 REM ----------------------------------------------------------------------------
@@ -146,7 +168,7 @@ echo ============================================================
 echo  AIRS Application Ready
 echo ============================================================
 echo  Redis   : READY (docker://%REDIS_CONTAINER%)
-echo  Celery  : READY + AUTO-RELOAD
+echo  Celery  : READY + AUTO-RELOAD (pool=%CELERY_POOL%, concurrency=%CELERY_CONC%, queues=%CELERY_QUEUE_LABEL%)
 echo  FastAPI : READY + AUTO-RELOAD
 echo  API     : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%
 echo  Docs    : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%/docs
@@ -347,6 +369,7 @@ REM Start Celery with auto-reload
 REM ----------------------------------------------------------------------------
 
 echo   [START] Starting Celery worker with AUTO-RELOAD...
+echo   [MODE]  pool=%CELERY_POOL% concurrency=%CELERY_CONC% queues=%CELERY_QUEUE_LABEL%
 echo   [WATCH] Watching: %CELERY_WATCH_DIR%
 echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
 echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
@@ -361,7 +384,9 @@ watchmedo auto-restart ^
 -- ^
 celery -A %CELERY_APP% worker ^
 --loglevel=%CELERY_LOGLEVEL% ^
---pool=solo
+--pool=%CELERY_POOL% ^
+--concurrency=%CELERY_CONC% ^
+%CELERY_QUEUE_ARG%
 
 
 REM ----------------------------------------------------------------------------

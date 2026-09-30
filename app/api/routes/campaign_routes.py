@@ -473,10 +473,15 @@ def get_processing_status(campaign_id: UUID,
 def get_dead_letter_queue(campaign_id: UUID,
     limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
+    include_resolved: bool = Query(
+        default=False, description="Also list chains whose task later succeeded (audit view).",
+    ),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
-    page = service.get_dead_letter_queue_for_campaign(campaign_id, limit=limit, offset=offset)
+    page = service.get_dead_letter_queue_for_campaign(
+        campaign_id, limit=limit, offset=offset, include_resolved=include_resolved,
+    )
     return APIResponse.ok(data=page, message="Dead letter queue entries retrieved successfully.")
 
 

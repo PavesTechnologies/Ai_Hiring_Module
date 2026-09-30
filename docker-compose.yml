@@ -118,6 +118,10 @@ services:
       # connections are roughly CELERY_CONCURRENCY x 3. Keep this low against
       # a shared RDS instance.
       CELERY_CONCURRENCY: "2"
+      # Unset = this worker consumes every queue. To cap LLM traffic
+      # separately, run a second worker service with CELERY_QUEUES: "llm"
+      # (low concurrency) and set this one to CELERY_QUEUES: "celery".
+      # CELERY_QUEUES: "celery"
     depends_on:
       redis:
         condition: service_healthy

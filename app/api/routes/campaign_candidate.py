@@ -32,7 +32,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
     CandidateTimelineResponse,
     HrOverrideRequest,
-    MovePipelineStageRequest,
     OverrideReportResponse,
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,

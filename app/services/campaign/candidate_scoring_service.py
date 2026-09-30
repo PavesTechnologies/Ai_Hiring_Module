@@ -702,7 +702,7 @@ class CandidateScoringService:
             "preferred_skill_bonus": preferred_skill_bonus,
         }
 
-    def compute_technical_score(self, mandatory_breakdown: dict, preferred_breakdown: dict | None) -> float:
+    def compute_technical_score(self, mandatory_breakdown: dict, preferred_breakdown: dict | None) -> float | None:
         """
         technical_score (0-100) =
             (1 - share) x required score + share x preferred score
@@ -715,6 +715,12 @@ class CandidateScoringService:
         no non-core required skills, in which case every mandatory skill
         is scored so the component never becomes empty. When one side has
         no skills at all, the other side counts 100%.
+
+        None when the JD has nothing to score as skills at all - e.g. a
+        non-technical JD whose skills are all still unknown to the catalog.
+        The technical component is then left out of the blend rather than
+        scored 100 for every candidate, which would let the constant
+        dominate the final score.
         """
         mandatory_entries = mandatory_breakdown["mandatory_skills"]
         scored_entries = [entry for entry in mandatory_entries if entry.get("importance") != "core"]
@@ -725,7 +731,7 @@ class CandidateScoringService:
         required_score = self._weighted_ratio(scored_entries)
         preferred_score = self._weighted_ratio(preferred_entries)
         if required_score is None and preferred_score is None:
-            return 100.0
+            return None
         if preferred_score is None:
             return round(required_score, 2)
         if required_score is None:
@@ -791,7 +797,8 @@ class CandidateScoringService:
         )
         core_gap_passed = missing_core_skill_count <= max_missing_core_skills
 
-        score_passed = skill_score >= float(deterministic_threshold)
+        # No scorable skills (skill_score None) - nothing to fail on here.
+        score_passed = skill_score is None or skill_score >= float(deterministic_threshold)
 
         return {
             "required_skill_coverage_threshold": float(required_skill_coverage_threshold),
@@ -993,7 +1000,8 @@ class CandidateScoringService:
             # determines final_passed - identical to pre-M07-E02 behavior
             # whenever coverage/core-gap aren't configured to gate anything
             # (their defaults are always-satisfied).
-            final_score = skill_score
+            # Nothing to score at all keeps the legacy "no requirements" 100.
+            final_score = skill_score if skill_score is not None else 100.0
             final_passed = skill_qualification["skill_qualification_passed"]
         else:
             # Coverage and core-gap are pure skill-stage structural checks
@@ -1045,7 +1053,7 @@ class CandidateScoringService:
     ) -> tuple[float, bool]:
         weights = {**self._DEFAULT_SCORE_WEIGHTS, **(score_weights or {})}
 
-        components = [(skill_score, weights["skills"])]
+        components = [] if skill_score is None else [(skill_score, weights["skills"])]
         if domain_result is not None and domain_result["applicable"]:
             components.append((domain_result["score"], weights["functional"]))
         if experience_result is not None and experience_result["applicable"]:
@@ -1054,10 +1062,11 @@ class CandidateScoringService:
             components.append((education_result["score"], weights["education"]))
 
         weight_sum = sum(weight for _, weight in components)
-        combined_score = (
-            round(sum(score * weight for score, weight in components) / weight_sum, 2)
-            if weight_sum > 0 else skill_score
-        )
+        if weight_sum > 0:
+            combined_score = round(sum(score * weight for score, weight in components) / weight_sum, 2)
+        else:
+            # Nothing applicable to score - the legacy "no requirements" 100.
+            combined_score = skill_score if skill_score is not None else 100.0
 
         # The campaign threshold is validated exactly once, here, against
         # combined_score - never separately against skill_score.

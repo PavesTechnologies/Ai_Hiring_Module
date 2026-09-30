@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 
 from app.models.candidates import ParseStatus
+from app.schemas.campaign.layer_failure_schema import LayerFailureResponse
 from app.models.pipeline import (
     AIEvaluationStatus,
     AIRecommendation,
@@ -129,17 +130,6 @@ class CampaignBoardResponse(BaseModel):
     campaign_id: UUID
     columns: list[CampaignBoardColumn]
     other_count: int = 0
-
-
-class MovePipelineStageRequest(BaseModel):
-    """Pipeline Board drag-and-drop - move one candidate to an arbitrary target stage."""
-    to_stage: PipelineStage
-    # Only required when the specific from->to transition's allowed_transitions
-    # row has requires_reason=True - PipelineTransitionService enforces this,
-    # not this schema.
-    reason: str | None = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class CampaignCandidateSummaryResponse(BaseModel):
@@ -601,6 +591,9 @@ class CandidateDeterministicResponse(BaseModel):
     campaign_candidate_id: UUID
     deterministic_score: float | None = None
     deterministic_score_breakdown: DeterministicScoreBreakdownResponse | None = None
+    # Set when this layer's task dead-lettered and it has no result yet -
+    # lets the tab explain why it's empty and offer a DLQ retry.
+    failure: LayerFailureResponse | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -690,6 +683,9 @@ class CandidateSemanticResponse(BaseModel):
     campaign_candidate_id: UUID
     semantic_score: float | None = None
     semantic_score_breakdown: SemanticScoreBreakdownResponse | None = None
+    # Set when this layer's task dead-lettered and it has no result yet -
+    # lets the tab explain why it's empty and offer a DLQ retry.
+    failure: LayerFailureResponse | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -723,6 +719,9 @@ class CandidateAIEvaluationResponse(BaseModel):
     ai_strengths: list[str] | None = None
     ai_weaknesses: list[str] | None = None
     ai_response_json: dict | None = None
+    # Set when this layer's task dead-lettered and it has no result yet -
+    # lets the tab explain why it's empty and offer a DLQ retry.
+    failure: LayerFailureResponse | None = None
 
     model_config = ConfigDict(
         json_schema_extra={

@@ -9,7 +9,6 @@ from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_service import CampaignService
-from app.services.campaign.campaign_scheduler_service import CampaignSchedulerService
 from app.repositories.campaign_weight_preset_repository import (
     CampaignWeightPresetRepository,
 )
@@ -108,16 +107,4 @@ def get_upload_history_service(
         campaign_repo=campaign_repo,
         resume_repo=resume_repo,
         bulk_upload_job_repo=bulk_upload_job_repo,
-    )
-
-
-def get_campaign_scheduler_service(
-    campaign_repo: CampaignRepository = Depends(get_campaign_repository),
-    audit_service: AuditService = Depends(get_audit_service),
-    config_repo: ConfigRepository = Depends(get_config_repository),
-) -> CampaignSchedulerService:
-    return CampaignSchedulerService(
-        campaign_repo=campaign_repo,
-        audit_service=audit_service,
-        config_repo=config_repo,
     )

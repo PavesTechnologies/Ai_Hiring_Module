@@ -39,36 +39,6 @@ class ConfidenceSourceNormalizationMixin:
         return _normalize_choice(value, allowed=SOURCE_VALUES, label="Source")
 
 
-class SkillOntologyFilterRequest(BaseModel):
-    page: int = Field(default=1, ge=1)
-
-    page_size: int = Field(default=20, ge=1, le=100)
-
-    search: str | None = None
-
-    category: str | None = None
-
-    confidence: Literal[
-        "verified",
-        "unverified",
-    ] | None = None
-
-    source: Literal[
-        "seed",
-        "admin",
-        "auto_extracted",
-    ] | None = None
-
-    include_inactive: bool = False
-
-    sort_by: str = "occurrence_count"
-
-    sort_order: Literal[
-        "asc",
-        "desc",
-    ] = "desc"
-
-
 class SkillOntologyUpdateRequest(BaseModel, ConfidenceSourceNormalizationMixin):
     """PATCH body for editing a skill. Only fields present in the request are applied."""
 

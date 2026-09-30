@@ -76,7 +76,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MissingSkillOccurrence,
     OverrideReportResponse,
     OverrideReportRow,
-    ProcessingTimelineEntry,
     OverrideWeeklyTrendPoint,
     PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
@@ -100,6 +99,13 @@ from app.schemas.campaign.campaign_candidate_schema import (
     UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
+from app.schemas.campaign.layer_failure_schema import LayerFailureResponse
+from app.services.campaign.layer_failure import (
+    LAYER_AI,
+    LAYER_DETERMINISTIC,
+    LAYER_SEMANTIC,
+    get_layer_failures,
+)
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
@@ -1338,6 +1344,7 @@ class CampaignCandidateService:
                 if campaign_candidate.deterministic_score is not None else None
             ),
             deterministic_score_breakdown=deterministic_score_breakdown,
+            failure=self._layer_failure(campaign_candidate, LAYER_DETERMINISTIC),
         )
 
     def get_candidate_semantic(self, campaign_candidate_id: UUID) -> CandidateSemanticResponse:
@@ -1362,6 +1369,7 @@ class CampaignCandidateService:
                 if campaign_candidate.semantic_score is not None else None
             ),
             semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+            failure=self._layer_failure(campaign_candidate, LAYER_SEMANTIC),
         )
 
     def get_candidate_ai_evaluation(self, campaign_candidate_id: UUID) -> CandidateAIEvaluationResponse:
@@ -1396,7 +1404,12 @@ class CampaignCandidateService:
             ai_strengths=ai_evaluation.ai_strengths if ai_evaluation else None,
             ai_weaknesses=ai_evaluation.ai_weaknesses if ai_evaluation else None,
             ai_response_json=ai_evaluation.ai_response_json if ai_evaluation else None,
+            failure=self._layer_failure(campaign_candidate, LAYER_AI),
         )
+
+    def _layer_failure(self, campaign_candidate: CampaignCandidate, layer: str) -> LayerFailureResponse | None:
+        """This layer's open dead-lettered task, if it stopped there - additive, best-effort."""
+        return get_layer_failures(self.dead_letter_queue_repo, campaign_candidate).get(layer)
 
     @staticmethod
     def _build_semantic_score_breakdown(
@@ -1440,41 +1453,6 @@ class CampaignCandidateService:
             matched_keywords=breakdown.get("matched_keywords") or [],
             semantic_explanation=breakdown.get("semantic_explanation"),
         )
-
-    def _build_processing_timeline(self, campaign_candidate_id: UUID) -> list[ProcessingTimelineEntry]:
-        """
-        Epic 4 (M05-E04) Phase D2 - every celery_task_log row for this
-        candidate, oldest first. Read-only; nothing here writes to
-        celery_task_log or recalculates anything the tasks themselves
-        already recorded.
-        """
-        if self.celery_task_log_service is None:
-            return []
-
-        logs = self.celery_task_log_service.repository.get_by_campaign_candidate_id(campaign_candidate_id)
-
-        return [
-            ProcessingTimelineEntry(
-                task_type=log.task_type,
-                status=log.status.value,
-                queued_at=log.queued_at,
-                started_at=log.started_at,
-                completed_at=log.completed_at,
-                duration_display=self._format_duration(log.started_at, log.completed_at),
-                error_message=log.error_message,
-            )
-            for log in logs
-        ]
-
-    @staticmethod
-    def _format_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
-        if started_at is None or completed_at is None:
-            return None
-        seconds = (completed_at - started_at).total_seconds()
-        if seconds < 60:
-            return f"{seconds:.1f} seconds"
-        minutes, remaining_seconds = divmod(int(seconds), 60)
-        return f"{minutes}m {remaining_seconds}s"
 
     def _build_rejection_banner(self, campaign_candidate: CampaignCandidate) -> dict:
         is_overridden = campaign_candidate.decision_type == DecisionType.RESET
@@ -1648,9 +1626,14 @@ class CampaignCandidateService:
 
         from app.services.campaign.candidate_scoring_service import _degree_level_display
 
-        skills_score = breakdown.get("skill_deterministic_score")
-        if skills_score is None:
-            skills_score = breakdown.get("deterministic_score")
+        if "technical_score" in breakdown:
+            # Current breakdowns: None when the JD had no scorable skills,
+            # which the UI shows as "-" rather than the final score.
+            skills_score = breakdown["technical_score"]
+        else:
+            skills_score = breakdown.get("skill_deterministic_score")
+            if skills_score is None:
+                skills_score = breakdown.get("deterministic_score")
 
         # Reuses candidate_rejections.rejection_reason exactly as already
         # resolved by _build_rejection_banner (passed in by the caller) -

@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.schemas.campaign.campaign_candidate_schema import AiSummaryDetail
+from app.schemas.campaign.layer_failure_schema import LayerFailureResponse
 
 
 class StageExecutionDetail(BaseModel):
@@ -219,3 +220,8 @@ class ResumeParsedJsonResponse(BaseModel):
     # AI-generated recommendation blurb - distinct from parsed_json's own
     # resume summary field. Null until AI evaluation has actually run.
     ai_candidate_summary: AiSummaryDetail | None = None
+
+    # Scoring layers whose task dead-lettered and that still have no result
+    # (same entries each tab endpoint returns as `failure`) - lets the
+    # scorecard header flag a stuck candidate before any tab is opened.
+    failed_layers: list[LayerFailureResponse] = []

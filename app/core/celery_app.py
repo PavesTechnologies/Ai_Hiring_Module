@@ -2,6 +2,7 @@ import platform
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.core.config import settings
 
@@ -50,19 +51,45 @@ celery_app.conf.update(
     # so don't write a celery-task-meta key per task into the shared Redis.
     task_ignore_result=True,
     result_expires=3600,
+    worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
 )
 
-# ── Worker pool: Windows dev vs. Linux production ────────────────────────────
+# ── Queues: LLM tasks isolated from everything else ─────────────────────────
+# Only these tasks call the LLM provider. Routing them to their own queue lets
+# a deployment run one worker for them at low concurrency (capping concurrent
+# provider requests, so no 429 storms) and another for scoring/embeddings/
+# emails at higher concurrency - neither waits behind the other. Routing is by
+# task name, so every enqueue path (API, retries, DLQ replay, recovery scans)
+# follows it automatically.
+LLM_TASK_NAMES = (
+    "jd.process_document",
+    "resume.process_document",
+    "bulk_upload.parse_file",
+    "scoring.calculate_ai_evaluation",
+)
+
+_queue_names = list(dict.fromkeys([settings.celery_default_queue, settings.celery_llm_queue]))
+celery_app.conf.task_default_queue = settings.celery_default_queue
+# A worker started without -Q consumes every queue declared here, so a single
+# worker (local dev, or a small deployment) still runs everything.
+celery_app.conf.task_queues = tuple(Queue(name) for name in _queue_names)
+celery_app.conf.task_routes = {name: {"queue": settings.celery_llm_queue} for name in LLM_TASK_NAMES}
+if settings.celery_llm_task_rate_limit:
+    celery_app.conf.task_annotations = {
+        name: {"rate_limit": settings.celery_llm_task_rate_limit} for name in LLM_TASK_NAMES
+    }
+
+# ── Worker pool ──────────────────────────────────────────────────────────────
 # billiard's prefork pool (Celery's default) forks worker processes with
 # os.fork(), which Windows does not support — it surfaces as a PermissionError
-# at worker startup rather than a clean "unsupported" error. Detecting the
-# platform here (instead of hardcoding a pool in a startup script/CLI flag)
-# means the same `celery -A app.core.celery_app worker` command works
-# unchanged on every developer's Windows machine AND in production, with no
-# env var or manual flag to remember. Linux production hosts fall through
-# untouched and keep Celery's default "prefork" pool (multi-process, so it
-# still scales across CPU cores there).
-if platform.system() == "Windows":
+# at worker startup rather than a clean "unsupported" error. So Windows falls
+# back to "solo" (one task at a time) unless CELERY_WORKER_POOL overrides it -
+# "threads" runs tasks in parallel there (fine for this I/O-bound workload;
+# raise DB_POOL_SIZE with --concurrency, since threads share one engine).
+# Linux keeps Celery's default "prefork" unless overridden.
+if settings.celery_worker_pool:
+    celery_app.conf.worker_pool = settings.celery_worker_pool
+elif platform.system() == "Windows":
     celery_app.conf.worker_pool = "solo"
 
 celery_app.conf.imports = (

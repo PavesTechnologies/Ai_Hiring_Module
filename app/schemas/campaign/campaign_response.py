@@ -78,18 +78,3 @@ class WeightHistoryItemResponse(BaseModel):
 class CampaignWeightHistoryResponse(BaseModel):
     history: list[WeightHistoryItemResponse]
     message: str | None = None  
-
-class HiringCampaignResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    campaign_id: UUID
-    campaign_name: str
-    status: str
-    jd_title: str
-    jd_version: int
-    max_candidates: int
-    hiring_manager: str | None
-    max_candidates: int | None
-    candidate_count: int
-    shortlisted_count: int
-    deadline: datetime | None

@@ -271,3 +271,29 @@ def test_legacy_unclassified_jd_keeps_gating_on_every_mandatory_skill():
     assert breakdown["gate_skill_scope"] == GATE_SCOPE_ALL_MANDATORY
     assert breakdown["core_coverage_pct"] == 50.0
     assert breakdown["coverage_passed"] is False
+
+
+# ---------------------------------------------------------------- nothing to score as skills
+
+
+def test_technical_score_is_none_when_the_jd_has_no_scorable_skills():
+    service, _ = _service(set())
+
+    assert service.compute_technical_score({"mandatory_skills": []}, {"preferred_skills": []}) is None
+    assert service.compute_technical_score({"mandatory_skills": []}, None) is None
+
+
+def test_empty_technical_component_is_left_out_of_the_blend_not_scored_100():
+    service, campaign_candidate = _service(set())
+    service.skill_repository.get_mandatory_skill_coverage.side_effect = lambda jd_id, resume_id, mandatory=True: []
+    domain_result = {"applicable": True, "skipped": False, "data_missing": False, "passed": True, "score": 40.0,
+                     "required": [], "preferred": []}
+
+    breakdown = _score(
+        service, campaign_candidate, domain_result=domain_result, deterministic_threshold=30.0,
+        score_weights={"skills": 0.7, "functional": 0.3, "experience": 0.0, "education": 0.0},
+    )
+
+    assert breakdown["technical_score"] is None
+    assert breakdown["deterministic_score"] == 40.0
+    assert breakdown["deterministic_passed"] is True

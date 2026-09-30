@@ -261,12 +261,31 @@ def test_prompt_blocks_generic_standalone_fragments():
     assert '"ServiceNow development" → "ServiceNow"' in _JD_PARSE_TEXT
 
 
-def test_prompt_routes_functional_items_to_domain_capabilities_and_tightens_core():
+def test_prompt_tightens_core_and_keeps_generic_items_out_of_it():
     assert "Technical Methodologies explicitly listed as skills" not in _JD_PARSE_TEXT
-    assert "never into required_skills or preferred_skills" in _JD_PARSE_TEXT
     assert 'is NOT evidence of core' in _JD_PARSE_TEXT
-    assert "Typically 2 to 5 skills" in _JD_PARSE_TEXT
-    assert "put it in domain_capabilities, not in skills" in _JD_PARSE_TEXT
+    assert "Never mark as core: API styles, architectures or engineering practices" in _JD_PARSE_TEXT
+
+
+def test_prompt_reads_all_required_heading_variants():
+    for heading in ("Required Skills", "Key Skills", "Must Have", "Need to Have", "Core Competencies"):
+        assert heading in _JD_PARSE_TEXT
+
+
+def test_prompt_is_role_aware_for_non_technical_competencies():
+    assert "NON-TECHNICAL role" in _JD_PARSE_TEXT
+    assert "Generic behavioural traits are soft skills, never skills" in _JD_PARSE_TEXT
+    assert "conflict resolution" in _JD_PARSE_TEXT
+
+
+def test_prompt_extracts_named_tools_not_categories_and_not_as_aliases():
+    assert "extract the named tools as separate skills" in _JD_PARSE_TEXT
+    assert "The tools are NOT aliases" in _JD_PARSE_TEXT
+    assert "Aliases are only different names for the SAME product or technology" in _JD_PARSE_TEXT
+
+
+def test_resume_prompt_extracts_listed_professional_competencies():
+    assert "Professional competencies listed by name" in _RESUME_PARSE_TEXT
 
 
 def test_prompt_records_aliases_instead_of_separate_skills():

@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 from app.models.async_tasks import (
@@ -8,6 +9,9 @@ from app.models.async_tasks import (
 from app.repositories.celery_task_log_repository import (
     CeleryTaskLogRepository,
 )
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+
+logger = logging.getLogger(__name__)
 
 
 class CeleryTaskLogService:
@@ -76,9 +80,44 @@ class CeleryTaskLogService:
         log.completed_at = datetime.now(timezone.utc)
 
         log = self.repository.update(log)
+        self._resolve_dead_letters(log)
         self.repository.commit()          # <-- IMPORTANT
 
         return log
+
+    def _resolve_dead_letters(self, log: CeleryTaskLog) -> None:
+        """
+        This task type now succeeded for this candidate/resume, so any
+        earlier dead-lettered attempts of it are resolved - kept for audit
+        and the replay-limit count, but dropped from the open DLQ view and
+        no longer replayable. Covers DLQ replays and any other later
+        success (e.g. a manual rescore) alike.
+
+        Runs in a SAVEPOINT inside the success commit: adds no commit of its
+        own, and a failure here is logged and rolled back to the savepoint
+        without affecting the task's SUCCESS write.
+        """
+        campaign_candidate_id = getattr(log, "campaign_candidate_id", None)
+        resume_id = getattr(log, "resume_id", None)
+        if campaign_candidate_id is None and resume_id is None:
+            return
+        db = getattr(self.repository, "db", None)
+        if db is None:
+            return
+        try:
+            with db.begin_nested():
+                DeadLetterQueueRepository(db).resolve_open(
+                    task_type=log.task_type,
+                    campaign_candidate_id=campaign_candidate_id,
+                    resume_id=resume_id,
+                    resolved_at=log.completed_at or datetime.now(timezone.utc),
+                    resolution_notes=f"Resolved: re-run succeeded (task {log.task_id}).",
+                )
+        except Exception:
+            logger.exception(
+                "Failed to resolve dead-letter entries for task_id=%s task_type=%s",
+                getattr(log, "task_id", None), getattr(log, "task_type", None),
+            )
 
     def mark_failure(
         self,

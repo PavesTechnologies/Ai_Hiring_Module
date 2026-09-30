@@ -5,7 +5,7 @@ from app.services.llm.base import LLMProvider
 class LLMExtractionService:
     """
     Provider-agnostic entry point for every AI step. Callers keep the exact
-    call shapes GeminiExtractionService had; which provider/model actually
+    call shapes the old Gemini-only service had; which provider/model actually
     runs is decided by the LLMProvider passed in - normally
     resolve_active_provider(db), i.e. the admin's saved Settings config
     with .env Gemini as the fallback.
