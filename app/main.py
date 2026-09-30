@@ -25,6 +25,7 @@ from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
 from app.api.routes.prompt_template_routes import router as prompt_template_router
+from app.api.routes.ai_provider_config_routes import router as ai_provider_config_router
 from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.api.routes.talent_pool_routes import filters_router as talent_pool_filters_router
 from app.api.routes.talent_pool_routes import router as talent_pool_router
@@ -60,9 +61,14 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="AI Resume Screening Platform (AIRS)",
     description="Secure API with JWT & RBAC",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # Served under API_PREFIX, not at the root. The shared nginx ingress (and
+    # the CloudFront behaviour in front of it) route only /airs/* to this
+    # service, so root-mounted docs are unreachable from outside the cluster:
+    # https://<host>/docs lands on the frontend origin instead. Every route
+    # here is already under /airs, so the docs belong there too.
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 
@@ -89,7 +95,7 @@ def _recover_stalled_resume_uploads_on_startup() -> None:
 app.add_middleware(JWTMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -186,6 +192,7 @@ app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monit
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])
 app.include_router(router=prompt_template_router, prefix=API_PREFIX, tags=["Prompt Templates"])
+app.include_router(router=ai_provider_config_router, prefix=API_PREFIX, tags=["AI Provider Config"])
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=audit_log_router, prefix=API_PREFIX, tags=["Audit Log"])

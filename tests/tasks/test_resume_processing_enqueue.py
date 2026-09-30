@@ -3,8 +3,13 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from app.models.async_tasks import TaskStatus
+from app.models.campaigns import CampaignStatus
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.tasks.resume_processing_tasks import _enqueue_deterministic_scoring
+from app.tasks.resume_processing_tasks import (
+    _enqueue_deterministic_scoring,
+    _move_parsed_candidates_to_screening,
+    _notify_resume_changed,
+)
 
 MODULE = "app.tasks.resume_processing_tasks"
 
@@ -78,6 +83,112 @@ def test_no_campaign_candidates_for_resume_enqueues_nothing():
         _enqueue_deterministic_scoring(MagicMock(), uuid4(), task_log_service)
 
     mock_task.apply_async.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# A parse outcome (PARSED or FAILED) drops the resume's cached views and
+# tells every campaign board holding it - nothing else publishes until
+# scoring runs later, and a cached mid-processing snapshot would otherwise
+# keep reporting "queued".
+# ----------------------------------------------------------------------
+
+def _run_notify(campaign_candidates, notifier=None):
+    notifier = notifier or MagicMock()
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = campaign_candidates
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.CandidateChangeNotifier", return_value=notifier):
+        _notify_resume_changed(MagicMock(), RESUME_ID)
+    return notifier
+
+
+RESUME_ID = uuid4()
+
+
+def test_notify_drops_resume_caches_and_updates_every_board_holding_the_resume():
+    cc_a = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+    cc_b = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    notifier = _run_notify([cc_a, cc_b])
+
+    notifier.invalidator.resumes.assert_called_once_with([RESUME_ID])
+    updated = {c.args for c in notifier.updated.call_args_list}
+    assert updated == {(cc_a.campaign_id, cc_a.id, RESUME_ID), (cc_b.campaign_id, cc_b.id, RESUME_ID)}
+
+
+def test_notify_without_campaign_candidates_still_drops_resume_caches():
+    notifier = _run_notify([])
+
+    notifier.invalidator.resumes.assert_called_once_with([RESUME_ID])
+    notifier.updated.assert_not_called()
+
+
+def test_notify_failure_is_logged_not_raised():
+    notifier = MagicMock()
+    notifier.invalidator.resumes.side_effect = Exception("redis down")
+
+    _run_notify([SimpleNamespace(id=uuid4(), campaign_id=uuid4())], notifier)  # must not raise
+
+
+# ----------------------------------------------------------------------
+# UPLOADED -> SCREENING right after the resume pipeline succeeds, committed
+# independently of (and before) deterministic scoring.
+# ----------------------------------------------------------------------
+
+def _run_move_to_screening(campaign_candidates, campaign_status=CampaignStatus.ACTIVE, transitioned=True):
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = campaign_candidates
+    campaign_repo = MagicMock()
+    campaign_repo.get_by_id.return_value = SimpleNamespace(status=campaign_status)
+    stage_transition_service = MagicMock()
+    if isinstance(transitioned, Exception):
+        stage_transition_service.transition_to_screening.side_effect = transitioned
+    else:
+        stage_transition_service.transition_to_screening.return_value = transitioned
+    db = MagicMock()
+
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.CampaignRepository", return_value=campaign_repo), \
+         patch(f"{MODULE}.StageTransitionService", return_value=stage_transition_service):
+        _move_parsed_candidates_to_screening(db, uuid4())
+
+    return stage_transition_service, campaign_candidate_repo, db
+
+
+def test_moves_every_campaign_candidate_on_the_parsed_resume_to_screening_and_commits():
+    cc_a = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+    cc_b = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    stage_transition_service, campaign_candidate_repo, _ = _run_move_to_screening([cc_a, cc_b])
+
+    moved = [c.args[0] for c in stage_transition_service.transition_to_screening.call_args_list]
+    assert moved == [cc_a, cc_b]
+    assert campaign_candidate_repo.commit.call_count == 2
+
+
+def test_no_commit_when_candidate_was_not_at_uploaded():
+    cc = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    _, campaign_candidate_repo, _ = _run_move_to_screening([cc], transitioned=False)
+
+    campaign_candidate_repo.commit.assert_not_called()
+
+
+def test_candidates_in_non_scoreable_campaigns_stay_uploaded():
+    cc = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    stage_transition_service, _, _ = _run_move_to_screening([cc], campaign_status=CampaignStatus.CLOSED)
+
+    stage_transition_service.transition_to_screening.assert_not_called()
+
+
+def test_transition_failure_is_rolled_back_and_logged_not_raised():
+    cc = SimpleNamespace(id=uuid4(), campaign_id=uuid4())
+
+    _, campaign_candidate_repo, db = _run_move_to_screening([cc], transitioned=Exception("db down"))
+
+    db.rollback.assert_called_once()
+    campaign_candidate_repo.commit.assert_not_called()
 
 
 # ----------------------------------------------------------------------

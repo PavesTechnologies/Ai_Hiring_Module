@@ -30,8 +30,8 @@ def _schedule(**overrides):
     return SimpleNamespace(**defaults)
 
 
-def _interviewer():
-    return SimpleNamespace(id=uuid4(), name="Priya Sharma", email="priya@example.com")
+def _interviewer(timezone=None):
+    return SimpleNamespace(id=uuid4(), name="Priya Sharma", email="priya@example.com", timezone=timezone)
 
 
 _NO_TEMPLATE_OVERRIDE = object()
@@ -97,16 +97,32 @@ def test_round_context_converts_a_non_utc_timezone_before_formatting():
     from datetime import datetime, timezone as tz
     schedule = _schedule(start_at=datetime(2026, 8, 25, 9, 30, tzinfo=tz.utc), timezone="Asia/Kolkata")
 
-    context = mod._round_context(schedule)
+    context = mod._round_context(schedule, _interviewer())
 
     assert context["interview_date"] == "August 25, 2026"
     assert context["interview_time"] == "3:00 PM IST"
 
 
+def test_round_context_uses_the_interviewers_own_timezone_over_the_schedulers():
+    """
+    Per-recipient timezone fix: an interviewer's own zone (e.g. US Eastern)
+    can differ from the round's schedule.timezone (e.g. the India-based
+    scheduler's zone) - the interviewer's email must show their own local
+    time, not the scheduler's.
+    """
+    from datetime import datetime, timezone as tz
+    schedule = _schedule(start_at=datetime(2026, 8, 25, 9, 30, tzinfo=tz.utc), timezone="Asia/Kolkata")
+
+    context = mod._round_context(schedule, _interviewer(timezone="America/New_York"))
+
+    assert context["interview_date"] == "August 25, 2026"
+    assert context["interview_time"] == "5:30 AM EDT"
+
+
 def test_round_context_shows_tbd_when_schedule_has_no_start_at():
     schedule = _schedule(start_at=None)
 
-    context = mod._round_context(schedule)
+    context = mod._round_context(schedule, _interviewer())
 
     assert context["interview_date"] == "TBD"
     assert context["interview_time"] == "TBD"

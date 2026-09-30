@@ -77,7 +77,7 @@ def create_campaign(request: CampaignCreateRequest,
     description="Lightweight list of ACTIVE campaigns for dropdowns/pickers.",
 )
 def get_active_campaigns(service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_active_campaigns_minimal(),
         message="Active campaigns retrieved successfully",
@@ -403,7 +403,7 @@ def get_campaign_details(campaign_id: UUID,
 )
 def get_pipeline_summary(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     summary = service.get_pipeline_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
@@ -473,10 +473,15 @@ def get_processing_status(campaign_id: UUID,
 def get_dead_letter_queue(campaign_id: UUID,
     limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
+    include_resolved: bool = Query(
+        default=False, description="Also list chains whose task later succeeded (audit view).",
+    ),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
-    page = service.get_dead_letter_queue_for_campaign(campaign_id, limit=limit, offset=offset)
+    page = service.get_dead_letter_queue_for_campaign(
+        campaign_id, limit=limit, offset=offset, include_resolved=include_resolved,
+    )
     return APIResponse.ok(data=page, message="Dead letter queue entries retrieved successfully.")
 
 
@@ -492,7 +497,7 @@ def get_dead_letter_queue(campaign_id: UUID,
 )
 def get_processing_queue(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN,UserRole.RECRUITER,UserRole.HIRING_MANAGER)),
 ):
     return APIResponse.ok(data=service.get_processing_queue(campaign_id),
         message="Processing queue retrieved successfully.",

@@ -1,0 +1,21 @@
+/*
+ * AIRS - production promotion pipeline.
+ *
+ * Mirrors User_Management_System/JenkinsfileProd. deployToProd does NOT
+ * rebuild the image: it looks up the most recently pushed tag in
+ * paves/airs-dev, pulls it, re-tags dev-<sha> as prod-<sha>, pushes it to
+ * paves/airs-prod, syncs secrets on the prod EC2 host, then rewrites
+ * k8s/backend/airs/deployment.yaml on intranet-devops@main for ArgoCD.
+ *
+ * So the exact bits verified in dev are the bits that reach production -
+ * which is also why arm.Dockerfile is never referenced here.
+ *
+ * The library ref is the main branch (paves-shared-lib-main), matching UMS.
+ */
+
+@Library('paves-shared-lib-main') _
+
+deployToProd(
+    serviceName: 'airs',
+    ecrRepo:     'paves/airs-prod'
+)

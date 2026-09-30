@@ -91,6 +91,27 @@ class EmailNotificationRepository:
         self.db.refresh(notification)
         return notification
 
+    def delete_by_campaign_candidate_id(self, campaign_candidate_id: UUID) -> None:
+        """
+        Single-campaign removal (CampaignCandidateService.delete_campaign_candidate)
+        - clears the notifications scoped directly to this one campaign
+        application (CANDIDATE_REJECTED/CANDIDATE_SELECTED etc., looked up
+        the same way by get_by_campaign_candidate_id_and_trigger_event),
+        not delete_by_candidate's candidate-wide scope, which would reach
+        into this candidate's other campaigns too - exactly what this
+        single-campaign delete must never do. Interview-related rows are
+        NOT this method's concern - InterviewScheduleRepository.
+        delete_by_campaign_candidate_id already clears those by
+        interview_schedule_id, same reasoning as delete_by_candidate's own
+        docstring about that split.
+        """
+        self.db.execute(
+            delete(EmailNotification).where(
+                EmailNotification.campaign_candidate_id == campaign_candidate_id,
+            )
+        )
+        self.db.flush()
+
     def delete_by_candidate(self, candidate_id: UUID) -> None:
         """
         Candidate erasure - removes this candidate's own email_notifications

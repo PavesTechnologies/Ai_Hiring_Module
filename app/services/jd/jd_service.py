@@ -19,7 +19,7 @@ from app.services.prompt_template_validation import validate_prompt_template_sel
 from app.schemas.ai.jd_extraction_response import JDExtractionResponse
 from app.services.skills.skill_normalization_service import SkillMatchResult, verification_status_for_tier
 from app.schemas.jd.request import CreateJDRequest, UpdateJDRequest, JDSearchRequest
-from app.schemas.jd.response import UpdateJDResponse, PaginatedJDResponse
+from app.schemas.jd.response import EducationOptionsResponse, UpdateJDResponse, PaginatedJDResponse
 from app.services.jd.hash_service import HashService
 from app.services.audit_service import AuditService
 from app.services.embedding_queue_service import EmbeddingQueueService, JDEmbeddingQueueError
@@ -34,7 +34,8 @@ from fastapi.responses import StreamingResponse
 from datetime import datetime
 from app.utils.excel_export import ExcelExport
 from app.core.config import settings
-from app.core.cache_keys import jd_key, jd_list_key, jd_list_prefix, jd_search_key, jd_search_prefix
+from app.core.cache_invalidation import CacheInvalidator
+from app.core.cache_keys import jd_key, jd_list_key, jd_search_key
 from app.services.cache_service import CacheService
 
 logger = logging.getLogger(__name__)
@@ -249,8 +250,9 @@ class JDService:
                 # the larger blob.
                 extracted_json=extraction.model_dump(mode="json"),
                 required_skills={
-                    "required": [item.model_dump() for item in extraction.required_skills],
-                    "preferred": [item.model_dump() for item in extraction.preferred_skills],
+                    "required": extraction.required_skills.model_dump(),
+                    "preferred": list(extraction.preferred_skills),
+                    "aliases": dict(extraction.aliases),
                 },
                 is_verified=is_verified,
             )
@@ -264,12 +266,14 @@ class JDService:
             # per canonical skill before persisting; mandatory wins on
             # conflict since "required" in any form should not be lost.
             matched_by_skill: dict[UUID, SkillMatchResult] = {}
+            alias_ids_by_skill: dict[UUID, list[UUID]] = {}
             for match in skill_matches:
                 if not match.canonical_skill_id:
                     continue
                 existing_match = matched_by_skill.get(match.canonical_skill_id)
                 if existing_match is None or (match.mandatory and not existing_match.mandatory):
                     matched_by_skill[match.canonical_skill_id] = match
+                alias_ids_by_skill.setdefault(match.canonical_skill_id, []).extend(match.alias_skill_ids)
 
             # Every matched skill (mandatory or preferred) gets the same
             # flat weight (see _DEFAULT_JD_SKILL_WEIGHT above for why).
@@ -290,6 +294,7 @@ class JDService:
                     mandatory=match.mandatory,
                     weight=_DEFAULT_JD_SKILL_WEIGHT,
                     importance=(JDSkillImportance(match.importance.upper()) if match.importance else None),
+                    alias_skill_ids=list(dict.fromkeys(alias_ids_by_skill.get(match.canonical_skill_id, []))) or None,
                     confidence=match.confidence,
                     match_tier=match.match_tier.value,
                     verification_status=verification_status_for_tier(match.match_tier),
@@ -536,13 +541,14 @@ class JDService:
         )
         return [GetJDResponse.model_validate(item) for item in json.loads(raw)]
 
+    def get_education_options(self, search: str | None = None, limit: int = 50) -> EducationOptionsResponse:
+        return EducationOptionsResponse(
+            degrees=self.repository.get_distinct_education_values("degree", search, limit),
+            fields=self.repository.get_distinct_education_values("field", search, limit),
+        )
+
     def _invalidate_jd_caches(self, jd_id: UUID | str | None = None) -> None:
-        if not self.cache_service:
-            return
-        if jd_id is not None:
-            self.cache_service.delete(jd_key(jd_id))
-        self.cache_service.delete_by_prefix(jd_list_prefix())
-        self.cache_service.delete_by_prefix(jd_search_prefix())
+        CacheInvalidator(self.cache_service).jd(jd_id)
 
     def download_jd_file(self, jd_id: UUID) -> tuple[bytes, str, str]:
         """

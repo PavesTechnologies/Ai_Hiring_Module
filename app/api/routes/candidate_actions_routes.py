@@ -18,6 +18,7 @@ from app.middleware.rbac import TokenUser, require_roles, resolve_actor_role
 from app.models.identity import UserRole
 from app.schemas.campaign.bulk_stage_move_schema import (
     BulkStageMoveRequest,
+    CandidateAllowedTransitionsResponse,
     BulkStageMoveResultResponse,
     ManualRejectRequest,
     SingleStageMoveRequest,
@@ -86,7 +87,7 @@ def single_stage_move(
     campaign_candidate_id: UUID,
     request: SingleStageMoveRequest,
     service: BulkStageMoveService = Depends(get_bulk_stage_move_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.RECRUITER)),
 ):
     result = service.move_one(
         campaign_id=campaign_id,
@@ -97,6 +98,37 @@ def single_stage_move(
         actor_role=resolve_actor_role(user),
     )
     return APIResponse.ok(data=result, message=result.detail)
+
+
+@router.get(
+    "/campaigns/{campaign_id}/candidates/{campaign_candidate_id}/allowed-transitions",
+    response_model=APIResponse[CandidateAllowedTransitionsResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List the stages this candidate can be moved to",
+    description=(
+        "Drives the stage-action UI: returns only the targets that are legal "
+        "for this candidate right now AND permitted for the caller's role. "
+        "Resolved from the candidate's current stage together with the stage "
+        "it arrived from (which is what flips ownership on HM_REVIEW paths) "
+        "against the seeded allowed_transitions table - the same pair the "
+        "move endpoint validates, so anything listed here will be accepted. "
+        "Automated SYSTEM-only transitions are never listed. Each entry "
+        "carries requires_reason, so the UI knows when to prompt for one. "
+        "Read-only."
+    ),
+)
+def get_allowed_transitions(
+    campaign_id: UUID,
+    campaign_candidate_id: UUID,
+    service: BulkStageMoveService = Depends(get_bulk_stage_move_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    result = service.get_allowed_transitions(
+        campaign_id=campaign_id,
+        campaign_candidate_id=campaign_candidate_id,
+        actor_role=resolve_actor_role(user),
+    )
+    return APIResponse.ok(data=result, message="Allowed transitions retrieved successfully.")
 
 
 @router.post(

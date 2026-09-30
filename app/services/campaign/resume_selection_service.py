@@ -11,10 +11,8 @@ from app.models.jd.job_descriptions import JobDescription
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
-from app.services.campaign.candidate_scoring_service import (
-    CandidateScoringService,
-    MandatorySkillMatchType,
-)
+from app.services.campaign.candidate_scoring_service import CandidateScoringService
+from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
@@ -27,6 +25,7 @@ _EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
 _RESUME_FRESHNESS_MAX_AGE_DAYS_KEY = "RESUME_FRESHNESS_MAX_AGE_DAYS"
 
 _DEFAULT_EXPERIENCE_TOLERANCE_YEARS = 0.0
@@ -36,6 +35,7 @@ _DEFAULT_RESUME_FRESHNESS_MAX_AGE_DAYS = 180
 _DEFAULT_DETERMINISTIC_WEIGHT_SKILLS = 0.70
 _DEFAULT_DETERMINISTIC_WEIGHT_EXPERIENCE = 0.15
 _DEFAULT_DETERMINISTIC_WEIGHT_EDUCATION = 0.15
+_DEFAULT_DETERMINISTIC_WEIGHT_FUNCTIONAL = 0.15
 
 _NO_ELIGIBLE_RESUME_MESSAGE = (
     "Candidate has no eligible resume for campaign assignment - every resume version is "
@@ -237,6 +237,7 @@ class ResumeSelectionService:
             _DETERMINISTIC_WEIGHT_SKILLS_KEY,
             _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
             _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+            _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
         ])
 
         validation_service = ExperienceEducationValidationService(
@@ -260,6 +261,9 @@ class ResumeSelectionService:
             ),
             "education": float(
                 configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, _DEFAULT_DETERMINISTIC_WEIGHT_EDUCATION)
+            ),
+            "functional": float(
+                configs.get(_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY, _DEFAULT_DETERMINISTIC_WEIGHT_FUNCTIONAL)
             ),
         }
 
@@ -347,15 +351,20 @@ class ResumeSelectionService:
         breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(
             job_description.id, resume.id, hierarchy=hierarchy,
         )
-        skill_score = breakdown["deterministic_score"]
-        mandatory_skills_passed = not any(
-            skill["match_type"] == MandatorySkillMatchType.MISSING.value
-            for skill in breakdown["mandatory_skills"]
+        preferred_breakdown = self.candidate_scoring_service.build_preferred_skill_breakdown(
+            job_description.id, resume.id,
         )
+        skill_score = self.candidate_scoring_service.compute_technical_score(breakdown, preferred_breakdown)
+        qualification = self.candidate_scoring_service.evaluate_skill_qualification(
+            breakdown, skill_score, float(campaign.deterministic_threshold),
+            float(campaign.required_skill_coverage_threshold), int(campaign.max_missing_core_skills),
+        )
+        structural_passed = qualification["coverage_passed"] and qualification["core_gap_passed"]
+        domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
 
         return self.candidate_scoring_service._combine_deterministic_score(
-            skill_score, mandatory_skills_passed, experience_result, education_result,
-            score_weights, float(campaign.deterministic_threshold),
+            skill_score, structural_passed, experience_result, education_result,
+            score_weights, float(campaign.deterministic_threshold), domain_result=domain_result,
         )
 
     def _score_semantic(self, resume: Resume, campaign: HiringCampaign) -> tuple[float | None, bool | None]:

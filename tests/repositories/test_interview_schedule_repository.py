@@ -288,8 +288,10 @@ def test_get_interviewer_by_id_delegates_to_session_get():
 # would conflate it with the same session's add/delete calls.
 # ----------------------------------------------------------------------
 
-def _make_interviewer_row(interview_id, name="Alice", email="alice@example.com", is_active=True):
-    return SimpleNamespace(id=uuid4(), interview_id=interview_id, name=name, email=email, is_active=is_active)
+def _make_interviewer_row(interview_id, name="Alice", email="alice@example.com", is_active=True, timezone=None):
+    return SimpleNamespace(
+        id=uuid4(), interview_id=interview_id, name=name, email=email, is_active=is_active, timezone=timezone,
+    )
 
 
 def _repo_with_active_interviewers(existing_rows):
@@ -333,6 +335,32 @@ def test_replace_interviewers_updates_name_in_place_for_a_matched_email():
 
     assert result[0] is alice
     assert alice.name == "New Name"
+
+
+def test_replace_interviewers_sets_timezone_on_a_newly_inserted_interviewer():
+    """Per-recipient timezone fix: a new interviewer's declared timezone is persisted, not silently dropped."""
+    interview_id = uuid4()
+    repo, db = _repo_with_active_interviewers([])
+
+    repo.replace_interviewers(
+        interview_id, [{"name": "Bob", "email": "bob@example.com", "timezone": "America/New_York"}],
+    )
+
+    new_row = db.add.call_args.args[0]
+    assert new_row.timezone == "America/New_York"
+
+
+def test_replace_interviewers_updates_timezone_in_place_for_a_matched_email():
+    """Per-recipient timezone fix: re-sending the same interviewer with an updated timezone refreshes it, mirroring name-update behavior."""
+    interview_id = uuid4()
+    alice = _make_interviewer_row(interview_id, timezone="Asia/Kolkata")
+    repo, db = _repo_with_active_interviewers([alice])
+
+    repo.replace_interviewers(
+        interview_id, [{"name": "Alice", "email": "alice@example.com", "timezone": "America/New_York"}],
+    )
+
+    assert alice.timezone == "America/New_York"
 
 
 def test_replace_interviewers_inserts_a_new_active_row_for_an_unmatched_incoming_entry():

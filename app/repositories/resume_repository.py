@@ -413,8 +413,18 @@ class ResumeRepository:
 
         if search:
             tokens = search.split()
+            full_name = Resume.parsed_json.op("->>")("full_name")
             name_pattern = f"%{self._escape_like(search)}%"
-            name_match = Resume.parsed_json.op("->>")("full_name").ilike(name_pattern, escape="\\")
+            # Two independent name matches, OR'd: the whole search string as
+            # one substring (covers a single partial token, e.g. "Jo"), and
+            # every whitespace token individually required (AND) against the
+            # name, so a full name typed out of word order - e.g. "Doe John"
+            # for "John Doe" - still matches.
+            name_match_whole = full_name.ilike(name_pattern, escape="\\")
+            name_match_tokens = and_(*(
+                full_name.ilike(f"%{self._escape_like(token)}%", escape="\\") for token in tokens
+            ))
+            name_match = or_(name_match_whole, name_match_tokens)
             skills_and_match = and_(*(skill_exists(token) for token in tokens))
             conditions.append(or_(name_match, skills_and_match))
 

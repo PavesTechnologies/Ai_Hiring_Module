@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
@@ -8,9 +9,11 @@ from app.db.session import SessionLocal
 from app.models.async_tasks import DocumentType
 from app.models.candidates import FileFormat
 from app.models.resume.resume_source_format import ResumeSourceFormat
+from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
@@ -20,9 +23,11 @@ from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.tasks.deterministic_scoring_tasks import (
+    _SCOREABLE_CAMPAIGN_STATUSES,
     DETERMINISTIC_SCORE_TASK_TYPE,
     calculate_deterministic_score_task,
 )
+from app.services.campaign.stage_transition_service import StageTransitionService
 
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.ai.preprocessing_service import PreprocessingService
@@ -30,7 +35,8 @@ from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
@@ -39,11 +45,19 @@ from app.services.skills.skill_normalization_service import SkillNormalizationSe
 from app.core.storage_service import StorageService
 from app.core.redis_client import get_redis_client
 from app.services.cache_service import CacheService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
 
 logger = logging.getLogger(__name__)
 
 RESUME_DOCUMENT_PROCESSING_TASK_TYPE = "RESUME_DOCUMENT_PROCESSING"
+
+# How long a RUNNING/RETRY row must sit untouched before the recovery scan
+# treats it as orphaned. Several times the broker's own visibility_timeout
+# (300s, see celery_app.broker_transport_options) on purpose: Redis
+# redelivering the message itself is the preferred recovery, and this scan
+# should only ever act on tasks the broker is never going to bring back.
+STALLED_IN_FLIGHT_MINUTES = 15
 
 # Resume.file_format (FileFormat) also allows PNG/JPEG for scanned/image
 # resumes — out of scope here, same as the rest of this pipeline: no OCR
@@ -53,6 +67,58 @@ _FILE_FORMAT_TO_SOURCE_FORMAT = {
     FileFormat.PDF: ResumeSourceFormat.PDF,
     FileFormat.DOCX: ResumeSourceFormat.DOCX,
 }
+
+
+def _notify_resume_changed(db, resume_id) -> None:
+    """
+    A parse outcome (PARSED or FAILED) changes what the resume views and
+    every campaign board holding this resume show: drop the resume's cached
+    detail/lists - otherwise a fetch made mid-processing keeps serving
+    "queued" after the worker finished - and tell each board, since nothing
+    else publishes until scoring runs later. Must run after the outcome is
+    committed. Never allowed to fail the task.
+    """
+    try:
+        notifier = CandidateChangeNotifier()
+        notifier.invalidator.resumes([resume_id])
+        for campaign_candidate in CampaignCandidateRepository(db).get_by_resume_id(resume_id):
+            notifier.updated(campaign_candidate.campaign_id, campaign_candidate.id, resume_id)
+    except Exception:
+        logger.exception("Failed to notify resume change for resume_id=%s", resume_id)
+
+
+def _move_parsed_candidates_to_screening(db, resume_id) -> None:
+    """
+    UPLOADED -> SCREENING for every campaign_candidate on this resume, as
+    soon as the resume pipeline succeeds - not later, when deterministic
+    scoring commits. Committed per candidate, independently of scoring, so
+    the board reflects SCREENING while scoring is still queued/running, and
+    a later scoring failure no longer leaves the candidate at UPLOADED.
+    A failed parse never reaches here, so it stays UPLOADED with
+    parse_status=FAILED. calculate_deterministic_score_task's own
+    transition_to_screening call remains as a no-op safety net (it only
+    acts on UPLOADED). Same campaign-status gate as scoring.
+    """
+    campaign_candidate_repo = CampaignCandidateRepository(db)
+    campaign_repo = CampaignRepository(db)
+    stage_transition_service = StageTransitionService(
+        AllowedTransitionRepository(db), campaign_candidate_repo,
+        AuditService(AuditRepository(db)), InterviewScheduleRepository(db),
+    )
+
+    for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
+        try:
+            campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
+            if campaign is None or campaign.status not in _SCOREABLE_CAMPAIGN_STATUSES:
+                continue
+            if stage_transition_service.transition_to_screening(campaign_candidate):
+                campaign_candidate_repo.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "Failed to move campaign_candidate_id=%s to SCREENING after resume %s parsed.",
+                campaign_candidate.id, resume_id,
+            )
 
 
 def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLogService) -> None:
@@ -189,7 +255,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
 
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=PreprocessingService(),
-            extraction_service=GeminiExtractionService(),
+            extraction_service=LLMExtractionService(resolve_active_provider(db)),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(
                 skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
@@ -220,6 +286,18 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         task_log_repo.update(task_log)
         task_log_repo.commit()
         task_log_service.mark_success(task_log, summary=f"Resume {processed_resume_id} parsed.")
+
+        # Before the notification below, so caches are dropped and boards
+        # told only once SCREENING is committed too. Never allowed to affect
+        # the committed parse success.
+        try:
+            _move_parsed_candidates_to_screening(db, processed_resume_id)
+        except Exception:
+            logger.exception(
+                "Failed to move candidates to SCREENING after resume %s parsed.", processed_resume_id,
+            )
+
+        _notify_resume_changed(db, processed_resume_id)
 
         # M08-E01: enqueued BEFORE deterministic scoring, not after -
         # calculate_deterministic_score_task's own auto-trigger calls
@@ -277,6 +355,8 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
                     db.rollback()
             if task_log:
                 task_log_service.mark_failure(task_log, str(stage_exc.original))
+            if resume is not None:
+                _notify_resume_changed(db, resume.id)
             logger.exception("Resume document processing task failed for task_id %s", task_id)
             raise stage_exc.original
     except Exception as ex:
@@ -295,6 +375,8 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
                 db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
+        if resume is not None:
+            _notify_resume_changed(db, resume.id)
         logger.exception("Resume document processing task failed for task_id %s", task_id)
         raise
 
@@ -382,10 +464,124 @@ def recover_stalled_resume_uploads(db=None) -> int:
                 )
                 task_log_service.mark_dispatch_failed(task_log, str(exc))
 
+        recovered += _recover_stalled_in_flight(
+            task_log_repo, campaign_candidate_repo, campaign_repo,
+        )
         return recovered
     finally:
         if owns_session:
             db.close()
+
+
+def _live_task_ids() -> set[str] | None:
+    """
+    task_ids the workers currently hold (executing, prefetched, or waiting
+    on a retry countdown). None means "could not ask" — no workers
+    answered, or the control channel failed.
+
+    Distinguishing None from an empty set matters: an empty set is a
+    definite "nothing is running, redispatching is safe", while None is
+    "unknown", and redispatching a task that might still be executing
+    would parse the same resume twice (process_resume_document has no
+    SUCCESS-shortcut). Callers treat None as "skip this sweep entirely".
+    """
+    try:
+        inspector = celery_app.control.inspect(timeout=5)
+        replies = [inspector.active(), inspector.reserved(), inspector.scheduled()]
+    except Exception:
+        logger.exception("Stalled in-flight scan: worker inspection failed")
+        return None
+
+    if all(reply is None for reply in replies):
+        return None
+
+    live: set[str] = set()
+    for reply in replies:
+        for entries in (reply or {}).values():
+            for entry in entries:
+                # scheduled() nests the real message under "request";
+                # active()/reserved() carry the id at the top level.
+                request = entry.get("request", entry)
+                task_id = request.get("id")
+                if task_id:
+                    live.add(task_id)
+    return live
+
+
+def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_repo) -> int:
+    """
+    Redispatches RESUME_DOCUMENT_PROCESSING rows orphaned mid-flight —
+    RUNNING under a worker that died, or RETRY whose countdown died with
+    the worker that held it (see get_stalled_in_flight for why the latter
+    can never recover on its own).
+
+    Two independent guards stop this from ever double-processing a resume
+    that is merely slow:
+
+    1. Age. Only rows untouched for STALLED_IN_FLIGHT_MINUTES are
+       considered, which is deliberately several times the broker's
+       visibility_timeout so the broker's own redelivery gets first refusal.
+    2. Liveness. Any task_id a worker currently holds is skipped outright,
+       and if the workers cannot be reached at all the sweep does nothing
+       rather than guess.
+
+    Both must pass. claim_in_flight_for_redispatch then re-checks the
+    status atomically, so a row that recovered between the scan and the
+    claim is left alone.
+    """
+    live_task_ids = _live_task_ids()
+    if live_task_ids is None:
+        logger.info("Stalled in-flight scan skipped | reason=worker_state_unknown")
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALLED_IN_FLIGHT_MINUTES)
+    stalled = task_log_repo.get_stalled_in_flight(RESUME_DOCUMENT_PROCESSING_TASK_TYPE, cutoff)
+
+    recovered = 0
+    for task_log in stalled:
+        if task_log.task_id in live_task_ids:
+            continue
+
+        campaign_candidates = campaign_candidate_repo.get_by_resume_id(task_log.resume_id)
+        campaign = (
+            campaign_repo.get_by_id(campaign_candidates[0].campaign_id)
+            if campaign_candidates else None
+        )
+        if campaign is None:
+            logger.error(
+                "Stalled in-flight recovery failed | task_id=%s resume_id=%s reason=campaign_not_found",
+                task_log.task_id, task_log.resume_id,
+            )
+            continue
+
+        # Claimed last, immediately before dispatch, to keep the window
+        # between "this row is mine" and apply_async as small as possible.
+        if not task_log_repo.claim_in_flight_for_redispatch(task_log.id):
+            logger.info(
+                "Stalled in-flight recovery skipped | task_id=%s reason=already_claimed", task_log.task_id,
+            )
+            continue
+
+        try:
+            process_resume_document.apply_async(
+                kwargs={
+                    "resume_id": str(task_log.resume_id),
+                    "prompt_template_id": str(campaign.prompt_template_id),
+                },
+                task_id=task_log.task_id,
+            )
+            recovered += 1
+            logger.warning(
+                "Stalled in-flight task redispatched | task_id=%s resume_id=%s previous_status=%s",
+                task_log.task_id, task_log.resume_id, task_log.status.value,
+            )
+        except Exception:
+            logger.exception(
+                "Stalled in-flight recovery failed | task_id=%s resume_id=%s reason=queue_unavailable",
+                task_log.task_id, task_log.resume_id,
+            )
+
+    return recovered
 
 
 @celery_app.task(name="resume.recover_stalled_uploads")

@@ -1,0 +1,43 @@
+# ==============================================================================
+# CI-only dependency set - referenced by Jenkinsfile.ci (requirementsPath).
+#
+# buildPythonCIPipeline runs a bare `pip install -r <requirementsPath>` with no
+# index or platform flags, so anything the install needs has to be expressed
+# in this file. Two things do:
+#
+#  1. torch. On the arm64 build agent, `torch==2.13.0` resolves from PyPI to
+#     2.13.0+cu130 - the Grace/sbsa CUDA build - dragging in the whole nvidia-*
+#     CUDA runtime and triton, several GB, on every pull request. The
+#     --extra-index-url below plus the explicit +cpu pin gets the CPU wheel
+#     instead. This is the same thing arm.Dockerfile does at image build time;
+#     both routes must agree or CI tests something the image never ships.
+#
+#  2. psycopg2. requirements.txt pins BOTH psycopg2 (source, needs pg_config
+#     and gcc on the agent) and psycopg2-binary. Inheriting from
+#     requirements.prod.txt rather than requirements.txt drops the source one -
+#     see the removal notes in that file.
+#
+# The +cpu pin and the plain `torch==2.13.0` inherited below are compatible:
+# PEP 440 says the specifier `==2.13.0` matches the local version `2.13.0+cpu`.
+# ==============================================================================
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.13.0+cpu
+
+# The runtime dependency set the image itself installs.
+-r requirements.prod.txt
+
+# ── Quality-gate tooling (scripts/quality_check.sh) ───────────────────────────
+# Versions match User_Management_System/Backend/requirements.txt so both
+# services are linted and scanned by identical tool versions; pytest is pinned
+# to AIRS' own requirements.txt version instead.
+autoflake==2.3.3
+bandit==1.9.4
+black==26.3.1
+flake8==7.3.0
+mypy==2.1.0
+pip_audit==2.10.0
+pytest==9.1.1
+pytest-cov==7.1.0
+pytest-mock==3.15.1

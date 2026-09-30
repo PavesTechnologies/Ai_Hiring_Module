@@ -22,15 +22,18 @@ clean no-op, never a partial write.
 """
 
 
-def _make_candidate(pipeline_stage=PipelineStage.SCREENING):
+def _make_candidate(pipeline_stage=PipelineStage.SCREENING, previous_stage=None):
     # decision_* fields default to None here, matching a real CampaignCandidate
     # row that has never had a decision recorded yet - transition_to_rejected/
     # apply_hr_override both read these (apply_hr_override reads them before
     # this fixture existed, to snapshot the decision being overridden).
+    # previous_stage (governance model, 2026-08-31) defaults to None, matching
+    # a real row that has never transitioned before.
     return SimpleNamespace(
         id=uuid4(),
         campaign_id=uuid4(),
         pipeline_stage=pipeline_stage,
+        previous_stage=previous_stage,
         decision_type=None,
         decision_source=None,
         decision_reason=None,
@@ -63,7 +66,7 @@ def test_transition_applies_when_allowed():
     assert result is True
     assert candidate.pipeline_stage == PipelineStage.REJECTED
     allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-        PipelineStage.SCREENING, PipelineStage.REJECTED,
+        PipelineStage.SCREENING, PipelineStage.REJECTED, previous_stage=None,
     )
     campaign_candidate_repo.update.assert_called_once_with(candidate)
     campaign_candidate_repo.create_stage_history.assert_called_once_with(
@@ -117,7 +120,7 @@ def test_transition_to_screening_applies_when_uploaded_and_allowed():
     assert result is True
     assert candidate.pipeline_stage == PipelineStage.SCREENING
     allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-        PipelineStage.UPLOADED, PipelineStage.SCREENING,
+        PipelineStage.UPLOADED, PipelineStage.SCREENING, previous_stage=None,
     )
     campaign_candidate_repo.update.assert_called_once_with(candidate)
     campaign_candidate_repo.create_stage_history.assert_called_once_with(
@@ -175,7 +178,7 @@ def test_apply_hr_override_applies_when_allowed():
     assert result is True
     assert candidate.pipeline_stage == PipelineStage.SCREENING
     allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-        PipelineStage.REJECTED, PipelineStage.SCREENING,
+        PipelineStage.REJECTED, PipelineStage.SCREENING, previous_stage=None,
     )
     campaign_candidate_repo.update.assert_called_once_with(candidate)
     campaign_candidate_repo.create_stage_history.assert_called_once_with(
@@ -187,7 +190,7 @@ def test_apply_hr_override_applies_when_allowed():
         transition_source=TransitionSource.MANUAL,
         scores_snapshot={
             "decision_type": "RESET",
-            "decision_source": "HR_ADMIN",
+            "decision_source": "RECRUITER",
             "decision_reason": "HR_ADMIN override of deterministic rejection",
             "decision_details": {
                 "overridden_decision_type": None,
@@ -283,7 +286,7 @@ def test_rejected_to_screening_uses_its_own_role_and_reason_rules():
 
     assert was_created is True
     assert result.pipeline_stage == PipelineStage.SCREENING
-    allowed_transition_repo.get.assert_called_once_with(PipelineStage.REJECTED, PipelineStage.SCREENING)
+    allowed_transition_repo.get.assert_called_once_with(PipelineStage.REJECTED, PipelineStage.SCREENING, previous_stage=None)
     audit_service.log.assert_called_once()
 
 
@@ -301,7 +304,7 @@ def test_screening_to_rejected_uses_its_own_role_and_reason_rules_not_the_revers
 
     assert was_created is True
     assert result.pipeline_stage == PipelineStage.REJECTED
-    allowed_transition_repo.get.assert_called_once_with(PipelineStage.SCREENING, PipelineStage.REJECTED)
+    allowed_transition_repo.get.assert_called_once_with(PipelineStage.SCREENING, PipelineStage.REJECTED, previous_stage=None)
     audit_service.log.assert_called_once()
 
 
@@ -316,7 +319,7 @@ def test_rejected_to_shortlisted_uses_its_own_role_and_reason_rules():
 
     assert was_created is True
     assert result.pipeline_stage == PipelineStage.SHORTLISTED
-    allowed_transition_repo.get.assert_called_once_with(PipelineStage.REJECTED, PipelineStage.SHORTLISTED)
+    allowed_transition_repo.get.assert_called_once_with(PipelineStage.REJECTED, PipelineStage.SHORTLISTED, previous_stage=None)
     audit_service.log.assert_called_once()
 
 
@@ -330,7 +333,7 @@ def test_shortlisted_to_rejected_is_not_allowed_even_though_the_reverse_edge_is(
         service.transition(candidate.id, PipelineStage.REJECTED, Actor(roles=["HR_ADMIN"], id="hr-1"), reason="x")
 
     assert str(exc_info.value).startswith("INVALID_TRANSITION:")
-    allowed_transition_repo.get.assert_called_once_with(PipelineStage.SHORTLISTED, PipelineStage.REJECTED)
+    allowed_transition_repo.get.assert_called_once_with(PipelineStage.SHORTLISTED, PipelineStage.REJECTED, previous_stage=None)
     campaign_candidate_repo.get_by_id_for_update.assert_not_called()
     audit_service.log.assert_not_called()
 
@@ -564,7 +567,7 @@ def test_nonexistent_pair_raises_invalid_transition_not_role_or_reason_error():
         service.transition(candidate.id, PipelineStage.INTERVIEW, Actor(roles=["RECRUITER"], id="rec-1"), reason=None)
 
     assert str(exc_info.value).startswith("INVALID_TRANSITION:")
-    allowed_transition_repo.get.assert_called_once_with(PipelineStage.UPLOADED, PipelineStage.INTERVIEW)
+    allowed_transition_repo.get.assert_called_once_with(PipelineStage.UPLOADED, PipelineStage.INTERVIEW, previous_stage=None)
     campaign_candidate_repo.get_by_id_for_update.assert_not_called()
     audit_service.log.assert_not_called()
 

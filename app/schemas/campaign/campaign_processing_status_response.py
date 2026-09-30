@@ -29,14 +29,38 @@ class DeadLetterQueueEntryResponse(BaseModel):
     moved_to_dlq_at: datetime
     campaign_candidate_id: UUID | None
     # additions:
+    candidate_name: str | None = None
     last_attempted_at: datetime | None = None
     resolution_notes: str | None = None
     replayed_at: datetime | None = None
     replay_supported: bool = False       # is this task_type in the replay registry?
+    # Chain view - one entry per piece of work (task_type + candidate/resume);
+    # this row is the chain's newest attempt, `history` its older ones.
+    error_summary: str = ""              # short UI phrase; final_error_message stays the raw text
+    status: str = "OPEN"                 # OPEN | REPLAYING | LIMIT_REACHED | RESOLVED
+    attempt_count: int = 1               # dead-lettered attempts in this chain, this one included
+    replays_used: int = 0
+    replay_limit: int | None = None      # platform_config MAX_DLQ_REPLAYS_PER_TASK
+    resolved_at: datetime | None = None
+    history: list["DeadLetterQueueAttemptResponse"] = []
+
+
+class DeadLetterQueueAttemptResponse(BaseModel):
+    """An older, already-replayed attempt in a DLQ chain - kept for audit."""
+    id: UUID
+    error_summary: str
+    moved_to_dlq_at: datetime
+    replayed_at: datetime | None = None
+
+
+DeadLetterQueueEntryResponse.model_rebuild()
 
 
 class DeadLetterQueuePageResponse(BaseModel):
-    """Paginated, replayable-only DLQ listing for a campaign."""
+    """
+    Paginated, replayable-only DLQ listing for a campaign - one entry per
+    chain, open chains only unless include_resolved.
+    """
     entries: list[DeadLetterQueueEntryResponse]
     total: int
     limit: int

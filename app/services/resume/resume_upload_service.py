@@ -27,10 +27,13 @@ from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.upload_resume_result import UploadResumeResult
 from app.tasks.resume_processing_tasks import process_resume_document
-from app.core.cache_keys import candidate_list_prefix, resume_key, resume_list_prefix
+from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
 
 _AVAILABLE_RESOLUTIONS = ["use_existing", "upload_anyway"]
+
+from app.models.async_tasks import DocumentType
+from app.websocket.publisher import publish_task_reset
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +98,7 @@ class ResumeUploadService:
         self.cache_service = cache_service
 
     def _invalidate_resume_caches(self, resume_id) -> None:
-        if not self.cache_service:
-            return
-        self.cache_service.delete(resume_key(resume_id))
-        self.cache_service.delete_by_prefix(resume_list_prefix())
-        self.cache_service.delete_by_prefix(candidate_list_prefix())
+        CacheInvalidator(self.cache_service).resumes([resume_id])
 
     def upload(
         self,
@@ -367,6 +366,10 @@ class ResumeUploadService:
                 "This resume has no linked campaign, so its prompt template cannot be resolved for a retry."
             )
         new_task_id = uuid4()
+        # Captured before set_task_id overwrites it: the socket a client is
+        # currently watching is keyed on the OLD task_id, so that is where
+        # the "this run has moved" notice has to be published.
+        previous_task_id = resume.task_id
 
         try:
             self.resume_repo.mark_parse_pending(resume)
@@ -393,6 +396,7 @@ class ResumeUploadService:
             },
             task_id=str(new_task_id),
         )
+        self._publish_retry_reset(previous_task_id, new_task_id)
         return resume, new_task_id
 
     def replay_from_dlq(
@@ -464,7 +468,39 @@ class ResumeUploadService:
             },
             task_id=str(new_task_id),
         )
+        self._publish_retry_reset(dlq_entry.original_task_id, new_task_id)
         return resume, new_task_id
+
+    @staticmethod
+    def _publish_retry_reset(previous_task_id, new_task_id) -> None:
+        """
+        Tells anyone watching the failed run's socket that it has been
+        re-dispatched, and under which task_id.
+
+        Resume sockets are per-task (ws /resumes/processing-status/{task_id})
+        and a retry always allocates a fresh task_id, so without this the
+        client stays subscribed to a channel that will never emit again and
+        the retry looks like it silently did nothing. No previous task_id
+        (a resume that failed before one was ever assigned) means there is
+        no channel anyone can be watching, so nothing is published.
+
+        Best-effort, same rule as every other publish call site: the DB
+        work and the dispatch have already happened, and a Redis problem
+        must not turn a successful retry into a failed request.
+        """
+        if not previous_task_id:
+            return
+        try:
+            publish_task_reset(
+                str(previous_task_id),
+                DocumentType.RESUME,
+                new_task_id=str(new_task_id),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish task.reset | previous_task_id=%s new_task_id=%s",
+                previous_task_id, new_task_id,
+            )
 
     def _resolve_owning_campaign(self, resume_id: UUID):
         """

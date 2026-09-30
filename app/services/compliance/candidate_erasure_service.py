@@ -5,13 +5,16 @@ from uuid import UUID
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import NotFoundError
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+from app.repositories.candidate_note_repository import CandidateNoteRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
@@ -54,6 +57,9 @@ class CandidateErasureService:
         storage_service,
         audit_service: AuditService,
         composite_score_history_repo: CandidateCompositeScoreHistoryRepository,
+        candidate_note_repo: CandidateNoteRepository | None = None,
+        interview_schedule_repo: InterviewScheduleRepository | None = None,
+        notifier: CandidateChangeNotifier | None = None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -65,6 +71,13 @@ class CandidateErasureService:
         self.storage_service = storage_service
         self.audit_service = audit_service
         self.composite_score_history_repo = composite_score_history_repo
+        # Optional so existing constructor call sites keep working; when
+        # absent their tables are simply not cleared, which is only safe
+        # for a candidate that has neither notes nor interviews. The DI
+        # provider always supplies both.
+        self.candidate_note_repo = candidate_note_repo
+        self.interview_schedule_repo = interview_schedule_repo
+        self.notifier = notifier or CandidateChangeNotifier()
 
     def erase_candidate(
         self,
@@ -81,6 +94,9 @@ class CandidateErasureService:
             resumes = self.resume_repo.get_all_versions_by_candidate(candidate_id)
             campaign_candidates = self.campaign_candidate_repo.get_by_candidate_id(candidate_id)
             had_bulk_origin = any(resume.bulk_upload_job_id is not None for resume in resumes)
+            # Plain values captured before delete - the rows are gone after commit.
+            erased_resume_ids = [resume.id for resume in resumes]
+            removed = [(cc.campaign_id, cc.id) for cc in campaign_candidates]
 
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
@@ -97,6 +113,17 @@ class CandidateErasureService:
                 # CampaignCandidate.ai_evaluation) when the campaign_candidate
                 # itself is deleted below.
                 self.campaign_candidate_repo.delete_stage_history(campaign_candidate.id)
+                # Distinct table from stage_history above: the per-transition
+                # log. Its FK blocked the whole erasure for any candidate
+                # that had ever changed pipeline stage.
+                self.campaign_candidate_repo.delete_stage_transition_log(campaign_candidate.id)
+                if self.candidate_note_repo is not None:
+                    self.candidate_note_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
+                if self.interview_schedule_repo is not None:
+                    # Clears the interview rounds and their own four
+                    # referencing tables (interviewers, history, feedback,
+                    # interview-related email notifications).
+                    self.interview_schedule_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 self.composite_score_history_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 # DLQ before celery_task_log — dead_letter_queue.original_task_id
                 # is a NOT NULL FK to celery_task_log.task_id.
@@ -132,6 +159,12 @@ class CandidateErasureService:
         except Exception:
             self.candidate_repo.rollback()
             raise
+
+        # Cached resume/candidate views hold decrypted names and emails -
+        # erased data must not keep being served from Redis until TTL.
+        self.notifier.invalidator.resumes(erased_resume_ids)
+        for campaign_id, campaign_candidate_id in removed:
+            self.notifier.removed(campaign_id, campaign_candidate_id)
 
     def request_erasure(
         self,

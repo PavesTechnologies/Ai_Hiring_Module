@@ -21,7 +21,8 @@ from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_pipeline import JDProcessingPipeline
 from app.services.jd.jd_service import JDService
@@ -89,6 +90,14 @@ def process_jd_document(
             audit_service=audit_service,
             storage_service=StorageService(),
             prompt_template_repository=PromptTemplateRepository(db),
+            # Without this the JD never appears in the list until the cache
+            # expires on its own. Persistence runs here, in the worker, and
+            # calls JDService._invalidate_jd_caches — which is a no-op when
+            # cache_service is None. The API process had already cached the
+            # JD list/search responses, so a newly-created JD stayed hidden
+            # for the full cache_jd_list_ttl_seconds (120s): refresh once
+            # and it is missing, refresh again after the TTL and it appears.
+            cache_service=CacheService(get_redis_client()),
         )
 
         # One EmbeddingService instance shared by the pipeline's own JD-level
@@ -111,7 +120,7 @@ def process_jd_document(
 
         pipeline = JDProcessingPipeline(
             preprocessing_service=PreprocessingService(),
-            extraction_service=GeminiExtractionService(),
+            extraction_service=LLMExtractionService(resolve_active_provider(db)),
             hash_service=HashService(),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(

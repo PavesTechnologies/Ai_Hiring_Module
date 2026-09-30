@@ -53,6 +53,7 @@ class _Harness:
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
             patch(f"{TASKS_MODULE}.CompositeScoringService", return_value=self.scoring_service_instance),
             patch(f"{TASKS_MODULE}.DeadLetterQueueRepository", return_value=self.dead_letter_queue_repo),
+            patch(f"{TASKS_MODULE}.CandidateChangeNotifier"),
         ]
         for p in self._patches:
             p.start()
@@ -67,7 +68,7 @@ def _make_campaign_candidate(
     campaign_id=None, deterministic_score=80, semantic_score=None, effective_ai_score=None,
 ):
     return SimpleNamespace(
-        id=uuid4(), campaign_id=campaign_id or uuid4(),
+        id=uuid4(), campaign_id=campaign_id or uuid4(), resume_id=uuid4(),
         deterministic_score=deterministic_score, semantic_score=semantic_score,
         effective_ai_score=effective_ai_score,
     )

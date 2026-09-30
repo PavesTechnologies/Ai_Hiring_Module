@@ -6,31 +6,6 @@ from pydantic import BaseModel, Field
 from pydantic import ConfigDict
 
 
-class SkillOntologyItemResponse(BaseModel):
-
-    model_config = ConfigDict(
-        from_attributes=True,
-    )
-
-    id: UUID
-
-    canonical_name: str
-
-    aliases: list[str]
-
-    category: str
-
-    confidence: str
-
-    source: str
-
-    is_active: bool
-
-    occurrence_count: int
-
-    last_seen_at: datetime | None
-
-
 class SkillOntologySummaryResponse(BaseModel):
     total_skills: int
     verified_skills: int

@@ -105,6 +105,26 @@ def test_search_term_ors_name_match_with_and_of_skill_tokens():
     assert "candidate_skills" in sql
 
 
+def test_search_term_name_match_ors_whole_string_with_and_of_tokens():
+    """
+    Name matching is two clauses OR'd: the whole search string as one
+    substring (a single partial term matches, e.g. "Jo" -> "John"), and
+    every whitespace token individually required against the name (AND),
+    so a full name typed out of word order - "Doe John" for "John Doe" -
+    still matches. Both must reference full_name; the AND-of-tokens clause
+    repeats the ILIKE pattern once per token.
+    """
+    repo, db = _make_repo()
+
+    repo.search_talent_pool(search="Doe John")
+
+    sql = _compiled(db.execute.call_args_list[1]).lower()
+    assert sql.count("full_name") >= 3  # whole-string clause + one per token
+    assert "%doe%" in sql
+    assert "%john%" in sql
+    assert "%doe john%" in sql
+
+
 def test_or_skill_terms_produce_an_or_of_exists_clauses():
     repo, db = _make_repo()
 

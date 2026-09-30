@@ -6,7 +6,7 @@ from app.models.pipeline import AIEvaluationStatus, AIRecommendation
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.ai.ai_evaluation_response import AIEvaluationGenerationSchema, AIEvaluationResponse
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
 
 
 class AIEvaluationService:
@@ -25,7 +25,7 @@ class AIEvaluationService:
 
     def __init__(
         self,
-        extraction_service: GeminiExtractionService,
+        extraction_service: LLMExtractionService,
         campaign_candidate_repository: CampaignCandidateRepository,
         campaign_candidate_ai_evaluation_repository: CampaignCandidateAIEvaluationRepository,
     ):
@@ -122,7 +122,7 @@ class AIEvaluationService:
     def _render_prompt(prompt_template_text: str, resume_json: dict, jd_json: dict) -> str:
         """
         Plain string assembly - the Prompt Template module has no
-        placeholder/Jinja templating (see GeminiExtractionService.
+        placeholder/Jinja templating (see LLMExtractionService.
         extract_raw's own concatenation for the same convention elsewhere
         in this codebase). Both documents are the already AI-ready
         structured JSON produced by earlier pipeline stages.

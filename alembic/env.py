@@ -53,6 +53,7 @@ import app.models.search            # noqa: F401, E402
 import app.models.email             # noqa: F401, E402
 import app.models.interview         # noqa: F401, E402
 import app.models.oauth             # noqa: F401, E402
+import app.models.ai_provider       # noqa: F401, E402
 
 target_metadata = Base.metadata
 

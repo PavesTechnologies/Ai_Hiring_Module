@@ -40,10 +40,14 @@ from app.repositories.campaign_candidate_repository import (
 from app.repositories.candidate_composite_score_history_repository import (
     CandidateCompositeScoreHistoryRepository,
 )
+from app.repositories.candidate_note_repository import CandidateNoteRepository
 from app.repositories.candidate_repository import CandidateRepository
+from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
@@ -72,7 +76,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MissingSkillOccurrence,
     OverrideReportResponse,
     OverrideReportRow,
-    ProcessingTimelineEntry,
     OverrideWeeklyTrendPoint,
     PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
@@ -96,6 +99,13 @@ from app.schemas.campaign.campaign_candidate_schema import (
     UpdateResumeResubmissionResponse,
 )
 from app.services.audit_service import AuditService
+from app.schemas.campaign.layer_failure_schema import LayerFailureResponse
+from app.services.campaign.layer_failure import (
+    LAYER_AI,
+    LAYER_DETERMINISTIC,
+    LAYER_SEMANTIC,
+    get_layer_failures,
+)
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
@@ -108,7 +118,7 @@ from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
-from app.websocket.publisher import publish_board_candidate_removed, publish_board_stage_changed
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +144,7 @@ _RESUBMISSION_FORMAT_TO_EXTENSION = {
 # which owns its own AI_EVALUATE_TASK_TYPE constant).
 SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 
-_HR_OVERRIDE_CHANGE_REASON = "HR_ADMIN override of deterministic rejection"
+_HR_OVERRIDE_CHANGE_REASON = "RECRUITER override of deterministic rejection"
 _OVERRIDE_RATE_ALERT_THRESHOLD_KEY = "OVERRIDE_RATE_ALERT_THRESHOLD"
 _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
 _OVERRIDE_RECOMMENDATION = "Review campaign JD skills or thresholds."
@@ -196,6 +206,7 @@ _DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD = 40.0
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
 _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY = "HIERARCHY_SEMANTIC_ONLY_THRESHOLD"
 _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY = "HIERARCHY_GRANDCHILD_MULTIPLIER"
 # Not seeded/present in PlatformConfig today (CHILD=0.7/SIBLING=0.4/
@@ -237,6 +248,11 @@ class CampaignCandidateService:
         file_validation_service: FileValidationService | None = None,
         storage_service: StorageService | None = None,
         composite_score_history_repo: CandidateCompositeScoreHistoryRepository | None = None,
+        email_notification_repo: EmailNotificationRepository | None = None,
+        candidate_note_repo: CandidateNoteRepository | None = None,
+        interview_schedule_repo: InterviewScheduleRepository | None = None,
+        dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
+        celery_task_log_repo: CeleryTaskLogRepository | None = None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
@@ -277,6 +293,27 @@ class CampaignCandidateService:
         self.celery_task_log_service = celery_task_log_service
         # M07-E03 S05: optional, additive - same reasoning as above.
         self.skill_repo = skill_repo
+        # Bug fix: delete_campaign_candidate used to call
+        # campaign_candidate_repo.delete() directly with none of these,
+        # which raised a raw ForeignKeyViolation the moment any of these
+        # tables held a row for that campaign_candidate (stage history,
+        # any transition at all, a note, an interview round, a queued/
+        # completed processing task, a dead-lettered failure) - i.e. any
+        # candidate that wasn't still sitting untouched at UPLOADED.
+        # Optional + lazily defaulted from campaign_candidate_repo.db, same
+        # convention as composite_score_history_repo above, so no existing
+        # call site needs to change.
+        self.email_notification_repo = email_notification_repo or EmailNotificationRepository(
+            campaign_candidate_repo.db,
+        )
+        self.candidate_note_repo = candidate_note_repo or CandidateNoteRepository(campaign_candidate_repo.db)
+        self.interview_schedule_repo = interview_schedule_repo or InterviewScheduleRepository(
+            campaign_candidate_repo.db,
+        )
+        self.dead_letter_queue_repo = dead_letter_queue_repo or DeadLetterQueueRepository(
+            campaign_candidate_repo.db,
+        )
+        self.celery_task_log_repo = celery_task_log_repo or CeleryTaskLogRepository(campaign_candidate_repo.db)
 
     def check_no_existing_campaign_membership(
         self,
@@ -550,13 +587,7 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
-        try:
-            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
 
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
 
@@ -626,13 +657,7 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
-        try:
-            publish_board_stage_changed(campaign_candidate.campaign_id, campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.stage_changed for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
 
         candidate = (
             self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
@@ -724,13 +749,15 @@ class CampaignCandidateService:
             for campaign_candidate, candidate, resume in rows
         ]
 
-    # Pipeline Board's 7 columns - HM_REVIEW/FRAUD_REVIEW aren't part of
-    # this board (a candidate can still be in either; see other_count).
+    # Pipeline Board's 8 columns - FRAUD_REVIEW isn't part of this board (a
+    # candidate can still be in it; see other_count). HM_REVIEW sits between
+    # HOLD and INTERVIEW, matching where it falls in the pipeline flow.
     _BOARD_STAGES = (
         PipelineStage.UPLOADED,
         PipelineStage.SCREENING,
         PipelineStage.SHORTLISTED,
         PipelineStage.HOLD,
+        PipelineStage.HM_REVIEW,
         PipelineStage.INTERVIEW,
         PipelineStage.SELECTED,
         PipelineStage.REJECTED,
@@ -1317,6 +1344,7 @@ class CampaignCandidateService:
                 if campaign_candidate.deterministic_score is not None else None
             ),
             deterministic_score_breakdown=deterministic_score_breakdown,
+            failure=self._layer_failure(campaign_candidate, LAYER_DETERMINISTIC),
         )
 
     def get_candidate_semantic(self, campaign_candidate_id: UUID) -> CandidateSemanticResponse:
@@ -1341,6 +1369,7 @@ class CampaignCandidateService:
                 if campaign_candidate.semantic_score is not None else None
             ),
             semantic_score_breakdown=self._build_semantic_score_breakdown(campaign_candidate),
+            failure=self._layer_failure(campaign_candidate, LAYER_SEMANTIC),
         )
 
     def get_candidate_ai_evaluation(self, campaign_candidate_id: UUID) -> CandidateAIEvaluationResponse:
@@ -1375,7 +1404,12 @@ class CampaignCandidateService:
             ai_strengths=ai_evaluation.ai_strengths if ai_evaluation else None,
             ai_weaknesses=ai_evaluation.ai_weaknesses if ai_evaluation else None,
             ai_response_json=ai_evaluation.ai_response_json if ai_evaluation else None,
+            failure=self._layer_failure(campaign_candidate, LAYER_AI),
         )
+
+    def _layer_failure(self, campaign_candidate: CampaignCandidate, layer: str) -> LayerFailureResponse | None:
+        """This layer's open dead-lettered task, if it stopped there - additive, best-effort."""
+        return get_layer_failures(self.dead_letter_queue_repo, campaign_candidate).get(layer)
 
     @staticmethod
     def _build_semantic_score_breakdown(
@@ -1419,41 +1453,6 @@ class CampaignCandidateService:
             matched_keywords=breakdown.get("matched_keywords") or [],
             semantic_explanation=breakdown.get("semantic_explanation"),
         )
-
-    def _build_processing_timeline(self, campaign_candidate_id: UUID) -> list[ProcessingTimelineEntry]:
-        """
-        Epic 4 (M05-E04) Phase D2 - every celery_task_log row for this
-        candidate, oldest first. Read-only; nothing here writes to
-        celery_task_log or recalculates anything the tasks themselves
-        already recorded.
-        """
-        if self.celery_task_log_service is None:
-            return []
-
-        logs = self.celery_task_log_service.repository.get_by_campaign_candidate_id(campaign_candidate_id)
-
-        return [
-            ProcessingTimelineEntry(
-                task_type=log.task_type,
-                status=log.status.value,
-                queued_at=log.queued_at,
-                started_at=log.started_at,
-                completed_at=log.completed_at,
-                duration_display=self._format_duration(log.started_at, log.completed_at),
-                error_message=log.error_message,
-            )
-            for log in logs
-        ]
-
-    @staticmethod
-    def _format_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
-        if started_at is None or completed_at is None:
-            return None
-        seconds = (completed_at - started_at).total_seconds()
-        if seconds < 60:
-            return f"{seconds:.1f} seconds"
-        minutes, remaining_seconds = divmod(int(seconds), 60)
-        return f"{minutes}m {remaining_seconds}s"
 
     def _build_rejection_banner(self, campaign_candidate: CampaignCandidate) -> dict:
         is_overridden = campaign_candidate.decision_type == DecisionType.RESET
@@ -1522,13 +1521,16 @@ class CampaignCandidateService:
         preferred_skills_raw = breakdown.get("preferred_skills") or []
         experience = breakdown.get("experience_validation")
         education = breakdown.get("education_validation")
+        domain = breakdown.get("domain_capability_validation")
 
         mandatory_skills = [
             MandatorySkillBreakdownItem(
                 jd_skill=entry.get("canonical_name"),
                 candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
                 mandatory=entry.get("mandatory"),
+                importance=entry.get("importance"),
                 match_type=entry.get("match_type"),
+                matched_via_alias=bool(entry.get("matched_via_alias")),
                 configured_weight=entry.get("configured_weight"),
                 normalization_discount=entry.get("candidate_scoring_weight"),
                 hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
@@ -1604,6 +1606,7 @@ class CampaignCandidateService:
                 _DETERMINISTIC_WEIGHT_SKILLS_KEY,
                 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
                 _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+                _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
                 _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY,
                 _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
                 _HIERARCHY_CHILD_MULTIPLIER_KEY,
@@ -1623,9 +1626,14 @@ class CampaignCandidateService:
 
         from app.services.campaign.candidate_scoring_service import _degree_level_display
 
-        skills_score = breakdown.get("skill_deterministic_score")
-        if skills_score is None:
-            skills_score = breakdown.get("deterministic_score")
+        if "technical_score" in breakdown:
+            # Current breakdowns: None when the JD had no scorable skills,
+            # which the UI shows as "-" rather than the final score.
+            skills_score = breakdown["technical_score"]
+        else:
+            skills_score = breakdown.get("skill_deterministic_score")
+            if skills_score is None:
+                skills_score = breakdown.get("deterministic_score")
 
         # Reuses candidate_rejections.rejection_reason exactly as already
         # resolved by _build_rejection_banner (passed in by the caller) -
@@ -1640,6 +1648,9 @@ class CampaignCandidateService:
                 status="PASSED" if breakdown.get("deterministic_passed") else "FAILED",
                 threshold=breakdown.get("deterministic_threshold"),
                 mandatory_coverage_pct=breakdown.get("mandatory_coverage_pct"),
+                core_coverage_pct=breakdown.get("core_coverage_pct"),
+                gate_skill_scope=breakdown.get("gate_skill_scope"),
+                missing_core_skill_count=breakdown.get("missing_core_skill_count"),
                 mandatory_skills_matched=mandatory_matched,
                 mandatory_skills_total=len(mandatory_skills_raw),
                 preferred_skills_matched=preferred_matched,
@@ -1686,12 +1697,16 @@ class CampaignCandidateService:
             ),
             score_calculation=ScoreCalculationDetail(
                 skills_score=skills_score,
+                functional_score=(domain.get("score") if domain and domain.get("applicable") else None),
                 experience_score=experience.get("score") if experience else None,
                 education_score=education.get("score") if education else None,
                 final_score=breakdown.get("deterministic_score"),
+                required_domain_capabilities=(domain or {}).get("required") or [],
+                preferred_domain_capabilities=(domain or {}).get("preferred") or [],
             ),
             configuration=ScoreConfigurationDetail(
                 skills_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_SKILLS_KEY),
+                functional_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY),
                 experience_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY),
                 education_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EDUCATION_KEY),
                 deterministic_threshold=breakdown.get("deterministic_threshold"),
@@ -2196,12 +2211,14 @@ class CampaignCandidateService:
         method.
         """
         try:
-            self.stage_transition_service.transition(
+            campaign_candidate, changed = self.stage_transition_service.transition(
                 campaign_candidate_id=campaign_candidate_id,
                 to_stage=to_stage,
                 actor=actor,
                 reason=reason,
             )
+            if changed:
+                CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
         except InvalidPipelineTransitionException as exc:
             self.campaign_candidate_repo.rollback()
             raise CampaignException(str(exc), 409) from exc
@@ -3110,7 +3127,27 @@ class CampaignCandidateService:
         actor_role: str | None = None,
     ) -> None:
         """
-        Delete a campaign candidate.
+        Delete a campaign candidate - scoped to this one campaign
+        application only (see test_campaign_candidate_delete.py for the
+        guarantee that this never reaches the shared Candidate/Resume rows
+        or any other campaign that candidate is also in - contrast with
+        the deliberately global DELETE /candidates/{id} GDPR erasure).
+
+        Bug fix: every one of these tables carries an FK to
+        campaign_candidates.id with no ON DELETE rule, so a bare
+        campaign_candidate_repo.delete() raised a raw
+        psycopg2.errors.ForeignKeyViolation - not the 404/409 this method's
+        callers expect - for any candidate that wasn't still sitting
+        untouched at UPLOADED (i.e. had ever recorded a stage, a note, an
+        interview round, or a processing task). Same set of tables
+        CandidateErasureService.erase_candidate already clears per
+        candidate, here scoped to campaign_candidate_id alone so a
+        candidate present in another campaign is never touched. Order
+        matters only where noted (DLQ before celery_task_log;
+        campaign_candidate_ai_evaluations needs no explicit call - it
+        cascades via cascade="all, delete-orphan" on
+        CampaignCandidate.ai_evaluation when the parent row is deleted
+        below).
         """
 
         try:
@@ -3137,17 +3174,25 @@ class CampaignCandidateService:
             deleted_candidate_id = candidate.candidate_id
             deleted_resume_id = candidate.resume_id
 
+            self.email_notification_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.campaign_candidate_repo.delete_stage_history(deleted_id)
+            self.campaign_candidate_repo.delete_stage_transition_log(deleted_id)
+            self.candidate_note_repo.delete_by_campaign_candidate_id(deleted_id)
+            # Also clears interview_interviewers/interview_schedule_history/
+            # interview_feedback/interview-round email_notifications - see
+            # its own docstring.
+            self.interview_schedule_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.composite_score_history_repo.delete_by_campaign_candidate_id(deleted_id)
+            # DLQ before celery_task_log - dead_letter_queue.original_task_id
+            # is a NOT NULL FK to celery_task_log.task_id.
+            self.dead_letter_queue_repo.delete_by_campaign_candidate_id(deleted_id)
+            self.celery_task_log_repo.delete_by_campaign_candidate_id(deleted_id)
+
             self.campaign_candidate_repo.delete(candidate)
 
             self.campaign_candidate_repo.commit()
 
-            try:
-                publish_board_candidate_removed(deleted_campaign_id, deleted_id)
-            except Exception:
-                logger.exception(
-                    "Failed to publish board.candidate_removed for campaign_candidate_id=%s",
-                    deleted_id,
-                )
+            CandidateChangeNotifier().removed(deleted_campaign_id, deleted_id, [deleted_resume_id])
 
             # Audit Log
             self.audit_service.log(

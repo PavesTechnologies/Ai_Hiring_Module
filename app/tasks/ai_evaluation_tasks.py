@@ -26,11 +26,12 @@ from app.services.campaign.stage_transition_service import StageTransitionServic
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
-from app.websocket.publisher import publish_board_candidate_updated
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         )
 
         evaluation_service = AIEvaluationService(
-            GeminiExtractionService(), campaign_candidate_repo, ai_evaluation_repo,
+            LLMExtractionService(resolve_active_provider(db)), campaign_candidate_repo, ai_evaluation_repo,
         )
         ai_response = evaluation_service.calculate_and_store_evaluation(
             campaign_candidate_id=campaign_candidate.id,
@@ -303,13 +304,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
 
         campaign_candidate_repo.commit()
 
-        try:
-            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

@@ -19,8 +19,10 @@ ALL_REALTIME_ROLES = {
     "HIRING_MANAGER",
 }
 
-# Resume processing WebSocket is intentionally recruiter-only
-RECRUITER_ONLY = {
+# Same roles as its HTTP counterpart, GET /resumes/processing-status/{task_id}
+# - an HR_ADMIN allowed to poll a resume's status may also watch it live.
+RESUME_PROCESSING_ROLES = {
+    "HR_ADMIN",
     "RECRUITER",
 }
 

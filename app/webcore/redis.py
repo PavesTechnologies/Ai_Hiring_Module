@@ -1,4 +1,5 @@
 import redis
+import redis.asyncio as aioredis
 
 from app.core.config import settings
 
@@ -30,6 +31,20 @@ def create_pubsub_client() -> redis.Redis:
     connections - none of those pools are touched or shared here.
     """
     return redis.Redis(connection_pool=_pubsub_pool)
+
+
+# Async pool for the WebSocket server's subscribers - they run on the event
+# loop directly instead of occupying a worker thread per channel.
+_async_pubsub_pool = aioredis.ConnectionPool.from_url(
+    settings.redis_url,
+    decode_responses=True,
+    socket_connect_timeout=2,
+    socket_timeout=None,
+)
+
+
+def create_async_pubsub_client() -> aioredis.Redis:
+    return aioredis.Redis(connection_pool=_async_pubsub_pool)
 
 
 def jd_channel(user_id: str) -> str:

@@ -123,7 +123,7 @@ class _Harness:
             patch(f"{TASKS_MODULE}.CampaignCandidateService", return_value=self.campaign_candidate_service_instance),
             patch(f"{TASKS_MODULE}.StorageService", return_value=self.storage_service_instance),
             patch(f"{TASKS_MODULE}.FileValidationService", return_value=self.file_validation_service_instance),
-            patch(f"{TASKS_MODULE}.publish_board_candidate_added", self.publish_mock),
+            patch(f"{TASKS_MODULE}.CandidateChangeNotifier", return_value=MagicMock(added=self.publish_mock)),
         ]
         for p in self._patches:
             p.start()

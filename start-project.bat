@@ -6,7 +6,7 @@ REM Startup order:
 REM     Redis Ready -> Celery Ready -> FastAPI Ready -> Application Ready
 REM
 REM Auto Reload:
-REM     Celery  : ENABLED via watchmedo
+REM     Celery  : ENABLED via watchmedo (hard restart; see notes below)
 REM     FastAPI : ENABLED via uvicorn --reload
 REM
 REM Infrastructure:
@@ -44,6 +44,53 @@ set "CELERY_APP=app.core.celery_app"
 set "CELERY_LOGLEVEL=info"
 set "CELERY_WATCH_DIR=%PROJECT_DIR%app"
 
+REM Auto-reload restarts are NOT graceful on Windows, and cannot be made so
+REM here. watchmedo stops the worker with a bare os.kill(pid, signal), and on
+REM Windows os.kill only honours CTRL_C_EVENT/CTRL_BREAK_EVENT - every other
+REM signal (SIGINT, its default, and SIGTERM alike) becomes TerminateProcess,
+REM an unconditional kill. So --signal/--kill-after buy nothing on this
+REM platform: a task mid-flight is always killed outright, never warm-shut.
+REM
+REM With task_acks_late that task's message stays in Redis "unacked" rather
+REM than being lost, and two things now bring it back quickly:
+REM   1. broker_transport_options visibility_timeout = 300s
+REM      (app/core/celery_app.py) - the broker redelivers within 5 minutes
+REM      instead of Celery's default hour.
+REM   2. the stalled in-flight recovery sweep in
+REM      app/tasks/resume_processing_tasks.py - the backstop for a RETRY
+REM      whose countdown died with the worker, which no broker timeout can
+REM      recover because that countdown lives in worker memory.
+REM
+REM DEBOUNCE is genuinely useful regardless: one restart per burst of saves
+REM instead of one restart per file, so saving three files no longer kills
+REM the worker three times.
+REM
+REM For a long batch run where restarts are unacceptable, start the worker
+REM without watchmedo: celery -A app.core.celery_app worker --pool=solo
+set "CELERY_DEBOUNCE_INTERVAL=2"
+
+REM Pool, concurrency and queues are read from .env (CELERY_WORKER_POOL,
+REM CELERY_CONCURRENCY, CELERY_QUEUES) so this script and the app share one
+REM source of truth. Empty or missing = solo pool, one task at a time, all
+REM queues. For parallel tasks on Windows set CELERY_WORKER_POOL=threads and
+REM CELERY_CONCURRENCY=4 (and DB_POOL_SIZE at least that high).
+set "CELERY_POOL="
+set "CELERY_CONC="
+set "CELERY_QUEUE_LIST="
+if exist "%PROJECT_DIR%.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%PROJECT_DIR%.env") do (
+        if /i "%%A"=="CELERY_WORKER_POOL" set "CELERY_POOL=%%B"
+        if /i "%%A"=="CELERY_CONCURRENCY" set "CELERY_CONC=%%B"
+        if /i "%%A"=="CELERY_QUEUES" set "CELERY_QUEUE_LIST=%%B"
+    )
+)
+if not defined CELERY_POOL set "CELERY_POOL=solo"
+if not defined CELERY_CONC set "CELERY_CONC=1"
+if /i "%CELERY_POOL%"=="solo" set "CELERY_CONC=1"
+set "CELERY_QUEUE_ARG="
+if defined CELERY_QUEUE_LIST set "CELERY_QUEUE_ARG=--queues=%CELERY_QUEUE_LIST%"
+if defined CELERY_QUEUE_LIST (set "CELERY_QUEUE_LABEL=%CELERY_QUEUE_LIST%") else (set "CELERY_QUEUE_LABEL=all")
+
 REM ----------------------------------------------------------------------------
 REM FastAPI
 REM ----------------------------------------------------------------------------
@@ -59,7 +106,14 @@ REM ----------------------------------------------------------------------------
 set "READY_TIMEOUT_SECONDS=60"
 set "POLL_INTERVAL_SECONDS=2"
 
-set "_FASTAPI_CHECK_URL=http://%FASTAPI_HOST%:%FASTAPI_PORT%/openapi.json"
+REM Bug fix: app.main serves openapi.json/docs under API_PREFIX (see
+REM app/enums/constants.py), not at the bare root - this check used to hit
+REM the root path, which always 404s, so the script always timed out after
+REM READY_TIMEOUT_SECONDS and reported startup as FAILED even when uvicorn
+REM had already logged "Application startup complete" and was serving
+REM requests fine.
+set "API_PREFIX=/airs"
+set "_FASTAPI_CHECK_URL=http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%/openapi.json"
 set "_HTTP_CODE_FILE=%TEMP%\airs_startup_http_code.txt"
 
 cd /d "%PROJECT_DIR%"
@@ -114,10 +168,10 @@ echo ============================================================
 echo  AIRS Application Ready
 echo ============================================================
 echo  Redis   : READY (docker://%REDIS_CONTAINER%)
-echo  Celery  : READY + AUTO-RELOAD
+echo  Celery  : READY + AUTO-RELOAD (pool=%CELERY_POOL%, concurrency=%CELERY_CONC%, queues=%CELERY_QUEUE_LABEL%)
 echo  FastAPI : READY + AUTO-RELOAD
-echo  API     : http://%FASTAPI_HOST%:%FASTAPI_PORT%
-echo  Docs    : http://%FASTAPI_HOST%:%FASTAPI_PORT%/docs
+echo  API     : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%
+echo  Docs    : http://%FASTAPI_HOST%:%FASTAPI_PORT%%API_PREFIX%/docs
 echo ============================================================
 echo.
 
@@ -315,7 +369,10 @@ REM Start Celery with auto-reload
 REM ----------------------------------------------------------------------------
 
 echo   [START] Starting Celery worker with AUTO-RELOAD...
+echo   [MODE]  pool=%CELERY_POOL% concurrency=%CELERY_CONC% queues=%CELERY_QUEUE_LABEL%
 echo   [WATCH] Watching: %CELERY_WATCH_DIR%
+echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
+echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
 
 start "AIRS - Celery Worker" cmd /k ^
 call "%VENV_ACTIVATE%" ^&^& ^
@@ -323,10 +380,13 @@ watchmedo auto-restart ^
 --directory="%CELERY_WATCH_DIR%" ^
 --pattern="*.py" ^
 --recursive ^
+--debounce-interval %CELERY_DEBOUNCE_INTERVAL% ^
 -- ^
 celery -A %CELERY_APP% worker ^
 --loglevel=%CELERY_LOGLEVEL% ^
---pool=solo
+--pool=%CELERY_POOL% ^
+--concurrency=%CELERY_CONC% ^
+%CELERY_QUEUE_ARG%
 
 
 REM ----------------------------------------------------------------------------

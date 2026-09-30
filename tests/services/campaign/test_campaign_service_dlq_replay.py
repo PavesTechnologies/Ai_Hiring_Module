@@ -9,11 +9,12 @@ SERVICE_MODULE = "app.services.campaign.campaign_service"
 
 def _make_dlq_entry(
     task_type="EMBED_RESUME", resume_id=None, campaign_candidate_id=None,
-    replayed_at=None, final_error_message="boom",
+    replayed_at=None, final_error_message="boom", resolved_at=None,
 ):
     return SimpleNamespace(
         id=uuid4(), task_type=task_type, resume_id=resume_id, campaign_candidate_id=campaign_candidate_id,
         replayed_at=replayed_at, original_task_id=str(uuid4()), final_error_message=final_error_message,
+        resolved_at=resolved_at,
     )
 
 
@@ -21,6 +22,7 @@ def _make_service(resume_repo=None, dead_letter_queue_repo=None, campaign_repo=N
     campaign_repo = campaign_repo or MagicMock()
     campaign_repo.get_by_id.return_value = SimpleNamespace(id=uuid4())
     campaign_repo.count_dlq_chain.return_value = 1
+    campaign_repo.count_dlq_chain_replays.return_value = 0
 
     config_repo = config_repo or MagicMock()
     config_repo.get_configs_by_keys.return_value = {}
@@ -228,3 +230,46 @@ def test_unsupported_task_type_still_skipped_unaffected():
 
     assert response.results[0].status == "SKIPPED"
     assert "not supported" in response.results[0].reason
+
+
+# ----------------------------------------------------------------------
+# Resolved chains and the replay limit.
+# ----------------------------------------------------------------------
+
+def _replay_ai_entry(service, campaign_repo, entry):
+    campaign_repo.get_dlq_entries_by_ids.return_value = [entry]
+    with patch(f"{SERVICE_MODULE}.calculate_ai_evaluation_task") as mock_task:
+        response = service.replay_dead_letter_tasks(
+            campaign_id=uuid4(), dlq_ids=[entry.id], replayed_by="rec-1", actor_role="RECRUITER",
+        )
+    return response, mock_task
+
+
+def test_resolved_entry_is_not_replayed():
+    from datetime import datetime, timezone
+
+    service, campaign_repo = _make_service()
+    entry = _make_dlq_entry(task_type="AI_EVALUATE", campaign_candidate_id=uuid4(),
+                            resolved_at=datetime.now(timezone.utc))
+
+    response, mock_task = _replay_ai_entry(service, campaign_repo, entry)
+
+    assert response.results[0].status == "SKIPPED"
+    assert "resolved" in response.results[0].reason.lower()
+    mock_task.apply_async.assert_not_called()
+
+
+def test_replay_limit_allows_exactly_max_replays():
+    service, campaign_repo = _make_service()  # MAX_DLQ_REPLAYS_PER_TASK defaults to 3
+    entry = _make_dlq_entry(task_type="AI_EVALUATE", campaign_candidate_id=uuid4())
+
+    campaign_repo.count_dlq_chain_replays.return_value = 2  # third replay still allowed
+    response, _ = _replay_ai_entry(service, campaign_repo, entry)
+    assert response.results[0].status == "REPLAYED"
+
+    entry = _make_dlq_entry(task_type="AI_EVALUATE", campaign_candidate_id=uuid4())
+    campaign_repo.count_dlq_chain_replays.return_value = 3  # limit used up
+    response, mock_task = _replay_ai_entry(service, campaign_repo, entry)
+    assert response.results[0].status == "SKIPPED"
+    assert "limit" in response.results[0].reason.lower()
+    mock_task.apply_async.assert_not_called()

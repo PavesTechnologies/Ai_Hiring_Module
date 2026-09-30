@@ -55,6 +55,14 @@ def decode_token(token: str) -> dict:
 
 _PUBLIC_PATHS = [
     "/docs", "/openapi.json", "/redoc", "/health",
+    # The same three under API_PREFIX, which is where app.main actually mounts
+    # them - only /airs/* reaches this service through the shared ingress.
+    # Without these, /airs/docs is rejected by this middleware with a 401
+    # before it ever reaches a route, so Swagger cannot even load its own page
+    # (let alone /airs/openapi.json, which it fetches unauthenticated).
+    # Hardcoded rather than built from API_PREFIX to match the /airs/oauth/...
+    # entries below.
+    "/airs/docs", "/airs/openapi.json", "/airs/redoc",
     # Each OAuth provider redirects the user's browser here directly
     # after consent - a plain top-level navigation, which never carries
     # our Authorization header (the provider has no concept of it).

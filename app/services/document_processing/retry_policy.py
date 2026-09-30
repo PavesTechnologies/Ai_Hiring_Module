@@ -49,3 +49,21 @@ def get_max_attempts(stage: ProcessingStage | None) -> int:
     if stage is None:
         return DEFAULT_POLICY.max_attempts
     return STAGE_POLICIES.get(stage, DEFAULT_POLICY).max_attempts
+
+
+def get_retries_remaining(stage: ProcessingStage | None, attempt_number: int) -> int:
+    """
+    How many further attempts a stage still has, given the attempt it is
+    on. Mirrors RetryDriver.handle_failure's `attempt_number >=
+    policy.max_attempts` give-up rule exactly, so a client showing
+    "retry 2 of 3 - 1 left" can never disagree with what the driver will
+    actually do next.
+
+    Read-only, like get_max_attempts above: it re-derives the budget from
+    the same policy tables rather than changing how retries are decided.
+    Note this is the *budget* left, not a promise - a PERMANENT failure
+    classification dead-letters immediately with attempts still unused,
+    which is why callers surfacing a terminal status (SUCCESS/FAILURE/
+    DEAD) should report 0 rather than this number.
+    """
+    return max(0, get_max_attempts(stage) - attempt_number)

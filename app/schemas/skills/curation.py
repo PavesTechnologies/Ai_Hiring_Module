@@ -123,12 +123,32 @@ class JDSkillRemapResponse(BaseModel):
     match_tier: str
 
 
+class UpdateJDSkillRequest(BaseModel):
+    mandatory: bool
+    # Required when mandatory is true; ignored (cleared) when false.
+    importance: Literal["core", "supporting"] | None = None
+
+
+class JDSkillUpdateResponse(BaseModel):
+    id: UUID
+    jd_id: UUID
+    canonical_skill_id: UUID
+    mandatory: bool
+    importance: str | None
+    match_tier: str
+
+
+class JDSkillRemoveResponse(BaseModel):
+    id: UUID
+
+
 class JDSkillItem(BaseModel):
     id: UUID
     jd_id: UUID
     canonical_skill_id: UUID
     canonical_name: str
     mandatory: bool
+    importance: str | None = None
     weight: float | None
     confidence: float | None
     match_tier: str

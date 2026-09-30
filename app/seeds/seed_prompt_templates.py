@@ -11,7 +11,7 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# RESUME_PARSE / JD_PARSE: GeminiExtractionService.extract_raw appends the
+# RESUME_PARSE / JD_PARSE: LLMExtractionService.extract_raw appends the
 # actual document text straight after this template text (plain
 # concatenation, no {{PLACEHOLDER}} substitution) - so these must be
 # free-standing instructions with no placeholder tokens of their own.
@@ -79,9 +79,12 @@ A technical skill includes, but is not limited to:
 - Infrastructure Technologies
 - Technical Methodologies explicitly listed as skills
 
+Professional competencies listed by name in a Skills / Key Skills / Core Competencies / Areas of Expertise section ARE skills too - extract them (e.g. Key Account Management, Contract Negotiation, Sales Forecasting, Talent Acquisition, Payroll Processing, Financial Reporting), along with the tools of that profession (e.g. Salesforce, Workday, Tally, MS Excel). This matters for non-technical candidates, whose skills are mostly competencies rather than technologies.
+
 Extract skills from all relevant sections including:
 
 - Skills
+- Key Skills / Core Competencies / Areas of Expertise
 - Technical Skills
 - Professional Summary
 - Work Experience
@@ -103,7 +106,9 @@ Examples:
 - "Maven or Gradle" → ["Maven", "Gradle"]
 - "Basic understanding of Docker and Linux" → ["Docker", "Linux"]
 - "Unit Testing (PyTest)" → ["Unit Testing", "PyTest"]
-- "Object-Oriented Programming (OOP)" → ["Object-Oriented Programming", "OOP"]
+- "Object-Oriented Programming (OOP)" → "Object-Oriented Programming"
+
+A term in parentheses that abbreviates or restates the preceding term is the same skill - keep only the preceding term. A parenthetical that names a different technology (e.g. "Unit Testing (PyTest)") is still split.
 
 If multiple technologies appear in a single phrase, extract each as a separate skill.
 
@@ -117,10 +122,10 @@ Do NOT:
 - Extract project names as skills.
 - Extract departments.
 - Extract responsibilities.
-- Extract business processes.
-- Extract soft skills as technical skills.
+- Extract business processes or duties that appear only inside work-experience or responsibility sentences (a competency must be listed by name, not inferred from a described duty).
+- Extract soft skills (communication, leadership, teamwork) as skills.
 
-Return each technical skill only once.
+Return each skill only once.
 
 SOFT SKILLS
 -----------
@@ -308,18 +313,48 @@ GENERAL RULES
 9. Preserve the original capitalization of extracted values whenever possible.
 10. Do not include duplicate entries across any list.
 
-TECHNICAL SKILLS
-----------------
-Extract only explicit technical skills mentioned in the Job Description.
+REQUIRED VS PREFERRED — HOW TO READ THE JD
+------------------------------------------
+Job Descriptions name their sections differently. Treat any heading or phrase that means "the candidate must have this" as REQUIRED, for example:
 
-A technical skill includes, but is not limited to:
+Required Skills, Key Skills, Mandatory Skills, Must Have, Must-Have Skills, Need to Have, Essential Skills, Core Competencies, Technical Skills, Skills, Skill Set, Requirements, Qualifications, What You'll Bring, What We're Looking For, You Have, Desired Profile, Candidate Profile.
+
+Treat any heading or phrase that means "optional" as PREFERRED, for example:
+
+Good to Have, Nice to Have, Preferred, Desirable, Bonus, Plus, Added Advantage, Would Be Great, Optional.
+
+If the Job Description has no headings, use the wording: "must / required / mandatory / strong experience in / proficiency in" → required; "plus / nice to have / preferred / familiarity with / exposure to" → preferred. If neither applies, treat the item as required.
+
+Items inside Responsibilities or the Job Summary become skills only when they name a specific technology, tool or competency. Never turn a responsibility sentence into a skill.
+
+SKILLS
+------
+First decide the role type:
+
+- TECHNICAL role: it primarily builds, configures, operates or analyses technology or data (e.g. developer, DevOps engineer, data scientist, QA engineer, architect).
+- NON-TECHNICAL role: e.g. sales, HR, finance, accounting, operations, marketing, customer support, administration, general management.
+
+A skill is something a candidate for THIS role would list by name in the Skills section of their resume:
+
+- Technologies, tools, platforms, languages and frameworks - for every role.
+- For NON-TECHNICAL roles, also the role's own professional competencies (e.g. Key Account Management, Contract Negotiation, Sales Forecasting, Pipeline Management, Talent Acquisition, Payroll Processing, Financial Reporting) and the tools of that profession (e.g. Salesforce, HubSpot, Workday, SAP SuccessFactors, Tally, MS Excel).
+
+- For TECHNICAL roles, also named engineering practices and methods listed under a skills heading (e.g. Incident Management, SLO/SLI Definition, Infrastructure as Code, CI/CD, Microservices Architecture, Responsive Design, Web Accessibility, Unit Testing). These are supporting skills, never core.
+
+Generic behavioural traits are soft skills, never skills - even for non-technical roles: e.g. communication, presentation skills, leadership, team leadership, teamwork, collaboration, conflict resolution, problem solving, analytical thinking, attention to detail, ownership.
+
+When a category is followed by the named tools that satisfy it - e.g. "HRIS (Workday or SAP SuccessFactors)", "CRM experience (Salesforce)", "BI tools such as Power BI or Tableau" - extract the named tools as separate skills and drop the category. The tools are NOT aliases of each other or of the category.
+
+Technologies include, but are not limited to:
 
 - Programming Languages
 - Frameworks
 - Libraries
-- APIs
+- Named APIs (e.g. "Glide APIs", "REST APIs")
 - Databases
 - Cloud Platforms
+- Software Platforms and their named modules or products (e.g. "ServiceNow", "ServiceNow SPM")
+- Named platform features or artifacts (e.g. "Business Rules", "Script Includes", "Flow Designer")
 - DevOps Tools
 - CI/CD Tools
 - Build Tools
@@ -333,26 +368,32 @@ A technical skill includes, but is not limited to:
 - Package Managers
 - Container Technologies
 - Infrastructure Technologies
-- Technical Methodologies explicitly listed as skills
 
-Extract skills from all relevant sections including:
+Extract skills from every section of the Job Description (skills sections under any of the headings above, Qualifications, Responsibilities, Job Summary), following the rules above.
 
-- Required Skills
-- Mandatory Skills
-- Must Have
-- Essential Skills
-- Preferred Skills
-- Good to Have
-- Nice to Have
-- Responsibilities
-- Qualifications
-- Job Summary
+DOMAIN CAPABILITIES
+-------------------
+Only these two kinds of items are domain capabilities - never skills, even when they are listed under a skills heading:
+
+1. Business processes or functional areas of the business system a TECHNICAL role builds or configures. The developer works ON them; they are not the developer's own skill. Examples: for a ServiceNow SPM developer - Demand Management, Portfolio Planning, Portfolio Hierarchy, Investment Funding, Financial Planning, Resource Management, Data Modelling, Application Portfolio Management, Enterprise Architecture; for an SAP developer - Order-to-Cash, Procure-to-Pay; for a claims-system developer - Claims Processing.
+
+2. Industry, regulatory or business-context knowledge that is neither a tool nor the role's own profession, for any role. Examples: IFRS 9, Basel, HIPAA, AML/KYC, SaaS selling, retail domain, B2B enterprise environment, labour law knowledge.
+
+Everything else listed under a skills heading is a skill - including a non-technical role's own professional competencies.
+
+If unsure whether an item is a skill or a domain capability: for a TECHNICAL role choose domain capability; for a NON-TECHNICAL role choose skill.
+
+Rules:
+
+- Capabilities listed under required-type headings go into domain_capabilities.required; optional-type headings (or "exposure / familiarity") go into domain_capabilities.preferred.
+- Drop a trailing parenthetical acronym: "Application Portfolio Management (APM)" → "Application Portfolio Management".
+- A domain capability is never "core" and never receives an importance.
 
 SKILL EXTRACTION RULES
 ----------------------
-Extract only the core technical skill.
+Extract only the skill itself.
 
-Remove descriptive or proficiency qualifiers that do not change the identity of the technology.
+Remove descriptive or proficiency qualifiers that do not change the identity of the skill.
 
 Examples:
 
@@ -363,57 +404,79 @@ Examples:
 - "Maven or Gradle" → ["Maven", "Gradle"]
 - "Basic understanding of Docker and Linux" → ["Docker", "Linux"]
 - "Unit Testing (JUnit)" → ["Unit Testing", "JUnit"]
-- "Object-Oriented Programming (OOP)" → ["Object-Oriented Programming", "OOP"]
+- "Proven experience in key account management" → "Key Account Management"
+- "CRM experience (Salesforce)" → "Salesforce"
+
+Parenthetical abbreviations: a term in parentheses that abbreviates or restates the preceding term is the SAME skill, not a second one. Keep the preceding term only.
+
+- "Object-Oriented Programming (OOP)" → "Object-Oriented Programming"
+- "Continuous Integration (CI)" → "Continuous Integration"
+
+A parenthetical that names a DIFFERENT technology (e.g. "Unit Testing (JUnit)") is still split into separate skills.
+
+Splitting on "/", "or", "and", ",": when the parts share a trailing noun, distribute that noun to every part.
+
+- "REST / SOAP APIs" → ["REST APIs", "SOAP APIs"]
+- "Client and Server Scripts" → ["Client Scripts", "Server Scripts"]
+
+Generic fragments: never extract a generic word on its own as a skill. Never extract any of these alone: "APIs", "integrations", "development", "scripting", "configuration", "customization", "workspaces", "tools", "platform".
+
+- If a phrase names a platform plus a generic word, extract only the platform: "ServiceNow development" → "ServiceNow", "ServiceNow integrations" → "ServiceNow".
+- If the phrase names no specific technology (e.g. "APIs", "integrations"), extract nothing from it.
 
 If multiple technologies appear in a single phrase, extract each as a separate skill.
 
 Do NOT:
 
 - Infer technologies.
-- Rename technologies.
-- Map aliases.
+- Rename technologies (except the parenthetical, shared-noun, and generic-fragment rules above).
 - Normalize to ontology.
 - Extract company names.
 - Extract project names.
 - Extract departments.
 - Extract responsibilities as skills.
-- Extract soft skills as technical skills.
+- Extract soft skills as skills.
+- Extract domain capabilities as skills.
 
-Return each technical skill only once.
+Return each skill only once.
+
+ALIASES
+-------
+When the Job Description presents several names for the SAME technology - as alternatives, former names, or a product and its sub-application - extract ONE skill and record the other names in aliases instead of extracting them as separate skills.
+
+- "ServiceNow SPM / ITBM / PPM" → skill "ServiceNow SPM", aliases ["ITBM", "PPM"]
+- "Strategic Portfolio Management (formerly ITBM)" → skill "Strategic Portfolio Management", aliases ["ITBM"]
+
+Aliases are only different names for the SAME product or technology. Different products that can each satisfy a requirement (e.g. Workday and SAP SuccessFactors, Maven and Gradle, AWS and Azure) are separate skills, never aliases.
+
+Only add aliases that appear in the Job Description. Never invent aliases. Keep the name used most prominently in the Job Description as the skill; do not rename it. Each aliases entry refers to a skill that appears in required_skills or preferred_skills. Skills without aliases get no entry.
 
 REQUIRED SKILLS
 ---------------
-Extract technical skills explicitly listed or described as:
-
-- Required
-- Mandatory
-- Must Have
-- Essential
+Extract skills that appear under a required-type heading, or that the wording marks as required (see REQUIRED VS PREFERRED above).
 
 If a skill appears as both required and preferred, include it only in required_skills.
 
 IMPORTANCE CLASSIFICATION (REQUIRED SKILLS ONLY)
 -------------------------------------------------
-For every skill in required_skills, classify its importance as exactly one of:
+Split required skills into required_skills.core and required_skills.supporting.
 
-- "core" — a skill that is central to the role and directly needed to perform its primary responsibilities (e.g. the main programming language, the primary framework/platform the role is built on).
-- "supporting" — a skill that is useful and expected but secondary to the role's primary capabilities (e.g. build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling).
+- core — ONLY the few items the role cannot be done without, typically 2 to 5 skills:
+  - TECHNICAL role: the primary platform or product the role is built on; the primary programming language(s) the role writes code in (e.g. JavaScript for ServiceNow development, Java for a Spring Boot backend); the primary framework or the platform's primary scripting API (e.g. Spring Boot for a Java backend, Glide APIs for ServiceNow).
+  - NON-TECHNICAL role: the professional competencies that define the job (e.g. for a Regional Sales Manager: B2B Enterprise Sales, Key Account Management, Pipeline Management; for an HR Generalist: Talent Acquisition, Employee Relations). Tools are supporting unless the Job Description makes one indispensable.
+- supporting — every other required skill: individual platform features and artifacts configured on top of the platform (e.g. Business Rules, Script Includes, Flow Designer), build tools, version control, testing frameworks, supporting libraries, infrastructure/tooling, and a non-technical role's tools and secondary competencies.
 
-Infer core vs. supporting from the Job Description's wording, responsibilities, qualifications, technical stack, how often the skill is repeated, and its role in context. Do not ask the recruiter to assign this and do not invent an importance that isn't grounded in the text.
+Never mark as core: API styles, architectures or engineering practices (e.g. REST APIs, Microservices Architecture, Responsive Design, CI/CD), tools of a non-technical role, or soft skills.
 
-If a required skill's importance is genuinely ambiguous, classify it as "supporting" — the safer default.
+Being listed under "Mandatory Skills" / "Must Have" / "Key Skills" is NOT evidence of core - it only makes a skill required. Repetition in the text is NOT evidence of core. Domain capabilities are never core.
 
-preferred_skills never receive an importance classification — they are not part of required-skill qualification.
+If a required skill's importance is ambiguous, classify it as supporting.
+
+preferred_skills never receive an importance classification.
 
 PREFERRED SKILLS
 ----------------
-Extract technical skills explicitly listed or described as:
-
-- Preferred
-- Good to Have
-- Nice to Have
-- Bonus
-- Plus
+Extract skills that appear under an optional-type heading, or that the wording marks as optional (see REQUIRED VS PREFERRED above).
 
 Do not duplicate any skill already present in required_skills.
 Do not classify preferred skills as required, and do not assign them an importance.
@@ -545,12 +608,18 @@ OUTPUT FORMAT
 Return ONLY the following JSON.
 
 {
-    "required_skills": [
-        {"name": "...", "importance": "core"}
+    "required_skills": {
+        "core": [],
+        "supporting": []
+    },
+    "preferred_skills": [],
+    "aliases": [
+        {"skill": "...", "aliases": []}
     ],
-    "preferred_skills": [
-        {"name": "..."}
-    ],
+    "domain_capabilities": {
+        "required": [],
+        "preferred": []
+    },
     "soft_skills": [],
     "responsibilities": [],
     "certifications": [],

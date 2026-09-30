@@ -25,19 +25,26 @@ class SESEmailClient:
             )
         return self._client
 
-    def send_email(self, *, to_address: str, subject: str, body_text: str) -> str:
+    def send_email(self, *, to_address: str, subject: str, body_text: str, is_html: bool = False) -> str:
         """
         Returns the SES MessageId on success. Raises EmailDeliveryException
         (wrapping the original botocore exception) on failure - the caller
         classifies transient vs. permanent and decides whether to retry.
+
+        HTML template design fix: is_html defaults to False so the
+        existing plain-text-only caller (embedding_health_tasks.py's
+        ops alert, which isn't built from an EmailTemplate row and was
+        never meant to be HTML) is unaffected. email_tasks.py passes
+        True since EmailTemplate.body_template is now HTML.
         """
+        body_key = "Html" if is_html else "Text"
         try:
             response = self._get_client().send_email(
                 Source=settings.ses_from_email,
                 Destination={"ToAddresses": [to_address]},
                 Message={
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
-                    "Body": {"Text": {"Data": body_text, "Charset": "UTF-8"}},
+                    "Body": {body_key: {"Data": body_text, "Charset": "UTF-8"}},
                 },
             )
             return response["MessageId"]

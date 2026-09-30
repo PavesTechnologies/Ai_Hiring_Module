@@ -75,9 +75,11 @@ def _parse_campaign_id(campaign_id: str) -> UUID:
         "RESUME_FRESHNESS_MAX_AGE_DAYS) are returned. Read-only - no resume "
         "is selected here; ResumeSelectionService independently selects the "
         "resume actually used once a candidate is added to a campaign. "
-        "HR_ADMIN only."
+        "HR_ADMIN, RECRUITER or HIRING_MANAGER."
     ),
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+    dependencies=[
+        Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    ],
 )
 def search_talent_pool_candidates(
     search: str | None = Query(

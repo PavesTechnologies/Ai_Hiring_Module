@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import func, or_, select
+from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.campaigns import CampaignStatus, HiringCampaign
@@ -70,6 +71,41 @@ class JDRepository:
             )
             .first()
         )
+
+    # Literal SQL per key - never interpolate the caller's value into the query.
+    _EDUCATION_OPTION_SQL = {
+        key: sql_text(f"""
+            SELECT mode() WITHIN GROUP (ORDER BY v) AS value, count(*) AS usage_count
+            FROM (
+                SELECT regexp_replace(btrim(education_criteria->>'{key}'), '\\s+', ' ', 'g') AS v
+                FROM job_descriptions
+                UNION ALL
+                SELECT regexp_replace(btrim(extracted_json->'education'->>'{key}'), '\\s+', ' ', 'g')
+                FROM job_descriptions
+            ) options
+            WHERE v IS NOT NULL AND v <> ''
+              AND (CAST(:pattern AS text) IS NULL OR v ILIKE CAST(:pattern AS text))
+            GROUP BY lower(v)
+            ORDER BY usage_count DESC, value
+            LIMIT :limit
+        """)
+        for key in ("degree", "field")
+    }
+
+    def get_distinct_education_values(self, key: str, search: str | None, limit: int) -> list[str]:
+        """
+        Distinct education `degree`/`field` values used across every JD
+        version - recruiter-entered education_criteria plus AI-extracted
+        extracted_json.education - for JD form suggestions. Duplicates are
+        collapsed case/whitespace-insensitively; each group is shown in its
+        most common spelling, most-used first.
+        """
+        pattern = None
+        if search:
+            escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{escaped}%"
+        rows = self.db.execute(self._EDUCATION_OPTION_SQL[key], {"pattern": pattern, "limit": limit}).all()
+        return [row.value for row in rows]
 
     def has_active_campaign(self, jd_id: UUID) -> bool:
        

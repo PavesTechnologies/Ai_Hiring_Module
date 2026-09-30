@@ -49,7 +49,8 @@ from app.services.compliance.consent_service import ConsentService
 from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
-from app.services.extractions.gemini_extraction_service import GeminiExtractionService
+from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.factory import resolve_active_provider
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
@@ -64,7 +65,7 @@ from app.core.redis_client import get_redis_client
 from app.services.cache_service import CacheService
 from app.tasks.embedding_tasks import _enqueue_resume_embedding
 from app.tasks.resume_processing_tasks import _enqueue_deterministic_scoring
-from app.websocket.publisher import publish_board_candidate_added
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -345,7 +346,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         candidate_service = CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
         file_validation_service = FileValidationService(config_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
-        extraction_service = GeminiExtractionService()
+        extraction_service = LLMExtractionService(resolve_active_provider(db))
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
@@ -472,13 +473,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             # (already_linked is None); a file whose candidate was already on
             # this campaign's board makes no board-visible change.
             if added_campaign_candidate is not None:
-                try:
-                    publish_board_candidate_added(job.campaign_id, added_campaign_candidate)
-                except Exception:
-                    logger.exception(
-                        "Failed to publish board.candidate_added for campaign_candidate_id=%s",
-                        added_campaign_candidate.id,
-                    )
+                CandidateChangeNotifier().added(job.campaign_id, added_campaign_candidate)
 
             _maybe_finalize_job(job_repo, job.id)
 
@@ -644,13 +639,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         # branch; it shares this task's session, and this is the first
         # commit reached after that insert - same reasoning as
         # ResumeIntakeService.upload_resume()'s individual-upload path).
-        try:
-            publish_board_candidate_added(job.campaign_id, added_campaign_candidate)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.candidate_added for campaign_candidate_id=%s",
-                added_campaign_candidate.id,
-            )
+        CandidateChangeNotifier().added(job.campaign_id, added_campaign_candidate)
 
         _maybe_finalize_job(job_repo, job.id)
 

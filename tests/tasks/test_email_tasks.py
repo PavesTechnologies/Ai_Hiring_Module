@@ -95,6 +95,7 @@ def test_sends_email_successfully_and_marks_notification_sent():
             to_address="candidate@example.com",
             subject="Update on your application for Backend Engineer",
             body_text="Dear Jane Doe.",
+            is_html=True,
         )
         assert notification.status == EmailNotificationStatus.SENT
         assert notification.sent_at is not None
@@ -212,6 +213,7 @@ def test_template_context_is_merged_in_for_extra_placeholders():
             to_address="candidate@example.com",
             subject="Your interview for Backend Engineer",
             body_text="Dear Jane Doe, your interview is on August 28, 2026 at 2:00 PM.",
+            is_html=True,
         )
 
 
@@ -247,5 +249,6 @@ def test_external_interviewer_recipient_uses_plaintext_address_no_decryption():
             to_address="interviewer@example.com",
             subject="Update on your application for Backend Engineer",
             body_text="Dear Jane Doe.",
+            is_html=True,
         )
         h.encryption_service_instance.decrypt.assert_called_once()

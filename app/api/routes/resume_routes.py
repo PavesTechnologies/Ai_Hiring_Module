@@ -219,9 +219,17 @@ def get_resume_processing_status(
     task_id: UUID,
     service: ResumeProcessingStatusService = Depends(get_resume_processing_status_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    include_attempts: bool = Query(
+        default=False,
+        description=(
+            "Return every attempt's stage rows instead of one row per stage. "
+            "Off by default: each retry re-records the whole pipeline prefix, "
+            "so the raw list is mostly SKIPPED repeats. Turn on for an audit trail."
+        ),
+    ),
 ):
     return APIResponse.ok(
-        data=service.get_status(task_id),
+        data=service.get_status(task_id, include_attempts=include_attempts),
         message="Processing status retrieved successfully.",
     )
 
@@ -234,7 +242,7 @@ def get_resume_processing_status(
 def get_resume_parsed_json_by_candidate(
     campaign_candidate_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
 ):
     """Read-only monitoring endpoint — returns the campaign candidate's active resume's parsed_json."""
     return APIResponse.ok(

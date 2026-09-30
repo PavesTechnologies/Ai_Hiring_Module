@@ -33,6 +33,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
+from app.services.campaign.dlq_error_summary import summarize_dlq_error
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, ScoringLayerExplanationResponse, CampaignMinimalResponse, CampaignPageResponse
@@ -56,14 +57,14 @@ from app.schemas.campaign.campaign_response import (CampaignWeightHistoryRespons
 )
 from app.core.config import settings
 from app.core.cache_keys import (
-    campaign_key,
     campaign_list_key,
-    campaign_list_prefix,
     campaign_platform_defaults_key,
     campaign_scoring_key,
     campaign_weight_presets_key,
 )
+from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.repositories.campaign_weight_preset_repository import (CampaignWeightPresetRepository,
 )
 from app.schemas.campaign.campaign_detail_response import (CampaignDetailResponse,
@@ -87,6 +88,7 @@ from app.schemas.campaign.campaign_monitoring_schema import (StalledCandidateIte
 )
 from app.schemas.campaign.pipeline_summary_response import PipelineSummaryResponse, StageStat
 from app.schemas.campaign.campaign_processing_status_response import (ProcessingStatusSummaryResponse,
+    DeadLetterQueueAttemptResponse,
     DeadLetterQueueEntryResponse,
     DeadLetterQueuePageResponse,
 )
@@ -531,8 +533,7 @@ class CampaignService:
             )
 
             self.campaign_repo.commit()
-            if self.cache_service:
-                self.cache_service.delete_by_prefix(campaign_list_prefix())
+            CacheInvalidator(self.cache_service).campaign()
 
 
             hiring_manager_name = request.hiring_manager_id
@@ -573,73 +574,10 @@ class CampaignService:
             raise
 
     def _invalidate_campaign_caches(self, campaign_id: UUID, org_id: UUID | None = None) -> None:
-        if not self.cache_service:
-            return
-        self.cache_service.delete(campaign_key(campaign_id), campaign_scoring_key(campaign_id))
-        self.cache_service.delete_by_prefix(campaign_list_prefix())
-        if org_id is not None:
-            self.cache_service.delete(campaign_weight_presets_key(org_id))
+        CacheInvalidator(self.cache_service).campaign(campaign_id, org_id)
 
-    def get_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
-        if not self.cache_service:
-            return self._load_campaign_by_id(campaign_id)
-
-        raw = self.cache_service.get_or_set(
-            campaign_key(campaign_id),
-            loader=lambda: self._load_campaign_by_id(campaign_id).model_dump_json(),
-            ttl=settings.cache_campaign_ttl_seconds,
-        )
-        return CampaignResponse.model_validate_json(raw)
-
-    def _load_campaign_by_id(self, campaign_id: UUID) -> CampaignResponse:
-
-        campaign = self.campaign_repo.get_by_id(campaign_id)
-        if not campaign:
-            raise CampaignException(
-                f"Campaign with ID '{campaign_id}' not found",
-                404,
-                None
-            )
-
-        jd = self.jd_repo.get_by_id(campaign.jd_id)
-        if not jd:
-            raise CampaignException(
-                "Associated job description not found",
-                404,
-                None
-            )
-
-        hiring_manager_name = None
-        if campaign.hiring_manager_id:
-            hiring_manager = self.db.query(User).filter(User.id == campaign.hiring_manager_id).first()
-            if hiring_manager:
-                hiring_manager_name = hiring_manager.full_name
-
-        cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
-        candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
-
-        return CampaignResponse(
-            id=campaign.id,
-            name=campaign.name,
-            status=campaign.status.value,
-            jd_title=jd.title,
-            jd_version=jd.version_number,
-            hiring_manager=hiring_manager_name,
-            max_candidates=campaign.max_candidates,
-            deadline=campaign.deadline,
-            created_at=campaign.created_at,
-            candidate_count=candidate_count,
-            shortlisted_count=self.campaign_repo.get_shortlisted_count(campaign.id),
-            approaching_cap=self._is_approaching_cap(
-                self.campaign_repo.get_selected_count(campaign.id),
-                campaign.max_candidates,
-                cap_warning_percentage,
-            ),
-            deadline_soon=self._is_deadline_soon(
-                campaign.deadline,
-                deadline_warning_days,
-            )
-        )
+    def _candidate_notifier(self) -> CandidateChangeNotifier:
+        return CandidateChangeNotifier(CacheInvalidator(self.cache_service))
 
     def get_scoring_configuration(
         self,
@@ -1514,7 +1452,9 @@ class CampaignService:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
         counts = self.campaign_repo.get_task_status_counts(campaign_id)
-        dlq_count = len(self.campaign_repo.get_dead_letter_queue_entries(campaign_id))
+        # Open chains only: a replayed attempt that failed again is one live
+        # entry, not two; a chain whose re-run succeeded is resolved.
+        dlq_count = self.campaign_repo.count_open_dlq_chains(campaign_id)
 
         breakdown = self.campaign_repo.get_task_type_breakdown(campaign_id)
         estimate = self._estimate_completion(breakdown, self._circuit_breaker_summaries())
@@ -1528,19 +1468,82 @@ class CampaignService:
             estimated_completion=estimate,
         )
 
+    def _max_dlq_replays(self) -> int:
+        return int(self.config_repo.get_configs_by_keys(["MAX_DLQ_REPLAYS_PER_TASK"])
+            .get("MAX_DLQ_REPLAYS_PER_TASK") or 3
+        )
+
     def get_dead_letter_queue_for_campaign(self,
         campaign_id: UUID,
         limit: int = 50,
         offset: int = 0,
+        include_resolved: bool = False,
     ) -> DeadLetterQueuePageResponse:
-        """Paginated DLQ entries, narrowed to task_types this endpoint can actually replay."""
+        """
+        Paginated DLQ, narrowed to task_types this endpoint can actually
+        replay, one entry per chain (task_type + candidate/resume): its newest
+        attempt, with older attempts as `history`. Resolved chains (a later
+        run of the task succeeded) are hidden unless include_resolved.
+        """
         campaign = self.campaign_repo.get_by_id(campaign_id)
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
-        entries, total = self.campaign_repo.get_replayable_dead_letter_queue_page(
-            campaign_id, list(self._DLQ_REPLAY_BUILDERS), limit, offset,
+        entries, total = self.campaign_repo.get_dlq_chain_heads_page(
+            campaign_id, list(self._DLQ_REPLAY_BUILDERS), limit, offset, include_resolved=include_resolved,
         )
+        chains = self.campaign_repo.get_dlq_chain_rows(entries)
+        replay_limit = self._max_dlq_replays()
+
+        def _chain_fields(head) -> dict:
+            rows = chains.get(head.id) or [head]
+            replays_used = sum(1 for r in rows if r.replayed_at is not None)
+            if head.resolved_at is not None:
+                chain_status = "RESOLVED"
+            elif head.replayed_at is not None:
+                chain_status = "REPLAYING"
+            elif replays_used >= replay_limit:
+                chain_status = "LIMIT_REACHED"
+            else:
+                chain_status = "OPEN"
+            return {
+                "error_summary": summarize_dlq_error(head.final_error_message),
+                "status": chain_status,
+                "attempt_count": len(rows),
+                "replays_used": replays_used,
+                "replay_limit": replay_limit,
+                "resolved_at": head.resolved_at,
+                "history": [
+                    DeadLetterQueueAttemptResponse(
+                        id=r.id,
+                        error_summary=summarize_dlq_error(r.final_error_message),
+                        moved_to_dlq_at=r.moved_to_dlq_at,
+                        replayed_at=r.replayed_at,
+                    )
+                    for r in rows if r.id != head.id
+                ],
+            }
+
+        # candidate_name follow-up, decrypted the same way every other
+        # campaign-wide list in this codebase does (see
+        # CampaignCandidateService._decrypt_candidate_name /
+        # get_stalled_candidates above). EncryptionService/CandidateRepository
+        # constructed ad-hoc rather than added to this class's already-large
+        # constructor, matching that same convention for an occasional-use
+        # dependency.
+        candidate_ids_by_entry = self.campaign_repo.get_candidate_ids_for_dlq_entries(entries)
+        encryption_service = EncryptionService(EncryptionKeyRepository(self.db))
+        candidates_by_id = {
+            c.id: c for c in CandidateRepository(self.db).get_by_ids(list(set(candidate_ids_by_entry.values())))
+        }
+
+        def _candidate_name(entry_id: UUID) -> str | None:
+            candidate = candidates_by_id.get(candidate_ids_by_entry.get(entry_id))
+            return (
+                encryption_service.decrypt(candidate.full_name_encrypted, candidate.encryption_key_id)
+                if candidate is not None else None
+            )
+
         return DeadLetterQueuePageResponse(
             entries=[
                 DeadLetterQueueEntryResponse(id=e.id,
@@ -1549,10 +1552,12 @@ class CampaignService:
                     retry_count=e.retry_count,
                     moved_to_dlq_at=e.moved_to_dlq_at,
                     campaign_candidate_id=e.campaign_candidate_id,
+                    candidate_name=_candidate_name(e.id),
                     last_attempted_at=e.last_attempted_at,
                     resolution_notes=e.resolution_notes,
                     replayed_at=e.replayed_at,
                     replay_supported=True,
+                    **_chain_fields(e),
                 )
                 for e in entries
             ],
@@ -1717,9 +1722,7 @@ class CampaignService:
         if not campaign:
             raise CampaignException(f"Campaign '{campaign_id}' not found", 404)
 
-        max_replays = int(self.config_repo.get_configs_by_keys(["MAX_DLQ_REPLAYS_PER_TASK"])
-            .get("MAX_DLQ_REPLAYS_PER_TASK") or 3
-        )
+        max_replays = self._max_dlq_replays()
 
         entries = self.campaign_repo.get_dlq_entries_by_ids(campaign_id, dlq_ids)
         found_ids = {e.id for e in entries}
@@ -1732,6 +1735,11 @@ class CampaignService:
 
         to_enqueue = []  # (task_fn, kwargs, new_task_id) — fired only after commit
         for entry in entries:
+            if entry.resolved_at is not None:
+                results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED",
+                    reason="Already resolved - a later run of this task succeeded.",
+                ))
+                continue
             if entry.replayed_at is not None:
                 results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED", reason="Already replayed.",
                 ))
@@ -1753,7 +1761,10 @@ class CampaignService:
                 if skip_reason is not None:
                     results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED", reason=skip_reason))
                     continue
-            if self.campaign_repo.count_dlq_chain(entry) >= max_replays:
+            # MAX_DLQ_REPLAYS_PER_TASK = how many replays a chain may have
+            # (the original failure isn't a replay) - counted as replays
+            # already done, so the limit allows exactly that many.
+            if self.campaign_repo.count_dlq_chain_replays(entry) >= max_replays:
                 results.append(DLQReplayResultItem(dlq_id=entry.id, status="SKIPPED",
                     reason=f"Replay limit reached ({max_replays}).",
                 ))
@@ -1995,6 +2006,7 @@ class CampaignService:
         if target == PipelineStage.SELECTED:
             self._close_if_all_positions_filled(campaign_id, actor_id, actor_role)
         self.campaign_repo.commit()
+        self._candidate_notifier().stage_changed(campaign_id, cc)
 
         # Selection email is no longer sent automatically here - see
         # CampaignCandidateService.send_selection_email (manual send
@@ -2040,6 +2052,7 @@ class CampaignService:
             },
         )
         self.campaign_repo.commit()
+        self._candidate_notifier().stage_changed(campaign_id, cc)
         return StalledActionResponse(campaign_candidate_id=cc.id,
             action="FLAGGED_FOR_REVIEW",
             detail=f"Moved from {from_stage.value} to FRAUD_REVIEW.",
@@ -3003,41 +3016,4 @@ class CampaignService:
         except Exception:
             self.campaign_repo.rollback()
             raise
-
-    def calculate_deterministic_score(self,
-        jd_id: UUID,
-        resume_id: UUID,
-        deterministic_threshold: float,
-    ) -> tuple[float, bool]:
-
-        mandatory_skills = (self.skill_repository.get_mandatory_jd_skills(jd_id)
-        )
-
-        candidate_skills = (self.skill_repository.get_candidate_normalized_skills(resume_id)
-        )
-
-        if not mandatory_skills:
-            return 100.0, True
-
-        required_skill_ids = {
-            skill.canonical_skill_id
-            for skill in mandatory_skills
-        }
-
-        candidate_skill_ids = {
-            skill.canonical_skill_id
-            for skill in candidate_skills
-            if skill.canonical_skill_id is not None
-        }
-
-        matched_skill_ids = required_skill_ids.intersection(candidate_skill_ids
-        )
-
-        score = round((len(matched_skill_ids) / len(required_skill_ids)) * 100,
-            2,
-        )
-
-        passed = score >= float(deterministic_threshold)
-
-        return score, passed
 

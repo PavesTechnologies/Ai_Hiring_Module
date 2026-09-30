@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy import and_, func, or_, select, text, tuple_, update
 from sqlalchemy.orm import Session, joinedload, lazyload
 from app.models.pipeline import PipelineStage
 from datetime import datetime, timezone, timedelta
@@ -822,6 +822,35 @@ class CampaignRepository:
         )
         return entries, total
 
+    def get_candidate_ids_for_dlq_entries(self, entries: list[DeadLetterQueue]) -> dict[UUID, UUID]:
+        """
+        Maps each DLQ entry's id to its resolved candidate_id, for the
+        candidate_name follow-up on the DLQ list - campaign_candidate_id is
+        preferred, falling back to resume_id for entries that died before
+        their CampaignCandidate row existed (see _dead_letter_queue_for_campaign_query).
+        """
+        cc_ids = {e.campaign_candidate_id for e in entries if e.campaign_candidate_id}
+        resume_ids = {e.resume_id for e in entries if e.resume_id}
+        cc_candidate_ids = (
+            dict(self.db.query(CampaignCandidate.id, CampaignCandidate.candidate_id)
+                .filter(CampaignCandidate.id.in_(cc_ids)).all())
+            if cc_ids else {}
+        )
+        resume_candidate_ids = (
+            dict(self.db.query(Resume.id, Resume.candidate_id)
+                .filter(Resume.id.in_(resume_ids)).all())
+            if resume_ids else {}
+        )
+
+        result = {}
+        for e in entries:
+            candidate_id = cc_candidate_ids.get(e.campaign_candidate_id)
+            if candidate_id is None and e.resume_id:
+                candidate_id = resume_candidate_ids.get(e.resume_id)
+            if candidate_id is not None:
+                result[e.id] = candidate_id
+        return result
+
     def get_pending_resume_counts_by_campaign(self) -> list[tuple[UUID, str, int]]:
         """
         Epic 4 (M05-E04) Phase D12 - platform-wide, grouped by campaign,
@@ -912,6 +941,90 @@ class CampaignRepository:
             e for e in self.get_dead_letter_queue_entries(campaign_id)
             if e.id in wanted
         ]
+
+    # ── DLQ chains ─────────────────────────────────────────────────
+    # A chain is every dead-lettered attempt of the same piece of work - same
+    # task_type + entity (campaign_candidate_id, else resume_id; the keying
+    # count_dlq_chain uses). A failed replay dead-letters a NEW row, so the
+    # newest row (the chain's "head") is the live one and older rows are
+    # replayed history, kept for audit and the replay limit.
+
+    @staticmethod
+    def _dlq_chain_key():
+        return func.coalesce(DeadLetterQueue.campaign_candidate_id, DeadLetterQueue.resume_id)
+
+    def _dlq_chain_heads_query(self, campaign_id: UUID, task_types: list[str] | None, include_resolved: bool):
+        base = self._dead_letter_queue_for_campaign_query(campaign_id)
+        if task_types is not None:
+            base = base.filter(DeadLetterQueue.task_type.in_(task_types))
+        ranked = base.with_entities(
+            DeadLetterQueue.id.label("id"),
+            func.row_number().over(
+                partition_by=(DeadLetterQueue.task_type, self._dlq_chain_key()),
+                order_by=DeadLetterQueue.moved_to_dlq_at.desc(),
+            ).label("rn"),
+        ).subquery()
+        query = (self.db.query(DeadLetterQueue)
+            .join(ranked, ranked.c.id == DeadLetterQueue.id)
+            .filter(ranked.c.rn == 1)
+        )
+        if not include_resolved:
+            query = query.filter(DeadLetterQueue.resolved_at.is_(None))
+        return query
+
+    def get_dlq_chain_heads_page(self,
+        campaign_id: UUID,
+        task_types: list[str],
+        limit: int,
+        offset: int,
+        include_resolved: bool = False,
+    ) -> tuple[list[DeadLetterQueue], int]:
+        """One row per chain (its newest attempt), open chains only unless include_resolved."""
+        query = self._dlq_chain_heads_query(campaign_id, task_types, include_resolved)
+        total = query.count()
+        entries = (query
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        return entries, total
+
+    def count_open_dlq_chains(self, campaign_id: UUID) -> int:
+        """Unresolved chains across every task type - the campaign's live DLQ size."""
+        return self._dlq_chain_heads_query(campaign_id, None, include_resolved=False).count()
+
+    def get_dlq_chain_rows(self, heads: list[DeadLetterQueue]) -> dict[UUID, list[DeadLetterQueue]]:
+        """head.id -> every row in that head's chain (head included), newest first - one query."""
+        keys = {
+            (h.task_type, h.campaign_candidate_id or h.resume_id): h.id
+            for h in heads if (h.campaign_candidate_id or h.resume_id) is not None
+        }
+        result: dict[UUID, list[DeadLetterQueue]] = {h.id: [h] for h in heads}
+        if not keys:
+            return result
+        rows = (self.db.query(DeadLetterQueue)
+            .filter(tuple_(DeadLetterQueue.task_type, self._dlq_chain_key()).in_(list(keys)))
+            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
+            .all()
+        )
+        result = {head_id: [] for head_id in result}
+        for row in rows:
+            head_id = keys.get((row.task_type, row.campaign_candidate_id or row.resume_id))
+            if head_id is not None:
+                result[head_id].append(row)
+        return result
+
+    def count_dlq_chain_replays(self, entry: DeadLetterQueue) -> int:
+        """How many times this entry's chain has already been replayed."""
+        conditions = [DeadLetterQueue.task_type == entry.task_type, DeadLetterQueue.replayed_at.is_not(None)]
+        if entry.campaign_candidate_id is not None:
+            conditions.append(DeadLetterQueue.campaign_candidate_id == entry.campaign_candidate_id)
+        elif entry.resume_id is not None:
+            conditions.append(DeadLetterQueue.resume_id == entry.resume_id)
+        else:
+            return 0
+        return self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar() or 0
 
     def count_dlq_chain(self, entry: DeadLetterQueue) -> int:
         """

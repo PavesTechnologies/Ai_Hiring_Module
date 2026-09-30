@@ -16,10 +16,13 @@ from app.services.cache_service import CacheService
 
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.checkpoint_repository import CheckpointRepository
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.stage_execution_service import StageExecutionService
 from app.services.jd.jd_processing_status_service import JDProcessingStatusService
+from app.services.jd.jd_retry_service import JDRetryService
 
 
 def get_jd_repository(
@@ -105,4 +108,36 @@ def get_jd_processing_status_service(
     return JDProcessingStatusService(
         task_log_repository=task_log_repository,
         stage_repository=stage_repository,
+    )
+
+
+# Local factories rather than importing app.dependencies.resume's copies:
+# resume.py already imports from this module, so importing it back would
+# be a circular import. Both are one-line `Repo(db)` constructions with no
+# behaviour to share, exactly like get_checkpoint_repository above.
+def get_stage_failure_log_repository(
+    db: Session = Depends(get_db),
+) -> StageFailureLogRepository:
+    return StageFailureLogRepository(db)
+
+
+def get_dead_letter_queue_repository(
+    db: Session = Depends(get_db),
+) -> DeadLetterQueueRepository:
+    return DeadLetterQueueRepository(db)
+
+
+def get_jd_retry_service(
+    task_log_repository: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    checkpoint_repository: CheckpointRepository = Depends(get_checkpoint_repository),
+    stage_failure_log_repository: StageFailureLogRepository = Depends(get_stage_failure_log_repository),
+    document_processing_repository: DocumentProcessingRepository = Depends(get_document_processing_repository),
+    dead_letter_queue_repository: DeadLetterQueueRepository = Depends(get_dead_letter_queue_repository),
+) -> JDRetryService:
+    return JDRetryService(
+        celery_task_log_repo=task_log_repository,
+        checkpoint_repo=checkpoint_repository,
+        stage_failure_log_repo=stage_failure_log_repository,
+        document_processing_repo=document_processing_repository,
+        dead_letter_queue_repo=dead_letter_queue_repository,
     )

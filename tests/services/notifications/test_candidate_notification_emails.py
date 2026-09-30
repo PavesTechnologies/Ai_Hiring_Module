@@ -27,7 +27,7 @@ def _schedule(**overrides):
     defaults = dict(
         id=uuid4(), start_at=datetime(2026, 8, 28, 14, 0, tzinfo=timezone.utc),
         end_at=datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc), platform=InterviewPlatform.TEAMS,
-        timezone="UTC", meeting_link=None, location=None,
+        timezone="UTC", candidate_timezone=None, meeting_link=None, location=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -89,6 +89,25 @@ def test_interview_email_context_converts_a_non_utc_timezone_before_formatting()
 
     assert context["interview_date"] == "August 28, 2026"
     assert context["interview_time"] == "2:00 PM IST"
+
+
+def test_interview_email_context_uses_candidate_timezone_over_the_schedulers():
+    """
+    Per-recipient timezone fix: a candidate in the US can be scheduled by
+    a recruiter in India - the candidate's confirmation email must show
+    their own local time (candidate_timezone), not the scheduler's zone
+    (schedule.timezone).
+    """
+    schedule = _schedule(
+        start_at=datetime(2026, 8, 28, 8, 30, tzinfo=timezone.utc),
+        end_at=datetime(2026, 8, 28, 9, 30, tzinfo=timezone.utc),
+        timezone="Asia/Kolkata",
+        candidate_timezone="America/New_York",
+    )
+    context = mod._interview_email_context(schedule, [])
+
+    assert context["interview_date"] == "August 28, 2026"
+    assert context["interview_time"] == "4:30 AM EDT"
 
 
 # ----------------------------------------------------------------------
