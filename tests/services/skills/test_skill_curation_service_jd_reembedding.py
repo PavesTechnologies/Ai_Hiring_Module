@@ -31,6 +31,8 @@ def _make_service():
     encryption_service = MagicMock()
     resume_repository = MagicMock()
     reevaluation_queue_service = MagicMock()
+    jd_repository = MagicMock()
+    jd_repository.has_active_campaign.return_value = False
 
     service = SkillCurationService(
         skill_repository=skill_repository,
@@ -39,6 +41,7 @@ def _make_service():
         encryption_service=encryption_service,
         resume_repository=resume_repository,
         reevaluation_queue_service=reevaluation_queue_service,
+        jd_repository=jd_repository,
     )
     return service, skill_repository, embedding_queue_service
 

@@ -8,8 +8,9 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
-from app.core.cache_keys import candidate_list_prefix, resume_key, resume_list_prefix
+from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ class ResumeCleanupService:
 
         try:
             campaign_candidates = self.campaign_candidate_repo.get_by_resume_id(resume_id)
+            # Plain values captured before delete - the rows are gone after commit.
+            removed = [(cc.campaign_id, cc.id) for cc in campaign_candidates]
 
             for campaign_candidate in campaign_candidates:
                 # candidate_rejections is gone - the AI evaluation row
@@ -113,10 +116,10 @@ class ResumeCleanupService:
             self.resume_repo.rollback()
             raise
 
-        if self.cache_service:
-            self.cache_service.delete(resume_key(resume_id))
-            self.cache_service.delete_by_prefix(resume_list_prefix())
-            self.cache_service.delete_by_prefix(candidate_list_prefix())
+        notifier = CandidateChangeNotifier(CacheInvalidator(self.cache_service))
+        notifier.invalidator.resumes([resume_id])
+        for campaign_id, campaign_candidate_id in removed:
+            notifier.removed(campaign_id, campaign_candidate_id, [resume_id])
 
     def _delete_resume_file(self, file_path: str) -> None:
         """Best-effort — same convention as CandidateErasureService._delete_resume_file."""

@@ -258,6 +258,34 @@ class SkillRepository:
             .all()
         )
 
+    def update_jd_skill_classification(
+        self, jd_skill: JDSkill, mandatory: bool, importance: JDSkillImportance | None,
+    ) -> JDSkill:
+        """HR-driven change of a JDSkill's mandatory flag / importance, marked as a human decision."""
+        jd_skill.mandatory = mandatory
+        jd_skill.importance = importance
+        jd_skill.match_tier = "MANUAL_HR"
+        jd_skill.verification_status = JDSkillVerificationStatus.AUTO_VERIFIED
+        self.db.flush()
+        self.db.refresh(jd_skill)
+        return jd_skill
+
+    def delete_jd_skill(self, jd_skill: JDSkill) -> None:
+        """Removes the JD-to-skill link only - the skill_ontology row itself is untouched."""
+        self.db.delete(jd_skill)
+        self.db.flush()
+
+    def count_core_jd_skills(self, jd_id: UUID) -> int:
+        return (
+            self.db.query(func.count(JDSkill.id))
+            .filter(
+                JDSkill.jd_id == jd_id,
+                JDSkill.mandatory.is_(True),
+                JDSkill.importance == JDSkillImportance.CORE,
+            )
+            .scalar()
+        )
+
     def remap_jd_skill(self, jd_skill: JDSkill, new_canonical_skill_id: UUID) -> JDSkill:
         """
         HR-driven override of an existing JDSkill's canonical mapping.
@@ -748,6 +776,7 @@ class SkillRepository:
                 JDSkill.weight.label("weight"),
                 JDSkill.mandatory.label("mandatory"),
                 JDSkill.importance.label("importance"),
+                JDSkill.alias_skill_ids.label("alias_skill_ids"),
                 CandidateSkill.scoring_weight.label("candidate_scoring_weight"),
                 CandidateSkill.match_tier.label("match_tier"),
                 CandidateSkill.confidence.label("confidence"),

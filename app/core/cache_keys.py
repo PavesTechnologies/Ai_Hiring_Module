@@ -34,18 +34,10 @@ def jd_search_prefix() -> str:
     return f"{PREFIX}:jd:search:"
 
 
-def jd_processing_status_key(jd_id: Any) -> str:
-    return f"{PREFIX}:jd:{jd_id}:processing:status"
-
-
 # --- Resume / Candidate ---
 
 def resume_key(resume_id: Any) -> str:
     return f"{PREFIX}:resume:{resume_id}"
-
-
-def candidate_key(candidate_id: Any) -> str:
-    return f"{PREFIX}:candidate:{candidate_id}"
 
 
 def resume_list_key(params: dict[str, Any]) -> str:
@@ -62,10 +54,6 @@ def candidate_list_key(params: dict[str, Any]) -> str:
 
 def candidate_list_prefix() -> str:
     return f"{PREFIX}:candidate:list:"
-
-
-def resume_processing_status_key(resume_id: Any) -> str:
-    return f"{PREFIX}:resume:{resume_id}:processing:status"
 
 
 # --- Campaign ---
@@ -109,14 +97,6 @@ def skill_key(skill_id: Any) -> str:
     return f"{PREFIX}:skill:{skill_id}"
 
 
-def skill_name_key(normalized_name: str) -> str:
-    return f"{PREFIX}:skill:name:{normalized_name.strip().lower()}"
-
-
-def skill_alias_key(alias: str) -> str:
-    return f"{PREFIX}:skill:alias:{alias.strip().lower()}"
-
-
 def skill_catalog_key() -> str:
     return f"{PREFIX}:skill:catalog:canonical-names"
 
@@ -143,10 +123,6 @@ def dashboard_key(kind: str, params: dict[str, Any]) -> str:
     return f"{PREFIX}:dashboard:{kind}:{_hash_params(params)}"
 
 
-def dashboard_prefix() -> str:
-    return f"{PREFIX}:dashboard:"
-
-
 # --- Reference / config data ---
 
 def reference_key(name: str) -> str:
@@ -155,11 +131,14 @@ def reference_key(name: str) -> str:
 
 # --- Processing pipeline ---
 
-def processing_status_key(kind: str, document_id: Any) -> str:
-    return f"{PREFIX}:processing:{kind}:{document_id}:status"
-
 
 # --- Stampede lock ---
 
 def lock_key(cache_key: str) -> str:
     return f"{PREFIX}:lock:{cache_key}"
+
+
+# --- Invalidation tombstones (see CacheService) ---
+
+def tombstone_key(key_or_prefix: str) -> str:
+    return f"{PREFIX}:tomb:{key_or_prefix}"

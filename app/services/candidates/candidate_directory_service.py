@@ -1,5 +1,4 @@
 import logging
-from uuid import UUID
 
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.models.candidates import Candidate

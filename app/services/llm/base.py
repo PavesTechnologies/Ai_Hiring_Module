@@ -206,17 +206,6 @@ def _quota_reason(message: str) -> str | None:
     return None
 
 
-def is_quota_exhausted(message: str) -> bool:
-    """
-    Every provider returns 429 for both short-term rate limiting (transient)
-    and spent quota/credits (permanent until someone changes the plan); only
-    the message tells them apart.
-    """
-    return _quota_reason(message) in (
-        LLMErrorReason.DAILY_LIMIT, LLMErrorReason.CREDITS_EXHAUSTED, LLMErrorReason.QUOTA_EXHAUSTED,
-    )
-
-
 def reason_for(status_code: int | None, message: str) -> str:
     if _contains_any(message, _INVALID_KEY_MARKERS) or status_code == 401:
         return LLMErrorReason.INVALID_KEY

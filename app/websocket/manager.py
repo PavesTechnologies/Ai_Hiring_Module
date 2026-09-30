@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections import defaultdict
 
@@ -55,20 +56,21 @@ class ConnectionManager:
         if not connections:
             return
 
-        disconnected = []
+        # Concurrently, so one slow client never delays the rest of the channel.
+        targets = list(connections)
+        results = await asyncio.gather(
+            *(websocket.send_json(message) for websocket in targets),
+            return_exceptions=True,
+        )
 
-        for websocket in connections.copy():
-            try:
-                await websocket.send_json(message)
-            except Exception:
-                logger.exception(
-                    "Failed to send WebSocket message. channel=%s",
+        for websocket, result in zip(targets, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Failed to send WebSocket message; dropping connection. channel=%s error=%r",
                     channel,
+                    result,
                 )
-                disconnected.append(websocket)
-
-        for websocket in disconnected:
-            self.disconnect(channel, websocket)
+                self.disconnect(channel, websocket)
 
     def has_connections(self, channel: str) -> bool:
         return bool(self.connections.get(channel))

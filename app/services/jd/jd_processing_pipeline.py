@@ -323,7 +323,7 @@ class JDProcessingPipeline:
 
     def _run_skill_normalization(self, context: JDProcessingContext) -> None:
         context.skill_matches = self.skill_normalization_service.normalize_skills(
-            context.extraction.required_skills, context.extraction.preferred_skills,
+            context.extraction.required_skill_specs(), context.extraction.preferred_skill_specs(),
         )
 
     def _run_embedding_generation(self, context: JDProcessingContext) -> None:

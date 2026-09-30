@@ -14,11 +14,14 @@ from app.schemas.skills.curation import (
     CreateCanonicalSkillFromUnknownResponse,
     JDSkillItem,
     JDSkillRemapResponse,
+    JDSkillRemoveResponse,
+    JDSkillUpdateResponse,
     JDUnknownSkillItem,
     MapUnknownSkillRequest,
     PromoteUnknownSkillRequest,
     PromotedSkillResponse,
     RemapJDSkillRequest,
+    UpdateJDSkillRequest,
     UnknownSkillActionResponse,
     UnknownSkillCandidateItem,
     UnknownSkillDeleteResponse,
@@ -365,6 +368,7 @@ def list_jd_skills(
                 canonical_skill_id=jd_skill.canonical_skill_id,
                 canonical_name=skill.canonical_name,
                 mandatory=jd_skill.mandatory,
+                importance=jd_skill.importance.value.lower() if jd_skill.importance else None,
                 weight=jd_skill.weight,
                 confidence=jd_skill.confidence,
                 match_tier=jd_skill.match_tier,
@@ -417,7 +421,7 @@ def remap_jd_skill(
     service: SkillCurationService = Depends(get_skill_curation_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    """HR overrides an existing JDSkill's canonical mapping in place."""
+    """HR overrides an existing JDSkill's canonical mapping in place. 409 while the JD is used by an active campaign."""
     jd_skill = service.remap_jd_skill(
         jd_skill_id=jd_skill_id,
         new_canonical_skill_id=request.new_canonical_skill_id,
@@ -431,4 +435,60 @@ def remap_jd_skill(
             match_tier=jd_skill.match_tier,
         ),
         message="JDSkill canonical mapping updated.",
+    )
+
+
+@router.patch(
+    "/jd-skills/{jd_skill_id}",
+    response_model=APIResponse[JDSkillUpdateResponse],
+)
+def update_jd_skill(
+    jd_skill_id: UUID,
+    request: UpdateJDSkillRequest,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Change whether a JD skill is mandatory and its core/supporting
+    importance. 409 while the JD is used by an active campaign; 400 when
+    importance is missing for a mandatory skill, or when the change would
+    leave the JD with no core skill.
+    """
+    jd_skill = service.update_jd_skill(
+        jd_skill_id=jd_skill_id,
+        mandatory=request.mandatory,
+        importance=request.importance,
+        actor_id=user.user_id,
+    )
+    return APIResponse.ok(
+        data=JDSkillUpdateResponse(
+            id=jd_skill.id,
+            jd_id=jd_skill.jd_id,
+            canonical_skill_id=jd_skill.canonical_skill_id,
+            mandatory=jd_skill.mandatory,
+            importance=jd_skill.importance.value.lower() if jd_skill.importance else None,
+            match_tier=jd_skill.match_tier,
+        ),
+        message="JD skill updated.",
+    )
+
+
+@router.delete(
+    "/jd-skills/{jd_skill_id}",
+    response_model=APIResponse[JDSkillRemoveResponse],
+)
+def remove_jd_skill(
+    jd_skill_id: UUID,
+    service: SkillCurationService = Depends(get_skill_curation_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    """
+    Remove a skill from a JD. Only the JD-to-skill link is deleted - the
+    skill stays in the skill ontology. 409 while the JD is used by an active
+    campaign; 400 when it is the JD's last core skill.
+    """
+    service.remove_jd_skill(jd_skill_id=jd_skill_id, actor_id=user.user_id)
+    return APIResponse.ok(
+        data=JDSkillRemoveResponse(id=jd_skill_id),
+        message="Skill removed from JD.",
     )

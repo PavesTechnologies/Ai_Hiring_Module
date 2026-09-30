@@ -57,10 +57,14 @@ class EmbeddingService:
         """
         parts = [title]
 
-        if extraction.required_skills:
-            parts.append("Required Skills: " + ", ".join(item.name for item in extraction.required_skills))
+        required_names = extraction.required_skills.core + extraction.required_skills.supporting
+        if required_names:
+            parts.append("Required Skills: " + ", ".join(required_names))
         if extraction.preferred_skills:
-            parts.append("Preferred Skills: " + ", ".join(item.name for item in extraction.preferred_skills))
+            parts.append("Preferred Skills: " + ", ".join(extraction.preferred_skills))
+        domain_capabilities = extraction.domain_capabilities.required + extraction.domain_capabilities.preferred
+        if domain_capabilities:
+            parts.append("Domain Capabilities: " + ", ".join(domain_capabilities))
         if extraction.responsibilities:
             parts.append("Responsibilities: " + "; ".join(extraction.responsibilities))
         if extraction.certifications:

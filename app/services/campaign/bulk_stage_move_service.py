@@ -12,6 +12,7 @@ from app.schemas.campaign.bulk_stage_move_schema import (
 )
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 
 # The unified decision model replaced hr_override; a manual stage move records
@@ -40,10 +41,12 @@ class BulkStageMoveService:
         campaign_candidate_repo: CampaignCandidateRepository,
         pipeline_transition_service: PipelineTransitionService,
         audit_service: AuditService,
+        notifier: CandidateChangeNotifier | None = None,
     ):
         self.campaign_candidate_repo = campaign_candidate_repo
         self.pipeline_transition_service = pipeline_transition_service
         self.audit_service = audit_service
+        self.notifier = notifier or CandidateChangeNotifier()
 
     def bulk_move(
         self,
@@ -139,6 +142,8 @@ class BulkStageMoveService:
             self.campaign_candidate_repo.rollback()
             raise
 
+        self.notifier.stage_changed_many(campaign_id, candidates)
+
         return BulkStageMoveResultResponse(
             moved_count=len(candidates),
             from_stage=from_stage.value,
@@ -221,6 +226,8 @@ class BulkStageMoveService:
         except Exception:
             self.campaign_candidate_repo.rollback()
             raise
+
+        self.notifier.stage_changed(campaign_id, cc)
 
         return SingleStageMoveResultResponse(
             campaign_candidate_id=campaign_candidate_id,

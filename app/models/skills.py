@@ -136,6 +136,12 @@ class JDSkill(Base):
         SAEnum(JDSkillImportance, name="jd_skill_importance_enum"),
         nullable=True,
     )
+    # Canonical ids of the JD's aliases for this skill (e.g. ITBM/PPM for
+    # ServiceNow SPM). A candidate holding any of them counts as an EXACT
+    # match for this skill. NULL/empty = no aliases.
+    alias_skill_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True,
+    )
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)
     verification_status: Mapped[JDSkillVerificationStatus] = mapped_column(

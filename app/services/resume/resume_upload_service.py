@@ -27,7 +27,7 @@ from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.upload_resume_result import UploadResumeResult
 from app.tasks.resume_processing_tasks import process_resume_document
-from app.core.cache_keys import candidate_list_prefix, resume_key, resume_list_prefix
+from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
 
 _AVAILABLE_RESOLUTIONS = ["use_existing", "upload_anyway"]
@@ -98,11 +98,7 @@ class ResumeUploadService:
         self.cache_service = cache_service
 
     def _invalidate_resume_caches(self, resume_id) -> None:
-        if not self.cache_service:
-            return
-        self.cache_service.delete(resume_key(resume_id))
-        self.cache_service.delete_by_prefix(resume_list_prefix())
-        self.cache_service.delete_by_prefix(candidate_list_prefix())
+        CacheInvalidator(self.cache_service).resumes([resume_id])
 
     def upload(
         self,

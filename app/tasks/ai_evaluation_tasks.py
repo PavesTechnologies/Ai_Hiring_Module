@@ -31,7 +31,7 @@ from app.services.llm.factory import resolve_active_provider
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
-from app.websocket.publisher import publish_board_candidate_updated
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -304,13 +304,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
 
         campaign_candidate_repo.commit()
 
-        try:
-            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

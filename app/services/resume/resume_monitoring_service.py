@@ -13,6 +13,7 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.services.campaign.layer_failure import get_layer_failures
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -598,6 +599,7 @@ class ResumeMonitoringService:
                 if campaign_candidate.composite_score is not None else None
             ),
             ai_candidate_summary=self._build_ai_candidate_summary(campaign_candidate),
+            failed_layers=list(get_layer_failures(self.dead_letter_queue_repository, campaign_candidate).values()),
         )
 
     def _decrypt_candidate_field(self, candidate, encrypted_attr: str) -> str | None:

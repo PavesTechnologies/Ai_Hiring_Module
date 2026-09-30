@@ -29,6 +29,7 @@ from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService,
     MandatorySkillMatchType,
 )
+from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
@@ -38,7 +39,7 @@ from app.services.notifications.candidate_rejection_email_service import Candida
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.email_tasks import send_candidate_email_task
-from app.websocket.publisher import publish_board_candidate_updated
+from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ _EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
 _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
+_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
 
 
 AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
@@ -244,6 +246,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             _DETERMINISTIC_WEIGHT_SKILLS_KEY,
             _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
             _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+            _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
         ])
         validation_service = ExperienceEducationValidationService(
             experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
@@ -268,7 +271,9 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
             "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),
             "education": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, 0.15)),
+            "functional": float(weight_configs.get(_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY, 0.15)),
         }
+        domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
 
         scoring_service = CandidateScoringService(
             skill_repo, skill_ontology_repo, config_repo, campaign_candidate_repo,
@@ -281,6 +286,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             score_weights=score_weights,
             required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
             max_missing_core_skills=int(campaign.max_missing_core_skills),
+            domain_result=domain_result,
         )
 
         now = datetime.now(timezone.utc)
@@ -343,13 +349,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
 
         campaign_candidate_repo.commit()
 
-        try:
-            publish_board_candidate_updated(campaign.id, campaign_candidate.id)
-        except Exception:
-            logger.exception(
-                "Failed to publish board.candidate_updated for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
+        CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

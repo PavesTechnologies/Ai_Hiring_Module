@@ -1,20 +1,24 @@
 import logging
 from uuid import UUID
 
+from app.core.cache_invalidation import CacheInvalidator
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.enums.constants import ActionType, EntityType
-from app.exception_handler.exceptions import BadRequestError, NotFoundError
+from app.exception_handler.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.candidates import Candidate
 from app.models.skills import (
+    JDSkillImportance,
     JDSkillVerificationStatus,
     SkillOntology,
     UnknownSkill,
     UnknownSkillStatus,
 )
+from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.schemas.unknown_skill.skill_resolution_request import UnknownSkillResolutionType
 from app.services.audit_service import AuditService
+from app.services.cache_service import CacheService
 from app.services.embedding_queue_service import (
     EmbeddingQueueError,
     EmbeddingQueueService,
@@ -53,6 +57,8 @@ class SkillCurationService:
         encryption_service: EncryptionService,
         resume_repository: ResumeRepository,
         reevaluation_queue_service: UnknownSkillReEvaluationQueueService,
+        jd_repository: JDRepository | None = None,
+        cache_service: CacheService | None = None,
     ):
         self.skill_repository = skill_repository
         self.audit_service = audit_service
@@ -60,6 +66,11 @@ class SkillCurationService:
         self.encryption_service = encryption_service
         self.resume_repository = resume_repository
         self.reevaluation_queue_service = reevaluation_queue_service
+        self.jd_repository = jd_repository
+        self.invalidator = CacheInvalidator(cache_service)
+        # JDs whose is_verified may have flipped in the current transaction;
+        # invalidated (and cleared) by _on_committed.
+        self._stale_jd_ids: set[UUID] = set()
 
     def list_pending_unknown_skills(
         self,
@@ -146,7 +157,7 @@ class SkillCurationService:
             },
         )
         self.skill_repository.commit()
-        self._trigger_jd_reembedding(touched_jd_ids)
+        self._on_committed(touched_jd_ids, catalog_changed=True)
         return unknown_skill
 
     def promote_to_canonical(
@@ -191,7 +202,7 @@ class SkillCurationService:
         )
         self.skill_repository.commit()
         self._enqueue_skill_embedding(new_skill.id)
-        self._trigger_jd_reembedding(touched_jd_ids)
+        self._on_committed(touched_jd_ids, catalog_changed=True)
         return new_skill
 
     def create_canonical_skill_from_unknown(
@@ -234,7 +245,7 @@ class SkillCurationService:
         self.skill_repository.commit()
         self._enqueue_skill_embedding(result["skill"].id)
         self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
-        self._trigger_jd_reembedding(affected_jd_ids)
+        self._on_committed(affected_jd_ids, catalog_changed=True)
         return result
 
     def bulk_approve_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
@@ -270,7 +281,7 @@ class SkillCurationService:
 
             self._enqueue_skill_embedding(result["skill"].id)
             self._trigger_reevaluation(unknown_skill_id, affected_resume_ids)
-            self._trigger_jd_reembedding(affected_jd_ids)
+            self._on_committed(affected_jd_ids, catalog_changed=True)
             results.append({
                 "unknown_skill_id": unknown_skill_id,
                 "success": True,
@@ -438,7 +449,7 @@ class SkillCurationService:
         )
         self.skill_repository.commit()
         self._trigger_reevaluation(unknown_skill.id, affected_resume_ids)
-        self._trigger_jd_reembedding(touched_jd_ids)
+        self._on_committed(touched_jd_ids, catalog_changed=True)
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
         """
@@ -471,6 +482,7 @@ class SkillCurationService:
         """
         result = self._delete_unknown_skill_core(unknown_skill_id, actor_id)
         self.skill_repository.commit()
+        self._on_committed(set())
         return result
 
     def bulk_delete_unknown_skills(self, unknown_skill_ids: list[UUID], actor_id: str) -> list[dict]:
@@ -500,6 +512,7 @@ class SkillCurationService:
                 "jd_unknown_skills_deleted": result["jd_unknown_skills_deleted"],
                 "candidate_skills_deleted": result["candidate_skills_deleted"],
             })
+        self._on_committed(set())
         return results
 
     def _delete_unknown_skill_core(self, unknown_skill_id: UUID, actor_id: str) -> dict:
@@ -529,10 +542,9 @@ class SkillCurationService:
         HR overrides an existing JDSkill's canonical mapping in place —
         updates canonical_skill_id only, no history column, per the
         finalized design; the prior mapping is recoverable from AuditLog.
+        Refused (409) while the JD is used by an active campaign.
         """
-        jd_skill = self.skill_repository.get_jd_skill_by_id(jd_skill_id)
-        if not jd_skill:
-            raise NotFoundError(f"JDSkill with ID {jd_skill_id} not found.")
+        jd_skill = self._get_editable_jd_skill(jd_skill_id)
 
         new_skill = self._get_skill_or_404(new_canonical_skill_id)
         previous_skill_id = jd_skill.canonical_skill_id
@@ -553,8 +565,107 @@ class SkillCurationService:
             },
         )
         self.skill_repository.commit()
-        self._trigger_jd_reembedding({jd_skill.jd_id})
+        self._on_committed({jd_skill.jd_id})
         return jd_skill
+
+    def update_jd_skill(
+        self, jd_skill_id: UUID, mandatory: bool, importance: str | None, actor_id: str,
+    ):
+        """
+        HR changes whether a JD skill is mandatory and, if so, its
+        core/supporting importance. A mandatory skill must carry an
+        importance (the core-skill gate depends on it); a preferred skill
+        never does, so importance is cleared when mandatory is False.
+        """
+        jd_skill = self._get_editable_jd_skill(jd_skill_id)
+
+        if mandatory and importance is None:
+            raise BadRequestError("importance ('core' or 'supporting') is required when mandatory is true.")
+        new_importance = JDSkillImportance(importance.upper()) if mandatory else None
+
+        losing_core = jd_skill.importance == JDSkillImportance.CORE and new_importance != JDSkillImportance.CORE
+        if losing_core:
+            self._ensure_not_last_core_skill(jd_skill)
+
+        previous = {
+            "mandatory": jd_skill.mandatory,
+            "importance": jd_skill.importance.value if jd_skill.importance else None,
+        }
+        self.skill_repository.update_jd_skill_classification(jd_skill, mandatory, new_importance)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.JD_SKILL_UPDATED,
+            entity_type=EntityType.JD_SKILL,
+            entity_id=jd_skill.id,
+            jurisdiction=None,
+            details={
+                "jd_id": str(jd_skill.jd_id),
+                "canonical_skill_id": str(jd_skill.canonical_skill_id),
+                "previous": previous,
+                "new": {"mandatory": mandatory, "importance": new_importance.value if new_importance else None},
+            },
+        )
+        self.skill_repository.commit()
+        self._on_committed({jd_skill.jd_id})
+        return jd_skill
+
+    def remove_jd_skill(self, jd_skill_id: UUID, actor_id: str) -> None:
+        """
+        Removes a skill from a JD (the jd_skills link only). The canonical
+        skill stays in skill_ontology for every other JD and resume.
+        """
+        jd_skill = self._get_editable_jd_skill(jd_skill_id)
+        if jd_skill.importance == JDSkillImportance.CORE:
+            self._ensure_not_last_core_skill(jd_skill)
+
+        jd_id = jd_skill.jd_id
+        details = {
+            "jd_id": str(jd_id),
+            "canonical_skill_id": str(jd_skill.canonical_skill_id),
+            "mandatory": jd_skill.mandatory,
+            "importance": jd_skill.importance.value if jd_skill.importance else None,
+            "match_tier": jd_skill.match_tier,
+        }
+        self.skill_repository.delete_jd_skill(jd_skill)
+
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role="HR_ADMIN",
+            action_type=ActionType.JD_SKILL_REMOVED,
+            entity_type=EntityType.JD_SKILL,
+            entity_id=jd_skill_id,
+            jurisdiction=None,
+            details=details,
+        )
+        self.skill_repository.commit()
+        self._on_committed({jd_id})
+
+    def _get_editable_jd_skill(self, jd_skill_id: UUID):
+        """
+        Editing a JD's skills changes how its candidates are scored, so it
+        is refused while the JD is used by a non-closed campaign - same
+        rule JDService.update_jd applies to the JD itself.
+        """
+        jd_skill = self.skill_repository.get_jd_skill_by_id(jd_skill_id)
+        if not jd_skill:
+            raise NotFoundError(f"JDSkill with ID {jd_skill_id} not found.")
+        if self.jd_repository is None:
+            raise RuntimeError("SkillCurationService needs a jd_repository to edit JD skills.")
+        if self.jd_repository.has_active_campaign(jd_skill.jd_id):
+            raise ConflictError(
+                f"Cannot edit skills of Job Description {jd_skill.jd_id}: it has an active hiring campaign assigned."
+            )
+        return jd_skill
+
+    def _ensure_not_last_core_skill(self, jd_skill) -> None:
+        # With zero core skills the gate silently falls back to counting
+        # every mandatory skill - refuse instead of changing gate semantics.
+        if self.skill_repository.count_core_jd_skills(jd_skill.jd_id) <= 1:
+            raise BadRequestError(
+                "This is the JD's last core skill. Mark another skill as core before removing or downgrading it."
+            )
 
     def _create_retroactive_jd_skills(self, unknown_skill: UnknownSkill, canonical_skill_id: UUID) -> set[UUID]:
         """
@@ -767,6 +878,21 @@ class SkillCurationService:
         """
         for jd_id in jd_ids:
             self.skill_repository.mark_jd_verified_if_fully_resolved(jd_id)
+        self._stale_jd_ids.update(jd_ids)
+
+    def _on_committed(self, jd_ids: set[UUID], catalog_changed: bool = False) -> None:
+        """
+        Post-commit tail of every curation write. catalog_changed = a skill
+        or alias was created: the cached catalog SkillNormalizationService
+        matches against must be dropped, or new JDs/resumes keep missing the
+        skill HR just added (and recreate it as unknown). JD caches cover
+        both jd_skills changes and is_verified flips.
+        """
+        if catalog_changed:
+            self.invalidator.skills()
+        self.invalidator.jds(set(jd_ids) | self._stale_jd_ids)
+        self._stale_jd_ids.clear()
+        self._trigger_jd_reembedding(jd_ids)
 
     def _get_unknown_skill_or_404(self, unknown_skill_id: UUID) -> UnknownSkill:
         unknown_skill = self.skill_repository.get_unknown_skill_by_id(unknown_skill_id)

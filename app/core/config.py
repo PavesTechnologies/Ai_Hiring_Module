@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     redis_username: str = ""
     redis_password: str = ""
     redis_db: int = 3
+    # Optional separate DB index for the application cache, so cache SCANs
+    # never walk Celery's broker keys and a cache flush never touches the
+    # queue. Unset = share redis_db.
+    redis_cache_db: int | None = None
 
     # Application cache (cache-aside layer over the same Redis instance)
     cache_key_prefix: str = "airs"
@@ -44,6 +48,29 @@ class Settings(BaseSettings):
     cache_dashboard_ttl_seconds: int = 60
     cache_dashboard_badge_ttl_seconds: int = 30
     cache_dashboard_stage_timing_ttl_seconds: int = 120
+
+    # Celery workers - see app/core/celery_app.py. Worker concurrency and the
+    # queues a worker consumes are set per container (CELERY_CONCURRENCY /
+    # CELERY_QUEUES in docker-entrypoint.sh), not here.
+    # Queue for every task that doesn't call the LLM. "celery" is Celery's own
+    # default name, so messages already queued before this setting existed
+    # are still picked up.
+    celery_default_queue: str = "celery"
+    # Queue for the tasks that call the LLM (JD/resume parsing, bulk parse, AI
+    # evaluation), so their parallelism - and therefore the request rate to
+    # the provider - is sized independently of everything else.
+    celery_llm_queue: str = "llm"
+    # Pool override. Unset = solo on Windows (prefork can't run there),
+    # prefork elsewhere. Set "threads" to run tasks in parallel on Windows.
+    celery_worker_pool: str | None = None
+    # Tasks each worker process reserves ahead. Keep 1: with acks_late and
+    # the 300s visibility_timeout, reserved-but-waiting tasks can otherwise be
+    # redelivered and run twice.
+    celery_worker_prefetch_multiplier: int = 1
+    # Optional throttle on LLM tasks, e.g. "20/m". Celery applies it per
+    # worker process, so the effective ceiling is this x the LLM worker's
+    # concurrency. Unset = no throttle beyond the worker's concurrency.
+    celery_llm_task_rate_limit: str | None = None
 
     # AWS S3
     aws_access_key_id: str = ""
@@ -66,7 +93,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "all-MiniLM-L6-v2"
 
-    # Gemini transport resilience (see GeminiExtractionService). These
+    # Gemini transport resilience (see the Gemini LLMProvider). These
     # govern retries of the HTTP call itself, inside the SDK — distinct
     # from retry_policy.py, which re-runs whole pipeline stages. The
     # transport layer is where a 503/429 blip belongs: it retries only the
@@ -187,12 +214,19 @@ class Settings(BaseSettings):
             f"?sslmode={self.db_sslmode}"
         )
 
-    @property
-    def redis_url(self) -> str:
+    def _redis_url_for_db(self, db: int) -> str:
         auth = ""
         if self.redis_username or self.redis_password:
             auth = f"{self.redis_username}:{self.redis_password}@"
-        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{db}"
+
+    @property
+    def redis_url(self) -> str:
+        return self._redis_url_for_db(self.redis_db)
+
+    @property
+    def cache_redis_url(self) -> str:
+        return self._redis_url_for_db(self.redis_cache_db if self.redis_cache_db is not None else self.redis_db)
 
     @property
     def CELERY_BROKER_URL(self) -> str:
