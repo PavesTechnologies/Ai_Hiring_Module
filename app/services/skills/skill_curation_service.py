@@ -25,6 +25,7 @@ from app.services.embedding_queue_service import (
     JDEmbeddingQueueError,
 )
 from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
+from app.services.jd.jd_skill_importance import importance_from_extraction
 from app.services.skills.skill_normalization_service import (
     SkillMatchTier,
     scoring_weight_for_tier,
@@ -96,6 +97,16 @@ class SkillCurationService:
         """Every JD version where this UnknownSkill occurs — the reverse direction of list_jd_unknown_skills."""
         self._get_unknown_skill_or_404(unknown_skill_id)
         return self.skill_repository.get_jd_links_by_unknown_skill_id(unknown_skill_id)
+
+    def jd_link_importance(self, unknown_skill_id: UUID, link, jd) -> str | None:
+        """CORE/SUPPORTING this JD's extraction gave the unknown skill - same lookup used when it's approved."""
+        if not link.mandatory:
+            return None
+        unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+        importance = importance_from_extraction(
+            getattr(jd, "extracted_json", None), unknown_skill.raw_text, getattr(unknown_skill, "normalized_key", None),
+        )
+        return importance.value if importance else None
 
     def list_candidates_for_unknown_skill(self, unknown_skill_id: UUID):
         """
@@ -684,6 +695,7 @@ class SkillCurationService:
             # blind insert, so check first rather than let that surface as
             # an unhandled IntegrityError mid-batch.
             if not self.skill_repository.get_jd_skill(link.jd_id, canonical_skill_id):
+                importance = self._required_skill_importance(link, unknown_skill) if link.mandatory else None
                 self.skill_repository.create_jd_skill(
                     jd_id=link.jd_id,
                     canonical_skill_id=canonical_skill_id,
@@ -695,11 +707,22 @@ class SkillCurationService:
                     # (M07) - this is a retroactive jd_skills row for an
                     # existing JD, so it must never be created NULL either.
                     weight=_DEFAULT_JD_SKILL_WEIGHT,
+                    # The core/supporting class JD extraction already gave
+                    # this skill - without it the JD loses its core gate.
+                    importance=importance,
                 )
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
                 touched_jd_ids.add(link.jd_id)
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
         return touched_jd_ids
+
+    def _required_skill_importance(self, link, unknown_skill: UnknownSkill) -> JDSkillImportance | None:
+        if self.jd_repository is None:
+            return None
+        jd = self.jd_repository.get_by_id(jd_id=link.jd_id)
+        return importance_from_extraction(
+            getattr(jd, "extracted_json", None), unknown_skill.raw_text, getattr(unknown_skill, "normalized_key", None),
+        )
 
     def _finalize_unknown_skill_resolution(
         self,

@@ -15,7 +15,7 @@ from .ai_pipeline import PromptVersion
 
 from .prompt_template import PromptTemplate, PromptTemplateStatus
 
-from .ai_provider import AIProviderConfig
+from .ai_provider import AIProviderConfig, AIProviderModel
 
 from app.models.config import *
 
@@ -50,6 +50,18 @@ from .skills import (
     JDSkill,
     JDUnknownSkill,
     CandidateSkill,
+)
+
+from .scoring_v2 import (
+    SkillSense,
+    SkillScanTerm,
+    ResumeSkillEvidence,
+    ResumeParseCache,
+    CoreSkillConfirmation,
+    CandidateScoringResult,
+    ResumeParseVersion,
+    SkillPatternRule,
+    ScoringShadowRanking,
 )
 
 from .email import (

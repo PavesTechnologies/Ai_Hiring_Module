@@ -305,6 +305,7 @@ def list_jds_for_unknown_skill(
                 mandatory=link.mandatory,
                 status=link.status.value,
                 created_at=link.created_at,
+                importance=service.jd_link_importance(unknown_skill_id, link, jd),
             )
             for link, jd in rows
         ],

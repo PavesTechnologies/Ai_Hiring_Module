@@ -176,6 +176,10 @@ class UnknownSkillJDItem(BaseModel):
     mandatory: bool | None
     status: str
     created_at: datetime
+    # CORE / SUPPORTING class this JD's extraction gave the skill (None for a
+    # preferred or unlisted skill). Deleting a CORE one removes a hard
+    # requirement from that JD - the UI warns before it does.
+    importance: str | None = None
 
 
 class UnknownSkillCandidateItem(BaseModel):

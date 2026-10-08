@@ -1,0 +1,108 @@
+# Baseline: pre-existing test failures before Scoring v2 Phase 1 (2026-10-01)
+#
+# Recorded while implementing Phase 1 Step 0+1. These failed before any
+# Phase 1 change and are NOT caused by it; each was checked by failure
+# reason. Scope of the run that produced it:
+#   python -m pytest tests/services/resume tests/services/skills tests/services/llm tests/tasks \
+#       --ignore=tests/tasks/test_semantic_scoring_tasks.py
+# Compare a later run against this list (ids only):
+#   python -m pytest <same scope> -q -p no:cacheprovider | grep ^FAILED | sed "s/^FAILED //; s/ - .*//" | sort > now.txt
+#   grep ^tests tests/baselines/pre_phase1_2026-10-01.txt | cut -d" " -f1 | sort | diff - now.txt
+#
+# id | reason
+tests/services/resume/test_resume_processing_pipeline_flow.py::test_single_upload_flow_runs_all_nine_stages_in_order_and_redacts_before_ai | ResumeProcessingPipeline no longer takes hash_service
+tests/services/resume/test_resume_processing_pipeline_flow.py::test_bulk_upload_style_initial_context_skips_already_populated_stages | ResumeProcessingPipeline no longer takes hash_service
+tests/tasks/test_bulk_upload_board_events.py::test_duplicate_file_publishes_candidate_added_once_after_commit | test env has no GEMINI_API_KEY (.env fallback provider raises before candidate creation)
+tests/tasks/test_deterministic_scoring_tasks.py::test_creates_rejection_when_mandatory_skill_missing | expects a candidate_rejection_repo.create() record; rejection records no longer written there
+tests/tasks/test_deterministic_scoring_tasks.py::test_rejection_transitions_pipeline_stage_to_rejected | expected stage-transition call not found
+tests/tasks/test_deterministic_scoring_tasks.py::test_creates_rejection_when_score_below_threshold_with_no_missing_skills | expects a candidate_rejection_repo.create() record; rejection records no longer written there
+tests/tasks/test_deterministic_scoring_tasks.py::test_creates_no_verified_skills_rejection_distinct_from_missing_skills | expects a candidate_rejection_repo.create() record; rejection records no longer written there
+tests/tasks/test_deterministic_scoring_tasks.py::test_creates_experience_rejection_when_skills_pass_but_experience_fails | expects a candidate_rejection_repo.create() record; rejection records no longer written there
+tests/tasks/test_deterministic_scoring_tasks.py::test_creates_education_rejection_when_skills_and_experience_pass_but_education_fails | expects a candidate_rejection_repo.create() record; rejection records no longer written there
+tests/tasks/test_deterministic_scoring_tasks.py::test_experience_education_wiring_is_passed_through_to_scoring_service | expected scoring-service call kwargs no longer match (call not found)
+tests/tasks/test_embedding_tasks.py::test_generates_new_embedding_when_no_dedup_match | expects generate_embeddings called once; now called twice
+tests/tasks/test_embedding_tasks.py::test_reports_reused_when_fresh_generate_branch_loses_the_insert_race | expects generate_embeddings called once; now called twice
+tests/tasks/test_embedding_tasks.py::test_permanent_400_failure_dead_letters_immediately_and_sets_manual_review | expects ai_evaluation_status MANUAL_REVIEW on embed failure; now None
+tests/tasks/test_embedding_tasks.py::test_retries_exhausted_dead_letters_and_sets_manual_review_for_all_candidates | expects ai_evaluation_status MANUAL_REVIEW on embed failure; now None
+#
+# Collection error (not counted in the 14):
+# tests/tasks/test_semantic_scoring_tasks.py | imports RejectionLayer, no longer in app.models.pipeline
+
+# ---------------------------------------------------------------------------
+# Scope 2 (added 2026-10-01, Phase 1 Step 2): tests/services/campaign
+#   python -m pytest tests/services/campaign --continue-on-collection-errors
+# 66 failed + 5 collection errors (RejectionLayer import), all in modules Phase 1
+# does not touch (composite, semantic, ranking, rejection analytics, scorecard,
+# deterministic breakdown endpoint). Grouped, not diagnosed one by one.
+# id | reason
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_configuration_is_null_when_config_repo_not_wired | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_experience_and_education_validation_null_when_not_present_in_breakdown | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_failure_reason_is_null_when_candidate_has_no_rejection | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_full_breakdown_maps_every_section_from_stored_values | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_returns_none_when_score_breakdown_is_empty_dict | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_deterministic_score_breakdown.py::test_returns_none_when_score_breakdown_not_yet_computed | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_override_integration.py | collection error: imports RejectionLayer
+tests/services/campaign/test_campaign_candidate_override_service.py | collection error: imports RejectionLayer
+tests/services/campaign/test_campaign_candidate_ranking_export_service.py::test_export_produces_a_real_readable_workbook_with_expected_headers_and_no_pii | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_ranking_service.py::test_ranking_status_and_flags_populated_on_each_item | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_integration.py::test_breakdown_classification_matches_export_top_rejection_reason_for_the_same_campaign | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_integration.py::test_rule3_override_rate_matches_override_report_alert_for_the_same_data | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_integration.py::test_service_still_constructible_with_only_the_original_three_positional_args | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_classifies_each_of_the_seven_categories | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_edge_case_rejection_with_no_individual_failure_counts_toward_total_only | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_empty_campaign_returns_zeroed_breakdown | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_not_found_when_campaign_missing | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_top_missing_skills_capped_at_five | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_analytics_top_missing_skills_sorted_and_percentaged | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_export_deterministic_rejection_summary_produces_a_real_three_sheet_workbook | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_recommendations_empty_below_min_candidates_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_recommendations_reads_min_candidates_threshold_from_config | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule1_does_not_recommend_when_below_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule1_recommends_when_skill_missing_above_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule1_threshold_read_from_config_not_hardcoded | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule2_does_not_recommend_when_below_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule2_recommends_when_experience_only_above_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule3_does_not_recommend_when_override_rate_below_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_rejection_analytics_service.py::test_rule3_recommends_when_override_rate_above_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_scorecard_integration.py | collection error: imports RejectionLayer
+tests/services/campaign/test_campaign_candidate_scorecard_service.py | collection error: imports RejectionLayer
+tests/services/campaign/test_campaign_candidate_scorecard_tabs.py | collection error: imports RejectionLayer
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_regression_deterministic_endpoint_unaffected_by_semantic_addition | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_regression_full_scorecard_endpoint_unaffected_by_semantic_addition | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_regression_summary_endpoint_unaffected_by_semantic_addition | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_semantic_maps_full_breakdown_and_excludes_other_tab_fields | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_semantic_not_found_when_campaign_candidate_missing | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_semantic_returns_null_breakdown_when_scoring_not_yet_run | pre-existing (not diagnosed individually)
+tests/services/campaign/test_campaign_candidate_semantic_endpoint.py::test_semantic_shows_failed_status_when_below_threshold | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_all_components_missing_computes_zero_not_an_error | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_all_components_present_uses_configured_weights_unchanged | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_audit_log_records_composite_score_computed | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_composite_score_is_rounded_to_two_decimal_places | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_history_row_captures_raw_and_normalized_semantic_score_and_configured_weights | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_history_row_normalized_semantic_score_is_none_when_semantic_score_missing | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_missing_ai_score_is_coalesced_to_zero_weights_never_redistributed | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_normalize_scores_coalesces_missing_components_to_zero | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_persists_composite_score_and_computed_at_on_campaign_candidate | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_ai_score[101] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_ai_score[200] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_ai_score[-5] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_deterministic_score[-1] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_deterministic_score[100.01] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_deterministic_score[150] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_semantic_score[-0.01] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_semantic_score[1.01] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_raises_invalid_score_range_error_for_out_of_range_semantic_score[2] | pre-existing (not diagnosed individually)
+tests/services/campaign/test_composite_scoring_service.py::test_semantic_score_normalized_from_0_1_scale_to_0_100_scale | pre-existing (not diagnosed individually)
+tests/services/campaign/test_scheduled_sweep_audit_actor_attribution.py::test_detect_stalled_candidate_alerts_logs_system_not_the_campaign_creator | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_breakdown_stores_computation_duration_ms | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_computes_similarity_via_pgvector_repository_method_with_resume_and_jd_ids | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_negative_similarity_is_clamped_to_zero_and_flagged | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_score_breakdown_generation_includes_all_required_fields | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_semantic_check_records_jd_and_resume_embedding_ids | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_semantic_score_above_threshold_passes | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_semantic_score_below_threshold_fails | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_semantic_score_computed_at_and_updated_at_set_atomically | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_semantic_score_rounded_to_four_decimal_places | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_threshold_comparison_uses_the_clamped_score_not_the_raw_negative_one | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_uses_the_passed_in_semantic_threshold_not_a_global_default | pre-existing (not diagnosed individually)
+tests/services/campaign/test_semantic_scoring_service.py::test_very_low_but_non_negative_score_is_not_clamped_and_can_still_fail | pre-existing (not diagnosed individually)

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
-from app.core.storage_service import StorageService
+from app.core.storage_service import StorageService, storage_safe_filename
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
@@ -51,9 +51,11 @@ from app.services.document_processing.stage_execution_service import StageExecut
 from app.services.document_processing.text_extraction_service import TextExtractionService
 from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.llm.factory import resolve_active_provider
+from app.services.llm.model_selection import LLMPurpose
 from app.services.bulk_upload.zip_validation_service import ZipValidationService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
+from app.services.skills.skill_evidence_service import build_v2_detection
 from app.services.pii.pii_types import PIIType
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
@@ -165,7 +167,11 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         staged_files: list[BulkUploadJobFile] = []
         for entry, basename in real_entries:
             file_bytes = archive.read(entry)
-            object_path = f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{uuid4()}_{basename}"
+            # Key uses a storage-safe copy of the name (Supabase rejects e.g.
+            # "[", "]"); original_filename below keeps the real one.
+            object_path = (
+                f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{uuid4()}_{storage_safe_filename(basename)}"
+            )
             storage_service.upload_file(
                 bucket_name=BULK_UPLOAD_STORAGE_BUCKET,
                 file_path=object_path,
@@ -346,7 +352,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         candidate_service = CandidateService(candidate_repo, encryption_service, consent_service, audit_service)
         file_validation_service = FileValidationService(config_repo)
         campaign_candidate_service = CampaignCandidateService(campaign_repo, campaign_candidate_repo, audit_service)
-        extraction_service = LLMExtractionService(resolve_active_provider(db))
+        extraction_service = LLMExtractionService(resolve_active_provider(db, LLMPurpose.EXTRACTION))
         preprocessing_service = PreprocessingService()
         storage_service = StorageService()
         task_log_service = CeleryTaskLogService(task_log_repo)
@@ -356,6 +362,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         )
         resume_service = ResumeService(resume_repo, audit_service)
         stage_tracker = StageExecutionService(stage_repo)
+        skill_evidence_service, detection_repository = build_v2_detection(
+            db, skill_repo, skill_normalization_service.cache_service,
+        )
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=preprocessing_service,
             extraction_service=extraction_service,
@@ -368,6 +377,8 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             pii_detection_service=PIIDetectionService(),
             pii_redaction_service=PIIRedactionService(),
             prompt_template_repository=prompt_template_repo,
+            skill_evidence_service=skill_evidence_service,
+            detection_repository=detection_repository,
         )
 
         existing_task_log = task_log_repo.get_by_task_id(task_id)
@@ -515,6 +526,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             lambda: pipeline._run_pii_redaction(context),
             attempt_number=attempt_number,
         )
+        # Scoring v2: reuse a cached extraction of identical input only on
+        # a campaign that has v2 switched on.
+        context.parse_cache_enabled = getattr(campaign, "scoring_v2_enabled", False) is True
         stage_tracker.run_stage(
             task_id, DocumentType.RESUME, ProcessingStage.AI_EXTRACTION,
             lambda: pipeline._run_ai_extraction(context),
@@ -599,6 +613,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             prompt_template_id=campaign.prompt_template_id,
             attempt_number=attempt_number,
             initial_context=context,
+            parse_cache_enabled=context.parse_cache_enabled,
         )
 
         added_campaign_candidate = campaign_candidate_service.create_campaign_candidate(
