@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     # AWS SES (M07-E03 S02 T02) — reuses the same AWS credentials/region
     # above; only the verified sender address is SES-specific.
     ses_from_email: str = ""
+    # "ses" (default) sends through AWS SES; "log" only logs each email and
+    # never creates an SES client - for isolated local stacks (docker/e2e).
+    email_delivery: str = "ses"
+    # "supabase" (default) or "local" - files under local_storage_dir, for
+    # isolated local stacks that must never touch the real bucket.
+    storage_backend: str = "supabase"
+    local_storage_dir: str = "/data/storage"
 
     # Supabase
     SUPABASE_URL:str
@@ -121,6 +128,12 @@ class Settings(BaseSettings):
     # The Settings "Check" button's test call - short, since an admin is
     # waiting on it and it only sends a one-line prompt.
     llm_verify_timeout_seconds: float = 30.0
+    # Output budget for Groq JSON calls. Groq's default completion limit is
+    # far too small for a long resume's extraction JSON (and reasoning
+    # models such as gpt-oss spend part of it thinking), which surfaces as
+    # 400 json_validate_failed "max completion tokens reached". Same order
+    # as AnthropicProvider's 16000.
+    groq_max_completion_tokens: int = 16000
 
     # Encryption
     candidate_pii_key: str = ""
