@@ -21,7 +21,9 @@ def _make_campaign_candidate(
         campaign_id=campaign_id or uuid4(),
         deterministic_score=deterministic_score,
         semantic_score=semantic_score,
-        effective_ai_score=effective_ai_score,
+        # The AI score lives on the related CampaignCandidateAIEvaluation row (1:1).
+        ai_evaluation=(SimpleNamespace(effective_ai_score=effective_ai_score)
+                       if effective_ai_score is not None else None),
         composite_score=None,
         composite_score_computed_at=None,
     )

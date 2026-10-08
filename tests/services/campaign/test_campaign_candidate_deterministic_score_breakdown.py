@@ -18,7 +18,8 @@ value, never a freshly-derived business decision.
 def _make_campaign_candidate(score_breakdown=None, screened_at=None):
     return SimpleNamespace(
         id=uuid4(),
-        score_breakdown=score_breakdown,
+        # The model field is deterministic_breakdown since the decision_* redesign (98d721e).
+        deterministic_breakdown=score_breakdown,
         screened_at=screened_at,
     )
 
@@ -132,13 +133,11 @@ def test_full_breakdown_maps_every_section_from_stored_values():
     assert result.summary.education_status == "PASSED"
     assert result.summary.screened_at == screened_at
     assert result.summary.screening_completed_at == screened_at
-    assert result.summary.failure_reason == (
-        "Missing required skills: Kubernetes. | Insufficient experience: 4.5 years provided, minimum 5 years required (gap: 0.5 years)."
-    )
-    assert result.summary.failure_reasons == [
-        "Missing required skills: Kubernetes.",
-        "Insufficient experience: 4.5 years provided, minimum 5 years required (gap: 0.5 years).",
-    ]
+    # Deterministic failure reasons are rebuilt from the breakdown, so they always
+    # agree with the checks: this breakdown PASSED, so a stale stored rejection
+    # text passed in is not shown (the failing-breakdown case is tested below).
+    assert result.summary.failure_reason is None
+    assert result.summary.failure_reasons == []
 
     # missing_mandatory_skills
     assert len(result.missing_mandatory_skills) == 1
@@ -313,3 +312,22 @@ def test_validation_status_reflects_skipped_and_data_missing_states():
     assert service._validation_status({"skipped": False, "data_missing": True, "passed": True}) == "DATA_MISSING"
     assert service._validation_status({"skipped": False, "data_missing": False, "passed": True}) == "PASSED"
     assert service._validation_status({"skipped": False, "data_missing": False, "passed": False}) == "FAILED"
+
+
+def test_failing_breakdown_shows_reasons_rebuilt_from_its_own_checks():
+    """A FAILED breakdown's reasons come from the breakdown, never from stale stored text."""
+    breakdown = {
+        "deterministic_score": 60.0, "deterministic_passed": False, "deterministic_threshold": 70.0,
+        "mandatory_coverage_pct": 100.0, "mandatory_skills": [], "preferred_skills": [],
+        "experience_validation": {
+            "applicable": True, "skipped": False, "data_missing": False, "passed": False,
+            "score": 90.0, "candidate_years": 4.5, "min_years": 5.0, "effective_min_years": 5.0,
+        },
+    }
+    candidate = _make_campaign_candidate(score_breakdown=breakdown)
+
+    result = make_service()._build_deterministic_score_breakdown(candidate, rejection_reason="stale text from an old rule")
+
+    assert result.summary.status == "FAILED"
+    assert result.summary.failure_reason is not None and "stale text" not in result.summary.failure_reason
+    assert any(reason.startswith("Insufficient experience") for reason in result.summary.failure_reasons)
