@@ -8,7 +8,7 @@ import pytest
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import PipelineStage, TransitionSource
+from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService,
     MandatorySkillMatchType,
@@ -70,7 +70,6 @@ class _Harness:
         # its literal default. Empty dict makes every lookup fall through
         # to the task's own defaults, exactly like an unconfigured platform.
         self.config_repo.get_configs_by_keys.return_value = {}
-        self.candidate_rejection_repo = MagicMock()
         self.allowed_transition_repo = MagicMock()
         # Default: transition is allowed, matching the now-seeded
         # SCREENING -> REJECTED row - tests for the "blocked" path override
@@ -315,7 +314,6 @@ def test_skips_gracefully_when_campaign_candidate_no_longer_exists():
         calculate_deterministic_score_task(campaign_candidate_id=str(uuid4()))
 
         h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
-        h.candidate_rejection_repo.create.assert_not_called()
         # task_log_service.create_log must be called with
         # campaign_candidate_id=None, never the missing id - this is exactly
         # the FK the old ordering violated.
@@ -346,12 +344,14 @@ def test_creates_rejection_when_mandatory_skill_missing():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "Missing required skills: Kubernetes."
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "Missing required skills: Kubernetes."
         # T01: rejection_detail is the complete score_breakdown snapshot,
         # not a curated per-branch subset.
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
         h.audit_service_instance.log.assert_called_once()
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
@@ -388,7 +388,7 @@ def test_rejection_transitions_pipeline_stage_to_rejected():
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
         h.allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-            PipelineStage.SCREENING, PipelineStage.REJECTED,
+            PipelineStage.SCREENING, PipelineStage.REJECTED, previous_stage=None,
         )
         assert cc.pipeline_stage == PipelineStage.REJECTED
         h.campaign_candidate_repo.create_stage_history.assert_called_once_with(
@@ -398,7 +398,14 @@ def test_rejection_transitions_pipeline_stage_to_rejected():
             changed_by=None,
             change_reason="Deterministic filter rejection",
             transition_source=TransitionSource.SYSTEM,
-            scores_snapshot=breakdown,
+            # The history snapshot is the breakdown plus the decision it led to.
+            scores_snapshot={
+                **breakdown,
+                "decision_type": DecisionType.REJECTED.value,
+                "decision_source": DecisionSource.DETERMINISTIC.value,
+                "decision_reason": cc.decision_reason,
+                "decision_details": breakdown,
+            },
         )
 
 
@@ -482,10 +489,12 @@ def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "Deterministic score below threshold."
-        assert rejection.rejection_detail == breakdown
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "Deterministic score below threshold."
+        assert cc.decision_details == breakdown
 
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["details"]["missing"] == 0
@@ -520,10 +529,12 @@ def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "No verifiable skills extracted from resume."
-        assert rejection.rejection_detail == breakdown
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "No verifiable skills extracted from resume."
+        assert cc.decision_details == breakdown
 
 
 def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
@@ -548,12 +559,14 @@ def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == (
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == (
             "Insufficient experience: 2 years provided, minimum 5 years required (gap: 3 years)."
         )
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
 
 def test_handles_decimal_min_experience_years_without_crashing():
@@ -610,12 +623,14 @@ def test_creates_education_rejection_when_skills_and_experience_pass_but_educati
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == (
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == (
             "Education requirement not met: Master's required, Bachelor's found."
         )
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
 
 def test_experience_education_wiring_is_passed_through_to_scoring_service():
@@ -643,7 +658,7 @@ def test_experience_education_wiring_is_passed_through_to_scoring_service():
         assert call_kwargs["experience_result"]["passed"] is True
         assert call_kwargs["experience_result"]["candidate_years"] == 6.0
         assert call_kwargs["education_result"]["skipped"] is True
-        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15}
+        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15, "functional": 0.15}
 
 
 def test_no_rejection_when_nothing_missing():
@@ -661,7 +676,7 @@ def test_no_rejection_when_nothing_missing():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_not_called()
+        assert getattr(cc, "decision_type", None) is None          # nothing recorded on a pass
 
 
 def test_auto_enqueues_semantic_scoring_after_successful_pass():
