@@ -19,7 +19,6 @@ EXPECTED_FULL_STAGE_ORDER = [
     ProcessingStage.AI_EXTRACTION,
     ProcessingStage.JSON_VALIDATION,
     ProcessingStage.SKILL_NORMALIZATION,
-    ProcessingStage.EMBEDDING_GENERATION,
     ProcessingStage.PERSISTENCE,
 ]
 
@@ -41,7 +40,7 @@ class RecordingStageTracker:
         self.calls.append(stage)
         return fn()
 
-    def link_document_id(self, task_id, document_id):
+    def link_document_id(self, task_id, document_id, document_type=None, created_by=None):
         pass
 
 
@@ -49,16 +48,15 @@ def _build_pipeline(stage_tracker, extraction_service, skill_normalization_servi
     return ResumeProcessingPipeline(
         preprocessing_service=MagicMock(normalize=MagicMock(return_value=RAW_TEXT_WITH_PII.lower())),
         extraction_service=extraction_service,
-        hash_service=MagicMock(generate_hash=MagicMock(return_value="hash123")),
         storage_service=MagicMock(download_file=MagicMock(return_value=b"raw bytes")),
         skill_normalization_service=skill_normalization_service,
-        embedding_service=MagicMock(generate_embedding=MagicMock(return_value=[0.1, 0.2, 0.3])),
         resume_service=resume_service,
         resume_repository=resume_repository,
         skill_repository=MagicMock(),
         stage_tracker=stage_tracker,
         pii_detection_service=PIIDetectionService(),
         pii_redaction_service=PIIRedactionService(),
+        prompt_template_repository=MagicMock(),
     )
 
 
@@ -75,7 +73,7 @@ def _make_extraction_response_dict(full_name="John Doe"):
     }
 
 
-def test_single_upload_flow_runs_all_nine_stages_in_order_and_redacts_before_ai():
+def test_single_upload_flow_runs_all_eight_stages_in_order_and_redacts_before_ai():
     stage_tracker = RecordingStageTracker()
     extraction_service = MagicMock()
     extraction_service.extract_raw.return_value = _make_extraction_response_dict()
@@ -90,7 +88,8 @@ def test_single_upload_flow_runs_all_nine_stages_in_order_and_redacts_before_ai(
         resume_repository=resume_repository, resume_service=resume_service,
     )
 
-    with patch(f"{MODULE}.ResumeTextExtractionService.extract", return_value=RAW_TEXT_WITH_PII):
+    with patch(f"{MODULE}.ResumeTextExtractionService.extract", return_value=RAW_TEXT_WITH_PII), \
+            patch(f"{MODULE}.TextExtractionService.get_pdf_page_count", return_value=1):
         resume_id = uuid4()
         result = pipeline.run(
             task_id="task-1",
@@ -98,6 +97,7 @@ def test_single_upload_flow_runs_all_nine_stages_in_order_and_redacts_before_ai(
             candidate_id=uuid4(),
             file_path="some/path.pdf",
             source_format=ResumeSourceFormat.PDF,
+            prompt_template_id=uuid4(),
         )
 
     assert result == resume_id
@@ -161,12 +161,12 @@ def test_bulk_upload_style_initial_context_skips_already_populated_stages():
         candidate_id=uuid4(),
         file_path="some/path.pdf",
         source_format=ResumeSourceFormat.PDF,
+        prompt_template_id=uuid4(),
         initial_context=initial_context,
     )
 
     assert stage_tracker.calls == [
         ProcessingStage.SKILL_NORMALIZATION,
-        ProcessingStage.EMBEDDING_GENERATION,
         ProcessingStage.PERSISTENCE,
     ]
     extraction_service.extract_raw.assert_not_called()
