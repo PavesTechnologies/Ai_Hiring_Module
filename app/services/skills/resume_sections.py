@@ -23,12 +23,9 @@ SECTION_PROJECTS = "PROJECTS"
 SECTION_RECOGNITION = "RECOGNITION"
 SECTION_INTERESTS = "INTERESTS"
 SECTION_EVENTS = "EVENTS"
-SECTION_OTHER = "OTHER"
 
 # Auto-confirm is allowed only in these.
 STRONG_SECTIONS = frozenset({SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS})
-# Always confirmed by the LLM, never auto.
-WEAK_SECTIONS = frozenset({SECTION_RECOGNITION, SECTION_INTERESTS, SECTION_EVENTS})
 
 _VOCABULARY = [
     (SECTION_SUMMARY, r"(professional |executive |career |personal )?(summary|profile|objective|overview|about me)"),

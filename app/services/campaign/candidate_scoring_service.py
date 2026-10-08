@@ -38,7 +38,6 @@ GATE_SCOPE_ALL_MANDATORY = "ALL_MANDATORY"
 # count): a candidate may be missing at most this many CORE required
 # skills, regardless of whether the JD has 10 or 100 required skills.
 DEFAULT_MAX_MISSING_CORE_SKILLS = 3
-DEFAULT_MAX_MISSING_CORE_PCT = 25.0
 
 
 def _optional_float(value) -> float | None:
