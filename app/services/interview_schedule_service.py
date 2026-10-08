@@ -118,6 +118,27 @@ class InterviewScheduleService:
                 "You do not have access to this candidate's campaign.", 403,
             )
 
+    # Fields compared for the reschedule audit entry. Only the field NAMES
+    # that changed go into audit_log - never their values (location/notes
+    # are free text) and never interviewer or candidate names/emails.
+    _AUDITED_FIELDS = (
+        "status", "start_at", "end_at", "timezone", "candidate_timezone", "interview_type",
+        "platform", "location", "notes", "meeting_link",
+    )
+
+    @classmethod
+    def _audit_snapshot(cls, schedule) -> dict:
+        return {field: getattr(schedule, field, None) for field in cls._AUDITED_FIELDS}
+
+    @staticmethod
+    def _interviewer_emails(interviewers) -> set[str]:
+        emails = set()
+        for interviewer in interviewers or []:
+            email = interviewer.get("email") if isinstance(interviewer, dict) else getattr(interviewer, "email", None)
+            if email:
+                emails.add(email.strip().lower())
+        return emails
+
     def _get_candidate_and_authorize(self, campaign_candidate_id: UUID, actor_id: str, actor_roles: list[str]):
         campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
@@ -516,6 +537,8 @@ class InterviewScheduleService:
             )
 
         was_cancelled = schedule.status == InterviewStatus.CANCELLED
+        audit_before = self._audit_snapshot(schedule)
+        interviewers_before = self._interviewer_emails(self.interview_schedule_repo.get_active_interviewers(schedule.id))
 
         old_start_at = schedule.start_at
         old_end_at = schedule.end_at
@@ -619,20 +642,41 @@ class InterviewScheduleService:
                 reason=request.reason,
             )
 
-            self.audit_service.log(
-                actor_id=actor_id,
-                actor_role=actor_roles[0] if actor_roles else None,
-                action_type=ActionType.INTERVIEW_RESCHEDULED,
-                entity_type=EntityType.CAMPAIGN_CANDIDATE,
-                entity_id=campaign_candidate.id,
-                campaign_id=campaign_candidate.campaign_id,
-                details={
-                    "interview_id": str(schedule.id),
-                    "old_start_at": old_start_at.isoformat() if old_start_at else None,
-                    "new_start_at": start_at.isoformat(),
-                    "reason": request.reason,
-                },
-            )
+        # Every reschedule call is audited - including a "quiet" edit that
+        # changes only interviewers, platform, location, notes or the
+        # meeting link (no status flip, no history row, no candidate email).
+        # Before this, such edits left no trace at all. Field names only,
+        # no values and no personal data; the free-text reason stays in
+        # interview_schedule_history.
+        audit_after = self._audit_snapshot(schedule)
+        interviewers_after = self._interviewer_emails(attendees)
+        interviewers_added = len(interviewers_after - interviewers_before)
+        interviewers_removed = len(interviewers_before - interviewers_after)
+        fields_changed = [field for field in self._AUDITED_FIELDS if audit_after[field] != audit_before[field]]
+        if interviewers_added or interviewers_removed:
+            fields_changed.append("interviewers")
+        self.audit_service.log(
+            actor_id=actor_id,
+            actor_role=actor_roles[0] if actor_roles else None,
+            action_type=ActionType.INTERVIEW_RESCHEDULED,
+            entity_type=EntityType.CAMPAIGN_CANDIDATE,
+            entity_id=campaign_candidate.id,
+            campaign_id=campaign_candidate.campaign_id,
+            details={
+                "interview_id": str(schedule.id),
+                "campaign_candidate_id": str(campaign_candidate.id),
+                "fields_changed": fields_changed,
+                "time_changed": start_at != old_start_at or end_at != old_end_at,
+                "reactivated_from_cancelled": was_cancelled,
+                "status_before": audit_before["status"].value if audit_before["status"] else None,
+                "status_after": schedule.status.value if schedule.status else None,
+                "interviewers_added": interviewers_added,
+                "interviewers_removed": interviewers_removed,
+                "old_start_at": old_start_at.isoformat() if old_start_at else None,
+                "new_start_at": start_at.isoformat(),
+                "reason_provided": bool(request.reason),
+            },
+        )
 
         self.interview_schedule_repo.commit()
         if is_reschedule_event:
@@ -661,6 +705,7 @@ class InterviewScheduleService:
             raise CampaignException("Interview is already cancelled.", 409)
 
         cancelled_start_at = schedule.start_at
+        status_before = schedule.status
         schedule.status = InterviewStatus.CANCELLED
         schedule.cancel_reason = request.reason
         schedule.updated_at = datetime.now(timezone.utc)
@@ -700,7 +745,17 @@ class InterviewScheduleService:
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=campaign_candidate.id,
             campaign_id=campaign_candidate.campaign_id,
-            details={"interview_id": str(schedule.id), "cancel_reason": request.reason},
+            # Field names only - the free-text reason is kept on the row
+            # (cancel_reason) and in interview_schedule_history, not here.
+            details={
+                "interview_id": str(schedule.id),
+                "campaign_candidate_id": str(campaign_candidate.id),
+                "fields_changed": ["status", "cancel_reason"],
+                "status_before": status_before.value if status_before else None,
+                "status_after": InterviewStatus.CANCELLED.value,
+                "old_start_at": cancelled_start_at.isoformat() if cancelled_start_at else None,
+                "reason_provided": bool(request.reason),
+            },
         )
 
         self.interview_schedule_repo.commit()

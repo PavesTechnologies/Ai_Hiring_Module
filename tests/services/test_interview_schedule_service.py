@@ -607,9 +607,10 @@ def test_reschedule_from_scheduled_moves_to_rescheduled_and_appends_history():
 def test_reschedule_with_unchanged_time_and_only_interviewer_change_is_a_quiet_edit():
     """
     Same date/time, different interviewer list - must NOT flip status,
-    write a history entry, write an audit entry, or tell the candidate
-    their interview moved (it didn't). Interviewer replacement still
-    happens - that's the entire point of this kind of edit.
+    write a history entry, or tell the candidate their interview moved
+    (it didn't). Interviewer replacement still happens - that's the
+    entire point of this kind of edit. Security fix: it IS audited now
+    (every reschedule call is), flagged time_changed=False.
     """
     from app.enums.constants import ActionType
 
@@ -629,7 +630,8 @@ def test_reschedule_with_unchanged_time_and_only_interviewer_change_is_a_quiet_e
 
     assert schedule.status == InterviewStatus.SCHEDULED  # never flipped to RESCHEDULED
     repo.add_history.assert_not_called()
-    audit_service.log.assert_not_called()
+    audit_service.log.assert_called_once()
+    assert audit_service.log.call_args.kwargs["details"]["time_changed"] is False
     mock_email.assert_not_called()
     repo.replace_interviewers.assert_called_once_with(
         schedule.id, [{"name": "New Interviewer", "email": "new@example.com", "timezone": None}],
