@@ -8,7 +8,7 @@ from app.dependencies.campaign_candidate import (
 )
 
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from app.middleware.rbac import TokenUser, get_current_user, require_roles
+from app.middleware.rbac import TokenUser, get_current_user, require_roles, resolve_actor_role
 from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
@@ -42,6 +42,10 @@ from app.schemas.campaign.campaign_candidate_schema import (
 )
 
 from app.schemas.response import APIResponse
+from app.schemas.campaign.reparse_schema import ParseChangesResponse, ReparseRequest, ReparseResponse, RescoreResponse
+from app.services.resume.resume_reparse_service import ResumeReparseService
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 
 from app.services.campaign.campaign_candidate_service import (
     CampaignCandidateService,
@@ -67,7 +71,8 @@ def create_campaign_candidate(
     user: TokenUser = Depends(get_current_user),
 ):
 
-    candidate = service.create_campaign_candidate(
+    # Committed inside add_campaign_candidate - 201 only after a successful commit.
+    candidate = service.add_campaign_candidate(
         request,
         actor_id=user.user_id,
         actor_role=user.roles[0] if user.roles else None,
@@ -697,8 +702,12 @@ def get_candidate_deterministic(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Depends(get_current_user),
 ):
-    deterministic = service.get_candidate_deterministic(campaign_candidate_id)
+    # Scoring v2 shadow panel: HR_ADMIN only (read-only, never decides).
+    deterministic = service.get_candidate_deterministic(
+        campaign_candidate_id, include_shadow=resolve_actor_role(user) == UserRole.HR_ADMIN.value,
+    )
 
     return APIResponse.ok(
         data=deterministic,
@@ -780,6 +789,70 @@ def get_candidate_composite(
     return APIResponse.ok(
         data=composite,
         message="Candidate composite score details retrieved successfully.",
+    )
+
+
+@router.post(
+    "/{campaign_candidate_id}/reparse",
+    response_model=APIResponse[ReparseResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Re-parse & re-score the candidate's resume",
+    description=(
+        "Re-parses the stored resume (fresh AI parse, no cache), re-matches its skills, re-embeds it "
+        "and re-scores this candidate. The previous parse is kept and the changes are listed under "
+        "parse-changes. The new parse replaces the resume's current skills (in every campaign it is in). "
+        "A REJECTED candidate moves back to SCREENING only when a RECRUITER triggers it, with a reason."
+    ),
+)
+def reparse_candidate_resume(
+    campaign_candidate_id: UUID,
+    request: ReparseRequest,
+    db: Session = Depends(get_db),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+):
+    result = ResumeReparseService(db).request(
+        campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id,
+        actor_role=resolve_actor_role(user), reason=request.reason,
+    )
+    return APIResponse.ok(data=ReparseResponse(**result), message="Re-parse queued.")
+
+
+@router.post(
+    "/{campaign_candidate_id}/rescore",
+    response_model=APIResponse[RescoreResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Re-score a candidate whose score is out of date",
+    description=(
+        "For a candidate whose resume was re-parsed from another campaign. At SCREENING it runs the "
+        "normal screening re-score; at any other stage only the scores are recomputed - the stage never "
+        "changes. RECRUITER only."
+    ),
+)
+def rescore_candidate(
+    campaign_candidate_id: UUID,
+    db: Session = Depends(get_db),
+    user: TokenUser = Security(require_roles(UserRole.RECRUITER)),
+):
+    result = ResumeReparseService(db).rescore_out_of_date(
+        campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id, actor_role=resolve_actor_role(user),
+    )
+    return APIResponse.ok(data=RescoreResponse(**result), message="Re-score queued.")
+
+
+@router.get(
+    "/{campaign_candidate_id}/parse-changes",
+    response_model=APIResponse[ParseChangesResponse],
+    status_code=status.HTTP_200_OK,
+    summary="What each re-parse of the candidate's resume changed",
+)
+def get_candidate_parse_changes(
+    campaign_candidate_id: UUID,
+    db: Session = Depends(get_db),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+):
+    return APIResponse.ok(
+        data=ParseChangesResponse(**ResumeReparseService(db).list_changes(campaign_candidate_id)),
+        message="Parse changes retrieved successfully.",
     )
 
 

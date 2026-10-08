@@ -7,6 +7,53 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Upload "use existing" (duplicate file) never adds the candidate to the campaign (found 2026-10-08)
+
+**Status:** open - not fixed (outside the scoring v2 work); found by the isolated e2e run.
+
+`ResumeIntakeService.upload_resume` calls `create_campaign_candidate`, which
+only flushes (it relies on the caller to commit). On the normal path the
+intake commits afterwards, but on the duplicate-file path with
+`resolution="use_existing"` it returns early (`if not result.requires_processing`)
+before that commit, so the new `campaign_candidates` row is rolled back when
+the request session closes. The API still answers 201, so the recruiter sees
+success while the candidate never appears in the campaign. The direct
+`POST /campaign-candidates` route has the same gap (no commit after
+`create_campaign_candidate`). Even if committed, a "use existing" candidate is
+left at UPLOADED with nothing scheduled to score it.
+
+Seen in: the isolated e2e stack (scripts/e2e/run_reparse_e2e.py), uploading
+the same fixture file to a second campaign with "use existing".
+
+**Workaround:** the e2e driver creates the shared-resume candidate directly
+and queues its deterministic scoring. Fix: commit after
+`create_campaign_candidate` on both paths and queue scoring for the
+"use existing" candidate.
+
+---
+
+## Skill matching (v1): fuzzy tier matches "IT governance" to AI Governance (found 2026-10-01)
+
+**Status:** open - v1 deliberately unchanged; blocked in scoring v2 only.
+
+`SkillNormalizationService._match_skill` FUZZY tier uses `fuzz.ratio` >= 85
+on canonical names. "IT governance" vs "AI Governance" differ by one
+letter pair, so the ratio passes, and `is_generic_word_subset` doesn't
+catch it ("it" and "ai" are different words, not a subset). Seen on a
+candidate in campaign "AI transformation lead Sep": their resume line
+"delivery, IT governance, PMO and business analysis" became an AI
+Governance match (FUZZY, 0.8 weight) - a JD **core** skill. The same
+pattern can hit any short-acronym pair (IT/AI, ML/QL, ...).
+
+**Workaround:** scoring v2 ignores this pair from every source via
+platform_config `SCORING_V2_MATCH_BLOCKLIST` (regression test
+`test_it_governance_never_becomes_ai_governance_in_v2`), and v2 core
+skills also need LLM confirmation. v1 still counts the match until its
+fuzzy tier is fixed (e.g. exclude pairs whose differing tokens are 2-letter
+acronyms).
+
+---
+
 ## M12: 2 pre-Epic-4 candidates at INTERVIEW with no `interview_schedules` row (backfilled 2026-08-17)
 
 **Status:** resolved. One-time backfill, not evidence of an ongoing gap.

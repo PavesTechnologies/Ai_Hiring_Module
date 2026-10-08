@@ -130,12 +130,17 @@ class ResumeUploadService:
             matched_candidate = self.candidate_repo.get_by_id(matched_resume.candidate_id)
 
             if resolution is None:
+                self._record_duplicate_warning(matched_resume, uploaded_by, actor_role, source_campaign_id)
                 raise DuplicateResumeFileException(
                     message="An identical resume file already exists in the system.",
                     data=self._build_duplicate_warning(matched_resume, matched_candidate),
                 )
 
             if resolution == "use_existing":
+                logger.info(
+                    "Duplicate resume file - 'use existing' chosen | matched_resume_id=%s campaign_id=%s by=%s",
+                    matched_resume.id, source_campaign_id, uploaded_by,
+                )
                 return UploadResumeResult(
                     resume=matched_resume,
                     requires_processing=False,
@@ -264,6 +269,29 @@ class ResumeUploadService:
 
         self._invalidate_resume_caches(resume.id)
         return resume
+
+    def _record_duplicate_warning(self, matched_resume, uploaded_by, actor_role, campaign_id) -> None:
+        """
+        Audit + log line for a duplicate-file warning, committed before the 409
+        goes back (the request writes nothing else). Never blocks the warning:
+        a failure here is logged and the warning still returns.
+        """
+        logger.info(
+            "Duplicate resume file detected - warning returned | matched_resume_id=%s campaign_id=%s by=%s",
+            matched_resume.id, campaign_id, uploaded_by,
+        )
+        try:
+            self.audit_service.log(
+                actor_id=uploaded_by, actor_role=actor_role, action_type=ActionType.RESUME_DUPLICATE_DETECTED,
+                entity_type=EntityType.RESUME, entity_id=matched_resume.id, campaign_id=campaign_id,
+                details={"matched_resume_id": str(matched_resume.id),
+                         "matched_candidate_id": str(matched_resume.candidate_id),
+                         "campaign_id": str(campaign_id) if campaign_id else None},
+            )
+            self.resume_repo.commit()
+        except Exception:
+            logger.exception("Could not audit the duplicate-file warning | matched_resume_id=%s", matched_resume.id)
+            self.resume_repo.rollback()
 
     def _build_duplicate_warning(
         self,
@@ -461,11 +489,10 @@ class ResumeUploadService:
             raise
 
         self._invalidate_resume_caches(resume.id)
+        from app.tasks.resume_processing_tasks import replay_kwargs
         process_resume_document.apply_async(
-            kwargs={
-                "resume_id": str(resume.id),
-                "prompt_template_id": str(campaign.prompt_template_id),
-            },
+            # Re-parse failures replay as re-parses (mode kept in input_payload).
+            kwargs=replay_kwargs(dlq_entry, campaign.prompt_template_id),
             task_id=str(new_task_id),
         )
         self._publish_retry_reset(dlq_entry.original_task_id, new_task_id)

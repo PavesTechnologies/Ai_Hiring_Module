@@ -5,7 +5,7 @@ from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
-from app.models.candidates import Resume
+from app.models.candidates import ParseStatus, Resume
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.schemas.campaign.campaign_candidate_schema import (
@@ -18,6 +18,7 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.resume_upload_service import ResumeUploadService
 from app.tasks.resume_processing_tasks import (
     RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
+    _enqueue_deterministic_scoring,
     process_resume_document,
 )
 from app.services.candidate_change_notifier import CandidateChangeNotifier
@@ -50,6 +51,35 @@ class ResumeIntakeService:
         self.audit_service = audit_service
         self.task_log_repo = task_log_repo
         self.task_log_service = CeleryTaskLogService(task_log_repo)
+
+    def _queue_scoring_for_existing_resume(self, resume, campaign_candidate_id) -> None:
+        """
+        A "use existing" candidate is scored like a normal upload, reusing the
+        resume's existing parse (never re-parsed): deterministic -> semantic ->
+        AI against THIS campaign's JD, plus v2 shadow when the campaign has it
+        on - the same chain a finished parse starts (_enqueue_deterministic_
+        scoring, idempotent per campaign candidate, so candidates already
+        scored in other campaigns are not touched).
+        Parse still running: nothing to do - when it finishes it queues every
+        campaign candidate on the resume, this one included. Parse failed:
+        nothing can be scored; logged. Post-commit and best-effort: a queueing
+        failure never undoes the committed candidate.
+        """
+        status = getattr(resume, "parse_status", None)
+        if status != ParseStatus.PARSED:
+            logger.info(
+                "'Use existing' candidate not queued for scoring yet | campaign_candidate_id=%s parse_status=%s",
+                campaign_candidate_id, getattr(status, "value", status),
+            )
+            return
+        try:
+            _enqueue_deterministic_scoring(
+                self.task_log_repo.db, resume.id, CeleryTaskLogService(self.task_log_repo),
+            )
+        except Exception:
+            logger.exception(
+                "Could not queue scoring for 'use existing' candidate | campaign_candidate_id=%s", campaign_candidate_id,
+            )
 
     def upload_resume(
         self,
@@ -117,7 +147,28 @@ class ResumeIntakeService:
             # "use_existing" — nothing was actually (re)uploaded or
             # (re)processed, so no RESUME_UPLOADED audit event and no new
             # Celery task; surface whatever task_id this resume already
-            # carries (may be None for older resumes).
+            # carries (may be None for older resumes). The new campaign
+            # candidate IS committed here (with an audit entry) - before this
+            # it was rolled back while the API still answered 201.
+            try:
+                self.audit_service.log(
+                    actor_id=uploaded_by,
+                    actor_role=actor_role,
+                    action_type=ActionType.RESUME_DUPLICATE_USE_EXISTING,
+                    entity_type=EntityType.CAMPAIGN_CANDIDATE,
+                    entity_id=campaign_candidate.id,
+                    campaign_id=campaign_id,
+                    details={"resume_id": str(resume.id), "candidate_id": str(resume.candidate_id)},
+                )
+                self.campaign_repo.commit()
+            except Exception:
+                self.campaign_repo.rollback()
+                raise
+            logger.info(
+                "Existing resume added to campaign ('use existing') | resume_id=%s campaign_id=%s "
+                "campaign_candidate_id=%s by=%s", resume.id, campaign_id, campaign_candidate.id, uploaded_by,
+            )
+            self._queue_scoring_for_existing_resume(resume, campaign_candidate.id)
             existing_task_id = UUID(resume.task_id) if resume.task_id else None
             return resume, campaign_candidate, campaign, existing_task_id, False
 

@@ -465,6 +465,22 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.rollback()
             raise
 
+    def add_campaign_candidate(
+        self, request, actor_id: str | None, actor_role: str | None = None,
+    ) -> CampaignCandidateResponse:
+        """
+        create_campaign_candidate + commit, for callers that own no wider
+        transaction (the direct POST /campaign-candidates route). The response
+        is returned only after the commit succeeded.
+        """
+        response = self.create_campaign_candidate(request, actor_id=actor_id, actor_role=actor_role)
+        try:
+            self.campaign_candidate_repo.commit()
+        except Exception:
+            self.campaign_candidate_repo.rollback()
+            raise
+        return response
+
     def _build_resubmission_info(
         self,
         campaign_candidate: CampaignCandidate,
@@ -1319,7 +1335,9 @@ class CampaignCandidateService:
             weaknesses=weaknesses,
         )
 
-    def get_candidate_deterministic(self, campaign_candidate_id: UUID) -> CandidateDeterministicResponse:
+    def get_candidate_deterministic(
+        self, campaign_candidate_id: UUID, include_shadow: bool = False,
+    ) -> CandidateDeterministicResponse:
         """
         Deterministic-tab-only view: deterministic_score +
         deterministic_score_breakdown, reusing
@@ -1345,7 +1363,48 @@ class CampaignCandidateService:
             ),
             deterministic_score_breakdown=deterministic_score_breakdown,
             failure=self._layer_failure(campaign_candidate, LAYER_DETERMINISTIC),
+            scoring_v2_shadow=self._scoring_v2_shadow(campaign_candidate) if include_shadow else None,
         )
+
+    def _scoring_v2_shadow(self, campaign_candidate) -> dict | None:
+        """Latest v2 result, summarised for the read-only shadow panel. Never used for decisions."""
+        try:
+            from app.repositories.scoring_result_repository import ScoringResultRepository
+            from app.services.campaign.scoring_shadow_report_service import v2_label
+            row = ScoringResultRepository(self.campaign_candidate_repo.db).latest(campaign_candidate.id, "v2")
+            if row is None:
+                return None
+            b = row.breakdown or {}
+            confirmation = {r.get("canonical_skill_id"): r for r in (b.get("confirmation") or {}).get("results") or []}
+            core = []
+            for entry in b.get("mandatory_skills") or []:
+                if entry.get("importance") != "core":
+                    continue
+                result = confirmation.get(entry.get("canonical_skill_id")) or {}
+                core.append({
+                    "name": entry.get("canonical_name"), "status": entry.get("confirmation_status"),
+                    "match_type": entry.get("match_type"), "counts_for_core_gate": entry.get("counts_for_core_gate"),
+                    "evidence_sources": entry.get("evidence_sources") or [], "evidence_text": entry.get("evidence_text"),
+                    "jd_sense": entry.get("jd_sense"), "jd_sense_basis": entry.get("jd_sense_basis"),
+                    "quote": result.get("quote"), "votes": result.get("votes") or [], "method": result.get("method"),
+                })
+            return {
+                "outcome": v2_label(row), "outcome_reason": b.get("outcome_reason"),
+                "score": float(row.score) if row.score is not None else None,
+                "provisional_score": b.get("provisional_score"),
+                "core_confirmed_count": b.get("core_confirmed_count"), "core_skill_count": b.get("core_skill_count"),
+                "allowed_missing_core_skills": b.get("allowed_missing_core_skills"),
+                "core_found_not_confirmed": b.get("core_found_not_confirmed") or [],
+                "core_uncertain": b.get("core_uncertain") or [],
+                "core_rejected_by_llm": b.get("core_rejected_by_llm") or [],
+                "core_sense_mismatch": b.get("core_sense_mismatch") or [],
+                "failed_checks": b.get("failed_checks") or [], "core_skills": core,
+                "components": b.get("components") or [], "scored_at": row.created_at.isoformat() if row.created_at else None,
+                "scoring_config_version": row.scoring_config_version,
+            }
+        except Exception:
+            logger.exception("Could not build the v2 shadow panel | campaign_candidate_id=%s", campaign_candidate.id)
+            return None
 
     def get_candidate_semantic(self, campaign_candidate_id: UUID) -> CandidateSemanticResponse:
         """
@@ -1571,11 +1630,13 @@ class CampaignCandidateService:
             MissingMandatorySkillItem(
                 skill=entry.get("canonical_name"),
                 configured_weight=entry.get("configured_weight"),
-                reason="No matching skill found in candidate's profile (including hierarchy fallback).",
+                importance=entry.get("importance"),
+                reason=self._missing_skill_reason(entry.get("importance")),
             )
             for entry in mandatory_skills_raw
             if entry.get("match_type") == "MISSING"
         ]
+        core_entries = [entry for entry in mandatory_skills_raw if entry.get("importance") == "core"]
 
         # Populated from both mandatory and preferred mappings, per this
         # contract - preferred skills never actually carry a hierarchy
@@ -1640,6 +1701,15 @@ class CampaignCandidateService:
         # never a second, independent lookup. Split on " | ", the same
         # delimiter CandidateScoringService.build_rejection_reason already
         # concatenates multiple failure clauses with.
+        from app.services.campaign.candidate_scoring_service import CandidateScoringService
+
+        # Deterministic-layer reasons only, rebuilt from this breakdown so
+        # they always agree with decision_checks (the stored rejection text
+        # can predate a rule change, or belong to a later layer).
+        if breakdown.get("deterministic_passed"):
+            rejection_reason = None
+        elif breakdown.get("mandatory_skills") is not None:
+            rejection_reason = CandidateScoringService.build_rejection_reason(breakdown, experience, education)
         failure_reasons = rejection_reason.split(" | ") if rejection_reason else []
 
         return DeterministicScoreBreakdownResponse(
@@ -1653,12 +1723,17 @@ class CampaignCandidateService:
                 missing_core_skill_count=breakdown.get("missing_core_skill_count"),
                 mandatory_skills_matched=mandatory_matched,
                 mandatory_skills_total=len(mandatory_skills_raw),
+                core_skills_matched=(
+                    sum(1 for entry in core_entries if entry.get("match_type") != "MISSING") if core_entries else None
+                ),
+                core_skills_total=len(core_entries) if core_entries else None,
                 preferred_skills_matched=preferred_matched,
                 preferred_skills_total=len(preferred_skills_raw),
                 additional_skills_count=None,
                 experience_status=self._validation_status(experience),
                 education_status=self._validation_status(education),
                 screened_at=getattr(campaign_candidate, "screened_at", None),
+                decision_checks=CandidateScoringService.explain_decision(breakdown),
                 failure_reason=rejection_reason,
                 failure_reasons=failure_reasons,
                 screening_completed_at=getattr(campaign_candidate, "screened_at", None),
@@ -1683,8 +1758,11 @@ class CampaignCandidateService:
                 # required_degree_text/candidate_degree_text, so this falls
                 # back to the old level-display behavior unchanged.
                 required_degree=(
-                    (education.get("required_degree_text") or _degree_level_display(education.get("required_level")))
-                    if education else None
+                    (education.get("required_degree_text") or (
+                        _degree_level_display(education.get("required_level"))
+                        if education.get("required_level") else None
+                    ))
+                    if education and not education.get("skipped") else None
                 ),
                 candidate_degree=(
                     (education.get("candidate_degree_text") or _degree_level_display(education.get("candidate_level")))
@@ -1694,6 +1772,8 @@ class CampaignCandidateService:
                     education.get("equivalent_experience_applied") if education else None
                 ),
                 passed=education.get("passed") if education else None,
+                status=self._validation_status(education),
+                **self._education_field_detail(education),
             ),
             score_calculation=ScoreCalculationDetail(
                 skills_score=skills_score,
@@ -1701,6 +1781,9 @@ class CampaignCandidateService:
                 experience_score=experience.get("score") if experience else None,
                 education_score=education.get("score") if education else None,
                 final_score=breakdown.get("deterministic_score"),
+                functional_applicable=bool(domain.get("applicable")) if domain else None,
+                experience_applicable=bool(experience.get("applicable")) if experience else None,
+                education_applicable=bool(education.get("applicable")) if education else None,
                 required_domain_capabilities=(domain or {}).get("required") or [],
                 preferred_domain_capabilities=(domain or {}).get("preferred") or [],
             ),
@@ -1717,8 +1800,40 @@ class CampaignCandidateService:
                 hierarchy_child_multiplier=self._config_float(config_values, _HIERARCHY_CHILD_MULTIPLIER_KEY),
                 hierarchy_sibling_multiplier=self._config_float(config_values, _HIERARCHY_SIBLING_MULTIPLIER_KEY),
                 semantic_multiplier=self._config_float(config_values, _SEMANTIC_MULTIPLIER_KEY),
+                max_missing_core_pct=breakdown.get("max_missing_core_pct"),
+                max_missing_core_skills=breakdown.get("max_missing_core_skills"),
+                allowed_missing_core_skills=breakdown.get("allowed_missing_core_skills"),
             ),
         )
+
+    @staticmethod
+    def _missing_skill_reason(importance: str | None) -> str:
+        if importance == "core":
+            return "Core skill not found - counts toward the missing core-skill limit."
+        if importance == "supporting":
+            return "Supporting skill not found - lowers the score only."
+        return "No matching skill found in the candidate's profile (including related skills)."
+
+    @staticmethod
+    def _education_field_detail(education: dict | None) -> dict:
+        """Field-of-study half of EducationValidationDetail - empty for pre-field-matching breakdowns."""
+        if not education or "field_match" not in education:
+            return {}
+        from app.services.campaign.candidate_scoring_service import _field_display
+        return {
+            "required_field": (
+                _field_display(education.get("required_field"), education.get("required_field_text"))
+                if education.get("required_field") or education.get("required_field_text") else None
+            ),
+            "candidate_field": (
+                _field_display(education.get("candidate_field"), education.get("candidate_field_text"))
+                if education.get("candidate_field") or education.get("candidate_field_text") else None
+            ),
+            "field_match": education.get("field_match"),
+            "related_field_allowed": education.get("related_field_allowed"),
+            "degree_passed": education.get("level_passed"),
+            "field_passed": education.get("field_passed"),
+        }
 
     @staticmethod
     def _validation_status(result: dict | None) -> str | None:
@@ -2062,13 +2177,11 @@ class CampaignCandidateService:
 
     @staticmethod
     def _education_gap_display(breakdown: dict) -> str:
-        education_result = breakdown.get("education_validation")
-        if not education_result or education_result.get("passed"):
-            return ""
-        from app.services.campaign.candidate_scoring_service import _degree_level_display
-        required = _degree_level_display(education_result.get("required_level"))
-        found = _degree_level_display(education_result.get("candidate_level"))
-        return f"{required} required, {found} found"
+        from app.services.campaign.candidate_scoring_service import describe_education_gap
+        level_gap, field_gap = describe_education_gap(breakdown.get("education_validation"))
+        if field_gap:
+            field_gap = f"field of study: {field_gap}"
+        return "; ".join(gap for gap in (level_gap, field_gap) if gap)
 
     # ------------------------------------------------------------------
     # M07-E03 S04 T01/T02: HR_ADMIN Override of a Deterministic Rejection
@@ -2169,7 +2282,7 @@ class CampaignCandidateService:
             self.campaign_candidate_repo.commit()
 
             # Best-effort, after commit - never undoes the already-committed
-            # override (same reasoning as _queue_rejection_email, M07-E03 S02 T02).
+            # override (M07-E03 S02 T02).
             self._queue_post_override_evaluation(campaign_candidate)
 
             return self.get_campaign_candidate_scorecard(campaign_candidate_id)
@@ -2337,12 +2450,12 @@ class CampaignCandidateService:
         actor_roles: list[str],
     ) -> SendRejectionEmailResponse:
         """
-        Manual "Send Rejection Email" action. Every human-driven rejection
-        path (reject_at_interview, board drag-and-drop move_pipeline_stage,
-        BulkStageMoveService) never auto-sends - unlike the automated
-        deterministic/semantic/AI-evaluation rejection paths, which still
-        send automatically and are completely untouched by this method.
-        A human explicitly triggers this once ready.
+        Manual "Send Rejection Email" action - the only way a rejection
+        email is ever sent. No rejection path sends one on its own: neither
+        the human ones (reject_at_interview, board drag-and-drop
+        move_pipeline_stage, BulkStageMoveService) nor the automated
+        deterministic/semantic/AI-evaluation rejections, which move the
+        candidate to REJECTED but leave emailing to a recruiter.
 
         Reuses CandidateRejectionEmailService/the exact CANDIDATE_REJECTED
         template the automated path already uses - not a parallel
