@@ -138,15 +138,6 @@ class StageExecutionService:
             raise StageExecutionError(stage, exc) from exc
         return result
 
-    def next_attempt_number(self, task_id: str, stage: ProcessingStage) -> int:
-        """
-        Retry hook: the attempt_number a future retry of this stage should
-        use. Not invoked by run_stage today — automatic retries aren't
-        implemented yet — but available so a retry driver can be added
-        later without changing this service's shape or the tracking schema.
-        """
-        return self.repository.get_latest_attempt_number(task_id, stage) + 1
-
     def link_document_id(
         self,
         task_id: str,

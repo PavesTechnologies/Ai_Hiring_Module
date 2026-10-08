@@ -36,10 +36,6 @@ class PromptTemplateRepository:
     def get_by_id(self, prompt_id: UUID) -> Optional[PromptTemplate]:
         return self.db.get(PromptTemplate, prompt_id)
 
-    def get_by_task_type(self, task_type: str) -> Optional[PromptTemplate]:
-        stmt = select(PromptTemplate).where(PromptTemplate.task_type == task_type)
-        return self.db.execute(stmt).scalars().first()
-
     def get_active_by_task_type(self, task_type: str) -> list[PromptTemplate]:
         """ACTIVE prompt templates for a given task_type, sorted by name — backs the dropdown lookups."""
         stmt = (

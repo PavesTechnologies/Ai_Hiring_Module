@@ -446,18 +446,6 @@ class CampaignRepository:
 
         return result.scalars().all()
     
-    def is_deadline_soon(self,
-        campaign: HiringCampaign,
-        warning_days: int = 3,
-    ) -> bool:
-
-        if campaign.deadline is None:
-            return False
-
-        now = datetime.now(timezone.utc)
-
-        return now <= campaign.deadline <= now + timedelta(days=warning_days)
-    
     def update_scoring_configuration(self,
         campaign: HiringCampaign,
         request: CampaignScoringUpdateRequest,
@@ -717,24 +705,6 @@ class CampaignRepository:
         )
         return result.rowcount or 0
 
-    def mark_processing_bulk_jobs_partial_failure(self, campaign_id: UUID) -> int:
-        """
-        E03-when a campaign auto-closes because its candidate cap was
-        just reached, any bulk_upload_jobs still PROCESSING get marked
-        PARTIAL_FAILURE (some files were processed before the cap hit, not a
-        clean FAILED) rather than left to run against a now-closed campaign.
-        """
-        result = self.db.execute(update(BulkUploadJob)
-            .where(BulkUploadJob.campaign_id == campaign_id,
-                BulkUploadJob.status == BulkUploadStatus.PROCESSING,
-            )
-            .values(status=BulkUploadStatus.PARTIAL_FAILURE,
-                error_summary="Campaign reached maximum candidate limit during upload.",
-            )
-            .execution_options(synchronize_session=False)
-        )
-        return result.rowcount or 0
-
     # Monitor Campaign Pipeline Health ────────────────────────────
 
     def get_task_status_counts(self, campaign_id: UUID) -> dict[str, int]:
@@ -802,25 +772,6 @@ class CampaignRepository:
             .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
             .all()
         )
-
-    def get_replayable_dead_letter_queue_page(self,
-        campaign_id: UUID,
-        task_types: list[str],
-        limit: int,
-        offset: int,
-    ) -> tuple[list[DeadLetterQueue], int]:
-        """Same campaign scoping, narrowed to replayable task_types, page + total count."""
-        query = self._dead_letter_queue_for_campaign_query(campaign_id).filter(
-            DeadLetterQueue.task_type.in_(task_types)
-        )
-        total = query.count()
-        entries = (query
-            .order_by(DeadLetterQueue.moved_to_dlq_at.desc())
-            .limit(limit)
-            .offset(offset)
-            .all()
-        )
-        return entries, total
 
     def get_candidate_ids_for_dlq_entries(self, entries: list[DeadLetterQueue]) -> dict[UUID, UUID]:
         """
@@ -1354,26 +1305,6 @@ class CampaignRepository:
         """), {"campaign_id": str(campaign_id)}).all()
         return [(r.skill, r.cnt) for r in rows]
 
-    def get_deterministic_rejection_rate(self, campaign_id: UUID) -> float:
-        """
-        T03: percentage of this campaign's total candidates rejected at the
-        DETERMINISTIC layer. 0.0 for a campaign with no candidates yet
-        (nothing to alert on).
-        """
-        total = self.get_candidate_count(campaign_id)
-        if total == 0:
-            return 0.0
-
-        rejected = (self.db.query(func.count(CampaignCandidate.id))
-            .filter(CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.decision_type == DecisionType.REJECTED,
-                CampaignCandidate.decision_source == DecisionSource.DETERMINISTIC,
-            )
-            .scalar()
-            or 0
-        )
-        return (rejected / total) * 100
-
     def get_deterministic_rejection_rate_batch(self, campaign_ids: list[UUID]) -> dict[UUID, float]:
         """Batch campaign_id -> deterministic-layer rejection rate, for scheduled health-alert sweeps."""
         if not campaign_ids:
@@ -1427,37 +1358,6 @@ class CampaignRepository:
             WHERE {' AND '.join(filters)}
         """), params).all()
         return [(row.detail or {}, row.campaign_id) for row in rows]
-
-    def get_average_screening_hours(self, campaign_id: UUID) -> float | None:
-        """
-        T03: average hours-in-SCREENING for candidates CURRENTLY in that
-        stage (i.e. "stuck", not a historical average over completed
-        transitions) — measured from each candidate's most recent
-        transition into SCREENING to now. None if nobody is in SCREENING.
-        """
-        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
-                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
-            )
-            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING)
-            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
-            .subquery()
-        )
-
-        rows = (self.db.query(latest_entry.c.entered_at)
-            .join(CampaignCandidate,
-                CampaignCandidate.id == latest_entry.c.campaign_candidate_id,
-            )
-            .filter(CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.pipeline_stage == PipelineStage.SCREENING,
-            )
-            .all()
-        )
-        if not rows:
-            return None
-
-        now = datetime.now(timezone.utc)
-        hours = [(now - r.entered_at).total_seconds() / 3600 for r in rows]
-        return sum(hours) / len(hours)
 
     def get_average_screening_hours_batch(self, campaign_ids: list[UUID]) -> dict[UUID, float]:
         """Batch campaign_id -> average hours-in-SCREENING, for scheduled health-alert sweeps."""

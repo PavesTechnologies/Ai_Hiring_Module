@@ -156,13 +156,6 @@ class BulkUploadJobRepository:
         )
         return self.db.execute(stmt).scalars().all()
 
-    def get_counts(self, job_id: UUID) -> tuple[int, int, int, int] | None:
-        """Returns (total_files, processed_count, failed_count, duplicate_count)."""
-        job = self.get_by_id(job_id)
-        if job is None:
-            return None
-        return job.total_files, job.processed_count, job.failed_count, job.duplicate_count
-
     def commit(self) -> None:
         self.db.commit()
 
