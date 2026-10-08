@@ -122,11 +122,21 @@ class InterviewScheduleService:
         campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
             raise CampaignException("Campaign candidate not found.", 404)
-        # RECRUITER is campaign-agnostic everywhere else in this codebase
-        # (campaign list, campaign_candidate_service, etc.) - only
-        # HIRING_MANAGER is ever ownership-scoped to their own campaigns.
-        if "HR_ADMIN" not in actor_roles and "RECRUITER" not in actor_roles:
-            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+        # HR_ADMIN is unscoped. RECRUITER is scoped to their own campaigns
+        # with the same check the campaign-wide calendar uses
+        # (_authorize_campaign_access -> "campaigns I created, uploaded to
+        # or bulk-uploaded to"); before this a RECRUITER could read,
+        # reschedule or cancel any campaign's interview by changing the ID.
+        # HIRING_MANAGER keeps the own-campaign check.
+        if "HR_ADMIN" in actor_roles:
+            return campaign_candidate
+        if "RECRUITER" in actor_roles:
+            campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+            if campaign is None:
+                raise CampaignException("Campaign not found.", 404)
+            self._authorize_campaign_access(campaign, actor_id, actor_roles)
+            return campaign_candidate
+        self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
         return campaign_candidate
 
     def _to_response(self, schedule, interviewers, history) -> InterviewScheduleResponse:
