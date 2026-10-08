@@ -259,6 +259,14 @@ class CandidateCompositeResponse(BaseModel):
     composite_score_computed_at: datetime | None = None
 
 
+class DeterministicDecisionCheck(BaseModel):
+    """One rule the deterministic layer checked - see CandidateScoringService.explain_decision."""
+    check: str
+    passed: bool
+    can_reject: bool          # False = informational only (e.g. score under the core-skill rule)
+    detail: str
+
+
 class DeterministicScoreSummary(BaseModel):
     """UI summary-card fields - all read straight from score_breakdown/CampaignCandidate, never recalculated."""
 
@@ -273,6 +281,9 @@ class DeterministicScoreSummary(BaseModel):
     missing_core_skill_count: int | None = None
     mandatory_skills_matched: int | None = None
     mandatory_skills_total: int | None = None
+    # Core skills - the hard skill requirement (see decision_checks).
+    core_skills_matched: int | None = None
+    core_skills_total: int | None = None
     preferred_skills_matched: int | None = None
     preferred_skills_total: int | None = None
     # Not tracked in score_breakdown today (would require a fresh
@@ -283,6 +294,8 @@ class DeterministicScoreSummary(BaseModel):
     experience_status: str | None = None
     education_status: str | None = None
     screened_at: datetime | None = None
+    # Why the candidate passed or failed: every rule checked, in plain words.
+    decision_checks: list[DeterministicDecisionCheck] = []
 
     # Reuses candidate_rejections.rejection_reason (via the scorecard's own
     # rejection banner) - never a second/independent evaluation. null when
@@ -301,6 +314,9 @@ class MissingMandatorySkillItem(BaseModel):
     skill: str | None = None
     configured_weight: float | None = None
     reason: str | None = None
+    # core = counts toward the missing-core limit (can reject);
+    # supporting = only lowers the score. None on unclassified legacy JDs.
+    importance: str | None = None
 
 
 class MandatorySkillBreakdownItem(BaseModel):
@@ -377,6 +393,15 @@ class EducationValidationDetail(BaseModel):
     candidate_degree: str | None = None
     equivalent_experience_applied: bool | None = None
     passed: bool | None = None
+    # Field of study - all None for a breakdown scored before field matching.
+    required_field: str | None = None         # JD's field text (or readable category)
+    candidate_field: str | None = None        # the deciding resume entry's field text (or category)
+    field_match: str | None = None            # FULL_MATCH | RELATED_FIELD_MATCH | MISMATCH | NOT_REQUIRED | UNKNOWN
+    related_field_allowed: bool | None = None
+    degree_passed: bool | None = None         # degree-level half of `passed`
+    field_passed: bool | None = None          # field-of-study half of `passed`
+    # NOT_REQUIRED (JD has no education requirement) | DATA_MISSING | PASSED | FAILED
+    status: str | None = None
 
 
 class DomainCapabilityMatchItem(BaseModel):
@@ -393,6 +418,11 @@ class ScoreCalculationDetail(BaseModel):
     experience_score: float | None = None
     education_score: float | None = None
     final_score: float | None = None
+    # Whether each part counted toward final_score - a part that doesn't apply
+    # (no JD requirement / no data) is left out and the weights renormalised.
+    functional_applicable: bool | None = None
+    experience_applicable: bool | None = None
+    education_applicable: bool | None = None
     required_domain_capabilities: list[DomainCapabilityMatchItem] = []
     preferred_domain_capabilities: list[DomainCapabilityMatchItem] = []
 
@@ -413,6 +443,10 @@ class ScoreConfigurationDetail(BaseModel):
     hierarchy_child_multiplier: float | None = None
     hierarchy_sibling_multiplier: float | None = None
     semantic_multiplier: float | None = None
+    # Missing-core rule (system-calculated): allowed = min(floor(core x pct), cap).
+    max_missing_core_pct: float | None = None
+    max_missing_core_skills: int | None = None
+    allowed_missing_core_skills: int | None = None
 
 
 class DeterministicScoreBreakdownResponse(BaseModel):
@@ -486,7 +520,13 @@ class DeterministicScoreBreakdownResponse(BaseModel):
                     "required_years": 5.0, "candidate_years": 4.5, "tolerance": 0.0, "passed": False,
                     "status": "FAILED",
                 },
-                "education_validation": {"required_degree": "Bachelor's", "candidate_degree": "Master's", "equivalent_experience_applied": False, "passed": True},
+                "education_validation": {
+                    "required_degree": "Bachelor's", "candidate_degree": "Master's",
+                    "equivalent_experience_applied": False, "passed": True,
+                    "required_field": "Computer Science or related field", "candidate_field": "Information Technology",
+                    "field_match": "RELATED_FIELD_MATCH", "related_field_allowed": True,
+                    "degree_passed": True, "field_passed": True,
+                },
                 "score_calculation": {"skills_score": 82.0, "experience_score": 90.0, "education_score": 100.0, "final_score": 78.5},
                 "configuration": {
                     "skills_weight": 0.70, "experience_weight": 0.15, "education_weight": 0.15,
@@ -594,6 +634,9 @@ class CandidateDeterministicResponse(BaseModel):
     # Set when this layer's task dead-lettered and it has no result yet -
     # lets the tab explain why it's empty and offer a DLQ retry.
     failure: LayerFailureResponse | None = None
+    # Scoring v2 shadow result (HR_ADMIN only; None otherwise or when v2
+    # hasn't run). Shown read-only, labelled "Shadow - not used for decisions".
+    scoring_v2_shadow: dict | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
