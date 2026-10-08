@@ -9,7 +9,11 @@ workaround is until someone actually fixes it.
 
 ## Upload "use existing" (duplicate file) never adds the candidate to the campaign (found 2026-10-08)
 
-**Status:** open - not fixed (outside the scoring v2 work); found by the isolated e2e run.
+**Status:** resolved 2026-10-08 in f94e6ed - both paths now commit the campaign
+candidate before answering 201 (audited + logged), and a "use existing" candidate
+is queued for scoring on the existing parse (tests:
+`tests/api/test_duplicate_upload_commit_routes.py`). The e2e driver workaround
+below can now use the real upload path. Original report kept for history.
 
 `ResumeIntakeService.upload_resume` calls `create_campaign_candidate`, which
 only flushes (it relies on the caller to commit). On the normal path the
