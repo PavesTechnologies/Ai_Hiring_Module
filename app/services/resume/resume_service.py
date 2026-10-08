@@ -53,6 +53,7 @@ class ResumeService:
         skill_matches: list[SkillMatchResult],
         attempt_number: int | None = None,
         page_count: int | None = None,
+        replace_existing_skills: bool = False,
     ) -> UUID:
         """
         Writes Resume.parsed_json/parse_status + candidate_skills + audit
@@ -75,6 +76,20 @@ class ResumeService:
         """
         logger.warning("=== persist_processed_resume STARTED === resume_id=%s", resume.id)
         try:
+            previous_skill_ids: set = set()
+            previous_unknown_raw: set = set()
+            if replace_existing_skills:
+                # Re-parse: the new parse replaces the old skills (the previous
+                # set is kept in resume_parse_versions before this runs).
+                # Idempotent - running it again (a replayed re-parse) leaves the
+                # same rows and doesn't inflate the catalogue counters: only
+                # skills new compared with the replaced set are counted.
+                for previous in self.repository.get_candidate_skills_by_resume(resume.id):
+                    if previous.canonical_skill_id:
+                        previous_skill_ids.add(previous.canonical_skill_id)
+                    else:
+                        previous_unknown_raw.add(previous.raw_extracted_text)
+                self.repository.delete_candidate_skills_by_resume(resume.id)
             self.repository.update_parsed_result(
                 resume,
                 parsed_json=extraction.model_dump(mode="json"),
@@ -120,7 +135,9 @@ class ResumeService:
                 for match in matched_by_skill.values()
             ]
             self.repository.bulk_create_candidate_skills(candidate_skills)
-            skill_repository.bump_occurrence_counts(list(matched_by_skill.keys()))
+            skill_repository.bump_occurrence_counts(
+                [skill_id for skill_id in matched_by_skill if skill_id not in previous_skill_ids]
+            )
             logger.warning(
                 "=== persist_processed_resume: matched candidate_skills persisted === "
                 "resume_id=%s count=%s", resume.id, len(matched_by_skill),
@@ -138,9 +155,16 @@ class ResumeService:
             for match in skill_matches:
                 if match.canonical_skill_id:
                     continue
-                unknown_skill, was_created = skill_repository.upsert_unknown_skill(
-                    match.raw_text, normalized_key=match.normalized_text
+                existing_unknown = (
+                    skill_repository.get_unknown_skill_by_raw_text(match.raw_text)
+                    if match.raw_text in previous_unknown_raw else None
                 )
+                if existing_unknown is not None:
+                    unknown_skill, was_created = existing_unknown, False
+                else:
+                    unknown_skill, was_created = skill_repository.upsert_unknown_skill(
+                        match.raw_text, normalized_key=match.normalized_text
+                    )
                 self.repository.create_candidate_skill(
                     candidate_id=resume.candidate_id,
                     resume_id=resume.id,

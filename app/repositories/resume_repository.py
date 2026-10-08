@@ -649,6 +649,9 @@ class ResumeRepository:
         self.db.execute(delete(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id))
         self.db.flush()
 
+    def get_candidate_skills_by_resume(self, resume_id: UUID) -> list[CandidateSkill]:
+        return list(self.db.query(CandidateSkill).filter(CandidateSkill.resume_id == resume_id).all())
+
     def delete_candidate_skills_by_resume(self, resume_id: UUID) -> None:
         """Single-resume cleanup — narrower than delete_candidate_skills_by_candidate, scoped to just this resume version's skills."""
         self.db.execute(delete(CandidateSkill).where(CandidateSkill.resume_id == resume_id))

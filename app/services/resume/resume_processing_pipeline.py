@@ -1,3 +1,6 @@
+import dataclasses
+import hashlib
+import json
 import logging
 from uuid import UUID
 
@@ -16,10 +19,29 @@ from app.services.document_processing.text_extraction_service import TextExtract
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
 from app.services.resume.resume_text_extraction_service import ResumeTextExtractionService
-from app.services.skills.skill_normalization_service import SkillNormalizationService
+from app.services.skills.compound_skill_splitter import split_compound_skill
+from app.services.llm.structured_call import call_info
+from app.services.skills.resume_skill_scanner import DETECTION_VERSION
+from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
+from app.services.skills.text_evidence import evidence_found_in  # noqa: F401 - re-exported
+from app.services.skills.skill_normalization_service import SkillMatchTier, SkillNormalizationService
 from app.core.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
+
+
+# Split parts and inferred skills are the system's own reading of the resume,
+# so they only count on a certain match - a fuzzy/semantic near-miss (e.g. a
+# fragment "P Governance" fuzzing to "AI Governance") must never add a skill.
+_SUPPLEMENTARY_MATCH_TIERS = frozenset({
+    SkillMatchTier.EXACT, SkillMatchTier.ALIAS, SkillMatchTier.CASE_INSENSITIVE, SkillMatchTier.RULE_BASED,
+})
+
+
+def parse_cache_key(text: str | None, prompt_hash: str, provider: str | None, model: str | None) -> str:
+    """Resume text + prompt version + provider/model + detection version."""
+    payload = json.dumps([text_hash(text), prompt_hash, provider or "", model or "", DETECTION_VERSION])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class ResumeProcessingPipeline:
@@ -73,6 +95,8 @@ class ResumeProcessingPipeline:
         pii_detection_service: PIIDetectionService,
         pii_redaction_service: PIIRedactionService,
         prompt_template_repository: PromptTemplateRepository,
+        skill_evidence_service=None,
+        detection_repository=None,
     ):
         self.preprocessing_service = preprocessing_service
         self.extraction_service = extraction_service
@@ -85,6 +109,10 @@ class ResumeProcessingPipeline:
         self.pii_detection_service = pii_detection_service
         self.pii_redaction_service = pii_redaction_service
         self.prompt_template_repository = prompt_template_repository
+        # Scoring v2 (Phase 1) - both optional; without them the pipeline
+        # behaves exactly as before (no parse cache, no evidence rows).
+        self.skill_evidence_service = skill_evidence_service
+        self.detection_repository = detection_repository
 
     def run(
         self,
@@ -97,6 +125,9 @@ class ResumeProcessingPipeline:
         prompt_template_id: UUID,
         attempt_number: int = 1,
         initial_context: ResumeProcessingContext | None = None,
+        parse_cache_enabled: bool = False,
+        bypass_parse_cache: bool = False,
+        reparse: bool = False,
     ) -> UUID:
         """
         initial_context lets a caller that already ran some of these stages
@@ -128,6 +159,9 @@ class ResumeProcessingPipeline:
         context.candidate_id = candidate_id
         context.prompt_template_id = prompt_template_id
         context.attempt_number = attempt_number
+        context.parse_cache_enabled = parse_cache_enabled
+        context.bypass_parse_cache = bypass_parse_cache or reparse
+        context.reparse = reparse
 
         for stage, output_attr, fn in (
             (ProcessingStage.TEXT_EXTRACTION, "raw_text", lambda: self._run_text_extraction(context)),
@@ -155,6 +189,8 @@ class ResumeProcessingPipeline:
             context.task_id, context.resume_id, document_type=context.document_type,
         )
 
+        self._run_skill_detection_v2(context)
+
         logger.warning("=== ResumeProcessingPipeline.run() RETURNING === resume_id=%s", context.resume_id)
         return context.resume_id
 
@@ -180,19 +216,137 @@ class ResumeProcessingPipeline:
         prompt_template = self.prompt_template_repository.get_by_id(context.prompt_template_id)
         if prompt_template is None:
             raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
+        provider = self.extraction_service.provider
+        cache_key = None
+        if self.detection_repository is not None:
+            cache_key = parse_cache_key(context.redacted_text, prompt_template.content_hash,
+                                        getattr(provider, "provider_name", None), getattr(provider, "model", None))
+            if context.parse_cache_enabled and not context.bypass_parse_cache:
+                cached = self._cache_lookup(cache_key)
+                if cached is not None:
+                    context.raw_extraction = cached.raw_extraction
+                    context.parse_call = {"provider": cached.provider, "model": cached.model,
+                                          "used_fallback": False, "cache_hit": True}
+                    return
+
         context.raw_extraction = self.extraction_service.extract_raw(
             context.redacted_text,
             prompt=prompt_template.template_text,
             response_schema=ResumeExtractionGenerationSchema,
         )
+        call = call_info(provider)
+        context.parse_call = {**call.as_dict(), "cache_hit": False}
+        if cache_key is not None:
+            self._cache_store(context, prompt_template.content_hash, call)
+
+    def _cache_lookup(self, cache_key: str):
+        try:
+            entry = self.detection_repository.get_parse_cache(cache_key)
+            if entry is not None:
+                self.detection_repository.mark_parse_cache_hit(entry)
+            return entry
+        except Exception:
+            logger.exception("Parse cache lookup failed - parsing normally.")
+            return None
+
+    def _cache_store(self, context: ResumeProcessingContext, prompt_hash: str, call) -> None:
+        """Stored under the model that answered - a backup model's answer never serves as the main model's."""
+        try:
+            self.detection_repository.put_parse_cache(
+                cache_key=parse_cache_key(context.redacted_text, prompt_hash, call.provider, call.model),
+                text_hash=text_hash(context.redacted_text), prompt_hash=prompt_hash,
+                provider=call.provider, model=call.model, detection_version=DETECTION_VERSION,
+                raw_extraction=context.raw_extraction,
+            )
+        except Exception:
+            logger.exception("Parse cache store failed - parse result unaffected.")
 
     def _run_json_validation(self, context: ResumeProcessingContext) -> None:
-        context.validated_extraction = ResumeExtractionResponse.model_validate(context.raw_extraction)
+        extraction = ResumeExtractionResponse.model_validate(context.raw_extraction)
+        # Inferred skills must quote the resume - drop any whose evidence
+        # isn't in the text the model was given, before it can be stored
+        # in parsed_json or counted in matching.
+        verified = [
+            item for item in extraction.inferred_skills
+            if evidence_found_in(item.evidence, context.redacted_text)
+        ]
+        if len(verified) != len(extraction.inferred_skills):
+            logger.warning(
+                "Dropped %s inferred skill(s) whose evidence isn't in the resume | resume_id=%s",
+                len(extraction.inferred_skills) - len(verified), getattr(context, "resume_id", None),
+            )
+            extraction.inferred_skills = verified
+        context.validated_extraction = extraction
 
     def _run_skill_normalization(self, context: ResumeProcessingContext) -> None:
-        context.skill_match_results = self.skill_normalization_service.normalize_skills(
-            required_skills=context.validated_extraction.skills, preferred_skills=[],
+        extraction = context.validated_extraction
+        primary = self.skill_normalization_service.normalize_skills(
+            required_skills=extraction.skills, preferred_skills=[],
         )
+        context.skill_match_results = primary + self._supplementary_matches(extraction, primary)
+
+    def _supplementary_matches(self, extraction: ResumeExtractionResponse, primary: list) -> list:
+        """
+        Extra matches from (a) the parts of compound skills ("IT Project &
+        Program Management" -> Program Management) and (b) evidence-backed
+        inferred skills (PMP -> Program Management). Each is kept only when
+        it resolves - on an exact/alias/case/rule match, never fuzzy or
+        semantic - to a known catalog skill the resume doesn't already
+        hold - an unmatched part/inference is dropped rather than added to
+        the unknown-skill review pool, so neither can create noise. The
+        stored raw text records where the skill came from.
+        """
+        candidates: list[tuple[str, str]] = []
+        for phrase in extraction.skills:
+            for part in split_compound_skill(phrase):
+                candidates.append((part, f'{part} (from "{phrase}")'))
+        for inferred in extraction.inferred_skills:
+            candidates.append((inferred.skill, f"{inferred.skill} (inferred: {inferred.evidence})"))
+        if not candidates:
+            return []
+
+        results = self.skill_normalization_service.normalize_skills(
+            required_skills=[name for name, _ in candidates], preferred_skills=[],
+        )
+        held = {r.canonical_skill_id for r in primary if r.canonical_skill_id}
+        extra = []
+        for (_, raw_text), result in zip(candidates, results):
+            if (
+                result.canonical_skill_id
+                and result.match_tier in _SUPPLEMENTARY_MATCH_TIERS
+                and result.canonical_skill_id not in held
+            ):
+                held.add(result.canonical_skill_id)
+                extra.append(dataclasses.replace(result, raw_text=raw_text))
+        return extra
+
+    def _run_skill_detection_v2(self, context: ResumeProcessingContext) -> None:
+        """
+        Scoring v2 evidence (scan + LLM union) for this resume. Runs after
+        the v1 parse is committed and never affects it: any failure is
+        logged and the resume stays parsed exactly as v1 sees it.
+        """
+        if self.skill_evidence_service is None or context.redacted_text is None:
+            return
+        try:
+            call = context.parse_call or {}
+            self.skill_evidence_service.detect(
+                context.resume_id,
+                text=context.redacted_text,
+                llm_matches=[
+                    LLMSkillMatch(m.canonical_skill_id, m.raw_text, m.match_tier.value)
+                    for m in context.skill_match_results or [] if m.canonical_skill_id
+                ],
+                parse=ParseInfo(call.get("provider"), call.get("model"), bool(call.get("used_fallback"))),
+                job_titles=job_titles_of(getattr(context, "validated_extraction", None)),
+            )
+            self.resume_repository.commit()
+        except Exception:
+            logger.exception("Scoring v2 skill detection failed | resume_id=%s", context.resume_id)
+            try:
+                self.resume_repository.rollback()
+            except Exception:
+                logger.exception("Rollback after v2 detection failure failed | resume_id=%s", context.resume_id)
 
     def _run_persistence(self, context: ResumeProcessingContext) -> None:
         resume = self.resume_repository.get_by_id(context.resume_id)
@@ -206,4 +360,5 @@ class ResumeProcessingPipeline:
             skill_matches=context.skill_match_results,
             attempt_number=context.attempt_number,
             page_count=context.page_count,
+            replace_existing_skills=getattr(context, "reparse", False),
         )
