@@ -26,7 +26,6 @@ def _make_service():
     candidate_repo = MagicMock()
     resume_repo = MagicMock()
     campaign_candidate_repo = MagicMock()
-    candidate_rejection_repo = MagicMock()
     consent_repo = MagicMock()
     email_notification_repo = MagicMock()
     celery_task_log_repo = MagicMock()
@@ -38,13 +37,13 @@ def _make_service():
         candidate_repo=candidate_repo,
         resume_repo=resume_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         consent_repo=consent_repo,
         email_notification_repo=email_notification_repo,
         celery_task_log_repo=celery_task_log_repo,
         dead_letter_queue_repo=dead_letter_queue_repo,
         storage_service=storage_service,
         audit_service=audit_service,
+        composite_score_history_repo=MagicMock(),
     )
     return service, candidate_repo, resume_repo, audit_service
 
