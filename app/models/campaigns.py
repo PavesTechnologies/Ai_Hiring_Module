@@ -48,10 +48,30 @@ class HiringCampaign(Base):
     required_skill_coverage_threshold: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=0.00, server_default=text("0.00")
     )
-    # Fixed business limit (never proportional to required-skill count) -
-    # see DEFAULT_MAX_MISSING_CORE_SKILLS.
+    # How many CORE skills a candidate may miss and still pass - calculated
+    # by the system, never entered by users:
+    # min(floor(core skill count x max_missing_core_pct / 100),
+    #     max_missing_core_skills). The percentage scales with the JD, the
+    # count is the hard ceiling. Both are system defaults (25% / 3), not
+    # exposed in the campaign API. See CandidateScoringService.allowed_missing_core.
     max_missing_core_skills: Mapped[int] = mapped_column(
         Integer, nullable=False, default=3, server_default=text("3")
+    )
+    max_missing_core_pct: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=25.00, server_default=text("25.00")
+    )
+    # Scoring v2 (Phase 1): when false (default) v2 is computed and stored
+    # alongside v1 for comparison but only v1 acts; when true, v2 decides.
+    # Switched on per campaign by an admin after reviewing the shadow
+    # report - not part of the campaign create/update API.
+    scoring_v2_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Scoring v2 shadow (opt-in per campaign): v2 is computed and stored
+    # next to v1 for the shadow report, never acted on. Costs LLM calls
+    # (core confirmation), capped daily by SCORING_V2_DAILY_LLM_CALL_CAP.
+    scoring_v2_shadow: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
