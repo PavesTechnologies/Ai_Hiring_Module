@@ -974,6 +974,7 @@ class CampaignRejectionAnalyticsResponse(BaseModel):
     min_candidates_for_analytics: int
     breakdown: list[RejectionBreakdownEntry]
     top_missing_skills: list[MissingSkillOccurrence]
+    recommendations: list[JdCalibrationRecommendation]
 
 
 class ResubmissionInfoResponse(BaseModel):
