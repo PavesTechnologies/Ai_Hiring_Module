@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from app.services.talent_pool.talent_pool_service import TALENT_POOL_MAX_PAGE_SIZE, TalentPoolService
@@ -204,20 +204,24 @@ term (from `search`'s AND tokens and the legacy OR'd skill/skills params) to
 its canonical SkillOntology id via the small skill_ontology table."""
 
 
+SERVICE_MODULE = "app.services.talent_pool.talent_pool_service"
+
+
 def test_search_resolves_each_search_token_to_a_canonical_skill_id():
-    skill_repo = MagicMock()
-    resolved = SimpleNamespace(id=uuid4())
-    skill_repo.find_skill_by_name_or_alias.side_effect = lambda term: resolved if term == "Python" else None
+    """Terms resolve in one pass over the cached active-skill catalogue (canonical name, then alias)."""
+    python = SimpleNamespace(id=uuid4(), canonical_name="Python", aliases=["py"])
+    kubernetes = SimpleNamespace(id=uuid4(), canonical_name="Kubernetes", aliases=["k8s"])
     resume_repo = MagicMock()
     candidate_repo = MagicMock()
     candidate_repo.get_by_ids.return_value = []
-    service = make_service(resume_repo=resume_repo, skill_repo=skill_repo, candidate_repo=candidate_repo)
+    service = make_service(resume_repo=resume_repo, skill_repo=MagicMock(), candidate_repo=candidate_repo)
 
-    service.search_candidates(search="Python AWS")
+    with patch(f"{SERVICE_MODULE}.load_cached_active_skills", return_value=[python, kubernetes]):
+        service.search_candidates(search="python K8S AWS")
 
     call_kwargs = resume_repo.search_talent_pool.call_args.kwargs
-    assert call_kwargs["resolved_skill_ids_by_term"] == {"Python": resolved.id, "AWS": None}
-    assert call_kwargs["search"] == "Python AWS"
+    assert call_kwargs["resolved_skill_ids_by_term"] == {"python": python.id, "K8S": kubernetes.id, "AWS": None}
+    assert call_kwargs["search"] == "python K8S AWS"
 
 
 def test_search_folds_singular_skill_into_or_skill_terms():
