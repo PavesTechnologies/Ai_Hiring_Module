@@ -23,6 +23,7 @@ from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.llm.factory import resolve_active_provider
+from app.services.llm.model_selection import LLMPurpose
 from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_pipeline import JDProcessingPipeline
 from app.services.jd.jd_service import JDService
@@ -120,7 +121,7 @@ def process_jd_document(
 
         pipeline = JDProcessingPipeline(
             preprocessing_service=PreprocessingService(),
-            extraction_service=LLMExtractionService(resolve_active_provider(db)),
+            extraction_service=LLMExtractionService(resolve_active_provider(db, LLMPurpose.EXTRACTION)),
             hash_service=HashService(),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(

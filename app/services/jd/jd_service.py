@@ -37,6 +37,7 @@ from app.core.config import settings
 from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import jd_key, jd_list_key, jd_search_key
 from app.services.cache_service import CacheService
+from app.services.jd.jd_education_merge import merge_extracted_json_education
 
 logger = logging.getLogger(__name__)
 
@@ -245,10 +246,13 @@ class JDService:
                 created_by=created_by,
                 prompt_template_id=prompt_template_id,
                 # extracted_json: the full AI-parsed JD JSON, as extracted
-                # (pre-normalization) — required_skills: just the two skill
-                # lists, kept separately for quick access without parsing
-                # the larger blob.
-                extracted_json=extraction.model_dump(mode="json"),
+                # (pre-normalization), with education gaps filled from the
+                # recruiter's education_criteria — required_skills: just the
+                # two skill lists, kept separately for quick access without
+                # parsing the larger blob.
+                extracted_json=merge_extracted_json_education(
+                    extraction.model_dump(mode="json"), education_criteria,
+                ),
                 required_skills={
                     "required": extraction.required_skills.model_dump(),
                     "preferred": list(extraction.preferred_skills),
@@ -425,6 +429,7 @@ class JDService:
         # already-computed values carry forward rather than being reset to
         # None/NOT_VERIFIED — this method never re-runs extraction/matching.
         raw_text = request.raw_text or fallback_raw_text
+        education_criteria = request.education_criteria.model_dump()
         return JobDescription(
             title= request.title,
             raw_text= raw_text,
@@ -432,7 +437,7 @@ class JDService:
             min_experience_years= request.min_experience_years,
             max_experience_years= request.max_experience_years,
             notice_period= request.notice_period,
-            education_criteria= request.education_criteria.model_dump(),
+            education_criteria= education_criteria,
             source_format= source_format,
             file_path= file_path,
             original_filename= original_filename,
@@ -443,7 +448,9 @@ class JDService:
             lineage_root_id= lineage_root_id,
             created_by= create_by,
             prompt_template_id= request.prompt_template_id,
-            extracted_json= fallback_extracted_json,
+            # Re-filled against the (possibly edited) education_criteria -
+            # an education edit must reach extracted_json, which scoring reads.
+            extracted_json= merge_extracted_json_education(fallback_extracted_json, education_criteria),
             required_skills= fallback_required_skills,
             is_verified= fallback_is_verified or JDVerificationStatus.NOT_VERIFIED,
         )

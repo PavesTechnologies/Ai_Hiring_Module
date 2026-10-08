@@ -68,6 +68,21 @@ _PARTIAL_CONFIDENCE_TIERS = {
 }
 
 
+_WORD = re.compile(r"[a-z0-9+#]+")
+
+
+def is_generic_word_subset(text: str, canonical_name: str) -> bool:
+    """
+    True when one name's words are a strict subset of the other's - e.g.
+    "Governance" vs "AI Governance", "Management" vs "Program Management",
+    "Unit Testing" vs "Testing". That's a generic term vs a more specific
+    skill, never a typo, so similarity tiers must not treat it as a match
+    (plain fuzz.ratio scores "governance"/"ai governance" at 87 > 85).
+    """
+    a, b = set(_WORD.findall(text.lower())), set(_WORD.findall(canonical_name.lower()))
+    return bool(a) and bool(b) and a != b and (a < b or b < a)
+
+
 def scoring_weight_for_tier(tier: SkillMatchTier) -> float:
     if tier in _FULL_CONFIDENCE_TIERS:
         return 1.0
@@ -252,14 +267,20 @@ class SkillNormalizationService:
             )
 
         fuzzy_skill, fuzzy_score = self._match_fuzzy(normalized_text, catalog)
-        if fuzzy_skill and fuzzy_score >= self.FUZZY_SCORE_THRESHOLD:
+        if (
+            fuzzy_skill and fuzzy_score >= self.FUZZY_SCORE_THRESHOLD
+            and not is_generic_word_subset(normalized_text, fuzzy_skill.canonical_name)
+        ):
             return SkillMatchResult(
                 raw_text, mandatory, fuzzy_skill.id, SkillMatchTier.FUZZY, fuzzy_score / 100,
                 normalized_text, importance,
             )
 
         semantic_skill, similarity = self._match_semantic(normalized_text)
-        if semantic_skill and similarity >= SEMANTIC_SIMILARITY_THRESHOLD:
+        if (
+            semantic_skill and similarity >= SEMANTIC_SIMILARITY_THRESHOLD
+            and not is_generic_word_subset(normalized_text, semantic_skill.canonical_name)
+        ):
             return SkillMatchResult(
                 raw_text, mandatory, semantic_skill.id, SkillMatchTier.SEMANTIC, similarity,
                 normalized_text, importance,

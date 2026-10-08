@@ -69,13 +69,8 @@ class _Harness:
         self.scoring_service_instance = MagicMock()
         self.scoring_service_instance.calculate_and_store_semantic_score_breakdown.return_value = _breakdown()
         self.dead_letter_queue_repo = MagicMock()
-        # Story 542: _queue_rejection_email is imported from
-        # deterministic_scoring_tasks (a real function that would otherwise
-        # try a real EmailTemplateRepository query + Celery apply_async) -
-        # patched at the name bound in THIS module by that import, same
-        # convention as test_deterministic_scoring_tasks.py's own
-        # send_candidate_email_task_mock.
         self.queue_rejection_email_mock = MagicMock()
+        self.email_apply_async_mock = MagicMock()
 
     def __enter__(self):
         self._patches = [
@@ -91,7 +86,14 @@ class _Harness:
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
             patch(f"{TASKS_MODULE}.SemanticScoringService", return_value=self.scoring_service_instance),
             patch(f"{TASKS_MODULE}.DeadLetterQueueRepository", return_value=self.dead_letter_queue_repo),
-            patch(f"{TASKS_MODULE}._queue_rejection_email", self.queue_rejection_email_mock),
+            # System rejections must never email: watch the real email entry
+            # points wherever they'd be called from.
+            patch(
+                "app.services.notifications.candidate_rejection_email_service."
+                "CandidateRejectionEmailService.queue_rejection_email",
+                self.queue_rejection_email_mock,
+            ),
+            patch("app.tasks.email_tasks.send_candidate_email_task.apply_async", self.email_apply_async_mock),
         ]
         for p in self._patches:
             p.start()
@@ -583,7 +585,10 @@ def test_semantic_rejection_queues_the_existing_rejection_email():
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.queue_rejection_email_mock.assert_called_once_with(h.campaign_candidate_repo.db, cc)
+        # Rejected, but never emailed - a recruiter sends it manually.
+        assert cc.pipeline_stage == PipelineStage.REJECTED
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
 
 
 def test_semantic_pass_never_queues_a_rejection_email():

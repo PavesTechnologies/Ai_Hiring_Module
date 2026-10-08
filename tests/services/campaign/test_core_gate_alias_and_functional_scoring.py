@@ -153,13 +153,32 @@ def test_missing_supporting_skills_never_fail_the_coverage_gate():
     assert breakdown["deterministic_passed"] is True
 
 
-def test_supporting_skills_lower_the_score_which_the_threshold_still_checks():
+def test_missing_supporting_skills_lower_the_score_but_do_not_reject_when_core_is_met():
+    """
+    Every core skill held, no supporting skill: the score falls below the
+    threshold but no longer rejects on its own - core skills are the hard
+    skill requirement, supporting skills/competencies only rank.
+    """
     service, campaign_candidate = _service(set(CORE_IDS))
 
     breakdown = _score(service, campaign_candidate, deterministic_threshold=50.0)
 
     assert breakdown["coverage_passed"] is True
     assert breakdown["score_passed"] is False
+    assert breakdown["score_threshold_rejects"] is False
+    assert breakdown["deterministic_passed"] is True
+
+
+def test_score_threshold_rejects_again_when_the_platform_setting_is_on():
+    service, campaign_candidate = _service(set(CORE_IDS))
+    service.config_repository.get_configs_by_keys.side_effect = lambda keys: (
+        {"DETERMINISTIC_SCORE_REJECTS": "true"} if "DETERMINISTIC_SCORE_REJECTS" in keys else {}
+    )
+
+    breakdown = _score(service, campaign_candidate, deterministic_threshold=50.0)
+
+    assert breakdown["score_passed"] is False
+    assert breakdown["score_threshold_rejects"] is True
     assert breakdown["deterministic_passed"] is False
 
 

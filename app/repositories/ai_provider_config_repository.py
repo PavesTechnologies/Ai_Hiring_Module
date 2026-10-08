@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.ai_provider import AIProviderConfig
+from app.models.ai_provider import AIProviderConfig, AIProviderModel
 
 
 class AIProviderConfigRepository:
@@ -48,6 +48,21 @@ class AIProviderConfigRepository:
         self.db.flush()
         self.db.refresh(config)
         return config
+
+    def replace_models(self, config: AIProviderConfig, assignments) -> None:
+        """
+        Swaps the provider's whole model set. The old rows are deleted and
+        flushed before the new ones are inserted - updating in place could
+        briefly break the (provider, usage) / (provider, model) unique
+        constraints, e.g. when two purposes swap models.
+        """
+        config.models.clear()
+        self.db.flush()
+        config.models.extend(
+            AIProviderModel(usage=a.usage, model_name=a.model_name, fallback_model_name=a.fallback_model_name)
+            for a in assignments
+        )
+        self.db.flush()
 
     def set_active(self, config: AIProviderConfig) -> AIProviderConfig:
         """

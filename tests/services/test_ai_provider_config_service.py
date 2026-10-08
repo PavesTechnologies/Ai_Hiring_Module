@@ -565,3 +565,126 @@ def test_cache_miss_or_redis_down_falls_back_to_checking():
         service.create(CreateAIProviderRequest(provider="GROQ", model_name="m", api_key="gsk_abc"),
                        updated_by="u1", actor_role="HR_ADMIN")
     assert build.call_count == 2
+
+
+# ---------------------------------------------------------------- per-purpose models
+
+def _setup(*items):
+    return [{"usage": u, "model_name": m, "fallback_model_name": f} for u, m, f in items]
+
+
+def test_register_with_split_models_verifies_every_model_once():
+    service, repo, *_ = _make_service()
+    models = _setup(("EXTRACTION", "claude-haiku-5", "claude-sonnet-5"), ("EVALUATION", "claude-opus-5", "claude-sonnet-5"))
+    with patch(_BUILD, return_value=_working()) as build:
+        row = service.create(
+            CreateAIProviderRequest(provider="ANTHROPIC", api_key="sk-ant-1234", models=models),
+            updated_by="u1", actor_role="HR_ADMIN",
+        )
+
+    checked = [call.args[2] for call in build.call_args_list]
+    assert sorted(checked) == ["claude-haiku-5", "claude-opus-5", "claude-sonnet-5"]
+    assert row.model_name == "claude-haiku-5"          # mirrors the extraction model
+    assert {(m.usage, m.model_name, m.fallback_model_name) for m in row.models} == {
+        ("EXTRACTION", "claude-haiku-5", "claude-sonnet-5"),
+        ("EVALUATION", "claude-opus-5", "claude-sonnet-5"),
+    }
+
+
+@pytest.mark.parametrize("models,fragment", [
+    (_setup(("EXTRACTION", "claude-opus-5", None), ("EVALUATION", "claude-opus-5", None)), "already used for Extraction"),
+    (_setup(("BOTH", "claude-opus-5", "claude-opus-5")), "must be different"),
+    (_setup(("EXTRACTION", "claude-haiku-5", None)), "Nothing handles Evaluation"),
+])
+def test_invalid_model_setup_is_a_friendly_400_before_any_provider_call(models, fragment):
+    service, repo, *_ = _make_service()
+    with patch(_BUILD) as build, pytest.raises(HTTPException) as exc_info:
+        service.create(
+            CreateAIProviderRequest(provider="ANTHROPIC", api_key="sk-ant-1234", models=models),
+            updated_by="u1", actor_role="HR_ADMIN",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert fragment in str(exc_info.value.detail)
+    assert "INVALID_MODEL_SETUP" in str(exc_info.value.detail)
+    build.assert_not_called()
+    repo.create.assert_not_called()
+
+
+def test_register_is_blocked_when_a_backup_model_fails_its_check():
+    service, repo, *_ = _make_service()
+    failing = _failing(LLMPermanentError("nope", reason=LLMErrorReason.MODEL_NOT_FOUND))
+    with patch(_BUILD, side_effect=lambda p, k, model, **kw: failing if model == "claude-bad" else _working()), \
+            pytest.raises(HTTPException) as exc_info:
+        service.create(
+            CreateAIProviderRequest(provider="ANTHROPIC", api_key="sk-ant-1234",
+                                    models=_setup(("BOTH", "claude-opus-5", "claude-bad"))),
+            updated_by="u1", actor_role="HR_ADMIN",
+        )
+
+    assert "claude-bad" in str(exc_info.value.detail)
+    repo.create.assert_not_called()
+
+
+def test_edit_replaces_the_model_set():
+    existing = _row(is_active=True)
+    service, repo, *_ = _make_service([existing])
+    models = _setup(("EXTRACTION", "claude-haiku-5", None), ("EVALUATION", "claude-opus-5", None))
+    with patch(_BUILD, return_value=_working()):
+        service.update(existing.id, UpdateAIProviderRequest(models=models), updated_by="u1", actor_role="HR_ADMIN")
+
+    [(row_arg, assignments)] = [call.args for call in repo.replace_models.call_args_list]
+    assert row_arg is existing
+    assert [(a.usage, a.model_name) for a in assignments] == [
+        ("EXTRACTION", "claude-haiku-5"), ("EVALUATION", "claude-opus-5"),
+    ]
+    assert existing.model_name == "claude-haiku-5"
+
+
+def test_verify_reports_each_model_and_stops_on_key_level_failure():
+    service, *_ = _make_service([_row()])
+    bad_key = _failing(LLMPermanentError("bad", reason=LLMErrorReason.INVALID_KEY))
+    with patch(_BUILD, return_value=bad_key) as build:
+        result = service.verify(VerifyRequest(
+            provider="ANTHROPIC", api_key="sk-ant-1234",
+            models=_setup(("EXTRACTION", "claude-haiku-5", None), ("EVALUATION", "claude-opus-5", None)),
+        ))
+
+    assert result.verified is False
+    assert result.message.startswith("claude-haiku-5: ")
+    assert len(result.results) == 1          # the key is bad for every model - no point checking the rest
+    assert build.call_count == 1
+
+
+def test_verify_all_models_passing():
+    service, *_ = _make_service([_row()])
+    with patch(_BUILD, return_value=_working()):
+        result = service.verify(VerifyRequest(
+            provider="ANTHROPIC", api_key="sk-ant-1234",
+            models=_setup(("BOTH", "claude-sonnet-5", "claude-haiku-5")),
+        ))
+
+    assert result.verified is True
+    assert [r.model_name for r in result.results] == ["claude-sonnet-5", "claude-haiku-5"]
+    assert "All 2" in result.message
+
+
+def test_verify_invalid_setup_is_reported_without_provider_calls():
+    service, *_ = _make_service([_row()])
+    with patch(_BUILD) as build:
+        result = service.verify(VerifyRequest(
+            provider="ANTHROPIC", api_key="sk-ant-1234",
+            models=_setup(("EXTRACTION", "a", None), ("EXTRACTION", "b", None)),
+        ))
+
+    assert (result.verified, result.error_code) == (False, "INVALID_MODEL_SETUP")
+    build.assert_not_called()
+
+
+def test_rows_expose_models_and_legacy_rows_read_as_both():
+    service, *_ = _make_service([_row(is_active=True, model="claude-opus-5")])
+
+    [row] = service.list_registered(page=1, page_size=5).items
+    assert [(m.usage, m.model_name) for m in row.models] == [("BOTH", "claude-opus-5")]
+    active = service.get_active_provider()
+    assert [(m.usage, m.model_name) for m in active.models] == [("BOTH", "claude-opus-5")]

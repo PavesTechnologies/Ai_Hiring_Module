@@ -32,7 +32,6 @@ from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.tasks.deterministic_scoring_tasks import (
     _cancel_downstream_ai_evaluation,
-    _queue_rejection_email,
 )
 from app.services.candidate_change_notifier import CandidateChangeNotifier
 
@@ -129,14 +128,10 @@ def _score_and_persist_semantic(
 
     CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
 
-    # Story 542: only after the transaction above has committed - never
-    # send a rejection email for a candidate whose pipeline_stage didn't
-    # actually move to REJECTED (transition blocked - see stage_transition_succeeded
-    # above). Reuses the exact same helper the deterministic layer uses -
-    # it swallows its own failures, so a delivery problem here never masks
-    # the already-successful scoring outcome or blocks this task.
+    # A system rejection never emails the candidate - a recruiter sends the
+    # rejection email manually. Composite scoring runs only once the stage
+    # actually moved to REJECTED (see stage_transition_succeeded above).
     if not breakdown["semantic_passed"] and stage_transition_succeeded:
-        _queue_rejection_email(campaign_candidate_repo.db, campaign_candidate)
         try:
             _enqueue_composite_scoring(
                 campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.REJECTION,

@@ -50,6 +50,24 @@ class WorkExperience(BaseModel):
         return _clean_optional_string(value)
 
 
+class InferredSkill(BaseModel):
+    """
+    A professional competency the resume demonstrates without listing it by
+    name - backed by a certification (PMP -> Program Management), a job title
+    that names it, or a concrete accomplishment. `evidence` is the short
+    quote/title/certification that proves it, so every inference is
+    auditable. Kept apart from `skills` (which stays "explicitly listed
+    only"); used for matching only when it resolves to a known catalog skill.
+    """
+    skill: str | None = None
+    evidence: str | None = None
+
+    @field_validator("skill", "evidence")
+    @classmethod
+    def clean_optional_string(cls, value: str | None) -> str | None:
+        return _clean_optional_string(value)
+
+
 class ProjectEntry(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -117,6 +135,9 @@ class ResumeExtractionResponse(BaseModel):
     # SkillNormalizationService's skill-ontology matching/scoring pipeline -
     # display-only, empty list if the resume has none.
     soft_skills: list[str] = Field(default_factory=list)
+    # Evidence-backed competencies the resume shows but doesn't list by name
+    # (see InferredSkill). Entries without both a skill and evidence are dropped.
+    inferred_skills: list[InferredSkill] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
@@ -136,6 +157,18 @@ class ResumeExtractionResponse(BaseModel):
     @classmethod
     def clean_optional_string(cls, value: str | None) -> str | None:
         return _clean_optional_string(value)
+
+    @field_validator("inferred_skills")
+    @classmethod
+    def keep_evidenced_inferences(cls, values: list[InferredSkill]) -> list[InferredSkill]:
+        """An inference without evidence isn't allowed to count; duplicates collapse (case-insensitive)."""
+        kept, seen = [], set()
+        for item in values:
+            if not item.skill or not item.evidence or item.skill.lower() in seen:
+                continue
+            seen.add(item.skill.lower())
+            kept.append(item)
+        return kept
 
     @field_validator("total_experience_years")
     @classmethod
@@ -158,6 +191,9 @@ class ResumeExtractionGenerationSchema(BaseModel):
     full_name: str | None = None
     skills: list[str] = Field(default_factory=list)
     soft_skills: list[str] = Field(default_factory=list)
+    # Evidence-backed competencies the resume shows but doesn't list by name
+    # (see InferredSkill). Entries without both a skill and evidence are dropped.
+    inferred_skills: list[InferredSkill] = Field(default_factory=list)
     work_experience: list[WorkExperience] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)

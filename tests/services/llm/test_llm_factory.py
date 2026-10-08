@@ -218,3 +218,102 @@ def test_openai_model_filter(model_id, usable):
 ])
 def test_groq_model_filter(model, usable):
     assert GroqProvider._is_usable(model) is usable
+
+
+# ---------------------------------------------------------------- per-purpose models
+
+def _models(*items):
+    return [SimpleNamespace(usage=u, model_name=m, fallback_model_name=f) for u, m, f in items]
+
+
+def _resolve(row, purpose):
+    with patch(_REPO) as repo, patch(_ENC) as enc, patch("app.services.llm.factory._model_cache", return_value=None):
+        repo.return_value.get_active.return_value = row
+        enc.return_value.decrypt.return_value = "sk-ant-real"
+        return factory.resolve_active_provider(MagicMock(), purpose)
+
+
+def test_each_purpose_gets_its_own_model():
+    from app.services.llm.model_selection import LLMPurpose
+
+    row = _row(models=_models(("EXTRACTION", "claude-haiku-5", None), ("EVALUATION", "claude-opus-5", None)))
+
+    assert _resolve(row, LLMPurpose.EXTRACTION).model == "claude-haiku-5"
+    assert _resolve(row, LLMPurpose.EVALUATION).model == "claude-opus-5"
+
+
+def test_purpose_without_its_own_model_uses_both():
+    from app.services.llm.model_selection import LLMPurpose
+
+    row = _row(models=_models(("BOTH", "claude-sonnet-5", None), ("EVALUATION", "claude-opus-5", None)))
+
+    assert _resolve(row, LLMPurpose.EXTRACTION).model == "claude-sonnet-5"
+
+
+def test_backup_model_wraps_in_fallback_provider():
+    from app.services.llm.fallback_provider import FallbackLLMProvider
+    from app.services.llm.model_selection import LLMPurpose
+
+    row = _row(models=_models(("BOTH", "claude-opus-5", "claude-sonnet-5")))
+    provider = _resolve(row, LLMPurpose.EVALUATION)
+
+    assert isinstance(provider, FallbackLLMProvider)
+    assert (provider.primary.model, provider.fallback.model) == ("claude-opus-5", "claude-sonnet-5")
+
+
+def test_row_without_model_assignments_uses_its_single_model():
+    from app.services.llm.model_selection import LLMPurpose
+
+    assert _resolve(_row(), LLMPurpose.EVALUATION).model == "claude-opus-5"
+
+
+# ---------------------------------------------------------------- Groq output budget / JSON failures
+
+from pydantic import BaseModel as _BaseModel
+
+
+class _OkSchema(_BaseModel):
+    ok: bool
+
+
+def _groq_status_error(body: str):
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    response = httpx.Response(400, request=request, text=body)
+    return openai.BadRequestError(f"Error code: 400 - {body}", response=response, body=None)
+
+
+def test_groq_sends_an_output_token_budget():
+    provider = factory.build_provider("GROQ", "key", "openai/gpt-oss-120b")
+    completion = MagicMock()
+    completion.choices = [SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content='{"ok": true}'))]
+    provider.client = MagicMock()
+    provider.client.chat.completions.create.return_value = completion
+
+    assert provider.generate_json("p", _OkSchema) == {"ok": True}
+    kwargs = provider.client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_completion_tokens"] == factory.settings.groq_max_completion_tokens
+
+
+def test_groq_json_validate_failed_is_bad_output_so_the_backup_can_run():
+    provider = factory.build_provider("GROQ", "key", "openai/gpt-oss-120b")
+    provider.client = MagicMock()
+    provider.client.chat.completions.create.side_effect = _groq_status_error(
+        "{'error': {'code': 'json_validate_failed', 'failed_generation': 'max completion tokens reached'}}"
+    )
+
+    with pytest.raises(LLMPermanentError) as exc_info:
+        provider.generate_json("p", _OkSchema)
+    assert exc_info.value.reason == LLMErrorReason.BAD_OUTPUT
+
+
+def test_other_groq_400s_stay_bad_request():
+    provider = factory.build_provider("GROQ", "key", "openai/gpt-oss-120b")
+    provider.client = MagicMock()
+    provider.client.chat.completions.create.side_effect = _groq_status_error("{'error': {'code': 'invalid_request'}}")
+
+    with pytest.raises(LLMPermanentError) as exc_info:
+        provider.generate_json("p", _OkSchema)
+    assert exc_info.value.reason == LLMErrorReason.BAD_REQUEST
