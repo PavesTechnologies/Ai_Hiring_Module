@@ -6,7 +6,7 @@ used. Never writes campaign_candidates - acting on the result is the
 caller's decision (deterministic_scoring_tasks, by campaign flag).
 
 Which campaigns compute v2 at all:
-  - scoring_v2_enabled campaigns (v2 decides once the REVIEW outcome exists),
+  - scoring_v2_enabled campaigns (v2 decides),
   - scoring_v2_shadow campaigns (opt-in per campaign: stored, never acted on).
 
 LLM budget: platform_config SCORING_V2_DAILY_LLM_CALL_CAP caps the core

@@ -30,7 +30,7 @@ from app.services.campaign.candidate_scoring_service import (
 )
 from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
 from app.repositories.scoring_result_repository import ScoringResultRepository
-from app.services.campaign.scoring_v2 import OUTCOME_PENDING, REVIEW_OUTCOME_AVAILABLE
+from app.services.campaign.scoring_v2 import OUTCOME_PENDING
 from app.services.campaign.scoring_v2_service import (
     ScoringV2Service, v1_result_row, v2_rejection_reason, v2_should_run,
 )
@@ -148,6 +148,12 @@ def _record_v1_result(db, campaign, campaign_candidate, breakdown, *, acted_on: 
         )
     except Exception:
         logger.exception("Could not store the v1 scoring result row | campaign_candidate_id=%s", campaign_candidate.id)
+
+
+def _v2_decides(campaign) -> bool:
+    """v2 makes the decision only on campaigns with scoring_v2_enabled (an
+    explicit True - a mocked or unset attribute never opts a campaign in)."""
+    return getattr(campaign, "scoring_v2_enabled", False) is True
 
 
 NEAR_MISS_BREAKDOWN_KEYS = (
@@ -352,13 +358,10 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             domain_result=domain_result,
         )
 
-        # Scoring v2 (Phase 1). It decides only on scoring_v2_enabled campaigns
-        # AND once the REVIEW outcome exists (go-live prerequisite) - then it
-        # runs inline here. Everywhere else it opted into (shadow / enabled
-        # before REVIEW) it runs afterwards in its own task (SCORING_V2),
-        # queued after v1 commits: v1 is never slowed or changed by it.
-        v2_enabled = getattr(campaign, "scoring_v2_enabled", False) is True
-        v2_decides = v2_enabled and REVIEW_OUTCOME_AVAILABLE
+        # Scoring v2 decides on scoring_v2_enabled campaigns - it runs inline
+        # here. On shadow-only campaigns it runs afterwards in its own task
+        # (SCORING_V2), queued after v1 commits: v1 is never slowed or changed.
+        v2_decides = _v2_decides(campaign)
         v2_breakdown = None
         if v2_decides:
             v2_breakdown = _run_scoring_v2(
@@ -369,9 +372,6 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
                 # A quota/provider failure must never decide (and never reject):
                 # roll back and retry the whole scoring later.
                 raise ScoringV2DecisionPending(v2_breakdown.get("outcome_reason") or "v2 confirmation unavailable")
-        elif v2_enabled:
-            logger.warning("campaign %s has scoring_v2_enabled but the REVIEW outcome isn't available yet - "
-                           "v2 runs in shadow only, v1 decides.", campaign.id)
         acting_on_v2 = v2_decides and v2_breakdown is not None
         _record_v1_result(db, campaign, campaign_candidate, breakdown,
                           acted_on=not acting_on_v2, score_weights=score_weights)

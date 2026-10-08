@@ -46,11 +46,6 @@ from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, Near
 
 SCORING_VERSION = "v2"
 
-# Go-live prerequisite (2026-10-01): v2 may only DECIDE once the REVIEW
-# outcome exists, so borderline candidates land on PASS or REVIEW, never
-# REJECT. REVIEW shipped (near_miss.py): a scoring_v2_enabled campaign now
-# lets v2 decide. Shadow-only campaigns are unaffected.
-REVIEW_OUTCOME_AVAILABLE = True
 SCORING_V2_CONFIG_KEY = "SCORING_V2_CONFIG"
 
 DEFAULT_CONFIG: dict = {

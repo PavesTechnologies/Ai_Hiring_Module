@@ -230,6 +230,9 @@ def test_uncertain_core_is_supporting_at_0_8_and_flags_review():
     assert result["outcome"] == "REVIEW" and result["would_be_review"] is True
 
 
-def test_review_outcome_exists_so_v2_may_decide_on_enabled_campaigns():
-    from app.services.campaign import scoring_v2
-    assert scoring_v2.REVIEW_OUTCOME_AVAILABLE is True
+def test_v2_decides_only_on_enabled_campaigns():
+    from app.tasks.deterministic_scoring_tasks import _v2_decides
+    assert _v2_decides(SimpleNamespace(scoring_v2_enabled=True, scoring_v2_shadow=True)) is True
+    assert _v2_decides(SimpleNamespace(scoring_v2_enabled=False, scoring_v2_shadow=True)) is False   # shadow only
+    assert _v2_decides(SimpleNamespace()) is False
+    assert _v2_decides(MagicMock()) is False             # a truthy mock never opts a campaign in
