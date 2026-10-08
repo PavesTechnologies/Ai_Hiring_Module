@@ -33,7 +33,7 @@ def make_jd_service():
     audit_service = MagicMock()
     service = JDService(
         repository=repository, hash_service=MagicMock(), audit_service=audit_service,
-        storage_service=MagicMock(),
+        storage_service=MagicMock(), prompt_template_repository=MagicMock(),
     )
     return service, repository
 
@@ -52,6 +52,7 @@ def _persist(service, skill_matches, **overrides):
         file_path=None,
         created_by=str(uuid4()),
         content_hash=f"hash-{uuid4()}",
+        prompt_template_id=uuid4(),
         extraction=JDExtractionResponse(required_skills=[], preferred_skills=[]),
         skill_repository=skill_repository,
         skill_matches=skill_matches,
@@ -64,11 +65,15 @@ def _persist(service, skill_matches, **overrides):
     return jd_id, skill_repository
 
 
+def _created_jd_skills(skill_repository):
+    """Every JDSkill the service inserted - one batch via bulk_create_jd_skills."""
+    return [jd_skill for call in skill_repository.bulk_create_jd_skills.call_args_list for jd_skill in call.args[0]]
+
+
 def _weights_by_mandatory(skill_repository):
     mandatory_weights, preferred_weights = [], []
-    for call in skill_repository.create_jd_skill.call_args_list:
-        weight = call.kwargs["weight"]
-        (mandatory_weights if call.kwargs["mandatory"] else preferred_weights).append(weight)
+    for jd_skill in _created_jd_skills(skill_repository):
+        (mandatory_weights if jd_skill.mandatory else preferred_weights).append(jd_skill.weight)
     return mandatory_weights, preferred_weights
 
 
@@ -82,8 +87,10 @@ def test_persist_processed_jd_never_leaves_weight_null():
     ]
     _, skill_repository = _persist(service, matches)
 
-    for call in skill_repository.create_jd_skill.call_args_list:
-        assert call.kwargs["weight"] is not None
+    created = _created_jd_skills(skill_repository)
+    assert created
+    for jd_skill in created:
+        assert jd_skill.weight is not None
 
 
 def test_every_matched_skill_gets_the_same_flat_equal_weight():
@@ -165,9 +172,11 @@ def test_reprocessing_creates_fresh_jd_skill_rows_without_touching_previous_vers
 
     assert new_jd_id != existing_jd_id
     repository.deactivate_version.assert_called_once()
-    for call in skill_repository.create_jd_skill.call_args_list:
-        assert call.kwargs["jd_id"] == new_jd_id
-        assert call.kwargs["jd_id"] != existing_jd_id
+    created = _created_jd_skills(skill_repository)
+    assert created
+    for jd_skill in created:
+        assert jd_skill.jd_id == new_jd_id
+        assert jd_skill.jd_id != existing_jd_id
     # Nothing in this flow ever calls an "update jd_skill weight" method
     # against the old version - no such method is even invoked here.
     assert not hasattr(skill_repository, "update_jd_skill_weight") or not skill_repository.update_jd_skill_weight.called
