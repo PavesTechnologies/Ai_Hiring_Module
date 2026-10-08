@@ -28,7 +28,9 @@ def _make_rejection(mandatory_skills=None, experience_validation=None, education
         "experience_validation": experience_validation,
         "education_validation": education_validation,
     }
-    return SimpleNamespace(rejection_detail=detail)
+    # Rejection analytics reads decision_details snapshots (campaign_repo.
+    # get_deterministic_rejection_details) - the dict itself, no wrapper record.
+    return detail
 
 
 def _missing_skill(canonical_name, canonical_skill_id=None):
@@ -64,7 +66,6 @@ def _failed_education():
 def make_service(
     campaign_repo=None,
     campaign_candidate_repo=None,
-    candidate_rejection_repo=None,
     config_repo=None,
     skill_repo=None,
     audit_service=None,
@@ -73,7 +74,6 @@ def make_service(
         campaign_repo=campaign_repo or MagicMock(),
         campaign_candidate_repo=campaign_candidate_repo or MagicMock(),
         audit_service=audit_service or MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
         skill_repo=skill_repo,
     )
@@ -100,13 +100,11 @@ def test_analytics_empty_campaign_returns_zeroed_breakdown():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 0
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = []
+    campaign_repo.get_deterministic_rejection_details.return_value = []
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -138,13 +136,11 @@ def test_analytics_classifies_each_of_the_seven_categories():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 0
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -179,13 +175,11 @@ def test_analytics_edge_case_rejection_with_no_individual_failure_counts_toward_
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 0
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -205,13 +199,11 @@ def test_analytics_top_missing_skills_sorted_and_percentaged():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 0
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -231,13 +223,11 @@ def test_analytics_top_missing_skills_capped_at_five():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 0
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -258,13 +248,11 @@ def test_recommendations_empty_below_min_candidates_threshold():
     campaign_candidate_repo.get_candidate_count.return_value = 5  # below default MIN_CANDIDATES_FOR_ANALYTICS (20)
     campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -279,15 +267,13 @@ def test_recommendations_reads_min_candidates_threshold_from_config():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 3
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = []
+    campaign_repo.get_deterministic_rejection_details.return_value = []
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {"MIN_CANDIDATES_FOR_ANALYTICS": "2"}
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 
@@ -306,15 +292,13 @@ def _make_gated_harness(rejections, total_candidates=25):
     campaign_candidate_repo.get_candidate_count.return_value = total_candidates
     campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {}
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
     return service, campaign, campaign_candidate_repo
@@ -358,8 +342,7 @@ def test_rule1_threshold_read_from_config_not_hardcoded():
     campaign_candidate_repo.get_candidate_count.return_value = 25
     campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
     # 50% missing-rate wouldn't clear the ticket's default 60% threshold,
     # but WOULD clear a lowered, config-driven threshold of 40%.
@@ -368,7 +351,6 @@ def test_rule1_threshold_read_from_config_not_hardcoded():
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 
@@ -412,15 +394,13 @@ def test_rule3_recommends_when_override_rate_above_threshold():
     campaign_candidate_repo.get_candidate_count.return_value = 25
     campaign_candidate_repo.get_overridden.return_value = [1, 2, 3]  # 3 overrides
     campaign_candidate_repo.get_rejected_by_campaign.return_value = [1, 2, 3, 4, 5]  # 5 rejected -> 60%
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {"OVERRIDE_RATE_ALERT_THRESHOLD": "20"}
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 
@@ -441,13 +421,11 @@ def test_rule3_does_not_recommend_when_override_rate_below_threshold():
     campaign_candidate_repo.get_candidate_count.return_value = 25
     campaign_candidate_repo.get_overridden.return_value = [1]
     campaign_candidate_repo.get_rejected_by_campaign.return_value = [1, 2, 3, 4, 5]  # 20%, not > 20%
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -475,8 +453,7 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
     rejections = [
         _make_rejection(mandatory_skills=[_missing_skill("Python", skill_id)]) for _ in range(2)
     ]
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     skill_repo = MagicMock()
     skill_repo.get_campaign_requirement_counts_by_skill.return_value = {skill_id: 4}
     audit_service = MagicMock()
@@ -484,7 +461,6 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
     service = make_service(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
-        candidate_rejection_repo=candidate_rejection_repo,
         skill_repo=skill_repo,
         audit_service=audit_service,
     )

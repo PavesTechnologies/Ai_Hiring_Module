@@ -33,8 +33,14 @@ def _make_campaign_candidate(
         candidate_id=uuid4(),
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
-        score_breakdown=score_breakdown,
-        semantic_score_breakdown=semantic_score_breakdown,
+        # Model fields since the decision_* redesign (98d721e).
+        deterministic_breakdown=score_breakdown,
+        semantic_breakdown=semantic_score_breakdown,
+        semantic_passed=(semantic_score_breakdown or {}).get("semantic_passed"),
+        previous_stage=None,
+        decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
+        decision_by_user_id=None, decision_at=None,
+        ai_evaluation=None,
         hr_override=False,
         deterministic_score=deterministic_score,
         ai_ats_score=None,
@@ -48,12 +54,11 @@ def _make_campaign_candidate(
     )
 
 
-def make_service(campaign_candidate_repo=None, candidate_rejection_repo=None, config_repo=None):
+def make_service(campaign_candidate_repo=None, config_repo=None):
     return CampaignCandidateService(
         campaign_repo=MagicMock(),
         campaign_candidate_repo=campaign_candidate_repo or MagicMock(),
         audit_service=MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 

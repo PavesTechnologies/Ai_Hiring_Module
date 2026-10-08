@@ -21,11 +21,12 @@ from app.services.campaign.campaign_candidate_service import CampaignCandidateSe
 
 
 def _make_rejection(mandatory_skills=None, experience_validation=None, education_validation=None):
-    return SimpleNamespace(rejection_detail={
+    # decision_details snapshot, as campaign_repo.get_deterministic_rejection_details returns it.
+    return {
         "mandatory_skills": mandatory_skills or [],
         "experience_validation": experience_validation,
         "education_validation": education_validation,
-    })
+    }
 
 
 def test_rule3_override_rate_matches_override_report_alert_for_the_same_data():
@@ -38,12 +39,13 @@ def test_rule3_override_rate_matches_override_report_alert_for_the_same_data():
     campaign_candidate_repo.get_candidate_count.return_value = 100
     campaign_candidate_repo.get_overridden.return_value = [1, 2, 3]  # 3 overrides
     campaign_candidate_repo.get_rejected_by_campaign.return_value = [1, 2, 3, 4, 5, 6]  # 6 rejected -> 50%
+    # The override report counts rejections for every campaign in one aggregate query.
+    campaign_candidate_repo.count_rejected_by_campaigns.return_value = {campaign.id: 6}
 
     rejections = [_make_rejection(mandatory_skills=[{
         "canonical_skill_id": uuid4(), "canonical_name": "Python", "match_type": "MISSING",
     }]) for _ in range(6)]
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {"OVERRIDE_RATE_ALERT_THRESHOLD": "20"}
@@ -52,7 +54,6 @@ def test_rule3_override_rate_matches_override_report_alert_for_the_same_data():
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 
@@ -108,14 +109,12 @@ def test_breakdown_classification_matches_export_top_rejection_reason_for_the_sa
     ] + [
         _make_rejection(experience_validation={"passed": False, "candidate_years": 2.0, "min_years": 4.0}),
     ]
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign.return_value = [(r, campaign.id) for r in rejections]
+    campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = CampaignCandidateService(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
@@ -136,4 +135,3 @@ def test_service_still_constructible_with_only_the_original_three_positional_arg
 
     assert service.skill_repo is None
     assert service.config_repo is None
-    assert service.candidate_rejection_repo is None
