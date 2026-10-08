@@ -339,13 +339,8 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
             cb_repo.reset(EMBEDDING_SERVICE_NAME)
             cb_repo.commit()
 
-          
-            # Task 6: batch-capable call (even though this task only ever
-            # embeds one text) - the same generate_embeddings() a future
-            # multi-resume backfill/batch task would call, so batch
-            # support lives in one place, not duplicated per call site.
-            batch_size = _read_embedding_batch_size(config_repo)
-            embedding_vectors = EmbeddingService(db).generate_embeddings([input_text], batch_size=batch_size)
+            # embedding_vectors comes from the protected call above (retry,
+            # circuit breaker, dead-letter) - generated once per resume.
 
             # Task 7. uq_resume_embeddings_resume_model_version is the final
             # backstop against a concurrent duplicate: was_created is False
