@@ -63,6 +63,12 @@ class _Harness:
         self.campaign_candidate_repo = MagicMock()
         self.campaign_candidate_repo.get_by_resume_id.return_value = []
         self.cb_repo = MagicMock()
+        # MANUAL_REVIEW lives on each candidate's ai_evaluation row (1:1) since the
+        # decision_* redesign - one row per campaign_candidate_id, inspectable here.
+        self.ai_evaluations = {}
+        self.ai_evaluation_repo = MagicMock()
+        self.ai_evaluation_repo.get_or_create.side_effect = (
+            lambda cc_id: self.ai_evaluations.setdefault(cc_id, SimpleNamespace(ai_evaluation_status=None)))
         # Default: circuit CLOSED, so every existing test (none of which
         # care about the circuit breaker) proceeds straight through to the
         # embedding-service call exactly as before this feature existed.
@@ -81,6 +87,11 @@ class _Harness:
             patch(f"{TASKS_MODULE}.EmbeddingService", return_value=self.embedding_service_instance),
             patch(f"{TASKS_MODULE}.CampaignCandidateRepository", return_value=self.campaign_candidate_repo),
             patch(f"{TASKS_MODULE}.CircuitBreakerRepository", return_value=self.cb_repo),
+            patch(f"{TASKS_MODULE}.CampaignCandidateAIEvaluationRepository", return_value=self.ai_evaluation_repo),
+            # The success path invalidates Redis caches and triggers semantic scoring
+            # (which can enqueue Celery tasks) - neither may run for real in a unit test.
+            patch(f"{TASKS_MODULE}.CacheInvalidator"),
+            patch("app.tasks.semantic_scoring_tasks.trigger_pending_semantic_scoring_for_resume"),
         ]
         for p in self._patches:
             p.start()
@@ -531,7 +542,7 @@ def test_permanent_400_failure_dead_letters_immediately_and_sets_manual_review()
     with _Harness() as h:
         resume = _make_resume(parsed_json=_PARSED_JSON)
         h.resume_repo.get_by_id.return_value = resume
-        cc = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
+        cc = SimpleNamespace(id=uuid4())
         h.campaign_candidate_repo.get_by_resume_id.return_value = [cc]
         h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(400)
 
@@ -540,7 +551,7 @@ def test_permanent_400_failure_dead_letters_immediately_and_sets_manual_review()
         h.dead_letter_queue_repo.create.assert_called_once()
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.DEAD
-        assert cc.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluations[cc.id].ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
 
 
 def test_retries_exhausted_dead_letters_and_sets_manual_review_for_all_candidates():
@@ -549,8 +560,8 @@ def test_retries_exhausted_dead_letters_and_sets_manual_review_for_all_candidate
     with _Harness() as h:
         resume = _make_resume(parsed_json=_PARSED_JSON)
         h.resume_repo.get_by_id.return_value = resume
-        cc_a = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
-        cc_b = SimpleNamespace(id=uuid4(), ai_evaluation_status=None)
+        cc_a = SimpleNamespace(id=uuid4())
+        cc_b = SimpleNamespace(id=uuid4())
         h.campaign_candidate_repo.get_by_resume_id.return_value = [cc_a, cc_b]
         h.embedding_service_instance.generate_embeddings.side_effect = _HTTPStatusError(503)
         h.config_repo.get_configs_by_keys.return_value = {"MAX_EMBED_RETRY_COUNT": "4"}
@@ -563,8 +574,8 @@ def test_retries_exhausted_dead_letters_and_sets_manual_review_for_all_candidate
         h.dead_letter_queue_repo.create.assert_called_once()
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.DEAD
-        assert cc_a.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
-        assert cc_b.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluations[cc_a.id].ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluations[cc_b.id].ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
 
 
 def test_upstream_db_error_never_touches_circuit_breaker():
