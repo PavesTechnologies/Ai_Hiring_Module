@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.pipeline import AIRecommendation, PipelineStage, RejectionLayer
+from app.models.pipeline import AIRecommendation, DecisionSource, DecisionType, PipelineStage
 from app.schemas.campaign.campaign_candidate_schema import (
     CandidateDeterministicResponse,
     CandidateSummaryResponse,
@@ -39,26 +39,30 @@ def _make_campaign_candidate(
         candidate_id=uuid4(),
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
-        score_breakdown=score_breakdown,
-        hr_override=False,
+        # Model fields since the decision_* redesign (98d721e): the breakdown is
+        # deterministic_breakdown, a rejection/override is a decision_* record on
+        # the candidate, and AI fields live on the related ai_evaluation row.
+        deterministic_breakdown=score_breakdown,
+        semantic_breakdown=None, semantic_passed=None, previous_stage=None,
+        decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
+        decision_by_user_id=None, decision_at=None,
         deterministic_score=deterministic_score,
-        ai_ats_score=None,
         semantic_score=None,
         composite_score=None,
         screened_at=None,
-        ai_recommendation=ai_recommendation,
-        ai_strengths=ai_strengths,
-        ai_weaknesses=ai_weaknesses,
+        ai_evaluation=SimpleNamespace(
+            ai_recommendation=ai_recommendation, ai_strengths=ai_strengths, ai_weaknesses=ai_weaknesses,
+            ai_evaluation_status=None, effective_ai_score=None, ai_confidence=None, ai_response_json=None,
+        ),
         created_at=datetime.now(timezone.utc),
     )
 
 
-def make_service(campaign_candidate_repo=None, candidate_rejection_repo=None, config_repo=None):
+def make_service(campaign_candidate_repo=None, config_repo=None):
     return CampaignCandidateService(
         campaign_repo=MagicMock(),
         campaign_candidate_repo=campaign_candidate_repo or MagicMock(),
         audit_service=MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
         config_repo=config_repo,
     )
 
@@ -198,20 +202,20 @@ def test_deterministic_reuses_rejection_banner_for_failure_reason():
     """
     breakdown = {
         "deterministic_score": 40.0, "deterministic_passed": False, "deterministic_threshold": 70.0,
-        "mandatory_coverage_pct": 50.0, "mandatory_skills": [], "preferred_skills": [],
+        "mandatory_coverage_pct": 50.0, "preferred_skills": [],
+        "mandatory_skills": [{"canonical_skill_id": str(uuid4()), "canonical_name": "Python",
+                              "mandatory": True, "match_type": "MISSING"}],
     }
     candidate = _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED, score_breakdown=breakdown)
-    candidate.hr_override = False
-    rejection = SimpleNamespace(
-        id=uuid4(), rejection_layer=RejectionLayer.DETERMINISTIC,
-        rejection_reason="Missing required skills: Python.", rejected_at=datetime.now(timezone.utc),
-    )
+    # The rejection is recorded on the candidate by the deterministic layer.
+    candidate.decision_type = DecisionType.REJECTED
+    candidate.decision_source = DecisionSource.DETERMINISTIC
+    candidate.decision_reason = "Missing required skills: Python."
+    candidate.decision_at = datetime.now(timezone.utc)
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_by_id.return_value = candidate
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign_candidate_id.return_value = [rejection]
 
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo, candidate_rejection_repo=candidate_rejection_repo)
+    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
 
     result = service.get_candidate_deterministic(candidate.id)
 
