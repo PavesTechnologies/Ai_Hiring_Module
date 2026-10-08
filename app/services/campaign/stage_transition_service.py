@@ -163,8 +163,12 @@ class StageTransitionService:
         scores_snapshot: dict | None,
         decision_reason: str | None = None,
         decision_details: dict | None = None,
+        decision_source: DecisionSource = DecisionSource.AI,
     ) -> bool:
         """
+        decision_source: AI, or DETERMINISTIC when the deterministic
+        layer's REVIEW outcome capped the AI's result at HOLD.
+
         AI evaluation's 2 non-REJECT outcomes: a SHORTLIST recommendation
         moves pipeline_stage to SHORTLISTED, a HOLD recommendation moves it
         to HOLD - same validate-then-apply shape as transition_to_rejected,
@@ -197,7 +201,7 @@ class StageTransitionService:
         campaign_candidate.previous_stage = from_stage
         campaign_candidate.pipeline_stage = to_stage
         campaign_candidate.decision_type = decision_type
-        campaign_candidate.decision_source = DecisionSource.AI
+        campaign_candidate.decision_source = decision_source
         campaign_candidate.decision_reason = effective_decision_reason
         campaign_candidate.decision_details = decision_details
         campaign_candidate.decision_by_user_id = None
@@ -214,7 +218,7 @@ class StageTransitionService:
             scores_snapshot={
                 **(scores_snapshot or {}),
                 "decision_type": decision_type.value,
-                "decision_source": DecisionSource.AI.value,
+                "decision_source": decision_source.value,
                 "decision_reason": effective_decision_reason,
                 "decision_details": decision_details,
             },

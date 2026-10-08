@@ -22,15 +22,16 @@ from app.repositories.prompt_template_repository import PromptTemplateRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.ai_evaluation_service import AIEvaluationService
+from app.services.campaign.near_miss import NEEDS_REVIEW_REASON, needs_recruiter_review
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.llm.factory import resolve_active_provider
+from app.services.llm.model_selection import LLMPurpose
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
-from app.tasks.deterministic_scoring_tasks import _queue_rejection_email
 from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,67 @@ def _enqueue_ai_evaluation(
         logger.exception(
             "Failed to enqueue AI_EVALUATE for campaign_candidate_id=%s", campaign_candidate.id,
         )
+
+
+def _apply_ai_recommendation(stage_transition_service, campaign_candidate, recommendation: str, ai_response: dict) -> bool:
+    """
+    Moves the candidate on the AI's recommendation: REJECT -> REJECTED,
+    SHORTLIST -> SHORTLISTED, HOLD -> HOLD. A near-miss the deterministic
+    layer let through (needs_review) is capped at HOLD - an AI REJECT still
+    rejects. Returns whether the stage transition was applied.
+    """
+    if recommendation == "REJECT":
+        rejection_reason = AIEvaluationService.build_rejection_reason(ai_response)
+
+        return stage_transition_service.transition_to_rejected(
+            campaign_candidate,
+            change_reason="AI evaluation rejection",
+            scores_snapshot=ai_response,
+            decision_source=DecisionSource.AI,
+            decision_reason=rejection_reason,
+            decision_details=ai_response,
+        )
+    elif recommendation in ("SHORTLIST", "HOLD") and needs_recruiter_review(campaign_candidate):
+        # REVIEW outcome: the deterministic layer let a near-miss through
+        # - the best it can reach is HOLD, whatever the AI recommends
+        # (an AI REJECT above still rejects).
+        deterministic = campaign_candidate.deterministic_breakdown or {}
+        return stage_transition_service.transition_on_ai_success(
+            campaign_candidate,
+            to_stage=PipelineStage.HOLD,
+            decision_type=DecisionType.HOLD,
+            change_reason=f"Capped at HOLD - needs recruiter review (AI recommended {recommendation})",
+            scores_snapshot=ai_response,
+            decision_reason=deterministic.get("needs_review_reason") or NEEDS_REVIEW_REASON,
+            decision_details={
+                "capped_at_hold": True,
+                "ai_recommendation": recommendation,
+                "near_misses": deterministic.get("near_misses") or [],
+                "ai_response": ai_response,
+            },
+            decision_source=DecisionSource.DETERMINISTIC,
+        )
+    elif recommendation == "SHORTLIST":
+        return stage_transition_service.transition_on_ai_success(
+            campaign_candidate,
+            to_stage=PipelineStage.SHORTLISTED,
+            decision_type=DecisionType.SHORTLISTED,
+            change_reason="AI evaluation shortlist recommendation",
+            scores_snapshot=ai_response,
+            decision_reason="AI evaluation recommended shortlisting this candidate.",
+            decision_details=ai_response,
+        )
+    elif recommendation == "HOLD":
+        return stage_transition_service.transition_on_ai_success(
+            campaign_candidate,
+            to_stage=PipelineStage.HOLD,
+            decision_type=DecisionType.HOLD,
+            change_reason="AI evaluation hold recommendation",
+            scores_snapshot=ai_response,
+            decision_reason="AI evaluation recommended placing this candidate on hold.",
+            decision_details=ai_response,
+        )
+    return False
 
 
 @celery_app.task(name="scoring.calculate_ai_evaluation", bind=True)
@@ -238,8 +300,9 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             exception_factory=ValueError,
         )
 
+        llm_provider = resolve_active_provider(db, LLMPurpose.EVALUATION)
         evaluation_service = AIEvaluationService(
-            LLMExtractionService(resolve_active_provider(db)), campaign_candidate_repo, ai_evaluation_repo,
+            LLMExtractionService(llm_provider), campaign_candidate_repo, ai_evaluation_repo,
         )
         ai_response = evaluation_service.calculate_and_store_evaluation(
             campaign_candidate_id=campaign_candidate.id,
@@ -249,38 +312,9 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         )
 
         recommendation = ai_response["recommendation"]
-        stage_transition_succeeded = False
-        if recommendation == "REJECT":
-            rejection_reason = AIEvaluationService.build_rejection_reason(ai_response)
-
-            stage_transition_succeeded = stage_transition_service.transition_to_rejected(
-                campaign_candidate,
-                change_reason="AI evaluation rejection",
-                scores_snapshot=ai_response,
-                decision_source=DecisionSource.AI,
-                decision_reason=rejection_reason,
-                decision_details=ai_response,
-            )
-        elif recommendation == "SHORTLIST":
-            stage_transition_succeeded = stage_transition_service.transition_on_ai_success(
-                campaign_candidate,
-                to_stage=PipelineStage.SHORTLISTED,
-                decision_type=DecisionType.SHORTLISTED,
-                change_reason="AI evaluation shortlist recommendation",
-                scores_snapshot=ai_response,
-                decision_reason="AI evaluation recommended shortlisting this candidate.",
-                decision_details=ai_response,
-            )
-        elif recommendation == "HOLD":
-            stage_transition_succeeded = stage_transition_service.transition_on_ai_success(
-                campaign_candidate,
-                to_stage=PipelineStage.HOLD,
-                decision_type=DecisionType.HOLD,
-                change_reason="AI evaluation hold recommendation",
-                scores_snapshot=ai_response,
-                decision_reason="AI evaluation recommended placing this candidate on hold.",
-                decision_details=ai_response,
-            )
+        stage_transition_succeeded = _apply_ai_recommendation(
+            stage_transition_service, campaign_candidate, recommendation, ai_response,
+        )
 
         summary_payload = {
             "campaign_candidate_id": str(campaign_candidate.id),
@@ -290,6 +324,13 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             "overall_score": ai_response["scores"]["overall_score"],
             "confidence_score": ai_response["confidence_score"],
             "ai_response": ai_response,
+            # Which model actually scored this candidate - a backup model
+            # may rank slightly differently from the main one.
+            "llm": {
+                "provider": getattr(llm_provider, "provider_name", None),
+                "model": getattr(llm_provider, "last_model_used", None) or getattr(llm_provider, "model", None),
+                "used_fallback": bool(getattr(llm_provider, "last_used_fallback", False)),
+            },
         }
 
         audit_service.log(
@@ -313,8 +354,8 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             campaign_candidate.id, recommendation,
         )
 
-        if recommendation == "REJECT" and stage_transition_succeeded:
-            _queue_rejection_email(db, campaign_candidate)
+        # An AI REJECT moves the stage but never emails the candidate - a
+        # recruiter sends the rejection email manually.
 
         # Composite score's 2 automated-pipeline triggers: AI evaluation
         # completing with a non-REJECT recommendation (this is the terminal

@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 from uuid import UUID
 
@@ -5,6 +6,7 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
+from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
 
 # Max child traversal depth for the hierarchy fallback: 1 = direct CHILD,
 # 2 = GRANDCHILD. Direct child always takes precedence over grandchild.
@@ -36,11 +38,50 @@ GATE_SCOPE_ALL_MANDATORY = "ALL_MANDATORY"
 # count): a candidate may be missing at most this many CORE required
 # skills, regardless of whether the JD has 10 or 100 required skills.
 DEFAULT_MAX_MISSING_CORE_SKILLS = 3
+DEFAULT_MAX_MISSING_CORE_PCT = 25.0
+
+
+def _optional_float(value) -> float | None:
+    """float(value), or None when unset - campaign rows always have it; older callers/fixtures may not."""
+    return None if value is None else float(value)
+
+
+def allowed_missing_core(core_skill_count: int, max_missing_core_skills: int, max_missing_core_pct: float | None) -> int:
+    """
+    How many CORE skills a candidate may miss and still pass: the campaign's
+    percentage of the JD's core skills (rounded down), never more than the
+    fixed max_missing_core_skills ceiling. With no percentage configured the
+    fixed count applies on its own (pre-percentage behavior).
+    """
+    if max_missing_core_pct is None:
+        return int(max_missing_core_skills)
+    by_pct = math.floor(core_skill_count * float(max_missing_core_pct) / 100 + 1e-9)
+    return max(0, min(by_pct, int(max_missing_core_skills)))
 
 # No prior concept of a coverage gate exists - 0.0 (always satisfied)
 # keeps every caller that doesn't pass this explicitly behaving exactly as
 # it did before this feature existed.
 DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD = 0.0
+
+# Whether a deterministic score below campaign.deterministic_threshold
+# rejects on its own for a JD that HAS core skills (a JD without any keeps
+# the score gate - it's the only skill gate it has). Off by default: the
+# score is built mostly from
+# supporting skills/competencies ("Change Management", "Responsible AI"...)
+# that strong senior candidates rarely list by name, so on its own it
+# filtered out good candidates before semantic/AI evaluation ever saw them.
+# Hard requirements still reject: too many missing CORE skills, required-
+# skill coverage, experience and education. The score still ranks and feeds
+# the composite. Set platform_config DETERMINISTIC_SCORE_REJECTS=true to
+# restore score-threshold rejection.
+DETERMINISTIC_SCORE_REJECTS_KEY = "DETERMINISTIC_SCORE_REJECTS"
+
+
+def score_threshold_rejects(config_repository) -> bool:
+    if config_repository is None:
+        return False
+    value = config_repository.get_configs_by_keys([DETERMINISTIC_SCORE_REJECTS_KEY]).get(DETERMINISTIC_SCORE_REJECTS_KEY)
+    return isinstance(value, str) and value.strip().lower() in ("true", "1", "yes")
 
 # M07-E03 S01 T02: human-readable display names for
 # ExperienceEducationValidationService's internal degree-level names -
@@ -64,6 +105,41 @@ def _degree_level_display(level_name: str | None) -> str:
     if level_name is None:
         return "no qualifying degree"
     return _DEGREE_LEVEL_DISPLAY_NAMES.get(level_name, level_name.replace("_", " ").title())
+
+
+def _field_display(code: str | None, text: str | None) -> str:
+    """The raw field text when there is one, else the readable enum name ('COMPUTER_SCIENCE' -> 'Computer Science')."""
+    if text:
+        return text
+    if code:
+        return code.replace("_", " ").title()
+    return "no matching field"
+
+
+def describe_education_gap(education_result: dict | None) -> tuple[str | None, str | None]:
+    """
+    (degree-level gap, field-of-study gap) for a failed education result,
+    each "X required, Y found" or None when that half passed. A breakdown
+    stored before field-of-study matching has no level_passed/field_passed -
+    its failure was always the degree level.
+    """
+    if not education_result or education_result.get("passed"):
+        return None, None
+    level_gap = None
+    if education_result.get("level_passed") is not True:
+        level_gap = (
+            f"{_degree_level_display(education_result.get('required_level'))} required, "
+            f"{_degree_level_display(education_result.get('candidate_level'))} found"
+        )
+    field_gap = None
+    if education_result.get("field_passed") is False:
+        field_gap = (
+            f"{_field_display(education_result.get('required_field'), education_result.get('required_field_text'))}"
+            f" required, "
+            f"{_field_display(education_result.get('candidate_field'), education_result.get('candidate_field_text'))}"
+            f" found"
+        )
+    return level_gap, field_gap
 
 
 def _format_years(value: float) -> str:
@@ -769,6 +845,7 @@ class CandidateScoringService:
         deterministic_threshold: float,
         required_skill_coverage_threshold: float = DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD,
         max_missing_core_skills: int = DEFAULT_MAX_MISSING_CORE_SKILLS,
+        max_missing_core_pct: float | None = None,
     ) -> dict:
         """
         The skill stage passes only when ALL three hold:
@@ -779,9 +856,9 @@ class CandidateScoringService:
         2. skill_score (technical_score) >= deterministic_threshold - the
            SAME campaign.deterministic_threshold every other deterministic
            comparison already uses, not a second threshold.
-        3. missing CORE required skills <= max_missing_core_skills (a fixed
-           business limit, default 3 - never proportional to how many
-           required skills the JD has).
+        3. missing CORE required skills <= allowed_missing_core(...): the
+           campaign's percentage of the JD's core skills (default 25%),
+           capped at max_missing_core_skills (default 3).
 
         Legacy JDs whose required skills were never classified (NULL
         importance) have no CORE skills; for them #1 falls back to every
@@ -795,7 +872,9 @@ class CandidateScoringService:
             1 for skill in breakdown["mandatory_skills"]
             if skill["match_type"] == MandatorySkillMatchType.MISSING.value and skill.get("importance") == "core"
         )
-        core_gap_passed = missing_core_skill_count <= max_missing_core_skills
+        core_skill_count = sum(1 for skill in breakdown["mandatory_skills"] if skill.get("importance") == "core")
+        allowed = allowed_missing_core(core_skill_count, max_missing_core_skills, max_missing_core_pct)
+        core_gap_passed = missing_core_skill_count <= allowed
 
         # No scorable skills (skill_score None) - nothing to fail on here.
         score_passed = skill_score is None or skill_score >= float(deterministic_threshold)
@@ -806,9 +885,85 @@ class CandidateScoringService:
             "score_passed": score_passed,
             "missing_core_skill_count": missing_core_skill_count,
             "max_missing_core_skills": max_missing_core_skills,
+            "max_missing_core_pct": max_missing_core_pct,
+            # The effective limit actually applied (percentage capped by the count).
+            "allowed_missing_core_skills": allowed,
             "core_gap_passed": core_gap_passed,
             "skill_qualification_passed": coverage_passed and score_passed and core_gap_passed,
         }
+
+    # ------------------------------------------------------------------
+    # Decision explanation - every rule the deterministic layer checked,
+    # pass or fail, and whether it can reject on its own. Built purely from
+    # the stored breakdown, so it always describes the decision actually
+    # made (including why a candidate below the score threshold passed).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def explain_decision(breakdown: dict) -> list[dict]:
+        checks: list[dict] = []
+        score_rejects = breakdown.get("score_threshold_rejects") is not False
+        is_core_scope = breakdown.get("gate_skill_scope") == GATE_SCOPE_CORE
+
+        core = [s for s in breakdown.get("mandatory_skills") or [] if s.get("importance") == "core"]
+        if is_core_scope and core and breakdown.get("core_gap_passed") is not None:
+            missing = breakdown.get("missing_core_skill_count") or 0
+            allowed = breakdown.get("allowed_missing_core_skills", breakdown.get("max_missing_core_skills"))
+            pct = breakdown.get("max_missing_core_pct")
+            rule = (f" ({float(pct):g}% of {len(core)}, max {breakdown.get('max_missing_core_skills')})"
+                    if pct is not None else "")
+            checks.append({
+                "check": "Core skills",
+                "passed": bool(breakdown.get("core_gap_passed")),
+                "can_reject": True,
+                "detail": f"{len(core) - missing} of {len(core)} core skills matched; "
+                          f"up to {allowed} may be missing{rule} - {missing} missing.",
+            })
+
+        if breakdown.get("coverage_passed") is not None and float(breakdown.get("required_skill_coverage_threshold") or 0) > 0:
+            coverage = breakdown.get("core_coverage_pct", breakdown.get("mandatory_coverage_pct"))
+            checks.append({
+                "check": "Core skill coverage" if is_core_scope else "Required skill coverage",
+                "passed": bool(breakdown.get("coverage_passed")),
+                "can_reject": True,
+                "detail": f"{coverage}% covered; at least {breakdown.get('required_skill_coverage_threshold')}% required.",
+            })
+
+        score = breakdown.get("deterministic_score")
+        threshold = breakdown.get("deterministic_threshold")
+        if score is not None and threshold is not None:
+            below = float(score) < float(threshold)
+            if not below:
+                detail = f"Score {score} meets the threshold of {threshold}."
+            elif score_rejects:
+                detail = f"Score {score} is below the threshold of {threshold}."
+            else:
+                detail = (f"Score {score} is below the threshold of {threshold}. It ranks the candidate but "
+                          "does not reject: the JD's core skills are its skill requirement, and supporting "
+                          "skills only lower the score.")
+            checks.append({"check": "Score threshold", "passed": not below, "can_reject": score_rejects,
+                           "detail": detail})
+
+        experience = breakdown.get("experience_validation") or {}
+        if experience.get("applicable"):
+            checks.append({
+                "check": "Experience",
+                "passed": bool(experience.get("passed")),
+                "can_reject": True,
+                "detail": f"{experience.get('candidate_years')} years; minimum {experience.get('min_years')} required.",
+            })
+
+        education = breakdown.get("education_validation") or {}
+        if education.get("applicable"):
+            level_gap, field_gap = describe_education_gap(education)
+            gap = "; ".join(g for g in (level_gap, field_gap) if g)
+            checks.append({
+                "check": "Education",
+                "passed": bool(education.get("passed")),
+                "can_reject": True,
+                "detail": gap or "Meets the education requirement.",
+            })
+        return checks
 
     # ------------------------------------------------------------------
     # M07-E03 S01 T02: human-readable rejection_reason summary
@@ -839,22 +994,37 @@ class CandidateScoringService:
         if breakdown.get("NO_VERIFIED_SKILLS"):
             clauses.append("No verifiable skills extracted from resume")
         else:
+            # Under the core-skill rule (score doesn't reject) only CORE
+            # skills can reject, so only those are named - listing every
+            # missing supporting skill would read as if each one caused it.
+            core_rule = breakdown.get("score_threshold_rejects") is False
             missing_skill_names = [
                 skill["canonical_name"] or skill["canonical_skill_id"]
                 for skill in breakdown.get("mandatory_skills", [])
                 if skill["match_type"] == MandatorySkillMatchType.MISSING.value
+                and (not core_rule or skill.get("importance") == "core")
             ]
-            if missing_skill_names:
+            # Under the core rule the core-gap clause below names them itself.
+            if missing_skill_names and not core_rule:
                 clauses.append(f"Missing required skills: {', '.join(missing_skill_names)}")
 
         # Explainability for the three skill-qualification checks (Part
         # 5-7) - only added when the corresponding check actually failed,
         # since a candidate can now have missing skills and still pass.
         if breakdown.get("core_gap_passed") is False:
-            clauses.append(
+            allowed = breakdown.get("allowed_missing_core_skills", breakdown["max_missing_core_skills"])
+            clause = (
                 f"Missing core required skills: {breakdown['missing_core_skill_count']} "
-                f"exceeds the maximum allowed ({breakdown['max_missing_core_skills']})"
+                f"exceeds the maximum allowed ({allowed})"
             )
+            missing_core = [
+                skill["canonical_name"] or skill["canonical_skill_id"]
+                for skill in breakdown.get("mandatory_skills", [])
+                if skill["match_type"] == MandatorySkillMatchType.MISSING.value and skill.get("importance") == "core"
+            ]
+            if breakdown.get("score_threshold_rejects") is False and missing_core:
+                clause += f" - {', '.join(missing_core)}"
+            clauses.append(clause)
         if breakdown.get("coverage_passed") is False:
             is_core_scope = breakdown.get("gate_skill_scope") == GATE_SCOPE_CORE
             coverage_pct = breakdown.get("core_coverage_pct", breakdown["mandatory_coverage_pct"])
@@ -872,12 +1042,11 @@ class CandidateScoringService:
                 f"minimum {_format_years(min_years)} years required (gap: {_format_years(gap)} years)"
             )
 
-        if education_result is not None and not education_result["passed"]:
-            required_display = _degree_level_display(education_result["required_level"])
-            candidate_display = _degree_level_display(education_result["candidate_level"])
-            clauses.append(
-                f"Education requirement not met: {required_display} required, {candidate_display} found"
-            )
+        level_gap, field_gap = describe_education_gap(education_result)
+        if level_gap:
+            clauses.append(f"Education requirement not met: {level_gap}")
+        if field_gap:
+            clauses.append(f"Field of study not met: {field_gap}")
 
         if not clauses:
             # deterministic_score alone fell below threshold with nothing
@@ -902,6 +1071,7 @@ class CandidateScoringService:
         required_skill_coverage_threshold: float = DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD,
         max_missing_core_skills: int = DEFAULT_MAX_MISSING_CORE_SKILLS,
         domain_result: dict | None = None,
+        max_missing_core_pct: float | None = None,
     ) -> dict:
         """
         Builds the hierarchy-aware mandatory-skill breakdown and persists it
@@ -972,6 +1142,16 @@ class CandidateScoringService:
         preferred_breakdown = self.build_preferred_skill_breakdown(jd_id, resume_id)
 
         breakdown["mandatory_skill_score"] = breakdown["deterministic_score"]
+        # Core skills are the JD's hard skill requirement - with them in
+        # place the score only ranks. A JD with no core skills (legacy /
+        # unclassified) has no other skill gate, so there the score still
+        # rejects, exactly as before.
+        has_core_gate = any(
+            entry.get("importance") == "core" for entry in self._gate_skills(breakdown["mandatory_skills"])
+        )
+        score_rejects = score_threshold_rejects(self.config_repository) or not has_core_gate
+        # Recorded so the breakdown says which rule decided pass/fail.
+        breakdown["score_threshold_rejects"] = score_rejects
         skill_score = self.compute_technical_score(breakdown, preferred_breakdown)
         breakdown["technical_score"] = skill_score
         # Part 7: the skill stage passes on ALL THREE checks - required
@@ -986,7 +1166,7 @@ class CandidateScoringService:
         # comparing skill_score here does not double-validate that one.
         skill_qualification = self.evaluate_skill_qualification(
             breakdown, skill_score, deterministic_threshold,
-            required_skill_coverage_threshold, max_missing_core_skills,
+            required_skill_coverage_threshold, max_missing_core_skills, max_missing_core_pct,
         )
         breakdown.update(skill_qualification)
 
@@ -1002,7 +1182,10 @@ class CandidateScoringService:
             # (their defaults are always-satisfied).
             # Nothing to score at all keeps the legacy "no requirements" 100.
             final_score = skill_score if skill_score is not None else 100.0
-            final_passed = skill_qualification["skill_qualification_passed"]
+            final_passed = (
+                skill_qualification["skill_qualification_passed"] if score_rejects
+                else skill_qualification["coverage_passed"] and skill_qualification["core_gap_passed"]
+            )
         else:
             # Coverage and core-gap are pure skill-stage structural checks
             # (about which/how many required skills are missing) and still
@@ -1017,6 +1200,7 @@ class CandidateScoringService:
             final_score, final_passed = self._combine_deterministic_score(
                 skill_score, structural_passed, experience_result, education_result,
                 score_weights, float(deterministic_threshold), domain_result=domain_result,
+                score_rejects=score_rejects,
             )
             breakdown["skill_deterministic_score"] = skill_score
             if experience_result is not None:
@@ -1026,6 +1210,17 @@ class CandidateScoringService:
             if domain_result is not None:
                 breakdown["domain_capability_validation"] = domain_result
                 breakdown["functional_score"] = domain_result.get("score")
+
+        # REVIEW outcome: a near-miss (one core skill over the limit, or
+        # experience short within the tolerance) is let through to semantic
+        # and AI with needs_review set - the AI step caps it at HOLD.
+        near_miss = self.evaluate_near_miss(
+            breakdown, skill_qualification, experience_result, education_result,
+            score_rejects, final_score, float(deterministic_threshold), final_passed,
+        )
+        breakdown.update(near_miss.as_breakdown())
+        if near_miss.needs_review:
+            final_passed = True
 
         breakdown["deterministic_threshold"] = float(deterministic_threshold)
         breakdown["deterministic_score"] = final_score
@@ -1038,6 +1233,33 @@ class CandidateScoringService:
 
         return breakdown
 
+    @staticmethod
+    def evaluate_near_miss(
+        breakdown, skill_qualification, experience_result, education_result,
+        score_rejects, final_score, deterministic_threshold, final_passed,
+    ) -> NearMissDecision:
+        """v1's inputs to the shared near-miss rule (v1 has no uncertain core matches)."""
+        if final_passed:
+            return NearMissDecision(NEAR_MISS_PASS)
+        core = [s for s in breakdown["mandatory_skills"] if s.get("importance") == "core"]
+        missing_core = [s for s in core if s["match_type"] == MandatorySkillMatchType.MISSING.value]
+        other_failed = []
+        if not skill_qualification["coverage_passed"]:
+            other_failed.append("Core skill coverage" if core else "Required skill coverage")
+        if education_result is not None and education_result.get("passed") is False:
+            other_failed.append("Education")
+        if score_rejects and final_score is not None and final_score < deterministic_threshold:
+            other_failed.append("Score threshold")
+        return evaluate_near_miss(
+            core_skill_count=len(core),
+            confirmed_core_count=len(core) - len(missing_core),
+            allowed_missing_core=skill_qualification["allowed_missing_core_skills"],
+            definite_missing_core=len(missing_core),
+            over_limit_names=[s["canonical_name"] or str(s["canonical_skill_id"]) for s in missing_core],
+            experience=experience_result,
+            other_failed_checks=other_failed,
+        )
+
     # Renormalized weighted blend across whichever of skills/experience/
     # education are "applicable" (see ExperienceEducationValidationService
     # docstring for what SKIPPED/DATA_MISSING mean) - skills is always
@@ -1049,7 +1271,7 @@ class CandidateScoringService:
 
     def _combine_deterministic_score(
         self, skill_score, mandatory_skills_passed, experience_result, education_result,
-        score_weights, deterministic_threshold, domain_result=None,
+        score_weights, deterministic_threshold, domain_result=None, score_rejects=True,
     ) -> tuple[float, bool]:
         weights = {**self._DEFAULT_SCORE_WEIGHTS, **(score_weights or {})}
 
@@ -1074,6 +1296,6 @@ class CandidateScoringService:
             mandatory_skills_passed
             and (experience_result is None or experience_result["passed"])
             and (education_result is None or education_result["passed"])
-            and combined_score >= deterministic_threshold
+            and (not score_rejects or combined_score >= deterministic_threshold)
         )
         return combined_score, combined_passed
