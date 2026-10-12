@@ -73,6 +73,12 @@ class HiringCampaign(Base):
     scoring_v2_shadow: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Campaigns that existed before JD calibration may stay active/resume with
+    # a "JD not calibrated" warning; cleared once their JD is calibrated. New
+    # campaigns are never exempt.
+    jd_calibration_exempt: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     max_candidates: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     prompt_template_id: Mapped[uuid.UUID] = mapped_column(

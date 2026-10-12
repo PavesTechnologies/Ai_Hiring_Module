@@ -143,6 +143,10 @@ class JDSkill(Base):
         ARRAY(UUID(as_uuid=True)), nullable=True,
     )
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # HR-confirmed sense of an ambiguous skill (skill_senses.sense_key), set
+    # by JD calibration. NULL = not confirmed: scoring resolves it from the
+    # JD text/title, or assumes the default sense.
+    sense_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)
     verification_status: Mapped[JDSkillVerificationStatus] = mapped_column(
         SAEnum(JDSkillVerificationStatus, name="jd_skill_verification_status_enum"),

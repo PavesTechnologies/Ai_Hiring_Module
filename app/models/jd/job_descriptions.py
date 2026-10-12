@@ -40,6 +40,20 @@ class JDVerificationStatus(enum.Enum):
     VERIFIED = "VERIFIED"
 
 
+class JDCalibrationStatus(enum.Enum):
+    # HR_ADMIN has not yet reviewed and confirmed this JD's scoring inputs.
+    NOT_CALIBRATED = "NOT_CALIBRATED"
+    # HR_ADMIN confirmed core/supporting/preferred skills, ambiguous skill
+    # senses, minimum experience and its tolerance, and education. Required
+    # before a (non-exempt) campaign using this JD can be active.
+    CALIBRATED = "CALIBRATED"
+
+
+class JDEducationRequirement(enum.Enum):
+    MANDATORY = "MANDATORY"   # a gate: not meeting it rejects
+    PREFERRED = "PREFERRED"   # never a gate; a small score component in scoring v2
+
+
 class JobDescription(Base):
     __tablename__ = "job_descriptions"
     __table_args__ = (
@@ -86,8 +100,37 @@ class JobDescription(Base):
         nullable=False,
         default=JDVerificationStatus.NOT_VERIFIED,
     )
+    # Calibration (Phase 2): HR_ADMIN review of this JD's scoring inputs.
+    # is_verified above only tracks unknown-skill resolution; calibration is
+    # the main readiness status.
+    calibration_status: Mapped[JDCalibrationStatus] = mapped_column(
+        SAEnum(JDCalibrationStatus, name="jd_calibration_status_enum"),
+        nullable=False, default=JDCalibrationStatus.NOT_CALIBRATED, server_default="NOT_CALIBRATED",
+    )
+    calibrated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    calibrated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    calibration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Near-miss (HOLD) experience band; NULL = default max(1 year, 10% of the minimum).
+    experience_tolerance_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
+    education_requirement: Mapped[JDEducationRequirement] = mapped_column(
+        SAEnum(JDEducationRequirement, name="jd_education_requirement_enum"),
+        nullable=False, default=JDEducationRequirement.MANDATORY, server_default="MANDATORY",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class JDCalibrationVersion(Base):
+    """One immutable snapshot per calibration save (version_no 1, 2, ...)."""
+    __tablename__ = "jd_calibration_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False, index=True)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    changes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    calibrated_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
+    calibrated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class JDEmbedding(Base):

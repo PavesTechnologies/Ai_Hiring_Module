@@ -54,6 +54,7 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
 from app.services.resume.resume_version_diff import diff_skills
+from app.services.campaign.score_out_of_date import stamp_out_of_date
 
 logger = logging.getLogger(__name__)
 
@@ -254,12 +255,10 @@ class ResumeReparseService:
         others = [other for other in self.campaign_candidate_repo.get_by_resume_id(resume_id)
                   if cc is None or other.id != cc.id]
         stamp = datetime.now(timezone.utc)
-        for other in others:
-            other.score_out_of_date_at = stamp
-            other.score_out_of_date_reason = (
-                f"The resume was re-parsed from campaign '{campaign.name if campaign else 'another campaign'}' "
-                f"on {stamp:%Y-%m-%d}: its skills changed, so these scores are out of date."
-            )
+        stamp_out_of_date(others, (
+            f"The resume was re-parsed from campaign '{campaign.name if campaign else 'another campaign'}' "
+            f"on {stamp:%Y-%m-%d}: its skills changed, so these scores are out of date."
+        ), stamp)
         diff["other_campaigns_marked_out_of_date"] = len(others)
         version.diff = {**diff, "status": "COMPLETED"}
         self.audit_service.log(

@@ -32,8 +32,13 @@ def needs_recruiter_review(campaign_candidate) -> bool:
     return isinstance(breakdown, dict) and breakdown.get("needs_review") is True
 
 
-def experience_near_miss_tolerance(min_years: float) -> float:
-    """How far short of the JD minimum still counts as a near-miss: max(1.0 year, 10% of the minimum)."""
+def experience_near_miss_tolerance(min_years: float, jd_tolerance_years: float | None = None) -> float:
+    """
+    How far short of the JD minimum still counts as a near-miss: the JD's
+    calibrated tolerance when set, else max(1.0 year, 10% of the minimum).
+    """
+    if jd_tolerance_years is not None:
+        return float(jd_tolerance_years)
     return max(EXPERIENCE_NEAR_MISS_MIN_YEARS, EXPERIENCE_NEAR_MISS_PCT * float(min_years))
 
 
@@ -98,7 +103,7 @@ def evaluate_near_miss(
             reject_reasons.append("Experience not met")
         else:
             shortfall = float(min_years) - float(years)
-            tolerance = experience_near_miss_tolerance(float(min_years))
+            tolerance = experience_near_miss_tolerance(float(min_years), experience.get("near_miss_tolerance_years"))
             if shortfall <= tolerance + 1e-9:
                 near_miss_count += 1
                 near_misses.append(

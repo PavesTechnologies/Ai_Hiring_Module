@@ -29,6 +29,11 @@ class CampaignResponse(BaseModel):
     warning: str | None = None
     duplicated_from_campaign_id: UUID | None = None
     duplicated_from_campaign_name: str | None = None
+    # JD calibration is the main readiness badge; verification (unknown
+    # skills resolved) is shown as a detail within it.
+    jd_calibration_status: str | None = None
+    jd_verification_status: str | None = None
+    jd_calibration_warning: str | None = None
 
 class CampaignPageResponse(BaseModel):
     items: list[CampaignResponse]

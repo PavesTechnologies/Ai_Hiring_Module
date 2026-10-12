@@ -76,7 +76,8 @@ VOTE_YES, VOTE_NO, VOTE_INVALID, VOTE_FAILED = "yes", "no", "invalid", "failed"
 
 # JD sense bases that count as definite (see SkillSenseResolver); "assumed"
 # is a default, so a mismatch against it still goes to the LLM.
-_DEFINITE_JD_SENSE = {"cue", "title"}
+# "hr": confirmed by HR_ADMIN in JD calibration - always definite.
+_DEFINITE_JD_SENSE = {"cue", "title", "hr"}
 
 CONFIRMATION_PROMPT = """You check whether a resume shows that the candidate has specific skills.
 
@@ -173,7 +174,8 @@ def jd_core_skill_specs(jd, jd_skills: list, skill_names: dict, resolver) -> lis
         if not row.mandatory or str(importance or "").upper() != "CORE":
             continue
         name = skill_names.get(row.canonical_skill_id, str(row.canonical_skill_id))
-        choice = resolver.resolve_jd_sense(row.canonical_skill_id, getattr(jd, "raw_text", "") or "", name, title_text)
+        choice = resolver.resolve_jd_sense(row.canonical_skill_id, getattr(jd, "raw_text", "") or "", name, title_text,
+                                           hr_sense=_hr_sense(row))
         sense_def = next((d for d in resolver.senses_for(row.canonical_skill_id) if d.sense_key == choice.sense), None)
         specs.append(CoreSkillSpec(
             canonical_skill_id=row.canonical_skill_id, name=name, sense=choice.sense,
@@ -183,6 +185,11 @@ def jd_core_skill_specs(jd, jd_skills: list, skill_names: dict, resolver) -> lis
             alias_skill_ids=tuple(row.alias_skill_ids or ()),
         ))
     return specs
+
+
+def _hr_sense(row) -> str | None:
+    value = getattr(row, "sense_key", None)
+    return value if isinstance(value, str) and value else None
 
 
 def definite_sense_mismatch(spec: CoreSkillSpec, resume_sense: str | None) -> bool:

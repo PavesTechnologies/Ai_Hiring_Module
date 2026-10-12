@@ -26,6 +26,10 @@ class GetJDResponse(BaseModel):
     updated_at: datetime | None
     prompt_template_id: UUID
     prompt_name: str | None
+    # JD calibration: the main readiness badge (is_verified is a detail within it).
+    calibration_status: str = "NOT_CALIBRATED"
+    calibration_version: int = 0
+    calibrated_at: datetime | None = None
 
 class UpdateJDResponse(BaseModel):
     id: UUID
@@ -50,6 +54,10 @@ class JDListItem(BaseModel):
     created_at: datetime
     prompt_template_id: UUID
     prompt_name: str | None
+    # JD calibration: the main readiness badge (is_verified is a detail within it).
+    calibration_status: str = "NOT_CALIBRATED"
+    calibration_version: int = 0
+    calibrated_at: datetime | None = None
 
 
 class PaginatedJDResponse(BaseModel):

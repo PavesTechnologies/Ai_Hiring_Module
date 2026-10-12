@@ -141,3 +141,12 @@ def get_jd_retry_service(
         document_processing_repo=document_processing_repository,
         dead_letter_queue_repo=dead_letter_queue_repository,
     )
+
+
+def get_jd_calibration_service(
+    db: Session = Depends(get_db),
+    audit_service: AuditService = Depends(get_audit_service),
+):
+    from app.repositories.jd_calibration_repository import JDCalibrationRepository
+    from app.services.jd.jd_calibration_service import JDCalibrationService
+    return JDCalibrationService(JDCalibrationRepository(db), audit_service)

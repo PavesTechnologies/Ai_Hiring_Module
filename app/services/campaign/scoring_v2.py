@@ -59,7 +59,9 @@ DEFAULT_CONFIG: dict = {
                     "UNCERTAIN": 0.8},
     "preferred_share": 0.10,
     # B: experience/education are gates only.
-    "component_weights": {"skills": 0.70, "functional": 0.15},
+    # education_preferred: only when the calibrated JD marks education PREFERRED
+    # (then it is never a gate, just this small component); MANDATORY stays a gate.
+    "component_weights": {"skills": 0.70, "functional": 0.15, "education_preferred": 0.05},
     # Old informational "would be REVIEW" margins - no longer read; the REVIEW
     # rule lives in near_miss.py. Kept so existing config versions still hash.
     "near_miss": {"extra_missing_core": 1, "experience_years": 1.0, "score_points": 5.0},
@@ -83,7 +85,8 @@ OUTCOME_PENDING = "PENDING"
 # v2 skipped entirely (daily LLM call cap reached) - shown "not run".
 OUTCOME_NOT_RUN = "NOT_RUN"
 
-_DEFINITE_JD_SENSE = {"cue", "title"}
+# "hr": confirmed by HR_ADMIN in JD calibration - always definite.
+_DEFINITE_JD_SENSE = {"cue", "title", "hr"}
 
 
 def apply_unavailable_outcome(breakdown: dict, outcome: str, reason: str) -> dict:
@@ -331,6 +334,11 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
     domain = inputs.domain_result or {}
     if domain.get("applicable"):
         components.append(("functional", float(domain["score"]), float(weights["functional"])))
+    education_input = inputs.education_result or {}
+    if (education_input.get("requirement") == "PREFERRED" and education_input.get("applicable")
+            and education_input.get("score") is not None):
+        components.append(("education_preferred", float(education_input["score"]),
+                           float(weights.get("education_preferred", 0.0))))
     weight_sum = sum(w for _, _, w in components)
     final_score = round(sum(v * w for _, v, w in components) / weight_sum, 2) if weight_sum > 0 else 100.0
 

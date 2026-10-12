@@ -38,6 +38,7 @@ from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import jd_key, jd_list_key, jd_search_key
 from app.services.cache_service import CacheService
 from app.services.jd.jd_education_merge import merge_extracted_json_education
+from app.services.jd.jd_calibration_rules import jd_calibration_response_fields
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +489,7 @@ class JDService:
             education_criteria=job_description.education_criteria,
             extracted_json=job_description.extracted_json,
             is_verified=job_description.is_verified.value,
+            **jd_calibration_response_fields(job_description),
             prompt_template_id=job_description.prompt_template_id,
             prompt_name=prompt.name if prompt else None,
         )
@@ -529,6 +531,7 @@ class JDService:
                 education_criteria=jd.education_criteria,
                 extracted_json=jd.extracted_json,
                 is_verified=jd.is_verified.value,
+                **jd_calibration_response_fields(jd),
                 prompt_template_id=jd.prompt_template_id,
                 prompt_name=prompt_names.get(jd.prompt_template_id),
             )

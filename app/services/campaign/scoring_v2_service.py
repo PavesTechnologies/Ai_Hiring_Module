@@ -106,7 +106,9 @@ class ScoringV2Service:
         jd_skills = []
         for row in rows:
             name = names.get(row.canonical_skill_id, str(row.canonical_skill_id))
-            choice = tools.resolver.resolve_jd_sense(row.canonical_skill_id, job_description.raw_text or "", name, jd_title)
+            hr_sense = row.sense_key if isinstance(getattr(row, "sense_key", None), str) else None
+            choice = tools.resolver.resolve_jd_sense(row.canonical_skill_id, job_description.raw_text or "", name, jd_title,
+                                                     hr_sense=hr_sense)
             jd_skills.append(JDSkillInput(
                 canonical_skill_id=row.canonical_skill_id, name=name, mandatory=bool(row.mandatory),
                 weight=float(row.weight) if row.weight is not None else None,

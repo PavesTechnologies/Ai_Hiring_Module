@@ -1,5 +1,6 @@
 from app.models.jd.job_descriptions import JobDescription
 from app.schemas.jd.response import JDListItem
+from app.services.jd.jd_calibration_rules import jd_calibration_response_fields
 
 
 
@@ -20,6 +21,7 @@ class JDMapper:
             jurisdiction=jd.jurisdiction,
             source_format=jd.source_format.value,
             is_verified=jd.is_verified.value,
+            **jd_calibration_response_fields(jd),
             is_active_version=jd.is_active_version,
             active_campaigns_count=campaign_counts["active"],
             passed_campaigns_count=campaign_counts["passed"],

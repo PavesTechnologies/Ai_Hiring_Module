@@ -17,6 +17,9 @@ class JDConfigSection(BaseModel):
     version_number: int
     jurisdiction: str | None
     mandatory_skill_count: int
+    jd_calibration_status: str | None = None
+    jd_verification_status: str | None = None
+    jd_calibration_warning: str | None = None
 
 class ScoringConfigSection(BaseModel):
     weight_deterministic: float

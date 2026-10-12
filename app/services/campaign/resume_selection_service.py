@@ -21,6 +21,7 @@ from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
+from app.services.jd.jd_calibration_rules import apply_education_requirement, apply_experience_tolerance
 
 # Same platform_config keys deterministic_scoring_tasks.py already reads for
 # the real pipeline - reused verbatim, never a second/duplicated key.
@@ -352,6 +353,9 @@ class ResumeSelectionService:
             jd_extracted_education=jd_extracted_education,
             required_field_text=(job_description.education_criteria or {}).get("field"),
         )
+        # JD calibration: the near-miss tolerance and education mandatory/preferred.
+        experience_result = apply_experience_tolerance(experience_result, job_description)
+        education_result = apply_education_requirement(education_result, job_description)
 
         breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(
             job_description.id, resume.id, hierarchy=hierarchy,

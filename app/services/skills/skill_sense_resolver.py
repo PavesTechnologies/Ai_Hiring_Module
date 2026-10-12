@@ -32,13 +32,14 @@ class SenseChoice:
     sense: str | None
     resolved: bool
     # "cue" (decided by cue words), "title" (JD role title/domain),
-    # "assumed" (JD default), None (unresolved).
+    # "hr" (confirmed in JD calibration), "assumed" (JD default), None (unresolved).
     basis: str | None = None
 
 
 SENSE_BASIS_CUE = "cue"
 SENSE_BASIS_TITLE = "title"
 SENSE_BASIS_ASSUMED = "assumed"
+SENSE_BASIS_HR = "hr"
 
 
 class SkillSenseResolver:
@@ -87,10 +88,17 @@ class SkillSenseResolver:
         sense = self._decide(skill_id, snippet, own_term)
         return SenseChoice(sense, sense is not None, SENSE_BASIS_CUE if sense else None)
 
-    def resolve_jd_sense(self, skill_id: UUID, jd_text: str, own_term: str, title_text: str = "") -> SenseChoice:
-        """JD side: cues in the JD text, then title/domain, then the default sense (assumed)."""
+    def resolve_jd_sense(self, skill_id: UUID, jd_text: str, own_term: str, title_text: str = "",
+                         hr_sense: str | None = None) -> SenseChoice:
+        """
+        JD side: the sense HR confirmed in JD calibration when it is one of the
+        skill's senses; else cues in the JD text, then title/domain, then the
+        default sense (assumed).
+        """
         if not self.has_senses(skill_id):
             return SenseChoice(None, True)
+        if hr_sense and any(s.sense_key == hr_sense for s in self.senses_for(skill_id)):
+            return SenseChoice(hr_sense, True, SENSE_BASIS_HR)
         sense = self._decide(skill_id, jd_text or "", own_term)
         if sense:
             return SenseChoice(sense, True, SENSE_BASIS_CUE)

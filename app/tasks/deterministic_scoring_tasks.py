@@ -42,6 +42,7 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.services.candidate_change_notifier import CandidateChangeNotifier
+from app.services.jd.jd_calibration_rules import apply_education_requirement, apply_experience_tolerance
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,9 @@ def build_validation_inputs(config_repo, job_description, resume):
         jd_extracted_education=jd_extracted_education,
         required_field_text=(job_description.education_criteria or {}).get("field"),
     )
+    # JD calibration: the near-miss tolerance and education mandatory/preferred.
+    experience_result = apply_experience_tolerance(experience_result, job_description)
+    education_result = apply_education_requirement(education_result, job_description)
     score_weights = {
         "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
         "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),

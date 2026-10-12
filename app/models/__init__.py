@@ -2,7 +2,7 @@ from .identity import User, Organization
 
 from .embeddings import EmbeddingModelVersion, ResumeEmbedding
 
-from .jd.job_descriptions import JobDescription, JDEmbedding
+from .jd.job_descriptions import JobDescription, JDEmbedding, JDCalibrationVersion
 
 from .campaigns import HiringCampaign
 

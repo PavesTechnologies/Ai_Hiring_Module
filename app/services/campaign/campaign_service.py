@@ -123,6 +123,44 @@ _INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
 )
 
 
+JD_NOT_CALIBRATED = "JD_NOT_CALIBRATED"
+
+
+def jd_is_calibrated(jd) -> bool:
+    status = getattr(getattr(jd, "calibration_status", None), "value", getattr(jd, "calibration_status", None))
+    return status == "CALIBRATED"
+
+
+def jd_not_calibrated_message(jd, campaign=None) -> str | None:
+    """
+    Why this campaign can't be activated, or None when it can. A campaign that
+    existed before JD calibration is exempt until its JD is calibrated (it then
+    shows a warning instead - see jd_calibration_fields).
+    """
+    if jd_is_calibrated(jd) or (campaign is not None and getattr(campaign, "jd_calibration_exempt", False) is True):
+        return None
+    return (f"The JD '{jd.title}' is not calibrated. An HR admin must calibrate it "
+            f"(skills, experience, education) before this campaign can be active.")
+
+
+def _not_calibrated_data(jd) -> dict:
+    return {"code": JD_NOT_CALIBRATED, "jd_id": str(jd.id), "jd_title": jd.title}
+
+
+def jd_calibration_fields(jd, campaign=None) -> dict:
+    """Calibration status (main badge) with verification as a detail, plus the exempt-campaign warning."""
+    calibrated = jd_is_calibrated(jd)
+    verification = getattr(getattr(jd, "is_verified", None), "value", None)
+    warning = None
+    if not calibrated and campaign is not None and getattr(campaign, "jd_calibration_exempt", False) is True:
+        warning = "JD not calibrated: an HR admin should calibrate it. Scoring uses the uncalibrated JD until then."
+    return {
+        "jd_calibration_status": "CALIBRATED" if calibrated else "NOT_CALIBRATED",
+        "jd_verification_status": verification,
+        "jd_calibration_warning": warning,
+    }
+
+
 class CampaignService:
 
     def __init__(self,
@@ -469,6 +507,11 @@ class CampaignService:
                     422
                 )
 
+            # A new campaign starts ACTIVE, so its JD must be calibrated.
+            not_calibrated = jd_not_calibrated_message(jd)
+            if not_calibrated:
+                raise CampaignException(not_calibrated, 409, data=_not_calibrated_data(jd))
+
 
             existing_campaign = self.campaign_repo.get_by_name(org_id, request.name)
             if existing_campaign:
@@ -548,6 +591,7 @@ class CampaignService:
             candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
 
             return CampaignResponse(id=campaign.id,
+                **jd_calibration_fields(jd, campaign),
                 name=campaign.name,
                 status=campaign.status.value,
                 jd_title=jd.title,
@@ -758,6 +802,7 @@ class CampaignService:
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
+                **jd_calibration_fields(c.job_description, c),
                 name=c.name,
                 status=c.status.value,
                 jd_title=c.job_description.title,
@@ -830,6 +875,7 @@ class CampaignService:
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         items = [
             CampaignResponse(id=c.id,
+                **jd_calibration_fields(c.job_description, c),
                 name=c.name,
                 status=c.status.value,
                 jd_title=c.job_description.title,
@@ -879,6 +925,7 @@ class CampaignService:
         aggregates = self._campaign_aggregate_maps(campaigns, hm_review_sla_days, stale_campaign_days)
         return [
             CampaignResponse(id=c.id,
+                **jd_calibration_fields(c.job_description, c),
                 name=c.name,
                 status=c.status.value,
                 jd_title=c.job_description.title,
@@ -936,6 +983,7 @@ class CampaignService:
 
         return [
             CampaignResponse(id=c.id,
+                **jd_calibration_fields(c.job_description, c),
                 name=c.name,
                 status=c.status.value,
                 jd_title=c.job_description.title,
@@ -1384,6 +1432,7 @@ class CampaignService:
                 version_number=jd.version_number,
                 jurisdiction=jd.jurisdiction,
                 mandatory_skill_count=self.campaign_repo.get_mandatory_skill_count(jd.id),
+                **jd_calibration_fields(jd, campaign),
             ),
             # role gate: spec says HM must NOT see weights or manager contact
             scoring_configuration=None if is_hiring_manager_only else ScoringConfigSection(weight_deterministic=campaign.weight_deterministic,
@@ -2432,6 +2481,10 @@ class CampaignService:
                     paused_now = True
                 elif (campaign.status == CampaignStatus.PAUSED
                         and request.status == CampaignStatus.ACTIVE):
+                    resume_jd = self.jd_repo.get_by_id(campaign.jd_id)
+                    not_calibrated = jd_not_calibrated_message(resume_jd, campaign) if resume_jd else None
+                    if not_calibrated:
+                        raise CampaignException(not_calibrated, 409, data=_not_calibrated_data(resume_jd))
                     changes["status"] = {"before": "PAUSED", "after": "ACTIVE"}
                     campaign.status = CampaignStatus.ACTIVE
                     resumed_now = True
@@ -2692,6 +2745,7 @@ class CampaignService:
             candidate_count = self.campaign_repo.get_candidate_count(campaign.id)
             cap_warning_percentage, deadline_warning_days = self._get_warning_thresholds()
             response = CampaignResponse(
+                **(jd_calibration_fields(jd, campaign) if jd else {}),
                 id=campaign.id,
                 name=campaign.name,
                 status=campaign.status.value,
@@ -2918,6 +2972,9 @@ class CampaignService:
                 issues.append(JDReadinessIssue(code="UNRESOLVED_SKILL_EXTRACTION",
                     message=f"{unresolved_count} skill(s) extracted from '{jd.title}' are still unresolved.",
                 ))
+            not_calibrated = jd_not_calibrated_message(jd, campaign)
+            if not_calibrated:
+                issues.append(JDReadinessIssue(code=JD_NOT_CALIBRATED, message=not_calibrated))
 
         return CampaignReopenReadinessResponse(is_ready=not issues,
             issues=issues,
