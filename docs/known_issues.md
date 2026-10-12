@@ -36,6 +36,22 @@ and queues its deterministic scoring. Fix: commit after
 
 ---
 
+## Frontend: unknown-skill and skill detail pages are routed with role "General" (found 2026-10-12)
+
+**Status:** open - documented only; `App.jsx` (outside the airs folder) is not changed.
+
+In the frontend's `src/App.jsx`, `/ai-screening/skill-ontology/:skillId` and
+`/ai-screening/skill-ontology/unknown/:unknownSkillId` use
+`<ProtectedRoute roles={["General"]}>` rather than an HR_ADMIN role. Any signed-in
+user can open the pages. The backend still enforces HR_ADMIN on every unknown-skill
+action (map, approve, delete, suggestions), so nothing can be changed - but the
+pages and their read-only data are visible to all roles.
+
+**Fix, when the route owner agrees:** use the same HR_ADMIN route role as the other
+skill-curation pages.
+
+---
+
 ## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
 
 **Status:** open - documented only, no code change.
