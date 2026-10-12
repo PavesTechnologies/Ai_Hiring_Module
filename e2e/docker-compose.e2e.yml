@@ -60,7 +60,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["127.0.0.1:56379:6379"]
+    # Below 49152: Windows reserves ranges inside the dynamic port range
+    # (49152-65535) at runtime, which made 56379 unbindable.
+    ports: ["127.0.0.1:46379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s

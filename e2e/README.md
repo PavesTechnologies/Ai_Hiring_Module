@@ -8,7 +8,7 @@ systems. Built for the scoring v2 re-parse / re-score check; reusable for other 
 | Live system | In this stack | Enforced by |
 |---|---|---|
 | RDS database | Postgres 16 + pgvector in Docker (`airs-e2e-postgres`, 127.0.0.1:55432) | `DB_HOST=postgres` in the compose file; `.env` is never read (excluded from the image, never mounted) |
-| Redis / Celery | Its own Redis (127.0.0.1:56379) and its own worker | compose network |
+| Redis / Celery | Its own Redis (127.0.0.1:46379) and its own worker | compose network |
 | Supabase storage | Local files in the `e2e_storage` volume | `STORAGE_BACKEND=local` - the Supabase client is never created |
 | AWS SES email | Nothing is sent - each email is only logged (`EMAIL NOT SENT ...`) | `EMAIL_DELIVERY=log` - the SES client is never created |
 | Auth (UMS / JWKS) | Test identities inside the e2e driver process only | placeholders on the reserved `.invalid` domain, which never resolves |
