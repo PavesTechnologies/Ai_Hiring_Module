@@ -290,8 +290,9 @@ def export_rejected_candidates(
     summary="Get Campaign Rejection Analytics",
     description=(
         "Deterministic rejection-reason distribution, top missing mandatory skills, and "
-        "(once MIN_CANDIDATES_FOR_ANALYTICS is reached) JD calibration recommendations."
+        "(once MIN_CANDIDATES_FOR_ANALYTICS is reached) JD calibration recommendations. HR_ADMIN only."
     ),
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
 def get_campaign_rejection_analytics(
     campaign_id: UUID,
