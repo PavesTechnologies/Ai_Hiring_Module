@@ -36,6 +36,29 @@ and queues its deterministic scoring. Fix: commit after
 
 ---
 
+## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
+
+**Status:** open - documented only, no code change.
+
+`CampaignCandidateService.export_rejected_candidates` exports candidates
+currently at `pipeline_stage = REJECTED`, and `_to_export_row` fills
+"HR Override" with `decision_type == RESET` and "Override Reason" with
+`decision_reason` when it is a RESET. Since the decision_* redesign (98d721e)
+an HR override *is* the RESET decision, and `StageTransitionService.
+apply_hr_override` moves the candidate from REJECTED to SCREENING at the same
+time. So a candidate in this export never has a RESET as its current decision:
+the columns are always `False` / empty. (A candidate overridden and later
+rejected again also shows no override - the newer REJECTED decision replaced
+the RESET.)
+
+**If it matters later:** take the override from stage history (a REJECTED ->
+SCREENING row with a RESET snapshot) or from `get_override_report`, or drop
+the two columns. Tests: `tests/services/campaign/test_campaign_candidate_
+scorecard_service.py::test_export_rejected_candidates_writes_rows_and_logs_audit`
+asserts today's behaviour.
+
+---
+
 ## Skill matching (v1): fuzzy tier matches "IT governance" to AI Governance (found 2026-10-01)
 
 **Status:** open - v1 deliberately unchanged; blocked in scoring v2 only.
