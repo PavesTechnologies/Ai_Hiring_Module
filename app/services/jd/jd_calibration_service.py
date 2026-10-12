@@ -60,8 +60,11 @@ def effective_min_experience(jd) -> float | None:
     extraction's value, else the column (as in validate_experience).
     """
     calibrated = calibrated_min_experience(jd)
-    if calibrated is not None:
-        return calibrated
+    return calibrated if calibrated is not None else extracted_min_experience(jd)
+
+
+def extracted_min_experience(jd) -> float | None:
+    """The extraction's minimum, else the column - never changed by calibration."""
     extracted = ((jd.extracted_json or {}).get("experience") or {}).get("min_experience_years")
     return _float(extracted) if extracted is not None else _float(jd.min_experience_years)
 
@@ -122,6 +125,7 @@ class JDCalibrationService:
             verification_status=jd.is_verified.value, pending_unknown_skill_count=pending,
             skills=skills, unknown_skills=unknown, core_skill_count=core_count,
             min_experience_years=min_years,
+            extracted_min_experience_years=extracted_min_experience(jd),
             experience_tolerance_years=_float(jd.experience_tolerance_years),
             default_experience_tolerance_years=experience_near_miss_tolerance(min_years) if min_years is not None else None,
             education_requirement=jd.education_requirement.value,

@@ -205,6 +205,7 @@ def test_calibration_never_changes_the_jds_extraction():
     assert jd.calibrated_min_experience_years == 8        # the calibrated value lives beside it
     view = service.get_view(jd.id, can_calibrate=True)
     assert view.min_experience_years == 8                 # what scoring will use
+    assert view.extracted_min_experience_years == 10      # the hint: what a blank minimum falls back to
 
 
 def test_skills_confirmed_in_calibration_are_recorded_as_verified_by_hr():

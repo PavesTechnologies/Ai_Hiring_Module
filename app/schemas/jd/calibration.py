@@ -60,6 +60,8 @@ class JDCalibrationView(BaseModel):
     unknown_skills: list[CalibrationUnknownSkill]
     core_skill_count: int
     min_experience_years: float | None
+    # The extracted minimum (extraction, else column) - what a blank calibrated minimum falls back to.
+    extracted_min_experience_years: float | None = None
     experience_tolerance_years: float | None          # as calibrated; None = default
     default_experience_tolerance_years: float | None  # max(1 year, 10% of the minimum)
     education_requirement: EducationRequirement
