@@ -13,8 +13,10 @@ from app.services.campaign.scoring_v2 import (
     EvidenceInput, JDSkillInput, ScoringInputs, merge_config, score_v2,
 )
 from app.services.jd.jd_calibration_rules import (
-    apply_education_requirement, apply_experience_tolerance, jd_calibration_response_fields,
+    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
+    jd_calibration_response_fields,
 )
+from app.services.campaign.experience_education_validation_service import ExperienceEducationValidationService
 from app.services.skills.skill_sense_resolver import SenseDef, SkillSenseResolver
 
 CORE = uuid4()
@@ -124,3 +126,31 @@ def test_an_hr_sense_counts_as_a_definite_mismatch_in_v2_and_confirmation():
 def test_response_fields_are_safe_for_bare_objects():
     assert jd_calibration_response_fields(SimpleNamespace()) == {
         "calibration_status": "NOT_CALIBRATED", "calibration_version": 0, "calibrated_at": None}
+
+
+# --- calibrated minimum experience -------------------------------------------
+
+def _min_jd(status="CALIBRATED", calibrated=None, extracted=10):
+    return SimpleNamespace(calibration_status=SimpleNamespace(value=status), calibrated_min_experience_years=calibrated,
+                           extracted_json={"experience": {"min_experience_years": extracted}})
+
+
+def _validate(jd, candidate_years, column_min=10.0):
+    min_years, extracted = experience_minimum_inputs(jd, column_min)
+    return ExperienceEducationValidationService().validate_experience(min_years, candidate_years,
+                                                                      jd_extracted_experience=extracted)
+
+
+def test_scoring_reads_the_calibrated_minimum_before_the_extraction():
+    jd = _min_jd(calibrated=Decimal("6"), extracted=10)
+    assert experience_minimum_inputs(jd, 10.0) == (6.0, None)
+    result = _validate(jd, candidate_years=7)
+    assert result["min_years"] == 6.0 and result["passed"] is True
+    assert jd.extracted_json == {"experience": {"min_experience_years": 10}}     # untouched
+
+
+def test_without_a_calibrated_minimum_scoring_falls_back_to_the_extraction():
+    for jd in (_min_jd(calibrated=None), _min_jd(status="NOT_CALIBRATED", calibrated=Decimal("6"))):
+        min_years, extracted = experience_minimum_inputs(jd, 10.0)
+        assert min_years == 10.0 and extracted == {"min_experience_years": 10}
+        assert _validate(jd, candidate_years=7)["passed"] is False

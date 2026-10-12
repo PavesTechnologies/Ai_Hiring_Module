@@ -11,7 +11,6 @@ PAUSED) on the JD keep their scores: their scored candidates are marked
 "score out of date" and re-scored under the existing rules. Calibrating also
 ends any exemption the JD's campaigns had from the activation rule.
 """
-import copy
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -37,6 +36,7 @@ from app.schemas.jd.calibration import (
 from app.services.audit_service import AuditService
 from app.services.campaign.near_miss import experience_near_miss_tolerance
 from app.services.campaign.score_out_of_date import LIVE_CAMPAIGN_STATUSES, mark_campaigns_out_of_date
+from app.services.jd.jd_calibration_rules import calibrated_min_experience
 from app.services.jd.jd_skill_importance import importance_from_extraction
 from app.services.skills.skill_sense_resolver import SkillSenseResolver
 
@@ -55,7 +55,13 @@ def _float(value) -> float | None:
 
 
 def effective_min_experience(jd) -> float | None:
-    """The minimum scoring uses: the extraction's value wins over the column (as in validate_experience)."""
+    """
+    The minimum scoring uses: the calibrated value on a calibrated JD, else the
+    extraction's value, else the column (as in validate_experience).
+    """
+    calibrated = calibrated_min_experience(jd)
+    if calibrated is not None:
+        return calibrated
     extracted = ((jd.extracted_json or {}).get("experience") or {}).get("min_experience_years")
     return _float(extracted) if extracted is not None else _float(jd.min_experience_years)
 
@@ -168,13 +174,12 @@ class JDCalibrationService:
                 row.mandatory = value["tier"] != "PREFERRED"
                 row.importance = JDSkillImportance(value["tier"]) if value["tier"] in ("CORE", "SUPPORTING") else None
                 row.sense_key = value["sense_key"]
-                row.verification_status = JDSkillVerificationStatus.AUTO_VERIFIED   # reviewed by HR
+                row.verification_status = JDSkillVerificationStatus.HR_VERIFIED   # confirmed by HR in calibration
+                row.verified_by = actor_id
+                row.verified_at = now
 
-            jd.min_experience_years = min_years
-            extracted = copy.deepcopy(jd.extracted_json or {})
-            if isinstance(extracted.get("experience"), dict) or min_years is not None:
-                extracted["experience"] = {**(extracted.get("experience") or {}), "min_experience_years": min_years}
-                jd.extracted_json = extracted     # the extraction's value is what scoring reads
+            # The extraction and min_experience_years stay as extracted; scoring reads this first.
+            jd.calibrated_min_experience_years = min_years
             jd.experience_tolerance_years = request.experience_tolerance_years
             jd.education_requirement = JDEducationRequirement(education)
             jd.calibration_status = JDCalibrationStatus.CALIBRATED

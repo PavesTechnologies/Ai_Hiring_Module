@@ -21,7 +21,9 @@ from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
-from app.services.jd.jd_calibration_rules import apply_education_requirement, apply_experience_tolerance
+from app.services.jd.jd_calibration_rules import (
+    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
+)
 
 # Same platform_config keys deterministic_scoring_tasks.py already reads for
 # the real pipeline - reused verbatim, never a second/duplicated key.
@@ -344,7 +346,8 @@ class ResumeSelectionService:
         candidate_education_entries = parsed_json.get("education")
 
         jd_extracted_education = (job_description.extracted_json or {}).get("education")
-        jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
+        # JD calibration: the calibrated minimum first, else the extraction / column.
+        min_experience_years, jd_extracted_experience = experience_minimum_inputs(job_description, min_experience_years)
         experience_result = validation_service.validate_experience(
             min_experience_years, candidate_total_years, jd_extracted_experience=jd_extracted_experience,
         )

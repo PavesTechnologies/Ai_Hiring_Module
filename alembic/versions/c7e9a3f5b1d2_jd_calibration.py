@@ -3,8 +3,12 @@
 - job_descriptions: calibration_status (NOT_CALIBRATED / CALIBRATED),
   calibrated_by / calibrated_at, calibration_version, the per-JD near-miss
   experience tolerance (NULL = default max(1 year, 10% of the minimum)) and
-  education_requirement (MANDATORY / PREFERRED, default MANDATORY).
+  education_requirement (MANDATORY / PREFERRED, default MANDATORY), and
+  calibrated_min_experience_years (the extraction and min_experience_years
+  are never overwritten; scoring reads the calibrated value first).
 - jd_skills.sense_key: the HR-confirmed sense of an ambiguous skill.
+- jd_skills verified by HR in calibration: verification status HR_VERIFIED
+  plus verified_by / verified_at.
 - jd_calibration_versions: one immutable snapshot per calibration save.
 - hiring_campaigns.jd_calibration_exempt: campaigns that already exist are
   exempt from the "JD must be calibrated to activate" rule until their JD is
@@ -45,7 +49,11 @@ def upgrade() -> None:
         "education_requirement", postgresql.ENUM(name="jd_education_requirement_enum", create_type=False),
         nullable=False, server_default="MANDATORY"))
 
+    op.add_column("job_descriptions", sa.Column("calibrated_min_experience_years", sa.Numeric(4, 1), nullable=True))
+
     op.add_column("jd_skills", sa.Column("sense_key", sa.String(64), nullable=True))
+    op.add_column("jd_skills", sa.Column("verified_by", sa.String(255), sa.ForeignKey("users.id"), nullable=True))
+    op.add_column("jd_skills", sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True))
 
     op.create_table(
         "jd_calibration_versions",
@@ -68,16 +76,18 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         for value in _ACTION_TYPES:
             op.execute(f"ALTER TYPE audit_action_type_enum ADD VALUE IF NOT EXISTS '{value}'")
+        op.execute("ALTER TYPE jd_skill_verification_status_enum ADD VALUE IF NOT EXISTS 'HR_VERIFIED'")
 
 
 def downgrade() -> None:
     op.drop_column("hiring_campaigns", "jd_calibration_exempt")
     op.drop_index("ix_jd_calibration_versions_jd_id", table_name="jd_calibration_versions")
     op.drop_table("jd_calibration_versions")
-    op.drop_column("jd_skills", "sense_key")
-    for column in ("education_requirement", "experience_tolerance_years", "calibration_version",
+    for column in ("verified_at", "verified_by", "sense_key"):
+        op.drop_column("jd_skills", column)
+    for column in ("calibrated_min_experience_years", "education_requirement", "experience_tolerance_years", "calibration_version",
                    "calibrated_at", "calibrated_by", "calibration_status"):
         op.drop_column("job_descriptions", column)
     postgresql.ENUM(name="jd_education_requirement_enum").drop(op.get_bind(), checkfirst=True)
     postgresql.ENUM(name="jd_calibration_status_enum").drop(op.get_bind(), checkfirst=True)
-    # Audit enum values can't be dropped in PostgreSQL; left in place.
+    # Enum values (audit actions, HR_VERIFIED) can't be dropped in PostgreSQL; left in place.

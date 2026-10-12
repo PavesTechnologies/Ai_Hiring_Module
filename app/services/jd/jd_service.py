@@ -496,14 +496,17 @@ class JDService:
 
     def get_by_id(self, jd_id: str) -> GetJDResponse:
         if not self.cache_service:
-            return self._load_jd_response(jd_id)
-
-        raw = self.cache_service.get_or_set(
-            jd_key(jd_id),
-            loader=lambda: self._load_jd_response(jd_id).model_dump_json(),
-            ttl=settings.cache_jd_ttl_seconds,
-        )
-        return GetJDResponse.model_validate_json(raw)
+            response = self._load_jd_response(jd_id)
+        else:
+            raw = self.cache_service.get_or_set(
+                jd_key(jd_id),
+                loader=lambda: self._load_jd_response(jd_id).model_dump_json(),
+                ttl=settings.cache_jd_ttl_seconds,
+            )
+            response = GetJDResponse.model_validate_json(raw)
+        # Not cached: campaign status changes don't invalidate the JD cache.
+        response.has_live_campaign = self.repository.has_active_campaign(response.id)
+        return response
 
     def _load_all_jds(self, is_active_version: bool) -> list[GetJDResponse]:
         records = self.repository.get_all_jds(is_active_version=is_active_version)

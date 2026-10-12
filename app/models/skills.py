@@ -26,6 +26,8 @@ class JDSkillVerificationStatus(enum.Enum):
     # Fuzzy and semantic tiers are similarity guesses, not certainties -
     # surfaced to HR for confirmation before being treated as ground truth.
     PENDING_REVIEW = "PENDING_REVIEW"
+    # Confirmed by an HR admin in JD calibration (verified_by / verified_at).
+    HR_VERIFIED = "HR_VERIFIED"
 
 
 class JDSkillImportance(enum.Enum):
@@ -147,6 +149,9 @@ class JDSkill(Base):
     # by JD calibration. NULL = not confirmed: scoring resolves it from the
     # JD text/title, or assumes the default sense.
     sense_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Who confirmed this skill in JD calibration, and when (status HR_VERIFIED).
+    verified_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     match_tier: Mapped[str] = mapped_column(Text, nullable=False)
     verification_status: Mapped[JDSkillVerificationStatus] = mapped_column(
         SAEnum(JDSkillVerificationStatus, name="jd_skill_verification_status_enum"),

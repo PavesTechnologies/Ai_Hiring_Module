@@ -110,6 +110,9 @@ class JobDescription(Base):
     calibrated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     calibrated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     calibration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Calibrated minimum experience. The extraction and min_experience_years
+    # are never overwritten; scoring reads this first on a calibrated JD.
+    calibrated_min_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
     # Near-miss (HOLD) experience band; NULL = default max(1 year, 10% of the minimum).
     experience_tolerance_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
     education_requirement: Mapped[JDEducationRequirement] = mapped_column(

@@ -30,6 +30,8 @@ class GetJDResponse(BaseModel):
     calibration_status: str = "NOT_CALIBRATED"
     calibration_version: int = 0
     calibrated_at: datetime | None = None
+    # A non-closed campaign uses this JD: skill edits go through calibration only.
+    has_live_campaign: bool = False
 
 class UpdateJDResponse(BaseModel):
     id: UUID

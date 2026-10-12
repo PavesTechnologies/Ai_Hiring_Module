@@ -22,7 +22,7 @@ def _jd(**overrides):
     values = dict(
         id=uuid4(), title="AI transformation lead", raw_text="Lead AI adoption across the business.",
         version_number=1, extracted_json={"experience": {"min_experience_years": 10}},
-        min_experience_years=10, experience_tolerance_years=None,
+        min_experience_years=10, calibrated_min_experience_years=None, experience_tolerance_years=None,
         education_requirement=JDEducationRequirement.MANDATORY,
         education_criteria={"degree": "Bachelor", "field": "Computer Science"},
         calibration_status=JDCalibrationStatus.NOT_CALIBRATED, calibration_version=0,
@@ -35,7 +35,8 @@ def _jd(**overrides):
 
 def _skill(canonical_id, mandatory=True, importance=JDSkillImportance.CORE, sense_key=None):
     return SimpleNamespace(id=uuid4(), canonical_skill_id=canonical_id, mandatory=mandatory, importance=importance,
-                           sense_key=sense_key, verification_status=JDSkillVerificationStatus.PENDING_REVIEW)
+                           sense_key=sense_key, verification_status=JDSkillVerificationStatus.PENDING_REVIEW,
+                           verified_by=None, verified_at=None)
 
 
 class FakeRepo:
@@ -185,14 +186,37 @@ def test_first_calibration_sets_status_who_when_version_and_skill_settings():
     assert change.sense_key == "ORGANISATIONAL"
     assert python.importance == JDSkillImportance.CORE and python.mandatory is True
     assert aws.mandatory is False and aws.importance is None
-    assert all(s.verification_status == JDSkillVerificationStatus.AUTO_VERIFIED for s in (change, python, aws))
-    assert jd.min_experience_years == 8
-    assert jd.extracted_json["experience"]["min_experience_years"] == 8     # what scoring reads
+    assert jd.calibrated_min_experience_years == 8
     assert jd.experience_tolerance_years == 2
     assert jd.education_requirement == JDEducationRequirement.PREFERRED
     assert [v.version_no for v in repo.versions] == [1]
     assert audit.log.call_args.kwargs["action_type"].value == "JD_CALIBRATED"
     assert repo.committed == 1
+
+
+def test_calibration_never_changes_the_jds_extraction():
+    service, repo, audit, jd, change, python, aws = _setup()
+    extracted_before = {"experience": {"min_experience_years": 10}}
+
+    service.save(jd.id, _request(change, python, aws, min_years=8), actor_id="hr-1", actor_role="HR_ADMIN")
+
+    assert jd.extracted_json == extracted_before          # extraction kept as extracted
+    assert jd.min_experience_years == 10                  # the extracted column too
+    assert jd.calibrated_min_experience_years == 8        # the calibrated value lives beside it
+    view = service.get_view(jd.id, can_calibrate=True)
+    assert view.min_experience_years == 8                 # what scoring will use
+
+
+def test_skills_confirmed_in_calibration_are_recorded_as_verified_by_hr():
+    service, repo, audit, jd, change, python, aws = _setup()
+
+    service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+
+    for skill in (change, python, aws):
+        assert skill.verification_status == JDSkillVerificationStatus.HR_VERIFIED
+        assert skill.verification_status != JDSkillVerificationStatus.AUTO_VERIFIED
+        assert skill.verified_by == "hr-1"
+        assert isinstance(skill.verified_at, datetime) and skill.verified_at == jd.calibrated_at
 
 
 def test_saving_the_same_calibration_again_creates_no_new_version():

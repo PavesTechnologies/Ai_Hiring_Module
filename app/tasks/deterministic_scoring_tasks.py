@@ -42,7 +42,9 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.services.candidate_change_notifier import CandidateChangeNotifier
-from app.services.jd.jd_calibration_rules import apply_education_requirement, apply_experience_tolerance
+from app.services.jd.jd_calibration_rules import (
+    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +101,8 @@ def build_validation_inputs(config_repo, job_description, resume):
         float(job_description.min_experience_years)
         if job_description.min_experience_years is not None else None
     )
-    jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
+    # JD calibration: the calibrated minimum first, else the extraction / column.
+    min_experience_years, jd_extracted_experience = experience_minimum_inputs(job_description, min_experience_years)
     experience_result = validation_service.validate_experience(
         min_experience_years, candidate_total_years,
         jd_extracted_experience=jd_extracted_experience,

@@ -53,3 +53,26 @@ def jd_calibration_response_fields(jd) -> dict:
         "calibration_version": version if isinstance(version, int) and not isinstance(version, bool) else 0,
         "calibrated_at": getattr(jd, "calibrated_at", None) if status == "CALIBRATED" else None,
     }
+
+
+def calibrated_min_experience(job_description) -> float | None:
+    """The calibrated minimum on a calibrated JD, else None."""
+    status = getattr(getattr(job_description, "calibration_status", None), "value",
+                     getattr(job_description, "calibration_status", None))
+    value = getattr(job_description, "calibrated_min_experience_years", None)
+    if status != "CALIBRATED" or not isinstance(value, (int, float, Decimal)) or isinstance(value, bool):
+        return None
+    return float(value)
+
+
+def experience_minimum_inputs(job_description, column_min: float | None = None) -> tuple[float | None, dict | None]:
+    """
+    (min_experience_years, jd_extracted_experience) for validate_experience.
+    The calibrated minimum wins - passed with no extraction so it isn't
+    overridden; otherwise the extraction (then the JD column) as before. The
+    extraction itself is never changed.
+    """
+    calibrated = calibrated_min_experience(job_description)
+    if calibrated is not None:
+        return calibrated, None
+    return column_min, (getattr(job_description, "extracted_json", None) or {}).get("experience")
