@@ -14,6 +14,7 @@ from app.services.llm.base import (
     ModelInfo,
     status_error,
 )
+from app.services.llm.capabilities import ModelCapabilities, resolve_capabilities
 
 # Status codes retried inside the SDK: the provider being unavailable or
 # overloaded. Re-sending the same request shortly after is the correct
@@ -80,22 +81,35 @@ def _is_usable_gemini_model(model_id: str, actions: list[str], display_name: str
 class GeminiProvider:
     provider_name = LLMProviderName.GOOGLE
 
-    def __init__(self, api_key: str, model: str, timeout_ms: int | None = None):
+    def __init__(
+        self, api_key: str, model: str, timeout_ms: int | None = None,
+        capabilities: ModelCapabilities | None = None,
+    ):
         self.model = model
+        self.capabilities = capabilities or resolve_capabilities(self.provider_name, model)
         self.client = genai.Client(
             api_key=api_key,
             http_options=_build_http_options(timeout_ms or settings.gemini_timeout_ms),
         )
 
-    def generate_json(self, prompt: str, response_schema: type[BaseModel]) -> dict:
+    def _generation_config(self, response_schema: type[BaseModel], deterministic: bool) -> dict:
+        """Only the settings this model supports (see capabilities.py)."""
+        config = {
+            "response_mime_type": "application/json",
+            "response_schema": response_schema,
+        }
+        if deterministic and self.capabilities.supports_temperature:
+            config["temperature"] = 0
+        if self.capabilities.max_output_tokens:
+            config["max_output_tokens"] = self.capabilities.max_output_tokens
+        return config
+
+    def generate_json(self, prompt: str, response_schema: type[BaseModel], *, deterministic: bool = False) -> dict:
         try:
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema,
-                },
+                config=self._generation_config(response_schema, deterministic),
             )
         except genai_errors.APIError as exc:
             raise self._map_error(exc) from exc

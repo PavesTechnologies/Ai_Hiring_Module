@@ -17,8 +17,6 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
-from app.repositories.email_notification_repository import EmailNotificationRepository
-from app.repositories.email_template_repository import EmailTemplateRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
@@ -26,19 +24,23 @@ from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.candidate_scoring_service import (
+    _optional_float,
     CandidateScoringService,
     MandatorySkillMatchType,
 )
 from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
+from app.repositories.scoring_result_repository import ScoringResultRepository
+from app.services.campaign.scoring_v2 import OUTCOME_PENDING
+from app.services.campaign.scoring_v2_service import (
+    ScoringV2Service, v1_result_row, v2_rejection_reason, v2_should_run,
+)
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.resume.work_experience_duration import annotate_work_experience_durations
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
-from app.tasks.email_tasks import send_candidate_email_task
 from app.services.candidate_change_notifier import CandidateChangeNotifier
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,131 @@ _DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
 _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
 _DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
 _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
+
+
+def build_validation_inputs(config_repo, job_description, resume):
+    """
+    (experience_result, education_result, score_weights, domain_result) for a
+    resume against a JD - the deterministic layer's non-skill inputs, shared
+    by this task and the scoring v2 dry-run script.
+    """
+    parsed_json = resume.parsed_json or {}
+    # Same "JSON is the single source of truth" preference as
+    # education/JD-experience above: prefer total_experience_years
+    # computed from work_experience's own start_date/end_date (the same
+    # computation the resume-parsed-json display endpoint already
+    # applies, per annotate_work_experience_durations' own docstring -
+    # it doesn't trust the AI-extracted figure verbatim since that can
+    # drift from what the listed dates actually add up to) over the raw
+    # extracted field, which is null whenever the resume never states an
+    # explicit "X years" figure even though its dates make one computable.
+    candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
+    candidate_education_entries = parsed_json.get("education")
+    required_degree_text = (job_description.education_criteria or {}).get("degree")
+    jd_extracted_education = (job_description.extracted_json or {}).get("education")
+
+    weight_configs = config_repo.get_configs_by_keys([
+        _EXPERIENCE_TOLERANCE_YEARS_KEY,
+        _EQUIVALENT_EXPERIENCE_YEARS_KEY,
+        _DETERMINISTIC_WEIGHT_SKILLS_KEY,
+        _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
+        _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
+        _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
+    ])
+    validation_service = ExperienceEducationValidationService(
+        experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
+        equivalent_experience_years=float(weight_configs[_EQUIVALENT_EXPERIENCE_YEARS_KEY])
+        if weight_configs.get(_EQUIVALENT_EXPERIENCE_YEARS_KEY) is not None else None,
+    )
+ 
+    min_experience_years = (
+        float(job_description.min_experience_years)
+        if job_description.min_experience_years is not None else None
+    )
+    jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
+    experience_result = validation_service.validate_experience(
+        min_experience_years, candidate_total_years,
+        jd_extracted_experience=jd_extracted_experience,
+    )
+    education_result = validation_service.validate_education(
+        required_degree_text, candidate_education_entries, candidate_total_years,
+        jd_extracted_education=jd_extracted_education,
+        required_field_text=(job_description.education_criteria or {}).get("field"),
+    )
+    score_weights = {
+        "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
+        "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),
+        "education": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, 0.15)),
+        "functional": float(weight_configs.get(_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY, 0.15)),
+    }
+    domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
+    return experience_result, education_result, score_weights, domain_result
+
+
+class ScoringV2DecisionPending(Exception):
+    """v2 decides this campaign but its confirmation couldn't run - retry the task, never reject."""
+
+
+def _run_scoring_v2(db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
+                    experience_result, education_result, domain_result, *, acted_on: bool):
+    """Inline v2 (only when it decides) - breakdown, or None when it fails (logged, never raised)."""
+    try:
+        from app.services.llm.factory import resolve_active_provider
+        from app.services.llm.model_selection import LLMPurpose
+        return ScoringV2Service(
+            db, skill_repo, config_repo,
+            provider_resolver=lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION),
+        ).score(
+            campaign=campaign, campaign_candidate=campaign_candidate, job_description=job_description,
+            resume=resume, experience_result=experience_result, education_result=education_result,
+            domain_result=domain_result, acted_on=acted_on,
+        )
+    except Exception:
+        logger.exception("Scoring v2 failed | campaign_candidate_id=%s", campaign_candidate.id)
+        return None
+
+
+def _record_v1_result(db, campaign, campaign_candidate, breakdown, *, acted_on: bool, score_weights) -> None:
+    try:
+        ScoringResultRepository(db).add(
+            v1_result_row(campaign, campaign_candidate, breakdown, acted_on=acted_on, score_weights=score_weights)
+        )
+    except Exception:
+        logger.exception("Could not store the v1 scoring result row | campaign_candidate_id=%s", campaign_candidate.id)
+
+
+def _v2_decides(campaign) -> bool:
+    """v2 makes the decision only on campaigns with scoring_v2_enabled (an
+    explicit True - a mocked or unset attribute never opts a campaign in)."""
+    return getattr(campaign, "scoring_v2_enabled", False) is True
+
+
+NEAR_MISS_BREAKDOWN_KEYS = (
+    "near_miss_outcome", "needs_review", "needs_review_reason", "near_misses", "near_miss_reject_reasons",
+)
+
+
+def _act_on_v2(campaign_candidate, breakdown: dict, v2_breakdown: dict) -> dict:
+    """
+    scoring_v2_enabled: v2's score and decision drive the pipeline. The v1
+    breakdown stays (the Deterministic tab reads its shape) with v1's own
+    numbers kept beside v2's.
+    """
+    acted = dict(breakdown)
+    acted.update(
+        v1_deterministic_score=breakdown.get("deterministic_score"),
+        v1_deterministic_passed=breakdown.get("deterministic_passed"),
+        deterministic_score=v2_breakdown["deterministic_score"],
+        deterministic_passed=v2_breakdown["deterministic_passed"],
+        acted_on_version="v2",
+        v2=v2_breakdown,
+        # v2's REVIEW decision is the one the AI step's HOLD cap reads.
+        **{key: v2_breakdown.get(key) for key in NEAR_MISS_BREAKDOWN_KEYS},
+    )
+    campaign_candidate.deterministic_breakdown = acted
+    campaign_candidate.deterministic_score = v2_breakdown["deterministic_score"]
+    campaign_candidate.deterministic_passed = v2_breakdown["deterministic_passed"]
+    return acted
 
 
 AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
@@ -97,31 +224,14 @@ def _cancel_downstream_ai_evaluation(
     ai_evaluation_repo.update(ai_evaluation)
 
 
-def _queue_rejection_email(db, campaign_candidate) -> None:
-   
-    try:
-        email_template_repo = EmailTemplateRepository(db)
-        email_notification_repo = EmailNotificationRepository(db)
-        email_service = CandidateRejectionEmailService(email_template_repo, email_notification_repo)
-
-        notification = email_service.queue_rejection_email(
-            candidate_id=campaign_candidate.candidate_id,
-            campaign_candidate_id=campaign_candidate.id,
-        )
-        if notification is None:
-            return  # already logged inside queue_rejection_email (no active template)
-
-        send_candidate_email_task.apply_async(
-            kwargs={"email_notification_id": str(notification.id)},
-        )
-    except Exception:
-        logger.exception(
-            "Failed to queue rejection email for campaign_candidate_id=%s", campaign_candidate.id,
-        )
-
-
 @celery_app.task(name="scoring.calculate_deterministic_score", bind=True)
-def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None:
+def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_only: bool = False) -> None:
+    """
+    score_only (re-score of a candidate past Screening, or Rejected without a
+    recruiter's move - see resume_reparse_service.request_rescore): scores are
+    recomputed and stored with the previous ones recorded, but the stage never
+    changes and nothing downstream (semantic / AI) is queued.
+    """
    
     db = SessionLocal()
     task_log = None
@@ -203,7 +313,8 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         if job_description is None:
             raise ValueError(f"Job description '{campaign.jd_id}' not found.")
 
-        stage_transition_service.transition_to_screening(campaign_candidate)
+        if not score_only:
+            stage_transition_service.transition_to_screening(campaign_candidate)
         # transition_to_screening()'s return value used to be discarded here -
         # its own no-op branches are meant to be benign (candidate already
         # progressed past UPLOADED, e.g. a redelivered duplicate task), but a
@@ -217,7 +328,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         # silently - raising here routes it through this task's normal
         # failure handling (task_log marked FAILED, visible for retry)
         # instead of a silent, permanent stuck state.
-        if campaign_candidate.pipeline_stage == PipelineStage.UPLOADED:
+        if not score_only and campaign_candidate.pipeline_stage == PipelineStage.UPLOADED:
             raise RuntimeError(
                 f"transition_to_screening did not advance campaign_candidate {campaign_candidate.id} "
                 "past UPLOADED - deterministic scoring cannot safely proceed. Check allowed_transitions "
@@ -225,59 +336,16 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             )
 
 
-        parsed_json = resume.parsed_json or {}
-        # Same "JSON is the single source of truth" preference as
-        # education/JD-experience above: prefer total_experience_years
-        # computed from work_experience's own start_date/end_date (the same
-        # computation the resume-parsed-json display endpoint already
-        # applies, per annotate_work_experience_durations' own docstring -
-        # it doesn't trust the AI-extracted figure verbatim since that can
-        # drift from what the listed dates actually add up to) over the raw
-        # extracted field, which is null whenever the resume never states an
-        # explicit "X years" figure even though its dates make one computable.
-        candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
-        candidate_education_entries = parsed_json.get("education")
-        required_degree_text = (job_description.education_criteria or {}).get("degree")
-        jd_extracted_education = (job_description.extracted_json or {}).get("education")
-
-        weight_configs = config_repo.get_configs_by_keys([
-            _EXPERIENCE_TOLERANCE_YEARS_KEY,
-            _EQUIVALENT_EXPERIENCE_YEARS_KEY,
-            _DETERMINISTIC_WEIGHT_SKILLS_KEY,
-            _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
-            _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
-            _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
-        ])
-        validation_service = ExperienceEducationValidationService(
-            experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
-            equivalent_experience_years=float(weight_configs[_EQUIVALENT_EXPERIENCE_YEARS_KEY])
-            if weight_configs.get(_EQUIVALENT_EXPERIENCE_YEARS_KEY) is not None else None,
+        experience_result, education_result, score_weights, domain_result = build_validation_inputs(
+            config_repo, job_description, resume,
         )
-     
-        min_experience_years = (
-            float(job_description.min_experience_years)
-            if job_description.min_experience_years is not None else None
-        )
-        jd_extracted_experience = (job_description.extracted_json or {}).get("experience")
-        experience_result = validation_service.validate_experience(
-            min_experience_years, candidate_total_years,
-            jd_extracted_experience=jd_extracted_experience,
-        )
-        education_result = validation_service.validate_education(
-            required_degree_text, candidate_education_entries, candidate_total_years,
-            jd_extracted_education=jd_extracted_education,
-        )
-        score_weights = {
-            "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
-            "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),
-            "education": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, 0.15)),
-            "functional": float(weight_configs.get(_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY, 0.15)),
-        }
-        domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
 
         scoring_service = CandidateScoringService(
             skill_repo, skill_ontology_repo, config_repo, campaign_candidate_repo,
         )
+        previous_score = getattr(campaign_candidate, "deterministic_score", None)
+        previous_score = float(previous_score) if previous_score is not None else None
+        previous_passed = getattr(campaign_candidate, "deterministic_passed", None)
         breakdown = scoring_service.calculate_and_store_score_breakdown(
             campaign_candidate.id, campaign.jd_id, campaign_candidate.resume_id,
             float(campaign.deterministic_threshold),
@@ -286,10 +354,36 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             score_weights=score_weights,
             required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
             max_missing_core_skills=int(campaign.max_missing_core_skills),
+            max_missing_core_pct=_optional_float(getattr(campaign, "max_missing_core_pct", None)),
             domain_result=domain_result,
         )
 
+        # Scoring v2 decides on scoring_v2_enabled campaigns - it runs inline
+        # here. On shadow-only campaigns it runs afterwards in its own task
+        # (SCORING_V2), queued after v1 commits: v1 is never slowed or changed.
+        v2_decides = _v2_decides(campaign)
+        v2_breakdown = None
+        if v2_decides:
+            v2_breakdown = _run_scoring_v2(
+                db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
+                experience_result, education_result, domain_result, acted_on=True,
+            )
+            if v2_breakdown is not None and v2_breakdown.get("outcome") == OUTCOME_PENDING:
+                # A quota/provider failure must never decide (and never reject):
+                # roll back and retry the whole scoring later.
+                raise ScoringV2DecisionPending(v2_breakdown.get("outcome_reason") or "v2 confirmation unavailable")
+        acting_on_v2 = v2_decides and v2_breakdown is not None
+        _record_v1_result(db, campaign, campaign_candidate, breakdown,
+                          acted_on=not acting_on_v2, score_weights=score_weights)
+        if acting_on_v2:
+            breakdown = _act_on_v2(campaign_candidate, breakdown, v2_breakdown)
+        elif v2_decides:
+            breakdown["v2_failed"] = True  # v2 errored: v1 decided this time (logged)
+
         now = datetime.now(timezone.utc)
+        # Scored now with the resume's current skills - no longer out of date.
+        campaign_candidate.score_out_of_date_at = None
+        campaign_candidate.score_out_of_date_reason = None
         campaign_candidate.screened_at = now
         campaign_candidate.updated_at = now
         campaign_candidate_repo.update(campaign_candidate)
@@ -302,10 +396,11 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         
         rejection_reason = None
         stage_transition_succeeded = False
-        if not breakdown["deterministic_passed"]:
+        if not breakdown["deterministic_passed"] and not score_only:
 
-            rejection_reason = CandidateScoringService.build_rejection_reason(
-                breakdown, experience_result, education_result,
+            rejection_reason = (
+                v2_rejection_reason(v2_breakdown) if acting_on_v2
+                else CandidateScoringService.build_rejection_reason(breakdown, experience_result, education_result)
             )
 
             stage_transition_succeeded = stage_transition_service.transition_to_rejected(
@@ -329,12 +424,18 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
             "mandatory_coverage_pct": breakdown["mandatory_coverage_pct"],
             "missing_core_skill_count": breakdown.get("missing_core_skill_count"),
             "max_missing_core_skills": breakdown.get("max_missing_core_skills"),
+            "allowed_missing_core_skills": breakdown.get("allowed_missing_core_skills"),
             "skill_qualification_passed": breakdown.get("skill_qualification_passed"),
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
             "rejection_reason": rejection_reason,
             "score_breakdown": breakdown,
         }
+        if score_only:
+            # What changed - the stage is left as it is.
+            summary_payload.update(score_only=True, stage_unchanged=campaign_candidate.pipeline_stage.value,
+                                   previous_deterministic_score=previous_score,
+                                   previous_deterministic_passed=previous_passed)
 
        
         audit_service.log(
@@ -351,6 +452,13 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
 
         CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
 
+        if not acting_on_v2 and v2_should_run(campaign):
+            try:
+                from app.tasks.scoring_v2_tasks import enqueue_scoring_v2
+                enqueue_scoring_v2(campaign_candidate, task_log_service)
+            except Exception:
+                logger.exception("Failed to queue shadow scoring v2 | campaign_candidate_id=%s", campaign_candidate.id)
+
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 
         logger.info(
@@ -359,8 +467,9 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
         )
 
 
+        # A system rejection never emails the candidate - a recruiter sends
+        # the rejection email manually (POST .../send-rejection-email).
         if not breakdown["deterministic_passed"] and stage_transition_succeeded:
-            _queue_rejection_email(db, campaign_candidate)
             try:
                 _enqueue_composite_scoring(
                     campaign_candidate.id, task_log_service, CompositeScoreTriggerSource.REJECTION,
@@ -371,7 +480,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str) -> None
                     campaign_candidate.id,
                 )
 
-        if breakdown["deterministic_passed"]:
+        if breakdown["deterministic_passed"] and not score_only:
             try:
                 from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
                 _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo, jd_id=campaign.jd_id)

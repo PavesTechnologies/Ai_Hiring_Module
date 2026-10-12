@@ -1,7 +1,13 @@
+import logging
+from uuid import uuid4
+
 import boto3
 
 from app.core.config import settings
 from app.exceptions.email_exception import EmailDeliveryException
+
+
+logger = logging.getLogger(__name__)
 
 
 class SESEmailClient:
@@ -37,6 +43,13 @@ class SESEmailClient:
         never meant to be HTML) is unaffected. email_tasks.py passes
         True since EmailTemplate.body_template is now HTML.
         """
+        if (settings.email_delivery or "ses").lower() == "log":
+            # Isolated local stack: nothing leaves the machine - no SES client
+            # is ever created. Logged so tests can see what would have gone out.
+            message_id = f"log-only-{uuid4()}"
+            logger.warning("EMAIL NOT SENT (EMAIL_DELIVERY=log) | id=%s to=%s subject=%s",
+                           message_id, to_address, subject)
+            return message_id
         body_key = "Html" if is_html else "Text"
         try:
             response = self._get_client().send_email(

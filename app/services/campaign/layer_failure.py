@@ -35,7 +35,7 @@ _RESUME_TASK_LAYER = {
 # (not imported) because campaign_service imports the Celery task modules;
 # test_layer_failure.py asserts the two stay in sync.
 REPLAYABLE_TASK_TYPES = frozenset({
-    "DETERMINISTIC_SCORE", "RESUME_DOCUMENT_PROCESSING", "EMBED_RESUME", "AI_EVALUATE",
+    "DETERMINISTIC_SCORE", "RESUME_DOCUMENT_PROCESSING", "EMBED_RESUME", "AI_EVALUATE", "SCORING_V2",
 })
 
 # An AI evaluation in one of these has a result to show - an older DLQ entry

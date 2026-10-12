@@ -600,6 +600,8 @@ class ResumeMonitoringService:
             ),
             ai_candidate_summary=self._build_ai_candidate_summary(campaign_candidate),
             failed_layers=list(get_layer_failures(self.dead_letter_queue_repository, campaign_candidate).values()),
+            score_out_of_date_at=getattr(campaign_candidate, "score_out_of_date_at", None),
+            score_out_of_date_reason=getattr(campaign_candidate, "score_out_of_date_reason", None),
         )
 
     def _decrypt_candidate_field(self, candidate, encrypted_attr: str) -> str | None:

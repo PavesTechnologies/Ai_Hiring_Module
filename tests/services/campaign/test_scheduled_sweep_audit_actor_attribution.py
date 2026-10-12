@@ -61,9 +61,10 @@ def test_detect_stalled_candidate_alerts_logs_system_not_the_campaign_creator():
     campaign = _make_campaign()
     campaign_repo = MagicMock()
     campaign_repo.get_all_campaigns.return_value = [campaign]
-    campaign_repo.get_stalled_candidates.return_value = [
-        {"pipeline_stage": "SCREENING", "stall_reason": "SLA_EXCEEDED"},
-    ]
+    # The sweep reads every active campaign's stalled candidates in one batch query.
+    campaign_repo.get_stalled_candidates_batch.return_value = {
+        campaign.id: [{"pipeline_stage": "SCREENING", "stall_reason": "SLA_EXCEEDED"}],
+    }
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {
         "SCREENING_SLA_HOURS": "48", "HM_REVIEW_SLA_DAYS": "5", "INTERVIEW_SLA_DAYS": "7",

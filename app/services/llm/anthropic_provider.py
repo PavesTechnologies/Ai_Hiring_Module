@@ -9,33 +9,46 @@ from app.services.llm.base import (
     ModelInfo,
     status_error,
 )
+from app.services.llm.capabilities import ModelCapabilities, resolve_capabilities
 
-# Extraction payloads are a few thousand tokens at most; 16k keeps a
-# non-streaming request comfortably under the SDK's HTTP timeout while
-# never truncating a long resume's JSON.
-_MAX_TOKENS = 16000
+# The Messages API requires max_tokens. Used only when the capability map
+# gives none: extraction payloads are a few thousand tokens at most; 16k
+# keeps a non-streaming request under the SDK's HTTP timeout while never
+# truncating a long resume's JSON.
+_DEFAULT_MAX_TOKENS = 16000
 
 
 class AnthropicProvider:
     provider_name = LLMProviderName.ANTHROPIC
 
-    def __init__(self, api_key: str, model: str, timeout_seconds: float, max_retries: int):
+    def __init__(
+        self, api_key: str, model: str, timeout_seconds: float, max_retries: int,
+        capabilities: ModelCapabilities | None = None,
+    ):
         self.model = model
+        self.capabilities = capabilities or resolve_capabilities(self.provider_name, model)
         self.client = anthropic.Anthropic(
             api_key=api_key,
             timeout=timeout_seconds,
             max_retries=max_retries,
         )
 
-    def generate_json(self, prompt: str, response_schema: type[BaseModel]) -> dict:
+    def _settings_kwargs(self, deterministic: bool) -> dict:
+        """Only the settings this model supports (see capabilities.py)."""
+        kwargs = {"max_tokens": self.capabilities.max_output_tokens or _DEFAULT_MAX_TOKENS}
+        if deterministic and self.capabilities.supports_temperature:
+            kwargs["temperature"] = 0
+        return kwargs
+
+    def generate_json(self, prompt: str, response_schema: type[BaseModel], *, deterministic: bool = False) -> dict:
         try:
             # messages.parse() sends the Pydantic schema as structured
             # output (output_config.format) and validates the reply.
             response = self.client.messages.parse(
                 model=self.model,
-                max_tokens=_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
                 output_format=response_schema,
+                **self._settings_kwargs(deterministic),
             )
         except anthropic.APIStatusError as exc:
             raise status_error(exc.status_code, f"Anthropic API error: {exc}") from exc

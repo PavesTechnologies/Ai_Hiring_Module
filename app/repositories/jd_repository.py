@@ -119,14 +119,6 @@ class JDRepository:
             is not None
         )
 
-    def get_latest_version(self, lineage_id: UUID) -> JobDescription | None:
-        return (
-            self.db.query(JobDescription)
-            .filter(JobDescription.lineage_root_id == lineage_id
-            ).order_by(JobDescription.version_number.desc())
-            .first()
-        )
-    
     def search(
         self,
         request: JDSearchRequest,

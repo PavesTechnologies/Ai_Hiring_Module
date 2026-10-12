@@ -7,6 +7,80 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Upload "use existing" (duplicate file) never adds the candidate to the campaign (found 2026-10-08)
+
+**Status:** resolved 2026-10-08 in f94e6ed - both paths now commit the campaign
+candidate before answering 201 (audited + logged), and a "use existing" candidate
+is queued for scoring on the existing parse (tests:
+`tests/api/test_duplicate_upload_commit_routes.py`). The e2e driver workaround
+below can now use the real upload path. Original report kept for history.
+
+`ResumeIntakeService.upload_resume` calls `create_campaign_candidate`, which
+only flushes (it relies on the caller to commit). On the normal path the
+intake commits afterwards, but on the duplicate-file path with
+`resolution="use_existing"` it returns early (`if not result.requires_processing`)
+before that commit, so the new `campaign_candidates` row is rolled back when
+the request session closes. The API still answers 201, so the recruiter sees
+success while the candidate never appears in the campaign. The direct
+`POST /campaign-candidates` route has the same gap (no commit after
+`create_campaign_candidate`). Even if committed, a "use existing" candidate is
+left at UPLOADED with nothing scheduled to score it.
+
+Seen in: the isolated e2e stack (scripts/e2e/run_reparse_e2e.py), uploading
+the same fixture file to a second campaign with "use existing".
+
+**Workaround:** the e2e driver creates the shared-resume candidate directly
+and queues its deterministic scoring. Fix: commit after
+`create_campaign_candidate` on both paths and queue scoring for the
+"use existing" candidate.
+
+---
+
+## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
+
+**Status:** open - documented only, no code change.
+
+`CampaignCandidateService.export_rejected_candidates` exports candidates
+currently at `pipeline_stage = REJECTED`, and `_to_export_row` fills
+"HR Override" with `decision_type == RESET` and "Override Reason" with
+`decision_reason` when it is a RESET. Since the decision_* redesign (98d721e)
+an HR override *is* the RESET decision, and `StageTransitionService.
+apply_hr_override` moves the candidate from REJECTED to SCREENING at the same
+time. So a candidate in this export never has a RESET as its current decision:
+the columns are always `False` / empty. (A candidate overridden and later
+rejected again also shows no override - the newer REJECTED decision replaced
+the RESET.)
+
+**If it matters later:** take the override from stage history (a REJECTED ->
+SCREENING row with a RESET snapshot) or from `get_override_report`, or drop
+the two columns. Tests: `tests/services/campaign/test_campaign_candidate_
+scorecard_service.py::test_export_rejected_candidates_writes_rows_and_logs_audit`
+asserts today's behaviour.
+
+---
+
+## Skill matching (v1): fuzzy tier matches "IT governance" to AI Governance (found 2026-10-01)
+
+**Status:** open - v1 deliberately unchanged; blocked in scoring v2 only.
+
+`SkillNormalizationService._match_skill` FUZZY tier uses `fuzz.ratio` >= 85
+on canonical names. "IT governance" vs "AI Governance" differ by one
+letter pair, so the ratio passes, and `is_generic_word_subset` doesn't
+catch it ("it" and "ai" are different words, not a subset). Seen on a
+candidate in campaign "AI transformation lead Sep": their resume line
+"delivery, IT governance, PMO and business analysis" became an AI
+Governance match (FUZZY, 0.8 weight) - a JD **core** skill. The same
+pattern can hit any short-acronym pair (IT/AI, ML/QL, ...).
+
+**Workaround:** scoring v2 ignores this pair from every source via
+platform_config `SCORING_V2_MATCH_BLOCKLIST` (regression test
+`test_it_governance_never_becomes_ai_governance_in_v2`), and v2 core
+skills also need LLM confirmation. v1 still counts the match until its
+fuzzy tier is fixed (e.g. exclude pairs whose differing tokens are 2-letter
+acronyms).
+
+---
+
 ## M12: 2 pre-Epic-4 candidates at INTERVIEW with no `interview_schedules` row (backfilled 2026-08-17)
 
 **Status:** resolved. One-time backfill, not evidence of an ongoing gap.

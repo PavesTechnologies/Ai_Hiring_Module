@@ -25,6 +25,8 @@ class ScoringConfigSection(BaseModel):
     semantic_threshold: float
     ai_threshold: float
     deterministic_threshold: float
+    max_missing_core_pct: float | None = None
+    max_missing_core_skills: int | None = None
 
 class PipelineLimitsSection(BaseModel):
     # max_candidates is the number of openings, measured against selected_count.

@@ -319,3 +319,24 @@ def test_recovery_task_wrapper_creates_its_own_task_log_and_marks_success():
     task_log = task_log_repo.update.call_args.args[0]
     assert task_log.status == TaskStatus.SUCCESS
     assert "3" in task_log.output_summary
+
+
+def test_use_existing_candidate_is_queued_and_other_campaigns_are_not_rescored():
+    """A resume re-used in a new campaign: only the new campaign candidate is queued (others already have keys)."""
+    resume_id = uuid4()
+    already_scored = SimpleNamespace(id=uuid4())
+    new_candidate = SimpleNamespace(id=uuid4())
+
+    campaign_candidate_repo = MagicMock()
+    campaign_candidate_repo.get_by_resume_id.return_value = [already_scored, new_candidate]
+    task_log_service, task_log_repo = _make_task_log_service()
+    task_log_repo.get_by_idempotency_key.side_effect = (
+        lambda key: SimpleNamespace(id=uuid4()) if str(already_scored.id) in key else None
+    )
+
+    with patch(f"{MODULE}.CampaignCandidateRepository", return_value=campaign_candidate_repo), \
+         patch(f"{MODULE}.calculate_deterministic_score_task") as mock_task:
+        _enqueue_deterministic_scoring(MagicMock(), resume_id, task_log_service)
+
+    enqueued = [c.kwargs["kwargs"]["campaign_candidate_id"] for c in mock_task.apply_async.call_args_list]
+    assert enqueued == [str(new_candidate.id)]

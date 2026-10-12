@@ -124,6 +124,9 @@ class _Harness:
             patch(f"{TASKS_MODULE}.StorageService", return_value=self.storage_service_instance),
             patch(f"{TASKS_MODULE}.FileValidationService", return_value=self.file_validation_service_instance),
             patch(f"{TASKS_MODULE}.CandidateChangeNotifier", return_value=MagicMock(added=self.publish_mock)),
+            # The task resolves an LLM provider while setting up; the duplicate-file
+            # path never calls it. Never let a test reach a real provider or .env key.
+            patch(f"{TASKS_MODULE}.resolve_active_provider", return_value=MagicMock()),
         ]
         for p in self._patches:
             p.start()

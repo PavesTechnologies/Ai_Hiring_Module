@@ -7,7 +7,6 @@ from docx.oxml.text.paragraph import CT_P
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from app.models.candidates import FileFormat
 from app.models.jd.job_descriptions import JDSourceFormat
 
 
@@ -80,26 +79,6 @@ class TextExtractionService:
         if source_format == JDSourceFormat.PDF:
             return cls.extract_pdf_text(file_content)
         return cls.extract_docx_text(file_content)
-
-    @classmethod
-    def extract_for_resume(cls, file_content: bytes, file_format: FileFormat) -> str:
-        """
-        FileFormat-dispatched counterpart to extract() for the resume
-        pipeline, which validates PDF/DOCX/PNG/JPEG (FileFormat) rather
-        than JD's TEXT/PDF/DOCX (JDSourceFormat). PNG/JPEG require OCR,
-        which isn't implemented yet — callers should route image-format
-        resumes around this method entirely (see
-        ResumeProcessingPipeline._mark_ocr_unsupported); this raises rather
-        than silently returning empty text if reached directly.
-        """
-        if file_format == FileFormat.PDF:
-            return cls.extract_pdf_text(file_content)
-        if file_format == FileFormat.DOCX:
-            return cls.extract_docx_text(file_content)
-        raise ValueError(
-            f"Text extraction for {file_format.value} resumes requires OCR, "
-            "which is not yet implemented."
-        )
 
     @staticmethod
     def get_pdf_page_count(file_content: bytes) -> int:

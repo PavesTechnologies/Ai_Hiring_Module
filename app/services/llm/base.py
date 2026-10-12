@@ -69,11 +69,14 @@ class LLMProvider(Protocol):
     provider_name: str
     model: str
 
-    def generate_json(self, prompt: str, response_schema: type[BaseModel]) -> dict:
+    def generate_json(self, prompt: str, response_schema: type[BaseModel], *, deterministic: bool = False) -> dict:
         """
         Sends one fully-composed prompt and returns the model's JSON
         payload as a dict, unvalidated - callers validate against their
         own stricter *Response models, exactly as they did with Gemini.
+        `deterministic` asks for the most repeatable answer the model
+        supports (temperature 0 where its capabilities allow it, nothing
+        extra otherwise) - see capabilities.py.
         """
         ...
 

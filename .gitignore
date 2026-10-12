@@ -36,3 +36,11 @@ Thumbs.db
 
 airs/
 .claude/
+
+# Local env files (never committed)
+.env.*
+e2e/.env.e2e
+
+# e2e resume fixtures are rebuilt from real candidates' resumes (identifiers replaced,
+# career details kept) - local only. Regenerate with scripts/e2e/export_fixtures.py.
+tests/fixtures/e2e/*.docx

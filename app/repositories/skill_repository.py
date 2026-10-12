@@ -52,12 +52,9 @@ class SkillRepository:
             .first()
         )
 
-    def get_by_canonical_name_ilike(self, name: str) -> SkillOntology | None:
-        return (
-            self.db.query(SkillOntology)
-            .filter(func.lower(SkillOntology.canonical_name) == name.lower())
-            .first()
-        )
+    def get_unknown_skill_by_raw_text(self, raw_text: str) -> UnknownSkill | None:
+        """Read-only lookup (no frequency bump) - for re-parses re-linking an unknown skill they already had."""
+        return self.db.query(UnknownSkill).filter(UnknownSkill.raw_text == raw_text).first()
 
     def upsert_unknown_skill(
         self, raw_text: str, normalized_key: str | None = None

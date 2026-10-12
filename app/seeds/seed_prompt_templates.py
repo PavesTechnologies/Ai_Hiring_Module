@@ -25,7 +25,7 @@ GENERAL RULES
 2. Do NOT include markdown.
 3. Do NOT explain your reasoning.
 4. Do NOT add comments.
-5. Do NOT infer, assume, or fabricate information that is not explicitly stated.
+5. Do NOT infer, assume, or fabricate information that is not explicitly stated. The one exception is inferred_skills, which follows its own evidence rules below.
 6. If a value is unavailable, return null.
 7. If no items exist for a list, return [].
 8. Return unique values only.
@@ -122,7 +122,7 @@ Do NOT:
 - Extract project names as skills.
 - Extract departments.
 - Extract responsibilities.
-- Extract business processes or duties that appear only inside work-experience or responsibility sentences (a competency must be listed by name, not inferred from a described duty).
+- Extract business processes or duties that appear only inside work-experience or responsibility sentences (a competency must be listed by name, not inferred from a described duty - evidence-backed competencies go in inferred_skills instead).
 - Extract soft skills (communication, leadership, teamwork) as skills.
 
 Return each skill only once.
@@ -150,6 +150,48 @@ Rules:
 - Do not infer.
 - Preserve the wording as written whenever possible.
 - Return each soft skill only once.
+
+INFERRED SKILLS
+---------------
+Professional competencies the resume clearly demonstrates but does not list by name in a skills section. Senior and non-engineering candidates show these through certifications, job titles and accomplishments rather than a skills list.
+
+Each entry is an object:
+
+{"skill": "<standard competency name>", "evidence": "<proof from the resume>"}
+
+Allowed evidence - exactly one of:
+
+1. A certification that certifies the competency. Examples:
+   - PMP → Project Management, Program Management
+   - PgMP → Program Management
+   - PRINCE2 → Project Management
+   - CSM / PSM → Scrum
+   - SAFe SPC / RTE → Scaled Agile Framework
+   - ITIL → IT Service Management
+   - CISSP / CISM → Information Security Management
+   - Six Sigma (Green/Black Belt) → Process Improvement
+2. A job title that names the competency - check EVERY work-experience title and the resume headline. Examples:
+   - "Technical Program Manager", "Program Manager", "Head of PMO" → Program Management
+   - "Change Manager" → Change Management
+   - "Risk Manager" → Risk Management
+   - "Transformation Lead/Director" → the transformation the resume names (e.g. Digital Transformation, AI Transformation)
+3. A specific accomplishment with concrete scope or outcome. The patterns below are illustrations only - never copy them; the evidence must be the resume's own words:
+   - governing a named AI/data portfolio or platform of a stated size → AI Governance, Portfolio Management
+   - leading organisational change adoption for a stated number of users/teams → Change Management
+   - regular status reporting to a named executive body (board, steering committee, CXOs) → Executive Reporting
+
+Rules:
+
+- evidence is a short verbatim quote (at most 20 words), the job title, or the certification name - copied from the resume.
+- For accomplishment evidence (3), quote a statement with a concrete scope or outcome (an amount, a count, a team/portfolio size, a named programme or result). A bare phrase or keyword on its own - e.g. "change control", "risk mitigation", "stakeholder management" - is never evidence: if the resume lists it as a competency by name it belongs in skills, otherwise leave it out.
+- The competency must be what the evidence actually shows: "change control" (IT change process) is not Change Management (organisational change); "risk mitigation" in one project is not Risk Management.
+- Only named professional competencies or methodologies (e.g. Program Management, Change Management, Risk Management, Stakeholder Management, Vendor Management, Portfolio Management, AI Governance, Digital Transformation, Executive Reporting).
+- Never technologies or tools - those belong in skills.
+- Never soft skills (communication, leadership, teamwork) - those belong in soft_skills.
+- Never infer from generic duty lists ("responsible for", "involved in", "worked on") without a concrete title, certification, scope or outcome.
+- Do not repeat anything already in skills.
+- Use the standard competency name, not the resume's phrasing.
+- At most 15 entries. If nothing qualifies, return [].
 
 WORK EXPERIENCE
 ---------------
@@ -259,6 +301,12 @@ Return ONLY the following JSON.
     "full_name": null,
     "skills": [],
     "soft_skills": [],
+    "inferred_skills": [
+        {
+            "skill": null,
+            "evidence": null
+        }
+    ],
     "work_experience": [
         {
             "title": null,
@@ -1341,8 +1389,38 @@ Return ONLY this JSON.
 }"""
 
 
+# Scoring v2 (Phase 1): same prompt, with named competencies made a firm
+# part of `skills`. Observed: weaker models put "Program Management",
+# "AI & Digital Transformation" etc. only into inferred_skills evidence (or
+# nowhere), so a senior candidate's competency section scored as missing.
+# Assigned to a campaign only when that campaign switches scoring v2 on -
+# the Standard template (and therefore v1) is unchanged.
+_RESUME_COMPETENCY_RULE_V1 = (
+    "Professional competencies listed by name in a Skills / Key Skills / Core Competencies / Areas of Expertise "
+    "section ARE skills too - extract them (e.g. Key Account Management, Contract Negotiation, Sales Forecasting, "
+    "Talent Acquisition, Payroll Processing, Financial Reporting), along with the tools of that profession (e.g. "
+    "Salesforce, Workday, Tally, MS Excel). This matters for non-technical candidates, whose skills are mostly "
+    "competencies rather than technologies."
+)
+_RESUME_COMPETENCY_RULE_V2 = (
+    "COMPETENCIES ARE SKILLS. Every item listed by name in a Skills / Key Skills / Core Competencies / Areas of "
+    "Expertise / Expertise / Specialisations section, or in a headline or summary line that lists expertise, MUST "
+    "be extracted into skills - technical or not (e.g. Program Management, Portfolio Management, Change Management, "
+    "Stakeholder Management, AI Governance, Digital Transformation, Key Account Management, Contract Negotiation, "
+    "Financial Reporting), along with the tools of that profession (e.g. Salesforce, Workday, Tally, MS Excel). "
+    "Never move a listed competency into inferred_skills instead - inferred_skills is only for competencies that "
+    "are NOT listed by name.\n\n"
+    "A listed item that names several competencies sharing one word is extracted as each of them: "
+    "\"Change, Incident & Problem Management\" -> [\"Change Management\", \"Incident Management\", "
+    "\"Problem Management\"]; \"AI & Digital Transformation\" -> [\"AI Transformation\", \"Digital "
+    "Transformation\"]. A single term written with an unspaced ampersand stays one skill (P&L, R&D, M&A)."
+)
+assert _RESUME_COMPETENCY_RULE_V1 in _RESUME_PARSE_TEXT, "resume prompt competency paragraph changed"
+_RESUME_PARSE_V2_TEXT = _RESUME_PARSE_TEXT.replace(_RESUME_COMPETENCY_RULE_V1, _RESUME_COMPETENCY_RULE_V2)
+
 _TEMPLATES = [
     {"task_type": "RESUME_PARSE", "name": "Resume Parsing - Standard", "template_text": _RESUME_PARSE_TEXT},
+    {"task_type": "RESUME_PARSE_V2", "name": "Resume Parsing - Scoring v2 (v2 only)", "template_text": _RESUME_PARSE_V2_TEXT},
     {"task_type": "JD_PARSE", "name": "JD Parsing - Standard", "template_text": _JD_PARSE_TEXT},
     {"task_type": "AI_EVALUATE", "name": "AI Evaluation - Universal", "template_text": _AI_EVALUATE_UNIVERSAL_TEXT},
     {"task_type": "AI_EVALUATE", "name": "AI Evaluation - Fresher", "template_text": _AI_EVALUATE_FRESHER_TEXT},

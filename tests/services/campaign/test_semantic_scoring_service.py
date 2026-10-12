@@ -12,8 +12,9 @@ from app.services.campaign.semantic_scoring_service import (
 )
 
 
-def _make_campaign_candidate(score_breakdown=None):
-    return SimpleNamespace(id=uuid4(), score_breakdown=score_breakdown, semantic_score=None, semantic_score_breakdown=None)
+def _make_campaign_candidate(deterministic_breakdown=None):
+    return SimpleNamespace(id=uuid4(), deterministic_breakdown=deterministic_breakdown, semantic_score=None,
+                           semantic_breakdown=None)
 
 
 def _harness(
@@ -71,11 +72,11 @@ def test_raises_missing_jd_embedding_error_when_jd_has_no_embedding():
 
 
 def test_semantic_score_above_threshold_passes():
-    score_breakdown = {
+    deterministic_breakdown = {
         "mandatory_skills": [{"canonical_name": "Python", "match_type": "EXACT"}],
         "preferred_skills": [{"canonical_name": "Docker", "match_type": "MISSING"}],
     }
-    cc = _make_campaign_candidate(score_breakdown=score_breakdown)
+    cc = _make_campaign_candidate(deterministic_breakdown=deterministic_breakdown)
     service, cc, campaign_candidate_repo, _, _ = _harness(
         campaign_candidate=cc, similarity=0.9,
         resume_skills=["Python", "AWS"], jd_skills=["Python", "AWS"],
@@ -90,7 +91,7 @@ def test_semantic_score_above_threshold_passes():
     assert breakdown["missing_skills"] == ["Docker"]
     assert breakdown["matched_keywords"] == ["aws", "python"]
     assert cc.semantic_score == 0.9
-    assert cc.semantic_score_breakdown == breakdown
+    assert cc.semantic_breakdown == breakdown
     campaign_candidate_repo.update.assert_called_once_with(cc)
 
 
@@ -189,7 +190,7 @@ def test_semantic_check_records_jd_and_resume_embedding_ids():
 
 def test_semantic_score_computed_at_and_updated_at_set_atomically():
     service, cc, campaign_candidate_repo, _, _ = _harness(similarity=0.8)
-    assert cc.semantic_score_breakdown is None
+    assert cc.semantic_breakdown is None
 
     service.calculate_and_store_semantic_score_breakdown(cc.id, uuid4(), uuid4(), semantic_threshold=0.65)
 

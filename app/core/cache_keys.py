@@ -78,6 +78,11 @@ def campaign_platform_defaults_key() -> str:
     return f"{PREFIX}:campaign:platform-defaults"
 
 
+def llm_model_down_key(provider: str, model_name: str) -> str:
+    """Set while a model is known to be unavailable, so calls go straight to its backup (FallbackLLMProvider)."""
+    return f"{PREFIX}:llm:model-down:{provider}:{model_name}"
+
+
 def ai_provider_verified_key(provider: str, model_name: str, api_key: str) -> str:
     """
     Marks a recent successful Settings "Check". Hashed with SHA-256, so

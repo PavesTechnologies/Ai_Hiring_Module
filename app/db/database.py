@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
@@ -16,11 +16,3 @@ engine = create_engine(
 class Base(DeclarativeBase):
     pass
 
-
-def check_connection() -> bool:
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return True
-    except Exception as exc:
-        raise RuntimeError(f"Database connection failed: {exc}") from exc

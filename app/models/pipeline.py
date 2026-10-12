@@ -131,6 +131,12 @@ class CampaignCandidate(Base):
     # matched_keywords/semantic_explanation, written by SemanticScoringService.
     semantic_breakdown: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     composite_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 3), nullable=True)
+    # Scoring v2 Step 3: the resume was re-parsed from another campaign, so
+    # this campaign's scores no longer reflect its current skills. Shown on
+    # the scorecard with a recruiter "Re-score" action; cleared on the next
+    # deterministic scoring.
+    score_out_of_date_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    score_out_of_date_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # M10-E01: when composite_score was last (re)computed - None until the
     # first successful calculation, overwritten (never appended) on every
     # subsequent one. The immutable per-calculation trail lives in

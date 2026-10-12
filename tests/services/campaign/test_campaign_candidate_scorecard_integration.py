@@ -9,7 +9,7 @@ suite's existing "integration test" convention
 (tests/tasks/test_deterministic_scoring_tasks.py).
 
 Regression: confirms the constructor extension (new optional
-candidate_repo/resume_repo/candidate_rejection_repo params) does not break
+candidate_repo/resume_repo params) does not break
 the one pre-existing call site that constructs this service with only 3
 positional args (app/tasks/bulk_upload_tasks.py).
 """
@@ -23,7 +23,7 @@ from uuid import uuid4
 import openpyxl
 
 from app.enums.constants import ActionType, EntityType
-from app.models.pipeline import PipelineStage, RejectionLayer
+from app.models.pipeline import DecisionSource, DecisionType, PipelineStage
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 
 
@@ -48,24 +48,35 @@ def _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED, score_breakd
         candidate_id=uuid4(),
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
-        score_breakdown=score_breakdown or {},
-        hr_override=False,
-        hr_override_reason=None,
+        # Model fields since the decision_* redesign (98d721e).
+        deterministic_breakdown=score_breakdown or {},
+        semantic_breakdown=None, semantic_passed=None, previous_stage=None,
+        decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
+        decision_by_user_id=None, decision_at=None,
+        ai_evaluation=None,
         deterministic_score=deterministic_score,
-        ai_ats_score=None,
         semantic_score=None,
         composite_score=None,
         created_at=datetime.now(timezone.utc),
     )
 
 
-def _make_rejection(rejection_layer=RejectionLayer.DETERMINISTIC, reason="Missing required skills: Python."):
+def _make_rejection(decision_source=DecisionSource.DETERMINISTIC, reason="Missing required skills: Python."):
+    """A to_stage=REJECTED stage-history row: the rejection record since candidate_rejections was removed."""
     return SimpleNamespace(
         id=uuid4(),
-        rejection_layer=rejection_layer,
-        rejection_reason=reason,
-        rejected_at=datetime.now(timezone.utc),
+        to_stage=PipelineStage.REJECTED,
+        changed_at=datetime.now(timezone.utc),
+        scores_snapshot={"decision_source": decision_source.value, "decision_reason": reason},
     )
+
+
+def _record_rejection(candidate, rejection):
+    """Set the candidate's current decision to this rejection, as StageTransitionService does."""
+    candidate.decision_type = DecisionType.REJECTED
+    candidate.decision_source = DecisionSource(rejection.scores_snapshot["decision_source"])
+    candidate.decision_reason = rejection.scores_snapshot["decision_reason"]
+    candidate.decision_at = rejection.changed_at
 
 
 # ----------------------------------------------------------------------
@@ -84,20 +95,18 @@ def test_export_rejected_candidates_produces_a_real_readable_workbook():
     }
     candidate = _make_campaign_candidate(score_breakdown=breakdown)
     rejection = _make_rejection(reason="Missing required skills: Python.")
+    _record_rejection(candidate, rejection)
 
     campaign_repo = MagicMock()
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_rejected_by_campaign.return_value = [candidate]
-    candidate_rejection_repo = MagicMock()
-    candidate_rejection_repo.get_by_campaign_candidate_id.return_value = [rejection]
     audit_service = MagicMock()
 
     service = CampaignCandidateService(
         campaign_repo=campaign_repo,
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=audit_service,
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     response = service.export_rejected_candidates(campaign.id, actor_id="hr-1", actor_role="HR_ADMIN")
@@ -126,8 +135,8 @@ def test_export_rejected_candidates_produces_a_real_readable_workbook():
 
     data_row = [cell.value for cell in sheet[2]]
     assert data_row[0] == str(candidate.candidate_id)
-    assert data_row[1] == RejectionLayer.DETERMINISTIC.value
-    assert data_row[2] == rejection.rejection_reason
+    assert data_row[1] == DecisionSource.DETERMINISTIC.value
+    assert data_row[2] == "Missing required skills: Python."
     assert data_row[5] == "Python"
     assert "1.0 years provided" in data_row[6]
     assert "Bachelor" in data_row[7]
@@ -178,17 +187,17 @@ def test_scorecard_and_history_agree_on_current_rejection_across_multiple_rounds
     round_1 = _make_rejection(reason="Missing required skills: Python.")
     round_2 = _make_rejection(reason="Insufficient experience: 2 years provided, minimum 4 years required (gap: 2 years).")
 
+    _record_rejection(candidate, round_2)               # the current decision is the latest round
+
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_by_id.return_value = candidate
-    candidate_rejection_repo = MagicMock()
-    # newest-first, as CandidateRejectionRepository.get_by_campaign_candidate_id guarantees.
-    candidate_rejection_repo.get_by_campaign_candidate_id.return_value = [round_2, round_1]
+    # Stage history comes back oldest-first; get_rejection_history reverses it.
+    campaign_candidate_repo.get_stage_history_by_campaign_candidate_id.return_value = [round_1, round_2]
 
     service = CampaignCandidateService(
         campaign_repo=MagicMock(),
         campaign_candidate_repo=campaign_candidate_repo,
         audit_service=MagicMock(),
-        candidate_rejection_repo=candidate_rejection_repo,
     )
 
     scorecard = service.get_campaign_candidate_scorecard(candidate.id)
@@ -222,7 +231,6 @@ def test_service_still_constructible_with_only_the_original_three_positional_arg
 
     assert service.candidate_repo is None
     assert service.resume_repo is None
-    assert service.candidate_rejection_repo is None
     assert service.encryption_service is None
 
 

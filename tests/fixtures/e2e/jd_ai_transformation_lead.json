@@ -1,0 +1,223 @@
+{
+ "campaign": {
+  "name": "AI transformation lead Sep",
+  "weight_deterministic": 30.0,
+  "weight_semantic": 40.0,
+  "weight_ai": 30.0,
+  "semantic_threshold": 0.4,
+  "ai_threshold": 70.0,
+  "deterministic_threshold": 40.0,
+  "required_skill_coverage_threshold": 0.0,
+  "max_missing_core_skills": 3.0,
+  "max_missing_core_pct": 25.0
+ },
+ "jd": {
+  "title": "AI transformation lead",
+  "raw_text": "Job Description\nJob Title: AI Program Enablement Lead\nCompany: Paves Technologies\nLocation: Dubai, UAE (on-site)\nEngagement Type: Contract (via Paves Technologies)\nIndustry: Payments / Fintech / Financial Services\nAbout Paves Technologies\nPaves Technologies is a cards, payments and banking technology consulting firm. We help banks, payment providers and fintechs deliver complex technology, transformation and delivery programs across the payments value chain, including in regulated and PCI DSS-aware environments. Through our contracting practice, we place senior specialists into high-impact roles with leading clients across the region.\nRole Overview\nOn behalf of our client a leading payments and financial technology organization operating across the Middle East; we are seeking an experienced AI Program Enablement Lead to drive an enterprise-wide AI transformation journey. This role shapes how AI is governed, adopted, scaled and embedded across the organization, working directly with executive leadership to define and deliver AI strategy and responsible AI adoption at enterprise scale.\nKey Responsibilities\nLead and drive the client's enterprise AI transformation agenda.\nEstablish and operationalize AI governance frameworks, operating models, policies and controls.\nPartner with senior leaders across Business, Technology, Risk, Legal, Compliance, Data, Finance and HR to accelerate AI adoption.\nDesign and lead an AI Champions Program to build a strong enterprise AI community.\nDrive AI communications, change management, training and workforce capability-building initiatives.\nManage enterprise AI platforms, including vendor relationships, licensing, budgets, adoption metrics and performance monitoring.\nSupport executive governance forums and leadership decision-making through clear reporting and actionable insights.\nBuild strategic partnerships and innovation initiatives that strengthen AI capabilities and business outcomes.\nRequired Experience & Skills\nSignificant experience in AI transformation, digital transformation, strategy, innovation, technology governance or enterprise change.\nStrong understanding of Generative AI, Responsible AI, AI governance, AI operating models and enterprise adoption.\nDemonstrated experience leading complex transformation programs across multiple business functions.\nProven ability to engage and influence senior executives and key stakeholders.\nExperience with governance frameworks, policies, risk management, controls and executive reporting.\nStrong program management, change management and communication capabilities.\nDesirable\nExperience within financial services, fintech, payments or other highly regulated industries.\nExposure to regional (Middle East / Africa) markets and multi-country operating environments.\nWhat We Offer\nThe opportunity to shape enterprise AI strategy and governance at a leading payments and fintech organization.\nDirect engagement with executive leadership on high-visibility transformation initiatives.\nA competitive contract rate commensurate with experience.\nHow to Apply\nSubmit your CV and a brief summary of relevant experience to careers@example.invalid",
+  "extracted_json": {
+   "aliases": {},
+   "location": "Dubai, UAE",
+   "metadata": {},
+   "education": {
+    "field": null,
+    "degree": null,
+    "degree_level": "UNKNOWN",
+    "field_normalized": "UNKNOWN",
+    "related_field_allowed": false
+   },
+   "work_mode": "On-site",
+   "experience": {
+    "max_experience_years": null,
+    "min_experience_years": null
+   },
+   "soft_skills": [
+    "Communication",
+    "Stakeholder Engagement",
+    "Influencing"
+   ],
+   "certifications": [],
+   "employment_type": "Contract",
+   "required_skills": {
+    "core": [
+     "AI Transformation",
+     "AI Governance",
+     "Program Management",
+     "Change Management"
+    ],
+    "supporting": [
+     "Digital Transformation",
+     "Technology Governance",
+     "Generative AI",
+     "Responsible AI",
+     "AI Operating Models",
+     "Risk Management",
+     "Executive Reporting"
+    ]
+   },
+   "preferred_skills": [],
+   "responsibilities": [
+    "Lead and drive the client's enterprise AI transformation agenda.",
+    "Establish and operationalize AI governance frameworks, operating models, policies and controls.",
+    "Partner with senior leaders across Business, Technology, Risk, Legal, Compliance, Data, Finance and HR to accelerate AI adoption.",
+    "Design and lead an AI Champions Program to build a strong enterprise AI community.",
+    "Drive AI communications, change management, training and workforce capability-building initiatives.",
+    "Manage enterprise AI platforms, including vendor relationships, licensing, budgets, adoption metrics and performance monitoring.",
+    "Support executive governance forums and leadership decision-making through clear reporting and actionable insights.",
+    "Build strategic partnerships and innovation initiatives that strengthen AI capabilities and business outcomes."
+   ],
+   "domain_capabilities": {
+    "required": [],
+    "preferred": [
+     "Financial Services",
+     "Fintech",
+     "Payments",
+     "Regulated Industries",
+     "Middle East / Africa markets",
+     "Multi-country operating environments"
+    ]
+   }
+  },
+  "required_skills": {
+   "aliases": {},
+   "required": {
+    "core": [
+     "AI Transformation",
+     "AI Governance",
+     "Program Management",
+     "Change Management"
+    ],
+    "supporting": [
+     "Digital Transformation",
+     "Technology Governance",
+     "Generative AI",
+     "Responsible AI",
+     "AI Operating Models",
+     "Risk Management",
+     "Executive Reporting"
+    ]
+   },
+   "preferred": []
+  },
+  "min_experience_years": 10.0,
+  "max_experience_years": 20.0,
+  "notice_period": 0,
+  "education_criteria": {
+   "field": null,
+   "degree": null
+  },
+  "source_format": "DOCX",
+  "jurisdiction": "GLOBAL"
+ },
+ "jd_skills": [
+  {
+   "skill": "Generative AI",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "EXACT",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Responsible AI",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Executive Reporting",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Change Management",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "CORE",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "AI Transformation",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "CORE",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Technology Governance",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Program Management",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "CORE",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Risk Management",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Digital Transformation",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "AI Operating Models",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "SUPPORTING",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "AI Governance",
+   "mandatory": true,
+   "weight": 1.0,
+   "importance": "CORE",
+   "aliases": [],
+   "match_tier": "MANUAL_HR",
+   "confidence": 1.0,
+   "verification_status": "AUTO_VERIFIED"
+  }
+ ]
+}

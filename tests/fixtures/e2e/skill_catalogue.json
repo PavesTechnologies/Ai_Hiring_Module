@@ -1,0 +1,7251 @@
+[
+ {
+  "canonical_name": "Angular",
+  "aliases": [
+   "Angular Framework"
+  ],
+  "category": "Frontend Framework",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Flutter",
+  "aliases": [
+   "Flutter SDK"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OpenTelemetry",
+  "aliases": [
+   "OTel"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Airbyte",
+  "aliases": [
+   "Open-source ETL"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OpenZeppelin",
+  "aliases": [
+   "OZ Contracts"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "VS Code",
+  "aliases": [],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Foundry",
+  "aliases": [
+   "Foundry Toolkit"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Analytics & BI",
+  "aliases": [
+   "BI & Visualization Tools"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Framer",
+  "aliases": [
+   "Design & Prototyping Tool"
+  ],
+  "category": "UI/UX Design",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Android",
+  "aliases": [
+   "Native Android"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Freezed",
+  "aliases": [
+   "Code Generation"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Project Portfolio Management (PPM)",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Alchemy",
+  "aliases": [
+   "Web3 Node Service"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GCP Provider",
+  "aliases": [
+   "GCP Resources"
+  ],
+  "category": "DevOps",
+  "parent": "Crossplane",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Alchemy Solana",
+  "aliases": [
+   "RPC Provider"
+  ],
+  "category": "Blockchain",
+  "parent": "Solana",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Allure Reports",
+  "aliases": [
+   "Test Reporting"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Analytics",
+  "aliases": [
+   "Web Analytics"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Anchor Framework",
+  "aliases": [
+   "Solana Framework"
+  ],
+  "category": "Blockchain",
+  "parent": "Solana",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Anthropic API",
+  "aliases": [
+   "Claude API"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Apache Flink",
+  "aliases": [
+   "Flink"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Pipeline",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Apache Iceberg",
+  "aliases": [
+   "Iceberg Table Format"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "API Gateway",
+  "aliases": [
+   "AWS API Gateway"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "APM",
+  "aliases": [
+   "Application Performance Monitoring"
+  ],
+  "category": "Database",
+  "parent": "Elasticsearch",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Apollo Server",
+  "aliases": [
+   "Apollo GraphQL Server"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Appium",
+  "aliases": [
+   "Appium Mobile Testing"
+  ],
+  "category": "Testing",
+  "parent": "Mobile Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "App Router",
+  "aliases": [
+   "Next.js App Router"
+  ],
+  "category": "Frontend",
+  "parent": "Next.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ASP.NET Core",
+  "aliases": [
+   "ASP.NET",
+   "AspNetCore"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Async Storage",
+  "aliases": [
+   "AsyncStorage"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Angular Frontend",
+  "aliases": [
+   "UI Components"
+  ],
+  "category": "Frontend Framework",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Angular Universal",
+  "aliases": [
+   "Server-side Rendering"
+  ],
+  "category": "Frontend",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "EventBridge",
+  "aliases": [
+   "AWS EventBridge"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Figma",
+  "aliases": [
+   "Figma Design"
+  ],
+  "category": "UI/UX Design",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ansible",
+  "aliases": [
+   "Ansible Automation"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GitOps",
+  "aliases": [
+   "GitOps Practices"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Passport",
+  "aliases": [
+   "OAuth Server"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "gRPC",
+  "aliases": [
+   "gRPC RPC"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ansible Galaxy",
+  "aliases": [
+   "Role Repository"
+  ],
+  "category": "DevOps",
+  "parent": "Ansible",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jenkinsfile",
+  "aliases": [
+   "Pipeline as Code",
+   "jenkins"
+  ],
+  "category": "DevOps",
+  "parent": "Azure DevOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Keras",
+  "aliases": [
+   "High-level API"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "KV Store",
+  "aliases": [
+   "Cloudflare KV"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Atlantis",
+  "aliases": [
+   "GitOps Automation"
+  ],
+  "category": "DevOps",
+  "parent": "Terraform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Atlas Search",
+  "aliases": [
+   "Full-text Search"
+  ],
+  "category": "Database",
+  "parent": "MongoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Atlas Triggers",
+  "aliases": [
+   "Event Triggers"
+  ],
+  "category": "Database",
+  "parent": "MongoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Autonomous Database",
+  "aliases": [
+   "Managed DB"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS Glue",
+  "aliases": [
+   "Glue ETL"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Pipeline",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS GuardDuty",
+  "aliases": [
+   "GuardDuty"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS IAM",
+  "aliases": [
+   "IAM"
+  ],
+  "category": "Security",
+  "parent": "Identity & Access",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS KMS",
+  "aliases": [
+   "Key Management Service"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS Provider",
+  "aliases": [
+   "AWS Resources"
+  ],
+  "category": "DevOps",
+  "parent": "Crossplane",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS SAM",
+  "aliases": [
+   "Serverless App Model"
+  ],
+  "category": "Cloud",
+  "parent": "Serverless",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS Security Hub",
+  "aliases": [
+   "Security Hub"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS SNS",
+  "aliases": [
+   "Simple Notification Service",
+   "SNS"
+  ],
+  "category": "Backend",
+  "parent": "Message Queues",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS SQS",
+  "aliases": [
+   "Simple Queue Service",
+   "SQS"
+  ],
+  "category": "Backend",
+  "parent": "Message Queues",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Axios",
+  "aliases": [
+   "HTTP Client"
+  ],
+  "category": "Frontend",
+  "parent": "JavaScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Axum",
+  "aliases": [
+   "Axum Framework"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Defender",
+  "aliases": [
+   "Microsoft Defender for Cloud"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Provider",
+  "aliases": [
+   "Azure Resources"
+  ],
+  "category": "DevOps",
+  "parent": "Crossplane",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Synapse",
+  "aliases": [
+   "Synapse Analytics"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Warehouse",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Babel",
+  "aliases": [
+   "Babel.js",
+   "BabelJS"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Metabase",
+  "aliases": [
+   "Open-source BI"
+  ],
+  "category": "Data Engineering",
+  "parent": "Analytics & BI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MongoDB Atlas",
+  "aliases": [
+   "Atlas"
+  ],
+  "category": "Database",
+  "parent": "MongoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ecto",
+  "aliases": [
+   "Ecto ORM"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ansible Vault",
+  "aliases": [
+   "Vault Encryption for Ansible"
+  ],
+  "category": "DevOps",
+  "parent": "Ansible",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Beats",
+  "aliases": [
+   "Data Shippers"
+  ],
+  "category": "Database",
+  "parent": "Elasticsearch",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "BentoML",
+  "aliases": [
+   "Model Serving"
+  ],
+  "category": "AI / ML",
+  "parent": "MLOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "BigQuery",
+  "aliases": [
+   "GCP BigQuery"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bitrise",
+  "aliases": [
+   "Mobile CI Platform"
+  ],
+  "category": "Mobile",
+  "parent": "Mobile CI/CD",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Blazor",
+  "aliases": [
+   "Blazor Framework"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bloc",
+  "aliases": [
+   "BLoC Pattern"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bloom",
+  "aliases": [
+   "Graph Visualization"
+  ],
+  "category": "Database",
+  "parent": "Neo4j",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Node.js",
+  "aliases": [
+   "NodeJS",
+   "Node"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OpenAI API",
+  "aliases": [
+   "OpenAI",
+   "ChatGPT API"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Optuna",
+  "aliases": [
+   "Hyperparameter Tuning"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PostCSS",
+  "aliases": [
+   "CSS Tooling"
+  ],
+  "category": "Frontend",
+  "parent": "CSS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Blue Ocean",
+  "aliases": [
+   "Modern UI"
+  ],
+  "category": "DevOps",
+  "parent": "Jenkins",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Alembic",
+  "aliases": [
+   "Database Migrations"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ArgoCD",
+  "aliases": [
+   "Argo CD"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Boto3",
+  "aliases": [
+   "AWS SDK for Python"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prisma Studio",
+  "aliases": [
+   "GUI Client"
+  ],
+  "category": "Backend",
+  "parent": "Prisma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "R2 Storage",
+  "aliases": [
+   "Cloudflare R2"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQLAlchemy",
+  "aliases": [
+   "SQLAlchemy ORM"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "BrowserStack",
+  "aliases": [
+   "BrowserStack Cloud"
+  ],
+  "category": "Testing",
+  "parent": "Mobile Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Buf CLI",
+  "aliases": [
+   "Protobuf Tooling"
+  ],
+  "category": "Backend",
+  "parent": "gRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "BuildKit",
+  "aliases": [
+   "Advanced Builder"
+  ],
+  "category": "DevOps",
+  "parent": "Docker",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bull",
+  "aliases": [
+   "Job Queue"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bundler",
+  "aliases": [
+   "Dependency Management"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Scala",
+  "aliases": [
+   "Scala Lang"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ScalaTest",
+  "aliases": [
+   "Testing"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Schema Definition",
+  "aliases": [
+   "Prisma Schema"
+  ],
+  "category": "Backend",
+  "parent": "Prisma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Schema Registry",
+  "aliases": [
+   "Confluent Schema Registry"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "REST Assured",
+  "aliases": [
+   "REST-assured"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redis Cluster",
+  "aliases": [
+   "Sharding"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Rust",
+  "aliases": [
+   "Rust Lang"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SDWebImage",
+  "aliases": [
+   "Image Loading"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Seaborn",
+  "aliases": [
+   "Statistical Plots"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Secret Manager",
+  "aliases": [
+   "GCP Secret Manager"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Security Testing",
+  "aliases": [
+   "Security Testing"
+  ],
+  "category": "Testing",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Seldon",
+  "aliases": [
+   "Seldon Core"
+  ],
+  "category": "AI / ML",
+  "parent": "MLOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Self-hosted Runners",
+  "aliases": [
+   "Custom Runners"
+  ],
+  "category": "DevOps",
+  "parent": "GitHub Actions",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Burp Suite",
+  "aliases": [
+   "Burp"
+  ],
+  "category": "Testing",
+  "parent": "Security Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sequelize",
+  "aliases": [
+   "Sequelize ORM"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Serde",
+  "aliases": [
+   "Serde Serialization"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Serilog",
+  "aliases": [
+   "Serilog Logging"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Server Actions",
+  "aliases": [
+   "Next.js Server Actions"
+  ],
+  "category": "Frontend",
+  "parent": "Next.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Server Components",
+  "aliases": [
+   "RSC",
+   "React Server Components"
+  ],
+  "category": "Frontend",
+  "parent": "Next.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Serverless",
+  "aliases": [
+   "Serverless Architecture"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Serverless Framework",
+  "aliases": [
+   "Deployment Tool"
+  ],
+  "category": "Cloud",
+  "parent": "Serverless",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Service Discovery",
+  "aliases": [
+   "Consul / Eureka"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Shadcn/ui",
+  "aliases": [
+   "Component Library"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Shared Libraries",
+  "aliases": [
+   "Reusable Pipelines"
+  ],
+  "category": "DevOps",
+  "parent": "Jenkins",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SonarQube",
+  "aliases": [
+   "SonarQube Scanner"
+  ],
+  "category": "Security",
+  "parent": "Application Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sidekiq",
+  "aliases": [
+   "Sidekiq Background Jobs"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SignalR",
+  "aliases": [
+   "SignalR"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sinatra",
+  "aliases": [
+   "Micro Framework"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Single Table Design",
+  "aliases": [
+   "Modeling Pattern"
+  ],
+  "category": "Database",
+  "parent": "DynamoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Slick",
+  "aliases": [
+   "Database Library"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Snort",
+  "aliases": [
+   "Snort IDS"
+  ],
+  "category": "Security",
+  "parent": "Network Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Snowflake",
+  "aliases": [
+   "Snowflake DW"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Warehouse",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SNS",
+  "aliases": [
+   "Simple Notification Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Snyk",
+  "aliases": [
+   "Snyk Security"
+  ],
+  "category": "Security",
+  "parent": "Application Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Socket.io",
+  "aliases": [
+   "SocketIO"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Solana",
+  "aliases": [
+   "SOL"
+  ],
+  "category": "Blockchain",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Solidity",
+  "aliases": [
+   "Solidity Lang"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "spaCy",
+  "aliases": [
+   "spaCy NLP"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Spark SQL",
+  "aliases": [
+   "Spark SQL Module"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Spark Streaming",
+  "aliases": [
+   "Structured Streaming"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Selenium",
+  "aliases": [
+   "Selenium WebDriver"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Scikit-learn",
+  "aliases": [
+   "sklearn"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Secrets Manager",
+  "aliases": [
+   "AWS Secrets Manager"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cargo",
+  "aliases": [
+   "Cargo Package Manager"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQLDelight",
+  "aliases": [
+   "Shared Database"
+  ],
+  "category": "Mobile",
+  "parent": "Kotlin Multiplatform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQLite",
+  "aliases": [
+   "Embedded Database"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQLite (sqflite)",
+  "aliases": [
+   "Local Database"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQLx",
+  "aliases": [
+   "SQLx"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sentence Transformers",
+  "aliases": [
+   "SBERT"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Spring Data JPA",
+  "aliases": [
+   "Spring JPA"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SQS",
+  "aliases": [
+   "Simple Queue Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SST (Serverless Stack)",
+  "aliases": [
+   "Modern Framework"
+  ],
+  "category": "Cloud",
+  "parent": "Serverless",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Stable Diffusion",
+  "aliases": [
+   "SD"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Step Functions",
+  "aliases": [
+   "AWS Step Functions"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Storybook",
+  "aliases": [
+   "Storybook.js"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Styled Components",
+  "aliases": [
+   "Styled-Components"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Style Dictionary",
+  "aliases": [
+   "Design Token Tool"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Design Systems",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Supabase",
+  "aliases": [
+   "Open-source Firebase Alt"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Supabase Auth",
+  "aliases": [
+   "Authentication"
+  ],
+  "category": "Database",
+  "parent": "Supabase",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Supabase Realtime",
+  "aliases": [
+   "Live Subscriptions"
+  ],
+  "category": "Database",
+  "parent": "Supabase",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Supabase Storage",
+  "aliases": [
+   "File Storage"
+  ],
+  "category": "Database",
+  "parent": "Supabase",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Svelte",
+  "aliases": [
+   "Svelte Framework"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SvelteKit",
+  "aliases": [
+   "Svelte Kit"
+  ],
+  "category": "Frontend",
+  "parent": "Svelte",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SwiftUI",
+  "aliases": [
+   "Swift UI"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Symfony",
+  "aliases": [
+   "Symfony Framework"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Tailwind CSS",
+  "aliases": [
+   "Utility-first CSS"
+  ],
+  "category": "Frontend",
+  "parent": "CSS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack",
+  "aliases": [
+   "Modern Frontend Libraries"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack Form",
+  "aliases": [
+   "Form Management"
+  ],
+  "category": "Frontend",
+  "parent": "TanStack",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack Query",
+  "aliases": [
+   "Server State"
+  ],
+  "category": "Frontend",
+  "parent": "TanStack",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack Router",
+  "aliases": [
+   "Type-safe Routing"
+  ],
+  "category": "Frontend",
+  "parent": "TanStack",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack Table",
+  "aliases": [
+   "Headless Table"
+  ],
+  "category": "Frontend",
+  "parent": "TanStack",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TanStack Virtual",
+  "aliases": [
+   "Virtualization"
+  ],
+  "category": "Frontend",
+  "parent": "TanStack",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TensorFlow",
+  "aliases": [
+   "TF"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Terraform Cloud",
+  "aliases": [
+   "TFC"
+  ],
+  "category": "DevOps",
+  "parent": "Terraform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Terragrunt",
+  "aliases": [
+   "Terraform Wrapper"
+  ],
+  "category": "DevOps",
+  "parent": "Terraform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TestFlight",
+  "aliases": [
+   "iOS Beta Testing"
+  ],
+  "category": "Mobile",
+  "parent": "Mobile CI/CD",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Testify",
+  "aliases": [
+   "Testing Library"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TestNG",
+  "aliases": [
+   "TestNG Framework"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "The Graph",
+  "aliases": [
+   "TheGraph Protocol"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cats",
+  "aliases": [
+   "FP Library"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Swagger / OpenAPI",
+  "aliases": [
+   "API Documentation"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Tokio",
+  "aliases": [
+   "Tokio Runtime"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Tonic",
+  "aliases": [
+   "gRPC Framework"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Terraform",
+  "aliases": [
+   "IaC"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Trivy",
+  "aliases": [
+   "Aqua Trivy"
+  ],
+  "category": "DevOps",
+  "parent": "Docker",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "tRPC",
+  "aliases": [
+   "Type-safe API"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Swift Package Manager",
+  "aliases": [],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Turbopack",
+  "aliases": [
+   "Rust Bundler"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Turborepo",
+  "aliases": [
+   "Monorepo Tool"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Turso",
+  "aliases": [
+   "SQLite at Edge"
+  ],
+  "category": "Database",
+  "parent": "SQLite",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TypeORM",
+  "aliases": [
+   "TypeORM Framework"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TypeScript",
+  "aliases": [
+   "TS"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UIKit",
+  "aliases": [
+   "UIKit Framework"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Tableau",
+  "aliases": [
+   "Data Visualization"
+  ],
+  "category": "Data Engineering",
+  "parent": "Analytics & BI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Upstash",
+  "aliases": [
+   "Serverless Redis"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vercel",
+  "aliases": [
+   "Vercel Platform"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Uvicorn",
+  "aliases": [
+   "ASGI Server"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UX Research",
+  "aliases": [
+   "User Research Tools"
+  ],
+  "category": "UI/UX Design",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Velero",
+  "aliases": [
+   "Backup & Restore"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vercel Deployment",
+  "aliases": [
+   "Platform Deploy"
+  ],
+  "category": "Frontend",
+  "parent": "Next.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vercel KV",
+  "aliases": [
+   "Redis on Edge"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vercel Postgres",
+  "aliases": [
+   "Serverless Postgres"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vertex AI",
+  "aliases": [
+   "Google Vertex AI"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vert.x",
+  "aliases": [
+   "Reactive Toolkit"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Viem",
+  "aliases": [
+   "TypeScript Ethereum"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Viper",
+  "aliases": [
+   "Configuration"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Virtual Environments",
+  "aliases": [
+   "venv",
+   "virtual environments (venv)"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Vite",
+  "aliases": [
+   "Vite.js"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vitess",
+  "aliases": [
+   "Underlying Engine"
+  ],
+  "category": "Database",
+  "parent": "PlanetScale",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vue.js",
+  "aliases": [
+   "Vue.js Framework"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vue Router",
+  "aliases": [
+   "Routing"
+  ],
+  "category": "Frontend",
+  "parent": "Vue.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Vuetify",
+  "aliases": [
+   "Vuetify UI"
+  ],
+  "category": "Frontend",
+  "parent": "Vue.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "WAF",
+  "aliases": [
+   "Web Application Firewall"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Wagmi",
+  "aliases": [
+   "Wagmi Hooks"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Web3.js",
+  "aliases": [
+   "Web3JS"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Web3.js Solana",
+  "aliases": [
+   "JavaScript SDK"
+  ],
+  "category": "Blockchain",
+  "parent": "Solana",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Web3 Tools",
+  "aliases": [
+   "Web3 Dev Tools"
+  ],
+  "category": "Blockchain",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Webpack",
+  "aliases": [
+   "Webpack Bundler"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Weights & Biases",
+  "aliases": [
+   "W&B",
+   "WandB"
+  ],
+  "category": "AI / ML",
+  "parent": "MLOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "WireMock",
+  "aliases": [
+   "WireMock Server"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Wireshark",
+  "aliases": [
+   "Wireshark Analyzer"
+  ],
+  "category": "Security",
+  "parent": "Network Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "WorkManager",
+  "aliases": [
+   "WorkManager"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "XCUITest",
+  "aliases": [
+   "XCUITest Framework"
+  ],
+  "category": "Testing",
+  "parent": "Mobile Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "XGBoost",
+  "aliases": [
+   "XGB"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "xUnit",
+  "aliases": [
+   "xUnit.net"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "YOLO",
+  "aliases": [
+   "You Only Look Once"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zap",
+  "aliases": [
+   "Logging"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zeroheight",
+  "aliases": [
+   "Design System Docs"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Design Systems",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zero Trust Access",
+  "aliases": [
+   "Identity-aware Proxy"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ZIO",
+  "aliases": [
+   "Effect System"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zod",
+  "aliases": [
+   "Schema Validation"
+  ],
+  "category": "Frontend",
+  "parent": "TypeScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zod Validation",
+  "aliases": [
+   "Input Validation"
+  ],
+  "category": "Backend",
+  "parent": "tRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Zustand",
+  "aliases": [
+   "Lightweight State"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "VPC",
+  "aliases": [
+   "Virtual Private Cloud"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Weaviate",
+  "aliases": [
+   "Vector Search"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Adobe XD",
+  "aliases": [
+   "Adobe Experience Design"
+  ],
+  "category": "UI/UX Design",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed"
+ },
+ {
+  "canonical_name": "AKS",
+  "aliases": [
+   "Azure Kubernetes Service"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Alamofire",
+  "aliases": [
+   "Alamofire Networking"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Oracle Cloud",
+  "aliases": [
+   "OCI",
+   "Oracle Cloud Infrastructure"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Demand Management",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Apache Superset",
+  "aliases": [
+   "Superset"
+  ],
+  "category": "Data Engineering",
+  "parent": "Analytics & BI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Application Security",
+  "aliases": [
+   "AppSec"
+  ],
+  "category": "Security",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Astro",
+  "aliases": [
+   "Static Site Framework"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Astronomer",
+  "aliases": [
+   "Managed Airflow"
+  ],
+  "category": "Data Engineering",
+  "parent": "Airflow",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AutoGen Studio",
+  "aliases": [
+   "AutoGen Framework"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Automation Testing",
+  "aliases": [
+   "Test Automation"
+  ],
+  "category": "Testing",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pact",
+  "aliases": [
+   "Contract Testing"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prisma",
+  "aliases": [
+   "Prisma ORM"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWX / Tower",
+  "aliases": [
+   "AWX",
+   "Ansible Tower"
+  ],
+  "category": "DevOps",
+  "parent": "Ansible",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Dio",
+  "aliases": [
+   "Dio HTTP Client"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Strategic Planning Workspace",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Azure API Management",
+  "aliases": [
+   "API Gateway"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Blob Storage",
+  "aliases": [
+   "Blob Storage"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Container Apps",
+  "aliases": [
+   "Container Platform"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Portfolio Hierarchy",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Azure Event Hub",
+  "aliases": [
+   "Event Streaming"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Functions",
+  "aliases": [
+   "Azure Serverless Functions"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Key Vault",
+  "aliases": [
+   "Key Vault"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Machine Learning",
+  "aliases": [
+   "Azure ML"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Monitor",
+  "aliases": [
+   "Azure Monitoring"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Service Bus",
+  "aliases": [
+   "Service Bus"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure SQL Database",
+  "aliases": [
+   "Azure SQL"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure VM",
+  "aliases": [
+   "Azure Virtual Machines"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Build Tools",
+  "aliases": [
+   "Frontend Build Tooling"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cassandra",
+  "aliases": [
+   "Apache Cassandra"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ruby",
+  "aliases": [
+   "Ruby Lang"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Checkmarx",
+  "aliases": [
+   "Checkmarx SAST"
+  ],
+  "category": "Security",
+  "parent": "Application Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Investment Funding",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "ClickHouse",
+  "aliases": [
+   "Analytical Database"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ClickHouse Cloud",
+  "aliases": [
+   "Managed Service"
+  ],
+  "category": "Database",
+  "parent": "ClickHouse",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Infura",
+  "aliases": [
+   "Ethereum API"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Composer",
+  "aliases": [
+   "GCP Airflow"
+  ],
+  "category": "Data Engineering",
+  "parent": "Airflow",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloudflare",
+  "aliases": [
+   "Cloudflare CDN"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloudflare Pages",
+  "aliases": [
+   "CF Pages"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloudflare Tunnel",
+  "aliases": [
+   "Secure Tunneling"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloudflare Workers",
+  "aliases": [
+   "CF Workers"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CloudFormation",
+  "aliases": [
+   "AWS CloudFormation",
+   "CFN"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Security",
+  "aliases": [
+   "Cloud Security"
+  ],
+  "category": "Security",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CloudTrail",
+  "aliases": [
+   "AWS CloudTrail"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CloudWatch",
+  "aliases": [
+   "AWS CloudWatch"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CodePipeline",
+  "aliases": [
+   "AWS CodePipeline"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cognito",
+  "aliases": [
+   "AWS Cognito"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Computer Vision",
+  "aliases": [
+   "CV"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Confluent Platform",
+  "aliases": [
+   "Confluent Kafka"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Coroutines",
+  "aliases": [
+   "Async Library"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cosmos DB",
+  "aliases": [
+   "Azure Cosmos DB"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Crew AI",
+  "aliases": [],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "CrewAI Enterprise",
+  "aliases": [
+   "Enterprise CrewAI",
+   "Crew AI Enterprise"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "CrewAI Framework",
+  "aliases": [],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Crossplane",
+  "aliases": [
+   "Universal Control Plane"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Financial Planning",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "CSS Modules",
+  "aliases": [
+   "CSS Modules"
+  ],
+  "category": "Frontend",
+  "parent": "CSS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cucumber",
+  "aliases": [
+   "Cucumber BDD"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cypress",
+  "aliases": [
+   "Cypress.io"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "D1 Database",
+  "aliases": [
+   "Cloudflare D1"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Resource Management",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Passport.js",
+  "aliases": [
+   "PassportJS"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Performance Testing",
+  "aliases": [
+   "Load & Performance Testing"
+  ],
+  "category": "Testing",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "performance tuning",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "DataStax Astra",
+  "aliases": [
+   "Managed Cassandra"
+  ],
+  "category": "Database",
+  "parent": "Cassandra",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DataStax Driver",
+  "aliases": [
+   "Client Driver"
+  ],
+  "category": "Database",
+  "parent": "Cassandra",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "pfSense",
+  "aliases": [
+   "Firewall"
+  ],
+  "category": "Security",
+  "parent": "Network Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Data Warehouse",
+  "aliases": [
+   "Data Warehouse Platforms"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Phoenix Framework",
+  "aliases": [
+   "Phoenix"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Data Modelling",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "dbt Cloud",
+  "aliases": [
+   "dbt Cloud"
+  ],
+  "category": "Data Engineering",
+  "parent": "dbt",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "dbt Core",
+  "aliases": [
+   "dbt CLI"
+  ],
+  "category": "Data Engineering",
+  "parent": "dbt",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "dbt Packages",
+  "aliases": [
+   "Community Packages"
+  ],
+  "category": "Data Engineering",
+  "parent": "dbt",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Debezium",
+  "aliases": [
+   "Debezium CDC"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Deep Learning",
+  "aliases": [
+   "DL"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Phoenix LiveView",
+  "aliases": [
+   "LiveView"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PHP",
+  "aliases": [
+   "PHP Language"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Design Systems",
+  "aliases": [
+   "Design System Development"
+  ],
+  "category": "UI/UX Design",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Detectron2",
+  "aliases": [
+   "Object Detection Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DevSecOps",
+  "aliases": [
+   "Security in DevOps"
+  ],
+  "category": "Security",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Docker Compose",
+  "aliases": [
+   "Compose"
+  ],
+  "category": "DevOps",
+  "parent": "Docker",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Docker Hub",
+  "aliases": [
+   "DockerHub"
+  ],
+  "category": "DevOps",
+  "parent": "Docker",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Docker Swarm",
+  "aliases": [
+   "Swarm Mode"
+  ],
+  "category": "DevOps",
+  "parent": "Docker",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Durable Objects",
+  "aliases": [
+   "Stateful Edge"
+  ],
+  "category": "Cloud",
+  "parent": "Cloudflare",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PHPUnit",
+  "aliases": [
+   "PHPUnit Testing"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DynamoDB",
+  "aliases": [
+   "DynamoDB NoSQL"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DynamoDB Streams",
+  "aliases": [
+   "DDB Streams"
+  ],
+  "category": "Database",
+  "parent": "DynamoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ECS",
+  "aliases": [
+   "Elastic Container Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "EKS",
+  "aliases": [
+   "Elastic Kubernetes Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Elasticsearch",
+  "aliases": [
+   "ES",
+   "Elastic"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Elixir",
+  "aliases": [
+   "Elixir Language"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "esbuild",
+  "aliases": [
+   "ESBuild"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ESLint",
+  "aliases": [
+   "ESLint Linter"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ethereum",
+  "aliases": [
+   "ETH"
+  ],
+  "category": "Blockchain",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ethers.js",
+  "aliases": [
+   "Ethers",
+   "EthersJS"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pinecone",
+  "aliases": [
+   "Vector Database"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "pip",
+  "aliases": [
+   "Package Management",
+   "pip package management"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "ExUnit",
+  "aliases": [
+   "Testing Framework"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PlanetScale",
+  "aliases": [
+   "Serverless MySQL Platform"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Figma Dev Mode",
+  "aliases": [
+   "Dev Mode"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Figma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Figma Plugins",
+  "aliases": [
+   "Extended Functionality"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Figma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Figma Variables",
+  "aliases": [
+   "Design Tokens"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Figma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Playwright",
+  "aliases": [
+   "MS Playwright"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Firebase",
+  "aliases": [
+   "Backend Services"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Fivetran",
+  "aliases": [
+   "Managed ETL"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Pipeline",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GetX",
+  "aliases": [
+   "GetX Framework"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GitLeaks",
+  "aliases": [
+   "GitLeaks Secret Scanner"
+  ],
+  "category": "Security",
+  "parent": "DevSecOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GKE",
+  "aliases": [
+   "Google Kubernetes Engine"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Glide",
+  "aliases": [
+   "Image Loading"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Global Tables",
+  "aliases": [
+   "Multi-region"
+  ],
+  "category": "Database",
+  "parent": "DynamoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Glue",
+  "aliases": [
+   "AWS Glue"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Go",
+  "aliases": [
+   "Golang"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GORM",
+  "aliases": [
+   "Go ORM"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GoRouter",
+  "aliases": [
+   "Navigation"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Grafana Plugin",
+  "aliases": [
+   "Visualization"
+  ],
+  "category": "Database",
+  "parent": "ClickHouse",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GraphQL",
+  "aliases": [
+   "GraphQL API"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "GraphQL Yoga",
+  "aliases": [
+   "Flexible Server"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "gRPC Gateway",
+  "aliases": [
+   "REST Proxy"
+  ],
+  "category": "Backend",
+  "parent": "gRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hardhat",
+  "aliases": [
+   "Hardhat Framework"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "HashiCorp Vault",
+  "aliases": [
+   "Vault"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hasura",
+  "aliases": [
+   "Hasura GraphQL Engine"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hilt",
+  "aliases": [
+   "Hilt DI"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "HTML File",
+  "aliases": [
+   "HTML Document",
+   ".html File"
+  ],
+  "category": "Frontend",
+  "parent": "HTML",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hugging Face Transformers",
+  "aliases": [
+   "Transformers"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hyperledger",
+  "aliases": [
+   "Enterprise Blockchain"
+  ],
+  "category": "Blockchain",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hyperledger Besu",
+  "aliases": [
+   "Besu"
+  ],
+  "category": "Blockchain",
+  "parent": "Hyperledger",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hyperledger Fabric",
+  "aliases": [
+   "Fabric"
+  ],
+  "category": "Blockchain",
+  "parent": "Hyperledger",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Identity & Access",
+  "aliases": [
+   "IAM"
+  ],
+  "category": "Security",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "iOS",
+  "aliases": [
+   "Native iOS"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "IPFS",
+  "aliases": [
+   "InterPlanetary File System"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jetpack Compose",
+  "aliases": [
+   "Compose",
+   "Android Compose"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ServiceNow integrations",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "JUnit 5",
+  "aliases": [
+   "JUnit5"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PM2",
+  "aliases": [
+   "Process Manager 2"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Application Portfolio Management (APM)",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Kafka Connect",
+  "aliases": [
+   "Kafka Connect Framework"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kafka Integration",
+  "aliases": [
+   "Event Streaming"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kafka Streams",
+  "aliases": [
+   "Kafka Streams API"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Karate",
+  "aliases": [
+   "API Testing DSL"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Keycloak",
+  "aliases": [
+   "Keycloak IAM"
+  ],
+  "category": "Security",
+  "parent": "Identity & Access",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kibana",
+  "aliases": [
+   "Elastic Kibana"
+  ],
+  "category": "Database",
+  "parent": "Elasticsearch",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kotlin",
+  "aliases": [
+   "Kotlin Lang"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kotlin Multiplatform",
+  "aliases": [
+   "KMM Cross-platform"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kotlinx Serialization",
+  "aliases": [
+   "JSON Parsing"
+  ],
+  "category": "Mobile",
+  "parent": "Kotlin Multiplatform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ksqlDB",
+  "aliases": [
+   "KSQL"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ktor",
+  "aliases": [
+   "Ktor Framework"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ktor Client",
+  "aliases": [
+   "Network Layer"
+  ],
+  "category": "Mobile",
+  "parent": "Kotlin Multiplatform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kustomize",
+  "aliases": [
+   "Config Overlays"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pothos",
+  "aliases": [
+   "Type-safe Schema Builder"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Lambda",
+  "aliases": [
+   "AWS Lambda"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "LangGraph",
+  "aliases": [
+   "Agent Orchestration"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "API Testing",
+  "aliases": [
+   "API Testing"
+  ],
+  "category": "Testing",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Lodash",
+  "aliases": [
+   "Utility Library"
+  ],
+  "category": "Frontend",
+  "parent": "JavaScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Logstash",
+  "aliases": [
+   "Elastic Logstash"
+  ],
+  "category": "Database",
+  "parent": "Elasticsearch",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Lombok",
+  "aliases": [
+   "Boilerplate Reduction"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Looker",
+  "aliases": [
+   "BI Platform"
+  ],
+  "category": "Data Engineering",
+  "parent": "Analytics & BI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Machine Learning",
+  "aliases": [
+   "ML"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MapStruct",
+  "aliases": [
+   "Object Mapping"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Matplotlib",
+  "aliases": [
+   "Plotting"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Exception Handling",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Message Queues",
+  "aliases": [
+   "MQ",
+   "Async Messaging"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Micronaut",
+  "aliases": [
+   "Microservice Framework"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Mix",
+  "aliases": [
+   "Build Tool"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Mobile CI/CD",
+  "aliases": [
+   "Mobile Delivery"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Mobile Testing",
+  "aliases": [
+   "Mobile App Testing"
+  ],
+  "category": "Testing",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MockK",
+  "aliases": [
+   "Mocking Framework"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Molecule",
+  "aliases": [
+   "Testing Framework"
+  ],
+  "category": "DevOps",
+  "parent": "Ansible",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MongoDB",
+  "aliases": [
+   "Mongo"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Monitoring & Observability",
+  "aliases": [
+   "System Monitoring"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MSK",
+  "aliases": [
+   "Amazon MSK",
+   "Managed Streaming for Kafka"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Kafka",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MWAA",
+  "aliases": [
+   "Managed Workflows for Apache Airflow"
+  ],
+  "category": "Data Engineering",
+  "parent": "Airflow",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prettier",
+  "aliases": [
+   "Prettier Formatter"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "NATS",
+  "aliases": [
+   "Lightweight Messaging"
+  ],
+  "category": "Backend",
+  "parent": "Message Queues",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Navigation Component",
+  "aliases": [
+   "In-app Navigation"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Neo4j",
+  "aliases": [
+   "Graph Database"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Neo4j AuraDB",
+  "aliases": [
+   "Managed Cloud"
+  ],
+  "category": "Database",
+  "parent": "Neo4j",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": ".NET",
+  "aliases": [
+   "DotNet",
+   ".NET Framework"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Network Security",
+  "aliases": [
+   "Network Security"
+  ],
+  "category": "Security",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Newman",
+  "aliases": [
+   "Postman CLI Runner"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "New Relic",
+  "aliases": [
+   "NewRelic"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Next.js",
+  "aliases": [
+   "React Meta-framework"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Nexus",
+  "aliases": [
+   "Code-first Schema"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PrimeNG",
+  "aliases": [
+   "UI Components"
+  ],
+  "category": "Frontend",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "NgRx",
+  "aliases": [
+   "NgRx Store"
+  ],
+  "category": "Frontend",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "NLTK",
+  "aliases": [
+   "Natural Language Toolkit"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Flask",
+  "aliases": [
+   "Flask Framework"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Nx",
+  "aliases": [
+   "Monorepo Tool"
+  ],
+  "category": "Frontend",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Oban",
+  "aliases": [
+   "Background Jobs"
+  ],
+  "category": "Backend",
+  "parent": "Elixir",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Air",
+  "aliases": [
+   "Live Reload"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "amazon s3",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "shedlock",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "apache",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "sendgrid",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "vector databases",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Version Control",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "alb",
+  "aliases": [
+   "alb"
+  ],
+  "category": "Blockchain",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "aws bedrock",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "sql",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "unity catalog",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Unit Testing",
+  "aliases": [
+   "unit testing (junit)"
+  ],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "aws ses",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "azure ai",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "azure databricks",
+  "aliases": [],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "catalog federation",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "cloud architecture",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "dab deployments",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "databricks notebooks",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "data factory",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "data pipeline design",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Data Structures and Algorithms",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "delta lake with python",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "delta lake with sparks sql in databricks",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "DVC",
+  "aliases": [
+   "Data Version Control"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "etl processes",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "faiss",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Azure AD",
+  "aliases": [
+   "Azure Active Directory",
+   "Entra ID"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "k3s",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "lake flow",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "mysql rds",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "nginx",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "OIDC",
+  "aliases": [
+   "OpenID Connect"
+  ],
+  "category": "DevOps",
+  "parent": "GitHub Actions",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OkHttp",
+  "aliases": [
+   "OkHttp Client"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Okta",
+  "aliases": [
+   "Okta Identity"
+  ],
+  "category": "Security",
+  "parent": "Identity & Access",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ollama",
+  "aliases": [
+   "Local LLM Runtime"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ONNX",
+  "aliases": [
+   "Open Neural Network Exchange"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OPA / Gatekeeper",
+  "aliases": [
+   "Open Policy Agent"
+  ],
+  "category": "Security",
+  "parent": "DevSecOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OpenCV",
+  "aliases": [
+   "cv2"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prisma Accelerate",
+  "aliases": [
+   "Connection Pooling"
+  ],
+  "category": "Backend",
+  "parent": "Prisma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prisma Client",
+  "aliases": [
+   "Type-safe Queries"
+  ],
+  "category": "Backend",
+  "parent": "Prisma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prisma Cloud",
+  "aliases": [
+   "CSPM Tool"
+  ],
+  "category": "Security",
+  "parent": "Cloud Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prometheus",
+  "aliases": [
+   "Prometheus Monitoring"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Prometheus + Grafana",
+  "aliases": [
+   "Prometheus/Grafana Stack"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "prompt engineering",
+  "aliases": [
+   "prompt engineering"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Protocol Buffers",
+  "aliases": [
+   "Protobuf",
+   "ProtoBuf"
+  ],
+  "category": "Backend",
+  "parent": "gRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pub/Sub",
+  "aliases": [
+   "Google Pub/Sub",
+   "PubSub"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PyTorch",
+  "aliases": [
+   "Torch"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PyTorch Lightning",
+  "aliases": [
+   "Training Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "Deep Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PySpark",
+  "aliases": [
+   "Python Spark API"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Quarkus",
+  "aliases": [
+   "Cloud-native Framework"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RabbitMQ",
+  "aliases": [
+   "RabbitMQ Broker"
+  ],
+  "category": "Backend",
+  "parent": "Message Queues",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "rancher",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "React",
+  "aliases": [
+   "React Library"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Hook Form",
+  "aliases": [
+   "RHF"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Native",
+  "aliases": [
+   "Cross-platform React Native"
+  ],
+  "category": "Mobile",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Navigation",
+  "aliases": [
+   "React Navigation"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Query / TanStack Query",
+  "aliases": [
+   "React Query",
+   "TanStack Query"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Router",
+  "aliases": [
+   "React Router DOM"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Testing Library",
+  "aliases": [
+   "Testing"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Reanimated",
+  "aliases": [
+   "Animation Library"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RedisJSON",
+  "aliases": [
+   "Redis JSON Module"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RedisSearch",
+  "aliases": [
+   "Redis Search Module"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redis Sentinel",
+  "aliases": [
+   "High Availability"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redis Stack",
+  "aliases": [
+   "RedisStack"
+  ],
+  "category": "Database",
+  "parent": "Redis",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redshift",
+  "aliases": [
+   "Amazon Redshift"
+  ],
+  "category": "Data Engineering",
+  "parent": "Data Warehouse",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redux",
+  "aliases": [
+   "Redux.js"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redux Toolkit",
+  "aliases": [
+   "RTK"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Remix",
+  "aliases": [
+   "React Framework"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "REST API (JAX-RS)",
+  "aliases": [
+   "RESTful Services"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Retrofit",
+  "aliases": [
+   "Retrofit HTTP Client"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Reusable Workflows",
+  "aliases": [
+   "Workflow Templates"
+  ],
+  "category": "DevOps",
+  "parent": "GitHub Actions",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Riverpod",
+  "aliases": [
+   "Riverpod State Mgmt"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Roboflow",
+  "aliases": [
+   "Dataset Management"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Robot Framework",
+  "aliases": [
+   "Robot"
+  ],
+  "category": "Testing",
+  "parent": "Automation Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Rollup",
+  "aliases": [
+   "Library Bundler"
+  ],
+  "category": "Frontend",
+  "parent": "Build Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Room Database",
+  "aliases": [
+   "Room",
+   "Android Room"
+  ],
+  "category": "Mobile",
+  "parent": "Android",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Route 53",
+  "aliases": [
+   "Route53",
+   "AWS DNS"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ruby on Rails",
+  "aliases": [
+   "Rails",
+   "RoR"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RxJS",
+  "aliases": [
+   "Reactive Extensions for JS"
+  ],
+  "category": "Frontend",
+  "parent": "Angular",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Saga Pattern",
+  "aliases": [
+   "Distributed Transactions"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SageMaker",
+  "aliases": [
+   "AWS SageMaker"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "SAM",
+  "aliases": [
+   "Segment Anything Model"
+  ],
+  "category": "AI / ML",
+  "parent": "Computer Vision",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sanctum",
+  "aliases": [
+   "API Authentication"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Sass/SCSS",
+  "aliases": [
+   "Sass",
+   "SCSS"
+  ],
+  "category": "Frontend",
+  "parent": "CSS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "data structures",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Cert Manager",
+  "aliases": [
+   "TLS Certificates"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Chaincode",
+  "aliases": [
+   "Smart Contracts"
+  ],
+  "category": "Blockchain",
+  "parent": "Hyperledger",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Chainlink",
+  "aliases": [
+   "Chainlink Oracles"
+  ],
+  "category": "Blockchain",
+  "parent": "Ethereum",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Change Streams",
+  "aliases": [
+   "Real-time Events"
+  ],
+  "category": "Database",
+  "parent": "MongoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Checkov",
+  "aliases": [
+   "Checkov IaC Scanner"
+  ],
+  "category": "Security",
+  "parent": "DevSecOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Chromatic",
+  "aliases": [
+   "Chromatic Visual Testing"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Design Systems",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Circuit Breaker",
+  "aliases": [
+   "Resilience4j Pattern",
+   "Hystrix Pattern"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cisco ASA",
+  "aliases": [
+   "Enterprise Firewall"
+  ],
+  "category": "Security",
+  "parent": "Network Security",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Build",
+  "aliases": [
+   "Google Cloud Build"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Functions",
+  "aliases": [
+   "GCF",
+   "Google Cloud Functions"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Monitoring",
+  "aliases": [
+   "Stackdriver"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Run",
+  "aliases": [
+   "Google Cloud Run"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud SQL",
+  "aliases": [
+   "Google Cloud SQL"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cloud Storage",
+  "aliases": [
+   "GCS",
+   "Google Cloud Storage"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cobra",
+  "aliases": [
+   "Cobra CLI"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CocoaPods",
+  "aliases": [
+   "CocoaPods"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Codemagic",
+  "aliases": [
+   "Flutter CI"
+  ],
+  "category": "Mobile",
+  "parent": "Mobile CI/CD",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CodePush",
+  "aliases": [
+   "CodePush",
+   "App Center CodePush"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Combine",
+  "aliases": [
+   "Reactive Framework"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Compose Multiplatform",
+  "aliases": [
+   "Shared UI"
+  ],
+  "category": "Mobile",
+  "parent": "Kotlin Multiplatform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Composer",
+  "aliases": [
+   "Composer PHP"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Compositions",
+  "aliases": [
+   "Resource Templates"
+  ],
+  "category": "DevOps",
+  "parent": "Crossplane",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Compute Engine",
+  "aliases": [
+   "GCE",
+   "Google Compute Engine"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ConnectRPC",
+  "aliases": [
+   "gRPC-compatible Protocol"
+  ],
+  "category": "Backend",
+  "parent": "gRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Core Data",
+  "aliases": [
+   "CoreData"
+  ],
+  "category": "Mobile",
+  "parent": "iOS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CQRS",
+  "aliases": [
+   "Command Query Separation"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CrewAI",
+  "aliases": [
+   "Multi-agent Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "Generative AI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cypher",
+  "aliases": [
+   "Query Language"
+  ],
+  "category": "Database",
+  "parent": "Neo4j",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Dapper",
+  "aliases": [
+   "Micro ORM"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CyberArk",
+  "aliases": [
+   "CyberArk PAM"
+  ],
+  "category": "Security",
+  "parent": "Identity & Access",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Database Branching",
+  "aliases": [
+   "Branch Workflow"
+  ],
+  "category": "Database",
+  "parent": "PlanetScale",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Datadog",
+  "aliases": [
+   "Datadog APM"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DataLoader",
+  "aliases": [
+   "Batching & Caching"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "DAX",
+  "aliases": [
+   "Caching Layer"
+  ],
+  "category": "Database",
+  "parent": "DynamoDB",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Day.js",
+  "aliases": [
+   "Date Library"
+  ],
+  "category": "Frontend",
+  "parent": "JavaScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Dependabot",
+  "aliases": [
+   "GitHub Dependabot"
+  ],
+  "category": "DevOps",
+  "parent": "GitHub Actions",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Detox",
+  "aliases": [
+   "Detox E2E Testing"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Devise",
+  "aliases": [
+   "Authentication"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Diesel",
+  "aliases": [
+   "Diesel ORM"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Django",
+  "aliases": [
+   "Django Framework",
+   "django (basics)"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Dovetail",
+  "aliases": [
+   "Research Repository"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Echo",
+  "aliases": [
+   "HTTP Framework"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Edge Functions",
+  "aliases": [
+   "Edge Compute"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ELK Stack",
+  "aliases": [
+   "Elasticsearch Logstash Kibana"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Eloquent ORM",
+  "aliases": [
+   "Eloquent"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Entity Framework Core",
+  "aliases": [
+   "EF Core",
+   "Entity Framework"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Envoy",
+  "aliases": [
+   "Proxy"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ESLint + TypeScript",
+  "aliases": [
+   "Linting"
+  ],
+  "category": "Frontend",
+  "parent": "TypeScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Espresso",
+  "aliases": [
+   "Android UI Testing"
+  ],
+  "category": "Testing",
+  "parent": "Mobile Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Event Sourcing",
+  "aliases": [
+   "Event-based State"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Expo",
+  "aliases": [
+   "Expo Framework"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Exposed",
+  "aliases": [
+   "ORM Framework"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Express.js",
+  "aliases": [
+   "Express",
+   "ExpressJS"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "HTTP methods",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Fastify",
+  "aliases": [
+   "Fast Web Framework"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Fastlane",
+  "aliases": [
+   "Fastlane CI/CD"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Federation",
+  "aliases": [
+   "Schema Federation"
+  ],
+  "category": "Backend",
+  "parent": "GraphQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Fiber",
+  "aliases": [
+   "Web Framework"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "FigJam",
+  "aliases": [
+   "FigJam Whiteboard"
+  ],
+  "category": "UI/UX Design",
+  "parent": "Figma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Firebase App Distribution",
+  "aliases": [
+   "Beta Testing"
+  ],
+  "category": "Mobile",
+  "parent": "Mobile CI/CD",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Firebase Integration",
+  "aliases": [
+   "Backend Services"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Firebase Test Lab",
+  "aliases": [
+   "Firebase Test Lab"
+  ],
+  "category": "Testing",
+  "parent": "Mobile Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Firestore",
+  "aliases": [
+   "Cloud Firestore"
+  ],
+  "category": "Cloud",
+  "parent": "GCP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "File Handling",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Flux CD",
+  "aliases": [
+   "FluxCD"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "FullStory",
+  "aliases": [
+   "FullStory Analytics"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gatling",
+  "aliases": [
+   "Gatling Load Testing"
+  ],
+  "category": "Testing",
+  "parent": "Performance Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gesture Handler",
+  "aliases": [
+   "Touch Gestures"
+  ],
+  "category": "Mobile",
+  "parent": "React Native",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gin",
+  "aliases": [
+   "Gin Web Framework"
+  ],
+  "category": "Backend",
+  "parent": "Go",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Google Play Console",
+  "aliases": [
+   "Android Release"
+  ],
+  "category": "Mobile",
+  "parent": "Mobile CI/CD",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Bootstrap",
+  "aliases": [
+   "CSS Framework"
+  ],
+  "category": "Frontend",
+  "parent": "CSS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Spring Boot",
+  "aliases": [
+   "SpringBoot",
+   "java spring boot"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gradle",
+  "aliases": [
+   "Gradle Build Tool"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gradle Kotlin DSL",
+  "aliases": [
+   "Build Scripts"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Grafana",
+  "aliases": [
+   "Grafana Dashboards"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Graph Data Science Library",
+  "aliases": [
+   "GDS"
+  ],
+  "category": "Database",
+  "parent": "Neo4j",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Gunicorn",
+  "aliases": [
+   "Green Unicorn"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Helius",
+  "aliases": [
+   "RPC Provider"
+  ],
+  "category": "Blockchain",
+  "parent": "Solana",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Helm",
+  "aliases": [
+   "Helm Charts"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hotjar",
+  "aliases": [
+   "Hotjar Analytics"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hugging Face",
+  "aliases": [
+   "HF"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Identity Server",
+  "aliases": [
+   "OAuth Server"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Ingress NGINX",
+  "aliases": [
+   "NGINX Ingress Controller"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Istio",
+  "aliases": [
+   "Service Mesh"
+  ],
+  "category": "Backend",
+  "parent": "Microservices",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jaeger",
+  "aliases": [
+   "Jaeger Tracing"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jest",
+  "aliases": [
+   "Jest Testing"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "JMeter",
+  "aliases": [
+   "Apache JMeter"
+  ],
+  "category": "Testing",
+  "parent": "Performance Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jotai",
+  "aliases": [
+   "Atomic State"
+  ],
+  "category": "Frontend",
+  "parent": "React",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "k6",
+  "aliases": [
+   "Grafana k6"
+  ],
+  "category": "Testing",
+  "parent": "Performance Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "KEDA",
+  "aliases": [
+   "Event-driven Autoscaling"
+  ],
+  "category": "DevOps",
+  "parent": "Kubernetes",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Koin",
+  "aliases": [
+   "Dependency Injection"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Koin Multiplatform",
+  "aliases": [
+   "DI"
+  ],
+  "category": "Mobile",
+  "parent": "Kotlin Multiplatform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kotest",
+  "aliases": [
+   "Testing Framework"
+  ],
+  "category": "Backend",
+  "parent": "Kotlin",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Kubeflow",
+  "aliases": [
+   "Kubeflow Pipelines"
+  ],
+  "category": "AI / ML",
+  "parent": "MLOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "LangChain",
+  "aliases": [
+   "LangChain Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Laravel",
+  "aliases": [
+   "Laravel Framework"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "LightGBM",
+  "aliases": [
+   "LGBM"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Litestream",
+  "aliases": [
+   "SQLite Replication"
+  ],
+  "category": "Database",
+  "parent": "SQLite",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Livewire",
+  "aliases": [
+   "Full-stack Components"
+  ],
+  "category": "Backend",
+  "parent": "PHP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "LlamaIndex",
+  "aliases": [
+   "GPT Index"
+  ],
+  "category": "AI / ML",
+  "parent": "NLP",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Locust",
+  "aliases": [
+   "Locust.io"
+  ],
+  "category": "Testing",
+  "parent": "Performance Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Maze",
+  "aliases": [
+   "Rapid Testing"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MediatR",
+  "aliases": [
+   "CQRS Library"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Metaplex",
+  "aliases": [
+   "NFT Standard"
+  ],
+  "category": "Blockchain",
+  "parent": "Solana",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Metasploit",
+  "aliases": [
+   "Metasploit Framework"
+  ],
+  "category": "Testing",
+  "parent": "Security Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Middleware",
+  "aliases": [
+   "tRPC Middleware"
+  ],
+  "category": "Backend",
+  "parent": "tRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Migrations",
+  "aliases": [
+   "Database Migrations"
+  ],
+  "category": "Backend",
+  "parent": "Prisma",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MLflow",
+  "aliases": [
+   "MLflow Tracking"
+  ],
+  "category": "AI / ML",
+  "parent": "MLOps",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Mongoose",
+  "aliases": [
+   "Mongoose ODM"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Moq",
+  "aliases": [
+   "Moq Mocking"
+  ],
+  "category": "Backend",
+  "parent": ".NET",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Moralis",
+  "aliases": [
+   "Moralis Web3 API"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MySQL Workbench",
+  "aliases": [
+   "GUI Tool"
+  ],
+  "category": "Database",
+  "parent": "MySQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "NestJS",
+  "aliases": [
+   "NestJS Framework"
+  ],
+  "category": "Backend",
+  "parent": "Node.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Next.js Integration",
+  "aliases": [
+   "Full-stack Next.js"
+  ],
+  "category": "Backend",
+  "parent": "tRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Nmap",
+  "aliases": [
+   "Network Mapper"
+  ],
+  "category": "Testing",
+  "parent": "Security Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Non-blocking Migrations",
+  "aliases": [
+   "Zero-downtime Schema"
+  ],
+  "category": "Database",
+  "parent": "PlanetScale",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Nuxt.js",
+  "aliases": [
+   "Meta-framework"
+  ],
+  "category": "Frontend",
+  "parent": "Vue.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI API Gateway",
+  "aliases": [
+   "API Management"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI Compute",
+  "aliases": [
+   "Oracle Cloud Compute"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI Functions",
+  "aliases": [
+   "Serverless"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI Kubernetes",
+  "aliases": [
+   "Container Engine"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI Object Storage",
+  "aliases": [
+   "Oracle Object Storage"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI Vault",
+  "aliases": [
+   "Secrets Management"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OpenTofu",
+  "aliases": [
+   "OpenTF"
+  ],
+  "category": "DevOps",
+  "parent": "Terraform",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Optimal Workshop",
+  "aliases": [
+   "IA Testing"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OWASP ZAP",
+  "aliases": [
+   "ZAP",
+   "Zed Attack Proxy"
+  ],
+  "category": "Testing",
+  "parent": "Security Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Percona",
+  "aliases": [
+   "MySQL Distribution"
+  ],
+  "category": "Database",
+  "parent": "MySQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pinia",
+  "aliases": [
+   "State Management"
+  ],
+  "category": "Frontend",
+  "parent": "Vue.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Play Framework",
+  "aliases": [
+   "Web Framework"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Poetry",
+  "aliases": [
+   "Dependency Management"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Preview Deployments",
+  "aliases": [
+   "PR Previews"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ProxySQL",
+  "aliases": [
+   "Connection Proxy"
+  ],
+  "category": "Database",
+  "parent": "MySQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pundit",
+  "aliases": [
+   "Authorization"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pydantic",
+  "aliases": [
+   "Pydantic Validation"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "pytest",
+  "aliases": [
+   "Pytest"
+  ],
+  "category": "Testing",
+  "parent": "Unit Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Quasar",
+  "aliases": [
+   "UI Framework"
+  ],
+  "category": "Frontend",
+  "parent": "Vue.js",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RainbowKit",
+  "aliases": [
+   "RainbowKit"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "React Query Integration",
+  "aliases": [
+   "Client Hooks"
+  ],
+  "category": "Backend",
+  "parent": "tRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Rocket",
+  "aliases": [
+   "Web Framework"
+  ],
+  "category": "Backend",
+  "parent": "Rust",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Routers",
+  "aliases": [
+   "API Routers"
+  ],
+  "category": "Backend",
+  "parent": "tRPC",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "RSpec",
+  "aliases": [
+   "RSpec Testing"
+  ],
+  "category": "Backend",
+  "parent": "Ruby",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "sbt",
+  "aliases": [
+   "Build Tool"
+  ],
+  "category": "Backend",
+  "parent": "Scala",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "semantic analysis",
+  "aliases": [
+   "Lang Graph",
+   "LangGraph Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "LangChain",
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "SQLCipher",
+  "aliases": [
+   "Encrypted SQLite"
+  ],
+  "category": "Database",
+  "parent": "SQLite",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Thirdweb",
+  "aliases": [
+   "ThirdWeb SDK"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "TimescaleDB",
+  "aliases": [
+   "TimescaleDB"
+  ],
+  "category": "Database",
+  "parent": "PostgreSQL",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "tranformers",
+  "aliases": [
+   "Lang Graph",
+   "LangGraph Framework"
+  ],
+  "category": "AI / ML",
+  "parent": "LangChain",
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "ts-node",
+  "aliases": [
+   "TS Execution"
+  ],
+  "category": "Frontend",
+  "parent": "TypeScript",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UserTesting",
+  "aliases": [
+   "UserTesting.com"
+  ],
+  "category": "UI/UX Design",
+  "parent": "UX Research",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "WalletConnect",
+  "aliases": [
+   "WalletConnect Protocol"
+  ],
+  "category": "Blockchain",
+  "parent": "Web3 Tools",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UI Builder",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Linux",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "spring mvc",
+  "aliases": [],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Spring Security",
+  "aliases": [
+   "Spring Sec"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure DevOps",
+  "aliases": [
+   "ADO"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CSDM",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "jpa",
+  "aliases": [],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "SOAP APIs",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Mockito",
+  "aliases": [
+   "Mockito Framework"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Import Sets",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Transform Maps",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "REST APIs",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Glide APIs",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "IAM",
+  "aliases": [
+   "Identity and Access Management"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "NumPy",
+  "aliases": [
+   "NumPy Library"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "JavaScript",
+  "aliases": [
+   "JS",
+   "ECMAScript",
+   "javascript (es6+)"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Digital Transformation",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Java",
+  "aliases": [
+   "Java SE",
+   "Core Java"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UI Actions",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "REST",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "IntegrationHub",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "PagerDuty",
+  "aliases": [
+   "Incident Management"
+  ],
+  "category": "DevOps",
+  "parent": "Monitoring & Observability",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Business Rules",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Script Includes",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Client Scripts",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Object-Oriented Programming",
+  "aliases": [
+   "Object-Oriented Programming",
+   "OOP",
+   "OOPS",
+   "oop concepts"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "JUnit",
+  "aliases": [
+   "JUnit5"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "UI Policies",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Flow Designer",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "AI Transformation",
+  "aliases": [],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "APIs",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "relational databases",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Django ORM",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "algorithms",
+  "aliases": [],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Technology Governance",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Responsible AI",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "GitHub Actions",
+  "aliases": [
+   "GH Actions"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "CSS",
+  "aliases": [
+   "CSS Styling",
+   "css3"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Pandas",
+  "aliases": [
+   "Pandas Library"
+  ],
+  "category": "AI / ML",
+  "parent": "Machine Learning",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "FastAPI",
+  "aliases": [
+   "FastAPI Framework"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "HTML",
+  "aliases": [
+   "HyperText Markup Language",
+   "HTML5"
+  ],
+  "category": "Frontend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AI Operating Models",
+  "aliases": [],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "NLP",
+  "aliases": [
+   "Natural Language Processing"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "jwt",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "RDS",
+  "aliases": [
+   "Relational Database Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Executive Reporting",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Chroma",
+  "aliases": [
+   "ChromaDB"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "EC2",
+  "aliases": [
+   "Elastic Compute Cloud"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "S3",
+  "aliases": [
+   "Simple Storage Service"
+  ],
+  "category": "Cloud",
+  "parent": "AWS",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Celery",
+  "aliases": [
+   "Celery Task Queue"
+  ],
+  "category": "Backend",
+  "parent": "Python",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Cron Jobs",
+  "aliases": [
+   "Scheduled Functions"
+  ],
+  "category": "Cloud",
+  "parent": "Vercel",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Portfolio Planning",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Enterprise Architecture (EA)",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Change Management",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Kubernetes",
+  "aliases": [
+   "K8s"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Risk Management",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Apache Kafka",
+  "aliases": [
+   "Kafka"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "PostgreSQL",
+  "aliases": [
+   "Postgres"
+  ],
+  "category": "Database",
+  "parent": "sql",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Jenkins",
+  "aliases": [
+   "Jenkins CI"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AI Governance",
+  "aliases": [],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Maven",
+  "aliases": [
+   "Apache Maven"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Microservices",
+  "aliases": [
+   "Microservices Architecture"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Redis",
+  "aliases": [
+   "Redis Cache",
+   "redis basics"
+  ],
+  "category": "Database",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hibernate",
+  "aliases": [
+   "Hibernate ORM"
+  ],
+  "category": "Backend",
+  "parent": "Java",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Airflow",
+  "aliases": [
+   "Apache Airflow"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "OCI DevOps",
+  "aliases": [
+   "CI/CD"
+  ],
+  "category": "Cloud",
+  "parent": "Oracle Cloud",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Azure Data Factory",
+  "aliases": [
+   "ADF"
+  ],
+  "category": "Cloud",
+  "parent": "Azure",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Data Pipeline",
+  "aliases": [
+   "ETL/ELT Tools"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "dbt",
+  "aliases": [
+   "Data Build Tool"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Delta Lake",
+  "aliases": [
+   "Delta Format"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "data warehousing",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Docker",
+  "aliases": [
+   "Docker Engine",
+   "doker",
+   "container"
+  ],
+  "category": "DevOps",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ServiceNow SPM",
+  "aliases": [
+   "SPM"
+  ],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Azure",
+  "aliases": [
+   "Microsoft Azure"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ITBM",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "GCP",
+  "aliases": [
+   "Google Cloud"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "ServiceNow development",
+  "aliases": [
+   "ServiceNow"
+  ],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Postman",
+  "aliases": [
+   "Postman API Client"
+  ],
+  "category": "Testing",
+  "parent": "API Testing",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "MySQL",
+  "aliases": [
+   "MySQL DB"
+  ],
+  "category": "Database",
+  "parent": "sql",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "git",
+  "aliases": [
+   "git version control",
+   "git & github",
+   "github"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "MLOps",
+  "aliases": [
+   "ML Operations"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "large language models",
+  "aliases": [
+   "llms",
+   "llm"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "RAG",
+  "aliases": [
+   "retrieval augmented generation"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Generative AI",
+  "aliases": [
+   "GenAI"
+  ],
+  "category": "AI / ML",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Hive",
+  "aliases": [
+   "Local Storage"
+  ],
+  "category": "Mobile",
+  "parent": "Flutter",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Apache Spark",
+  "aliases": [
+   "Spark"
+  ],
+  "category": "Data Engineering",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Databricks",
+  "aliases": [
+   "Managed Spark Platform"
+  ],
+  "category": "Data Engineering",
+  "parent": "Apache Spark",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Program Management",
+  "aliases": [],
+  "category": null,
+  "parent": null,
+  "confidence": "unverified",
+  "source": "manual entry"
+ },
+ {
+  "canonical_name": "Python",
+  "aliases": [
+   "Py",
+   "Core Python"
+  ],
+  "category": "Backend",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "Power BI",
+  "aliases": [
+   "Microsoft Power BI"
+  ],
+  "category": "Data Engineering",
+  "parent": "Analytics & BI",
+  "confidence": "verified",
+  "source": "seed import"
+ },
+ {
+  "canonical_name": "AWS",
+  "aliases": [
+   "Amazon Web Services"
+  ],
+  "category": "Cloud",
+  "parent": null,
+  "confidence": "verified",
+  "source": "seed import"
+ }
+]

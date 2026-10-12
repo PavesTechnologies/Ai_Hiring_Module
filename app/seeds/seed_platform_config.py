@@ -270,6 +270,14 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="DETERMINISTIC_SCORE_REJECTS",
+            value="false",
+            description="When true, a deterministic score below the campaign threshold rejects the candidate on its own. "
+                        "When false (default), only hard requirements reject (too many missing core skills, skill "
+                        "coverage, experience, education); the score still ranks candidates.",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="INTERVIEW_SLA_DAYS",
             value="7",
             description="Days a candidate may sit in INTERVIEW before being flagged as stalled (M04-E04-S04)",

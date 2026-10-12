@@ -37,10 +37,12 @@ from app.services.document_processing.retry_driver import RetryDriver
 from app.services.document_processing.stage_execution_service import StageExecutionError, StageExecutionService
 from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.llm.factory import resolve_active_provider
+from app.services.llm.model_selection import LLMPurpose
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
+from app.services.skills.skill_evidence_service import build_v2_detection
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
 from app.core.redis_client import get_redis_client
@@ -85,6 +87,51 @@ def _notify_resume_changed(db, resume_id) -> None:
             notifier.updated(campaign_candidate.campaign_id, campaign_candidate.id, resume_id)
     except Exception:
         logger.exception("Failed to notify resume change for resume_id=%s", resume_id)
+
+
+def _v2_enabled_for_resume(db, resume_id) -> bool:
+    """True when any campaign holding this resume has scoring_v2_enabled (gates the parse cache)."""
+    try:
+        campaign_repo = CampaignRepository(db)
+        for campaign_candidate in CampaignCandidateRepository(db).get_by_resume_id(resume_id):
+            campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
+            if campaign is not None and getattr(campaign, "scoring_v2_enabled", False) is True:
+                return True
+    except Exception:
+        logger.exception("Could not read scoring_v2_enabled for resume %s - parse cache off.", resume_id)
+    return False
+
+
+def replay_payload(resume_id, prompt_template_id, reparse: dict | None) -> dict:
+    """What a dead-letter replay needs to re-run this task exactly (stored as the DLQ input_payload)."""
+    payload = {"resume_id": str(resume_id), "prompt_template_id": str(prompt_template_id)}
+    if reparse:
+        payload["reparse"] = reparse
+    return payload
+
+
+def replay_kwargs(entry, default_prompt_template_id=None) -> dict:
+    """process_resume_document kwargs rebuilt from a DLQ entry - keeps re-parse mode when it was one."""
+    payload = entry.input_payload if isinstance(getattr(entry, "input_payload", None), dict) else {}
+    kwargs = {"resume_id": str(entry.resume_id)}
+    prompt = payload.get("prompt_template_id") or default_prompt_template_id
+    if prompt:
+        kwargs["prompt_template_id"] = str(prompt)
+    if payload.get("reparse"):
+        kwargs["reparse"] = payload["reparse"]
+    return kwargs
+
+
+def _mark_reparse_failed(db, reparse: dict | None, error) -> None:
+    """A failed re-parse leaves its version row FAILED (the previous parse is still in that row)."""
+    if not reparse:
+        return
+    try:
+        from app.services.resume.resume_reparse_service import ResumeReparseService
+        ResumeReparseService(db).mark_failed(reparse["version_id"], str(error))
+    except Exception:
+        logger.exception("Could not mark re-parse version %s failed.", reparse.get("version_id"))
+        db.rollback()
 
 
 def _move_parsed_candidates_to_screening(db, resume_id) -> None:
@@ -176,7 +223,7 @@ def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLo
 
 
 @celery_app.task(name="resume.process_document", bind=True)
-def process_resume_document(self, resume_id: str, prompt_template_id: str) -> None:
+def process_resume_document(self, resume_id: str, prompt_template_id: str, reparse: dict | None = None) -> None:
     """
     Background Resume document-processing pipeline: Text Extraction ->
     Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
@@ -253,12 +300,14 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             task_type=RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
         )
 
+        cache_service = CacheService(get_redis_client())
+        skill_evidence_service, detection_repository = build_v2_detection(db, skill_repo, cache_service)
         pipeline = ResumeProcessingPipeline(
             preprocessing_service=PreprocessingService(),
-            extraction_service=LLMExtractionService(resolve_active_provider(db)),
+            extraction_service=LLMExtractionService(resolve_active_provider(db, LLMPurpose.EXTRACTION)),
             storage_service=StorageService(),
             skill_normalization_service=SkillNormalizationService(
-                skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
+                skill_repo, embedding_service, cache_service=cache_service
             ),
             resume_service=resume_service,
             resume_repository=resume_repo,
@@ -267,6 +316,8 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             pii_detection_service=PIIDetectionService(),
             pii_redaction_service=PIIRedactionService(),
             prompt_template_repository=PromptTemplateRepository(db),
+            skill_evidence_service=skill_evidence_service,
+            detection_repository=detection_repository,
         )
 
         attempt_number = self.request.retries + 1
@@ -279,6 +330,10 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             source_format=source_format,
             prompt_template_id=UUID(prompt_template_id),
             attempt_number=attempt_number,
+            parse_cache_enabled=_v2_enabled_for_resume(db, resume.id),
+            # Recruiter re-parse (ResumeReparseService): fresh LLM parse, the
+            # resume's skills replaced rather than added to.
+            reparse=bool(reparse),
         )
         logger.warning("=== pipeline.run() RETURNED === resume_id=%s", processed_resume_id)
 
@@ -313,6 +368,20 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
         # recover_pending_semantic_scores Beat job to pick it back up. A
         # failure here must never affect the already-committed resume
         # processing result.
+        if reparse:
+            # Re-parse finish: diff vs the kept previous version, re-embed,
+            # re-score this candidate. The first-parse enqueues below are
+            # idempotent per resume and would do nothing here.
+            try:
+                from app.services.resume.resume_reparse_service import ResumeReparseService
+                ResumeReparseService(db).finish(
+                    resume_id=processed_resume_id, reparse=reparse, task_log_service=task_log_service,
+                )
+            except Exception:
+                logger.exception("Re-parse finish failed | resume_id=%s", processed_resume_id)
+                db.rollback()
+            return
+
         try:
             _enqueue_resume_embedding(db, processed_resume_id, task_log_service)
         except Exception:
@@ -342,6 +411,9 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
                 # Epic 4 (M05-E04) Phase D10 - lets a dead-lettered resume
                 # failure be traced back to its resume for replay.
                 resume_id=resume.id if resume is not None else None,
+                # The task's own arguments - a replay of a re-parse must run
+                # as a re-parse (same version, reason, actor), not a first parse.
+                input_payload=replay_payload(resume_id, prompt_template_id, reparse),
             )
         if not should_retry:
             db.rollback()
@@ -357,6 +429,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
                 task_log_service.mark_failure(task_log, str(stage_exc.original))
             if resume is not None:
                 _notify_resume_changed(db, resume.id)
+            _mark_reparse_failed(db, reparse, stage_exc.original)
             logger.exception("Resume document processing task failed for task_id %s", task_id)
             raise stage_exc.original
     except Exception as ex:
@@ -377,6 +450,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str) -> No
             task_log_service.mark_failure(task_log, str(ex))
         if resume is not None:
             _notify_resume_changed(db, resume.id)
+        _mark_reparse_failed(db, reparse, ex)
         logger.exception("Resume document processing task failed for task_id %s", task_id)
         raise
 

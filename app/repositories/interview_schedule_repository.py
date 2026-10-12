@@ -75,23 +75,6 @@ class InterviewScheduleRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
     
-    def get_started_active_rounds(self, after: datetime) -> list[InterviewSchedule]:
-        """
-        Epic 5 Step 4 - candidates for the feedback-request sweep: rounds
-        whose interview time has started (start_at > after) but are still
-        logistically active (SCHEDULED/RESCHEDULED). Deliberately excludes
-        CANCELLED (the interview never happened as planned - nothing to
-        give feedback on) and PENDING (start_at is never set). COMPLETED
-        also excluded - confirmed dead, nothing writes it since the
-        multi-round redesign (a round's completeness is signaled by
-        feedback existing, not this status).
-        """
-        stmt = select(InterviewSchedule).where(
-            InterviewSchedule.status.in_([InterviewStatus.SCHEDULED, InterviewStatus.RESCHEDULED]),
-            InterviewSchedule.start_at > after,
-        )
-        return list(self.db.execute(stmt).scalars().all())
-
     def get_by_campaign_id(
         self,
         campaign_id: UUID,

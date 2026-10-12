@@ -1,0 +1,16 @@
+{
+ "V": {
+  "file": "candidate_v.docx",
+  "full_name": "Test Candidate V",
+  "email": "candidate.v@example.invalid",
+  "lines": 26,
+  "source": "stored parse (file unavailable: StorageException)"
+ },
+ "K": {
+  "file": "candidate_k.docx",
+  "full_name": "Test Candidate K",
+  "email": "candidate.k@example.invalid",
+  "lines": 42,
+  "source": "stored parse (file unavailable: StorageException)"
+ }
+}

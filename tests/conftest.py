@@ -1,3 +1,9 @@
+import os
+
+# Standing rule: tests never send email. Forced before app settings load, so
+# SESEmailClient only logs and never creates an SES client.
+os.environ["EMAIL_DELIVERY"] = "log"
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,3 +22,12 @@ def _block_real_celery_dispatch(monkeypatch):
     """
     monkeypatch.setattr(Task, "apply_async", MagicMock(name="blocked_apply_async"))
     monkeypatch.setattr(Task, "delay", MagicMock(name="blocked_delay"))
+
+
+@pytest.fixture(autouse=True)
+def _email_is_log_only():
+    """Fails loudly if anything switched the test run back to real SES delivery."""
+    from app.core.config import settings
+    settings.email_delivery = "log"
+    yield
+    assert settings.email_delivery == "log", "a test switched EMAIL_DELIVERY away from log-only"

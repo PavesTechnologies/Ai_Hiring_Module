@@ -225,3 +225,8 @@ class ResumeParsedJsonResponse(BaseModel):
     # (same entries each tab endpoint returns as `failure`) - lets the
     # scorecard header flag a stuck candidate before any tab is opened.
     failed_layers: list[LayerFailureResponse] = []
+
+    # The resume was re-parsed from another campaign - this campaign's scores
+    # don't reflect its current skills until it is re-scored.
+    score_out_of_date_at: datetime | None = None
+    score_out_of_date_reason: str | None = None

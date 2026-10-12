@@ -55,21 +55,6 @@ class ConsentService:
         )
         return self.consent_repo.create(consent)
 
-    def is_adequate(self, candidate_id: UUID, jurisdiction: str) -> bool:
-        """
-        True if the candidate's most recent consent is both given and at or
-        above the minimum acceptable version configured for the jurisdiction.
-        """
-        latest = self.consent_repo.get_latest_by_candidate(candidate_id)
-        if latest is None or not latest.consent_given:
-            return False
-
-        min_version = self._min_acceptable_version(jurisdiction)
-        if not min_version:
-            return True
-
-        return _version_at_least(latest.consent_version, min_version)
-
     def _default_consent_version(self) -> str:
         configs = self.config_repo.get_configs_by_keys(["CONSENT_VERSION"])
         return configs.get("CONSENT_VERSION", DEFAULT_CONSENT_VERSION)

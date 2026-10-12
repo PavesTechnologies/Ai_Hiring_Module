@@ -1,0 +1,28 @@
+{
+  "_note": "Synthetic resume excerpt for scoring v2 detection-rule tests - invented content, no real person. Keeps the shapes the rules care about: British 'Programme' job titles (one plain, one after a slash), a non-matching 'General Manager' title, a wrapped target-roles line, an AI governance line in the profile, a letter-spaced RECOGNITION heading with an 'AI Governance' event, and an 'IT governance' line.",
+  "work_experience_titles": [
+    "Head - Data & Platform Towers / Chief Delivery Officer / Practice Head",
+    "Director, Operations Excellence",
+    "General Manager, O2C Transformation",
+    "Senior Programme Manager, Advisory",
+    "Head of Regional Quality (Benelux)",
+    "Quality CoE Lead / Programme Manager"
+  ],
+  "text": [
+    "PROFILE",
+    "Delivery and practice leader across operations, quality and AI risk.",
+    "Target roles: Practice / P&L Leader Operations & Transformation Head Programme Head / Project",
+    "Director",
+    "AI GRC & security: AI governance, privacy impact reviews, model risk and Responsible AI across four internal AI tools.",
+    "R E C O G N I T I O N",
+    "Chapter event - AI Governance",
+    "Trivia Host (2023 & 2025)",
+    "PROFESSIONAL EXPERIENCE",
+    "Head - Data & Platform Towers / Chief Delivery Officer / Practice Head",
+    "Runs multi-client delivery to SLA/KPI across 30 clients and 5 service lines.",
+    "Senior Programme Manager, Advisory",
+    "Led a portfolio of six parallel programmes for an insurance client.",
+    "Quality CoE Lead / Programme Manager",
+    "Owned IT governance and audit readiness for the operations centre."
+  ]
+}

@@ -49,8 +49,14 @@ def _make_campaign_candidate(
     return SimpleNamespace(
         id=uuid4(), candidate_id=uuid4(), pipeline_stage=pipeline_stage,
         composite_score=composite_score, deterministic_score=deterministic_score,
-        semantic_score=semantic_score, effective_ai_score=effective_ai_score,
-        ai_recommendation=ai_recommendation, ai_evaluation_status=ai_evaluation_status,
+        semantic_score=semantic_score,
+        # AI fields live on the related ai_evaluation row (decision_* redesign, 98d721e).
+        ai_evaluation=SimpleNamespace(
+            effective_ai_score=effective_ai_score, ai_recommendation=ai_recommendation,
+            ai_evaluation_status=ai_evaluation_status, ai_confidence=None, ai_strengths=None,
+            ai_weaknesses=None, ai_response_json=None,
+        ),
+        decision_type=None,
         composite_score_computed_at=composite_score_computed_at,
     )
 

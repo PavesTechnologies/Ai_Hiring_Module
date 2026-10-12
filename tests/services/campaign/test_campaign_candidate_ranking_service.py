@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
+from app.models.pipeline import AIEvaluationStatus, AIRecommendation, DecisionType, PipelineStage
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 
 
@@ -27,8 +27,14 @@ def _make_campaign_candidate(
         id=uuid4(), campaign_id=uuid4(), candidate_id=uuid4(), resume_id=uuid4(),
         pipeline_stage=pipeline_stage, composite_score=composite_score,
         deterministic_score=deterministic_score, ai_ats_score=None, semantic_score=None,
-        ai_evaluation_status=ai_evaluation_status, is_fraud_flagged=is_fraud_flagged,
-        hr_override=hr_override, ai_recommendation=ai_recommendation,
+        is_fraud_flagged=is_fraud_flagged,
+        # Since the decision_* redesign: AI fields live on the related ai_evaluation
+        # row, and an HR override is a RESET decision.
+        ai_evaluation=SimpleNamespace(
+            ai_evaluation_status=ai_evaluation_status, ai_recommendation=ai_recommendation, effective_ai_score=None,
+            ai_confidence=None, ai_strengths=None, ai_weaknesses=None, ai_response_json=None,
+        ),
+        decision_type=DecisionType.RESET if hr_override else None,
         created_at=datetime.now(timezone.utc),
     )
 

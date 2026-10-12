@@ -36,6 +36,7 @@ class RetryDriver:
         error,
         attempt_number: int,
         resume_id: UUID | None = None,
+        input_payload: dict | None = None,
     ) -> bool:
         classification = classify(error.original)
         self.stage_failure_log_repo.record(
@@ -59,7 +60,10 @@ class RetryDriver:
                 task_type=self.task_type,
                 final_error_message=str(error.original),
                 full_error_trace=None,
-                input_payload=checkpoint.context_data if checkpoint else None,
+                # A caller-supplied payload (resume processing: the task's own
+                # kwargs, incl. re-parse mode) wins - it's what a replay needs.
+                input_payload=input_payload if input_payload is not None
+                else (checkpoint.context_data if checkpoint else None),
                 retry_count=attempt_number,
                 first_attempted_at=self.task_log.queued_at,
                 last_attempted_at=datetime.now(timezone.utc),

@@ -188,6 +188,8 @@ def test_embed_resume_dlq_entry_not_double_replayed():
 def test_resume_document_processing_dlq_entry_still_replays_unaffected():
     resume_id = uuid4()
     service, campaign_repo = _make_service()
+    prompt_template_id = uuid4()
+    campaign_repo.get_by_id.return_value = SimpleNamespace(id=uuid4(), prompt_template_id=prompt_template_id)
     entry = _make_dlq_entry(task_type="RESUME_DOCUMENT_PROCESSING", resume_id=resume_id)
     campaign_repo.get_dlq_entries_by_ids.return_value = [entry]
 
@@ -198,7 +200,10 @@ def test_resume_document_processing_dlq_entry_still_replays_unaffected():
 
     assert response.replayed_count == 1
     mock_task.apply_async.assert_called_once()
-    assert mock_task.apply_async.call_args.kwargs["kwargs"] == {"resume_id": str(resume_id)}
+    # process_resume_document requires the prompt - an older DLQ entry without
+    # it in input_payload gets the campaign's (previously the replay crashed).
+    assert mock_task.apply_async.call_args.kwargs["kwargs"] == {
+        "resume_id": str(resume_id), "prompt_template_id": str(prompt_template_id)}
 
 
 def test_deterministic_score_dlq_entry_still_replays_unaffected():

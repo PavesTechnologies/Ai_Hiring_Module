@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -7,7 +8,7 @@ import pytest
 
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
-from app.models.pipeline import PipelineStage, RejectionLayer
+from app.models.pipeline import AIEvaluationStatus, DecisionSource, DecisionType, PipelineStage
 from app.services.celery_task_log_service import CeleryTaskLogService
 
 TASKS_MODULE = "app.tasks.semantic_scoring_tasks"
@@ -41,7 +42,6 @@ class _Harness:
         self.campaign_repo = MagicMock()
         self.resume_repo = MagicMock()
         self.jd_repo = MagicMock()
-        self.candidate_rejection_repo = MagicMock()
         self.allowed_transition_repo = MagicMock()
         self.allowed_transition_repo.is_transition_allowed.return_value = True
         self.task_log_repo = MagicMock()
@@ -69,13 +69,11 @@ class _Harness:
         self.scoring_service_instance = MagicMock()
         self.scoring_service_instance.calculate_and_store_semantic_score_breakdown.return_value = _breakdown()
         self.dead_letter_queue_repo = MagicMock()
-        # Story 542: _queue_rejection_email is imported from
-        # deterministic_scoring_tasks (a real function that would otherwise
-        # try a real EmailTemplateRepository query + Celery apply_async) -
-        # patched at the name bound in THIS module by that import, same
-        # convention as test_deterministic_scoring_tasks.py's own
-        # send_candidate_email_task_mock.
+        self.ai_evaluation = SimpleNamespace(ai_evaluation_status=None)
+        self.ai_evaluation_repo = MagicMock()
+        self.ai_evaluation_repo.get_or_create.return_value = self.ai_evaluation
         self.queue_rejection_email_mock = MagicMock()
+        self.email_apply_async_mock = MagicMock()
 
     def __enter__(self):
         self._patches = [
@@ -84,14 +82,27 @@ class _Harness:
             patch(f"{TASKS_MODULE}.CampaignRepository", return_value=self.campaign_repo),
             patch(f"{TASKS_MODULE}.ResumeRepository", return_value=self.resume_repo),
             patch(f"{TASKS_MODULE}.JDRepository", return_value=self.jd_repo),
-            patch(f"{TASKS_MODULE}.CandidateRejectionRepository", return_value=self.candidate_rejection_repo),
             patch(f"{TASKS_MODULE}.AllowedTransitionRepository", return_value=self.allowed_transition_repo),
             patch(f"{TASKS_MODULE}.AuditRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
             patch(f"{TASKS_MODULE}.SemanticScoringService", return_value=self.scoring_service_instance),
             patch(f"{TASKS_MODULE}.DeadLetterQueueRepository", return_value=self.dead_letter_queue_repo),
-            patch(f"{TASKS_MODULE}._queue_rejection_email", self.queue_rejection_email_mock),
+            # System rejections must never email: watch the real email entry
+            # points wherever they'd be called from.
+            patch(
+                "app.services.notifications.candidate_rejection_email_service."
+                "CandidateRejectionEmailService.queue_rejection_email",
+                self.queue_rejection_email_mock,
+            ),
+            patch("app.tasks.email_tasks.send_candidate_email_task.apply_async", self.email_apply_async_mock),
+            patch(f"{TASKS_MODULE}.CampaignCandidateAIEvaluationRepository", return_value=self.ai_evaluation_repo),
+            # Never reach a real broker: the enqueue helpers run (tests read their
+            # task logs) but every Celery apply_async underneath them is patched.
+            patch("app.tasks.ai_evaluation_tasks.calculate_ai_evaluation_task.apply_async"),
+            patch("app.tasks.composite_scoring_tasks.calculate_composite_score_task.apply_async"),
+            patch("app.tasks.semantic_scoring_tasks.calculate_semantic_score_task.apply_async"),
+            patch("app.tasks.embedding_tasks.generate_resume_embedding_task.apply_async"),
         ]
         for p in self._patches:
             p.start()
@@ -110,7 +121,10 @@ def _make_campaign_candidate(
         id=uuid4(), campaign_id=campaign_id or uuid4(), resume_id=resume_id or uuid4(),
         candidate_id=candidate_id or uuid4(), pipeline_stage=pipeline_stage,
         deterministic_passed=deterministic_passed,
-        semantic_score_breakdown=semantic_score_breakdown,
+        semantic_breakdown=semantic_score_breakdown,
+        previous_stage=None,
+        decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
+        decision_by_user_id=None, decision_at=None,
     )
 
 
@@ -256,19 +270,19 @@ def test_missing_resume_embedding_skips_gracefully_without_scoring():
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_embedding.return_value = None
-        h.candidate_rejection_repo.get_by_campaign_candidate_id.return_value = []
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
         h.scoring_service_instance.calculate_and_store_semantic_score_breakdown.assert_not_called()
-        assert cc.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluation.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
         # Never an automatic rejection - pipeline_stage must be untouched.
         assert cc.pipeline_stage == PipelineStage.SCREENING
+        assert cc.decision_type is None
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_layer == RejectionLayer.SEMANTIC
-        assert rejection.rejection_reason == MISSING_RESUME_EMBEDDING_REASON
+        # The skip is recorded on the candidate as a SEMANTIC decision note.
+        assert cc.decision_source == DecisionSource.SEMANTIC
+        assert cc.decision_reason == MISSING_RESUME_EMBEDDING_REASON
+        assert cc.decision_details == {"reason": MISSING_RESUME_EMBEDDING_REASON}
 
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
@@ -276,7 +290,7 @@ def test_missing_resume_embedding_skips_gracefully_without_scoring():
 
 
 def test_missing_resume_embedding_skip_is_idempotent():
-    """A second run before the embedding is ready must not insert a duplicate rejection row."""
+    """A second run before the embedding is ready must not re-stamp the same decision."""
     from app.tasks.semantic_scoring_tasks import MISSING_RESUME_EMBEDDING_REASON, calculate_semantic_score_task
 
     with _Harness() as h:
@@ -285,13 +299,14 @@ def test_missing_resume_embedding_skip_is_idempotent():
         h.campaign_candidate_repo.get_by_id.return_value = cc
         h.campaign_repo.get_by_id.return_value = campaign
         h.resume_repo.get_embedding.return_value = None
-        h.candidate_rejection_repo.get_by_campaign_candidate_id.return_value = [
-            SimpleNamespace(rejection_layer=RejectionLayer.SEMANTIC, rejection_reason=MISSING_RESUME_EMBEDDING_REASON),
-        ]
+        first_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        cc.decision_source = DecisionSource.SEMANTIC
+        cc.decision_reason = MISSING_RESUME_EMBEDDING_REASON
+        cc.decision_at = first_at
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_not_called()
+        assert cc.decision_at == first_at                      # not re-stamped
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
 
@@ -344,7 +359,7 @@ def test_jd_embedding_still_missing_after_max_retries_routes_to_manual_review():
 
         h.scoring_service_instance.calculate_and_store_semantic_score_breakdown.assert_not_called()
         assert cc.semantic_score is None
-        assert cc.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluation.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW   # on the ai_evaluation row
         # Never an automatic rejection - pipeline_stage must be untouched.
         assert cc.pipeline_stage == PipelineStage.SCREENING
 
@@ -369,7 +384,7 @@ def test_model_version_mismatch_routes_to_manual_review_without_scoring():
 
         h.scoring_service_instance.calculate_and_store_semantic_score_breakdown.assert_not_called()
         assert cc.semantic_score is None
-        assert cc.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW
+        assert h.ai_evaluation.ai_evaluation_status == AIEvaluationStatus.MANUAL_REVIEW   # on the ai_evaluation row
         assert cc.pipeline_stage == PipelineStage.SCREENING
 
         task_log = h.task_log_repo.update.call_args.args[0]
@@ -444,7 +459,7 @@ def test_no_rejection_when_semantic_score_passes():
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_not_called()
+        assert cc.decision_type is None                         # no rejection recorded on a pass
         assert cc.pipeline_stage == PipelineStage.SCREENING
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
@@ -519,7 +534,6 @@ def test_semantic_rejection_never_queues_ai_evaluate():
 
 
 def test_creates_rejection_and_transitions_stage_when_semantic_score_below_threshold():
-    from app.models.pipeline import RejectionLayer
     from app.tasks.semantic_scoring_tasks import calculate_semantic_score_task
 
     with _Harness() as h:
@@ -532,13 +546,13 @@ def test_creates_rejection_and_transitions_stage_when_semantic_score_below_thres
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_layer == RejectionLayer.SEMANTIC
-        assert rejection.rejection_detail == breakdown
+        # The rejection is recorded on the candidate (decision_*) by transition_to_rejected.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.SEMANTIC
+        assert cc.decision_details == breakdown
 
         h.allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-            PipelineStage.SCREENING, PipelineStage.REJECTED,
+            PipelineStage.SCREENING, PipelineStage.REJECTED, previous_stage=None,
         )
         assert cc.pipeline_stage == PipelineStage.REJECTED
         h.campaign_candidate_repo.create_stage_history.assert_called_once()
@@ -583,7 +597,10 @@ def test_semantic_rejection_queues_the_existing_rejection_email():
 
         calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.queue_rejection_email_mock.assert_called_once_with(h.campaign_candidate_repo.db, cc)
+        # Rejected, but never emailed - a recruiter sends it manually.
+        assert cc.pipeline_stage == PipelineStage.REJECTED
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
 
 
 def test_semantic_pass_never_queues_a_rejection_email():

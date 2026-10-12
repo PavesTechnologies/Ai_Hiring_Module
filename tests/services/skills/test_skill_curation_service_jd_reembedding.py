@@ -276,3 +276,40 @@ def test_trigger_jd_reembedding_noop_on_empty_set():
     service._trigger_jd_reembedding(set())
 
     embedding_queue_service.queue_jd_embedding.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# Retroactive (HR-approved) JD skills keep the importance JD extraction gave them.
+# ----------------------------------------------------------------------
+
+def _service_with_jd(extracted_json):
+    service, skill_repository, _ = _make_service()
+    service.jd_repository.get_by_id.return_value = SimpleNamespace(extracted_json=extracted_json)
+    skill_repository.get_jd_skill.return_value = None
+    return service, skill_repository
+
+
+def test_retroactive_jd_skill_gets_core_importance_from_the_jd_extraction():
+    from app.models.skills import JDSkillImportance
+
+    service, skill_repository = _service_with_jd(
+        {"required_skills": {"core": ["Program Management"], "supporting": ["Risk Management"]}}
+    )
+    unknown_skill = _make_unknown_skill(raw_text="Program Management")
+    skill_repository.get_pending_jd_links.return_value = [_make_jd_link()]
+
+    service._create_retroactive_jd_skills(unknown_skill, uuid4())
+
+    assert skill_repository.create_jd_skill.call_args.kwargs["importance"] == JDSkillImportance.CORE
+
+
+def test_retroactive_preferred_or_unlisted_skill_gets_no_importance():
+    service, skill_repository = _service_with_jd({"required_skills": {"core": ["Python"], "supporting": []}})
+    skill_repository.get_pending_jd_links.return_value = [
+        _make_jd_link(mandatory=False),   # preferred skill - never classified
+        _make_jd_link(mandatory=True),    # required but not in the extraction's lists
+    ]
+
+    service._create_retroactive_jd_skills(_make_unknown_skill(raw_text="Golang"), uuid4())
+
+    assert [c.kwargs["importance"] for c in skill_repository.create_jd_skill.call_args_list] == [None, None]

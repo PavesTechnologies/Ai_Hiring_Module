@@ -8,7 +8,7 @@ import pytest
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
-from app.models.pipeline import PipelineStage, TransitionSource
+from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService,
     MandatorySkillMatchType,
@@ -70,7 +70,6 @@ class _Harness:
         # its literal default. Empty dict makes every lookup fall through
         # to the task's own defaults, exactly like an unconfigured platform.
         self.config_repo.get_configs_by_keys.return_value = {}
-        self.candidate_rejection_repo = MagicMock()
         self.allowed_transition_repo = MagicMock()
         # Default: transition is allowed, matching the now-seeded
         # SCREENING -> REJECTED row - tests for the "blocked" path override
@@ -89,6 +88,8 @@ class _Harness:
         self.email_template_repo.get_active_by_trigger_event.return_value = None
         self.email_notification_repo = MagicMock()
         self.send_candidate_email_task_mock = MagicMock()
+        self.queue_rejection_email_mock = MagicMock()
+        self.email_apply_async_mock = MagicMock()
         # M08-E02: calculate_deterministic_score_task imports this locally
         # (from app.tasks.semantic_scoring_tasks, to avoid a circular import -
         # that module itself imports _cancel_downstream_ai_evaluation from
@@ -107,15 +108,19 @@ class _Harness:
             patch(f"{TASKS_MODULE}.SkillRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.SkillOntologyRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.ConfigRepository", return_value=self.config_repo),
-            patch(f"{TASKS_MODULE}.CandidateRejectionRepository", return_value=self.candidate_rejection_repo),
             patch(f"{TASKS_MODULE}.AllowedTransitionRepository", return_value=self.allowed_transition_repo),
             patch(f"{TASKS_MODULE}.AuditRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
             scoring_service_patch,
-            patch(f"{TASKS_MODULE}.EmailTemplateRepository", return_value=self.email_template_repo),
-            patch(f"{TASKS_MODULE}.EmailNotificationRepository", return_value=self.email_notification_repo),
-            patch(f"{TASKS_MODULE}.send_candidate_email_task", self.send_candidate_email_task_mock),
+            # System rejections must never email: watch the real email entry
+            # points wherever they'd be called from.
+            patch(
+                "app.services.notifications.candidate_rejection_email_service."
+                "CandidateRejectionEmailService.queue_rejection_email",
+                self.queue_rejection_email_mock,
+            ),
+            patch("app.tasks.email_tasks.send_candidate_email_task.apply_async", self.email_apply_async_mock),
             patch(
                 "app.tasks.semantic_scoring_tasks._enqueue_semantic_scoring",
                 self.enqueue_semantic_scoring_mock,
@@ -150,7 +155,7 @@ def _make_campaign_candidate(
     return SimpleNamespace(
         id=uuid4(), campaign_id=campaign_id, resume_id=resume_id, candidate_id=candidate_id or uuid4(),
         screened_at=None, updated_at=None, pipeline_stage=pipeline_stage,
-        deterministic_passed=deterministic_passed,
+        deterministic_passed=deterministic_passed, previous_stage=None,
     )
 
 
@@ -172,7 +177,7 @@ def _make_resume(parse_status=ParseStatus.PARSED, parsed_json=None):
 def _make_job_description(min_experience_years=None, education_criteria=None):
     return SimpleNamespace(
         id=uuid4(), min_experience_years=min_experience_years,
-        education_criteria=education_criteria,
+        education_criteria=education_criteria, extracted_json={},
     )
 
 
@@ -309,7 +314,6 @@ def test_skips_gracefully_when_campaign_candidate_no_longer_exists():
         calculate_deterministic_score_task(campaign_candidate_id=str(uuid4()))
 
         h.scoring_service_instance.calculate_and_store_score_breakdown.assert_not_called()
-        h.candidate_rejection_repo.create.assert_not_called()
         # task_log_service.create_log must be called with
         # campaign_candidate_id=None, never the missing id - this is exactly
         # the FK the old ordering violated.
@@ -340,12 +344,14 @@ def test_creates_rejection_when_mandatory_skill_missing():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "Missing required skills: Kubernetes."
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "Missing required skills: Kubernetes."
         # T01: rejection_detail is the complete score_breakdown snapshot,
         # not a curated per-branch subset.
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
         h.audit_service_instance.log.assert_called_once()
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
@@ -382,7 +388,7 @@ def test_rejection_transitions_pipeline_stage_to_rejected():
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
         h.allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-            PipelineStage.SCREENING, PipelineStage.REJECTED,
+            PipelineStage.SCREENING, PipelineStage.REJECTED, previous_stage=None,
         )
         assert cc.pipeline_stage == PipelineStage.REJECTED
         h.campaign_candidate_repo.create_stage_history.assert_called_once_with(
@@ -392,7 +398,14 @@ def test_rejection_transitions_pipeline_stage_to_rejected():
             changed_by=None,
             change_reason="Deterministic filter rejection",
             transition_source=TransitionSource.SYSTEM,
-            scores_snapshot=breakdown,
+            # The history snapshot is the breakdown plus the decision it led to.
+            scores_snapshot={
+                **breakdown,
+                "decision_type": DecisionType.REJECTED.value,
+                "decision_source": DecisionSource.DETERMINISTIC.value,
+                "decision_reason": cc.decision_reason,
+                "decision_details": breakdown,
+            },
         )
 
 
@@ -419,32 +432,22 @@ def test_blocked_transition_leaves_pipeline_stage_untouched():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
         assert cc.pipeline_stage == PipelineStage.SCREENING
         h.campaign_candidate_repo.create_stage_history.assert_not_called()
         # No email either - pipeline_stage never actually reached REJECTED.
-        h.email_notification_repo.create.assert_not_called()
-        h.send_candidate_email_task_mock.apply_async.assert_not_called()
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
 
 
-def test_queues_rejection_email_after_successful_transition():
+def test_system_rejection_moves_to_rejected_but_never_emails():
     """
-    M07-E03 S02 T02: once the transaction (rejection + stage transition)
-    has committed, an EmailNotification is created and EMAIL_SEND is
-    dispatched - never before, never synchronously.
+    A deterministic rejection still moves the candidate to REJECTED, but no
+    rejection email is queued or sent - a recruiter sends it manually
+    (POST .../send-rejection-email).
     """
-    from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
     from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
 
     with _Harness() as h:
-        template = SimpleNamespace(id=uuid4())
-        h.email_template_repo.get_active_by_trigger_event.return_value = template
-        created_notification = EmailNotification(
-            id=uuid4(), candidate_id=uuid4(), status=EmailNotificationStatus.QUEUED,
-            trigger_event=EmailTriggerEvent.CANDIDATE_REJECTED, template_id=template.id,
-        )
-        h.email_notification_repo.create.return_value = created_notification
-
         campaign = _make_campaign()
         cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=PipelineStage.SCREENING)
         h.campaign_candidate_repo.get_by_id.return_value = cc
@@ -456,42 +459,9 @@ def test_queues_rejection_email_after_successful_transition():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.email_template_repo.get_active_by_trigger_event.assert_called_once_with(
-            EmailTriggerEvent.CANDIDATE_REJECTED,
-        )
-        h.email_notification_repo.create.assert_called_once()
-        created_arg = h.email_notification_repo.create.call_args[0][0]
-        assert created_arg.candidate_id == cc.candidate_id
-        assert created_arg.campaign_candidate_id == cc.id
-        assert created_arg.template_id == template.id
-        h.email_notification_repo.commit.assert_called_once()
-        h.send_candidate_email_task_mock.apply_async.assert_called_once_with(
-            kwargs={"email_notification_id": str(created_notification.id)},
-        )
-
-
-def test_no_email_queued_when_no_active_template():
-    """No active CANDIDATE_REJECTED template configured -> no notification, no EMAIL_SEND dispatch, no crash."""
-    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
-
-    with _Harness() as h:
-        # Default harness state: get_active_by_trigger_event returns None.
-        campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=PipelineStage.SCREENING)
-        h.campaign_candidate_repo.get_by_id.return_value = cc
-        h.campaign_repo.get_by_id.return_value = campaign
-        h.resume_repo.get_by_id.return_value = _make_resume()
-
-        breakdown = _breakdown([_skill_entry(uuid4(), "MISSING", canonical_name="AWS")], coverage_pct=0.0, passed=False)
-        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
-
-        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
-
-        h.email_notification_repo.create.assert_not_called()
-        h.send_candidate_email_task_mock.apply_async.assert_not_called()
-        # The task itself must still succeed - a missing template is a
-        # configuration gap, never a reason to fail the scoring task.
         assert cc.pipeline_stage == PipelineStage.REJECTED
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
 
 
 def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
@@ -519,10 +489,12 @@ def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "Deterministic score below threshold."
-        assert rejection.rejection_detail == breakdown
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "Deterministic score below threshold."
+        assert cc.decision_details == breakdown
 
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["details"]["missing"] == 0
@@ -557,10 +529,12 @@ def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == "No verifiable skills extracted from resume."
-        assert rejection.rejection_detail == breakdown
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == "No verifiable skills extracted from resume."
+        assert cc.decision_details == breakdown
 
 
 def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
@@ -585,12 +559,14 @@ def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == (
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == (
             "Insufficient experience: 2 years provided, minimum 5 years required (gap: 3 years)."
         )
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
 
 def test_handles_decimal_min_experience_years_without_crashing():
@@ -647,12 +623,14 @@ def test_creates_education_rejection_when_skills_and_experience_pass_but_educati
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_called_once()
-        rejection = h.candidate_rejection_repo.create.call_args[0][0]
-        assert rejection.rejection_reason == (
+        # The rejection is recorded on the candidate (decision_* fields) by
+        # StageTransitionService.transition_to_rejected - no separate rejection table.
+        assert cc.decision_type == DecisionType.REJECTED
+        assert cc.decision_source == DecisionSource.DETERMINISTIC
+        assert cc.decision_reason == (
             "Education requirement not met: Master's required, Bachelor's found."
         )
-        assert rejection.rejection_detail == breakdown
+        assert cc.decision_details == breakdown
 
 
 def test_experience_education_wiring_is_passed_through_to_scoring_service():
@@ -680,7 +658,7 @@ def test_experience_education_wiring_is_passed_through_to_scoring_service():
         assert call_kwargs["experience_result"]["passed"] is True
         assert call_kwargs["experience_result"]["candidate_years"] == 6.0
         assert call_kwargs["education_result"]["skipped"] is True
-        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15}
+        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15, "functional": 0.15}
 
 
 def test_no_rejection_when_nothing_missing():
@@ -698,7 +676,7 @@ def test_no_rejection_when_nothing_missing():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        h.candidate_rejection_repo.create.assert_not_called()
+        assert getattr(cc, "decision_type", None) is None          # nothing recorded on a pass
 
 
 def test_auto_enqueues_semantic_scoring_after_successful_pass():
@@ -806,3 +784,54 @@ def test_marks_failure_on_unexpected_exception():
 
         with pytest.raises(RuntimeError):
             calculate_deterministic_score_task(campaign_candidate_id=str(uuid4()))
+
+
+# --- Scoring v2 Step 3: score-only re-score never moves a stage --------------
+
+@pytest.mark.parametrize("stage", [PipelineStage.SHORTLISTED, PipelineStage.INTERVIEW, PipelineStage.REJECTED])
+def test_score_only_rescore_updates_scores_but_never_moves_the_stage(stage):
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=stage, deterministic_passed=True)
+        cc.deterministic_score = 55.0
+        cc.score_out_of_date_at, cc.score_out_of_date_reason = "2026-10-08", "re-parsed elsewhere"
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+        failing = _breakdown([_skill_entry(uuid4(), "MISSING", canonical_name="AWS")], coverage_pct=0.0, passed=False)
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = failing
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id), score_only=True)
+
+        assert cc.pipeline_stage == stage                      # not moved, even though the new score fails
+        h.allowed_transition_repo.is_transition_allowed.assert_not_called()
+        h.enqueue_semantic_scoring_mock.assert_not_called()
+        assert cc.score_out_of_date_at is None and cc.score_out_of_date_reason is None
+        details = h.audit_service_instance.log.call_args.kwargs["details"]
+        assert details["score_only"] is True and details["stage_unchanged"] == stage.value
+        assert (details["previous_deterministic_score"], details["previous_deterministic_passed"]) == (55.0, True)
+        # Standing rule: a re-score never sends email.
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
+
+
+def test_score_only_pass_queues_nothing_downstream():
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, uuid4(), pipeline_stage=PipelineStage.SHORTLISTED)
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = _breakdown(
+            [_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True)
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id), score_only=True)
+
+        assert cc.pipeline_stage == PipelineStage.SHORTLISTED
+        h.enqueue_semantic_scoring_mock.assert_not_called()
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()

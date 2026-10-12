@@ -83,6 +83,8 @@ services:
       # localhost is the container itself, so the app would find no broker.
       # `redis` is this compose file's service name.
       REDIS_HOST: redis
+      # Standing rule: a local stack never sends email - SES client never created.
+      EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       # DB_HOST in .env points at AWS RDS, which is reachable from here, so it
       # is intentionally left alone.
@@ -111,6 +113,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
+      # Standing rule: a local stack never sends email - SES client never created.
+      EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       OMP_NUM_THREADS: "1"
       # Each prefork child holds its own SQLAlchemy engine, and settings
@@ -146,6 +150,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
+      # Standing rule: a local stack never sends email - SES client never created.
+      EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       OMP_NUM_THREADS: "1"
     volumes:
@@ -181,6 +187,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
+      # Standing rule: a local stack never sends email - SES client never created.
+      EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
     networks: [airs]
 

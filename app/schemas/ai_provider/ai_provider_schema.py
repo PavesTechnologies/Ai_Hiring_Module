@@ -2,9 +2,68 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ProviderKey = Literal["GOOGLE", "ANTHROPIC", "OPENAI", "GROQ"]
+# What a model is used for - see app.services.llm.model_selection.
+ModelUsageKey = Literal["EXTRACTION", "EVALUATION", "BOTH"]
+_MAX_MODELS = 3
+
+
+class ModelAssignmentRequest(BaseModel):
+    usage: ModelUsageKey
+    model_name: str = Field(..., min_length=1, max_length=200)
+    # Same provider and API key; takes over when the main model is unavailable.
+    fallback_model_name: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("model_name")
+    @classmethod
+    def _strip_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Select a model.")
+        return value
+
+    @field_validator("fallback_model_name")
+    @classmethod
+    def _strip_fallback(cls, value: Optional[str]) -> Optional[str]:
+        value = value.strip() if value else value
+        return value or None
+
+
+class ModelAssignmentResponse(BaseModel):
+    usage: ModelUsageKey
+    usage_label: str
+    model_name: str
+    fallback_model_name: Optional[str] = None
+
+
+class _ModelsRequest(BaseModel):
+    """
+    The models a provider uses: `models` (one per purpose, each with an
+    optional backup), or - for older clients - a single `model_name`, which
+    means one model for Both. Cross-model rules (duplicates, coverage) are
+    checked by the service so they come back as a plain-English 400.
+    """
+    model_name: Optional[str] = Field(default=None, max_length=200)
+    models: Optional[list[ModelAssignmentRequest]] = Field(default=None, max_length=_MAX_MODELS)
+
+    @field_validator("model_name")
+    @classmethod
+    def _strip_model(cls, value: Optional[str]) -> Optional[str]:
+        value = value.strip() if value else value
+        return value or None
+
+    @model_validator(mode="after")
+    def _require_a_model(self):
+        if not self.models and not self.model_name:
+            raise ValueError("Select a model.")
+        return self
+
+    def assignments(self) -> list[ModelAssignmentRequest]:
+        if self.models:
+            return list(self.models)
+        return [ModelAssignmentRequest(usage="BOTH", model_name=self.model_name)]
 
 
 class ProviderOptionResponse(BaseModel):
@@ -28,6 +87,7 @@ class ActiveProviderResponse(BaseModel):
     provider: ProviderKey
     provider_label: str
     model_name: str
+    models: list[ModelAssignmentResponse] = []
 
 
 class AIProviderRowResponse(BaseModel):
@@ -35,7 +95,8 @@ class AIProviderRowResponse(BaseModel):
     id: UUID
     provider: ProviderKey
     provider_label: str
-    model_name: str
+    model_name: str                   # the extraction model - kept for older clients
+    models: list[ModelAssignmentResponse] = []
     api_key_masked: Optional[str] = None
     is_active: bool
     is_verified: bool
@@ -67,17 +128,8 @@ class ListModelsRequest(_ProviderKeyRequest):
     pass
 
 
-class VerifyRequest(_ProviderKeyRequest):
-    """Body for POST /verify - the Check button."""
-    model_name: str = Field(..., min_length=1, max_length=200)
-
-    @field_validator("model_name")
-    @classmethod
-    def _strip_model(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Select a model.")
-        return value
+class VerifyRequest(_ModelsRequest, _ProviderKeyRequest):
+    """Body for POST /verify - the Check button. Checks every model (main + backup) in the setup."""
 
 
 class CreateAIProviderRequest(VerifyRequest):
@@ -93,9 +145,8 @@ class CreateAIProviderRequest(VerifyRequest):
         return value
 
 
-class UpdateAIProviderRequest(BaseModel):
+class UpdateAIProviderRequest(_ModelsRequest):
     """Edit a registered provider. The provider itself is fixed; a blank key keeps the saved one."""
-    model_name: str = Field(..., min_length=1, max_length=200)
     api_key: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("api_key")
@@ -104,13 +155,13 @@ class UpdateAIProviderRequest(BaseModel):
         value = value.strip() if value else value
         return value or None
 
-    @field_validator("model_name")
-    @classmethod
-    def _strip_model(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Select a model.")
-        return value
+
+class ModelCheckResult(BaseModel):
+    model_name: str
+    verified: bool
+    message: str
+    latency_ms: Optional[int] = None
+    error_code: Optional[str] = None
 
 
 class VerifyResponse(BaseModel):
@@ -118,5 +169,8 @@ class VerifyResponse(BaseModel):
     message: str
     latency_ms: Optional[int] = None
     # Set when verified is False - a stable LLMErrorReason code
-    # (e.g. RATE_LIMITED, DAILY_LIMIT, CREDITS_EXHAUSTED, INVALID_KEY).
+    # (e.g. RATE_LIMITED, DAILY_LIMIT, CREDITS_EXHAUSTED, INVALID_KEY), or
+    # INVALID_MODEL_SETUP when the model assignments themselves are invalid.
     error_code: Optional[str] = None
+    # One entry per distinct model checked (main and backup models).
+    results: list[ModelCheckResult] = []

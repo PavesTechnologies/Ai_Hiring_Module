@@ -17,7 +17,7 @@ from app.exception_handler.exceptions import (
     ServiceUnavailableError,
     UnprocessableError,
 )
-from app.models.ai_provider import AIProviderConfig
+from app.models.ai_provider import AIProviderConfig, AIProviderModel
 from app.repositories.ai_provider_config_repository import AIProviderConfigRepository
 from app.schemas.ai_provider.ai_provider_schema import (
     ActiveProviderResponse,
@@ -25,6 +25,8 @@ from app.schemas.ai_provider.ai_provider_schema import (
     AIProviderRowResponse,
     CreateAIProviderRequest,
     ListModelsRequest,
+    ModelAssignmentResponse,
+    ModelCheckResult,
     ModelOptionResponse,
     ProviderOptionResponse,
     UpdateAIProviderRequest,
@@ -35,6 +37,15 @@ from app.services.audit_service import AuditService
 from app.services.cache_service import CacheService
 from app.services.llm.base import LLMError, LLMErrorReason, LLMProviderName
 from app.services.llm.factory import AI_PROVIDER_KEY_PURPOSE, build_provider
+from app.services.llm.model_selection import (
+    LLMPurpose,
+    ModelAssignment,
+    ModelAssignmentError,
+    ModelUsage,
+    distinct_model_names,
+    select_assignment,
+    validate_assignments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +176,51 @@ def _key_mismatch_message(selected: str, api_key: str) -> str | None:
     )
 
 
+INVALID_MODEL_SETUP = "INVALID_MODEL_SETUP"
+
+# A failed check with one of these codes is about that one model, so the
+# remaining models in the setup are still worth checking. Any other failure
+# (bad key, key for another provider, rate limit, no credits, outage) would
+# fail every model the same way - checking stops there instead of spending
+# more provider calls.
+_MODEL_SPECIFIC_CODES = frozenset({
+    LLMErrorReason.MODEL_NOT_FOUND, LLMErrorReason.NO_ACCESS, LLMErrorReason.BAD_REQUEST,
+    LLMErrorReason.BAD_OUTPUT, LLMErrorReason.REFUSED,
+})
+
+
+def _row_assignments(row) -> list[ModelAssignment]:
+    """A saved provider's model assignments - a row from before per-purpose models counts as one Both model."""
+    models = getattr(row, "models", None) or []
+    if models:
+        return [ModelAssignment(m.usage, m.model_name, m.fallback_model_name) for m in models]
+    return [ModelAssignment(ModelUsage.BOTH, row.model_name)]
+
+
+def _assignment_responses(assignments: list[ModelAssignment]) -> list[ModelAssignmentResponse]:
+    order = {usage: i for i, usage in enumerate(ModelUsage.ALL)}
+    return [
+        ModelAssignmentResponse(
+            usage=a.usage, usage_label=ModelUsage.LABELS[a.usage],
+            model_name=a.model_name, fallback_model_name=a.fallback_model_name,
+        )
+        for a in sorted(assignments, key=lambda a: order.get(a.usage, len(order)))
+    ]
+
+
+def _assignment_details(assignments: list[ModelAssignment]) -> list[dict]:
+    """Audit-log shape of a model setup."""
+    return [
+        {"usage": a.usage, "model_name": a.model_name, "fallback_model_name": a.fallback_model_name}
+        for a in assignments
+    ]
+
+
+def _extraction_model(assignments: list[ModelAssignment]) -> str:
+    """What ai_provider_config.model_name mirrors - the model extraction runs on."""
+    return select_assignment(assignments, LLMPurpose.EXTRACTION).model_name
+
+
 def _already_registered(provider: str) -> ConflictError:
     return ConflictError(f"{LLMProviderName.LABELS[provider]} is already registered. Edit it instead.")
 
@@ -218,12 +274,14 @@ class AIProviderConfigService:
                 provider=config.provider,
                 provider_label=LLMProviderName.LABELS.get(config.provider, config.provider),
                 model_name=config.model_name,
+                models=_assignment_responses(_row_assignments(config)),
             )
         return ActiveProviderResponse(
             source="env_fallback",
             provider=LLMProviderName.GOOGLE,
             provider_label=LLMProviderName.LABELS[LLMProviderName.GOOGLE],
             model_name=settings.gemini_model,
+            models=_assignment_responses([ModelAssignment(ModelUsage.BOTH, settings.gemini_model)]),
         )
 
     def list_models(self, request: ListModelsRequest) -> list[ModelOptionResponse]:
@@ -245,11 +303,48 @@ class AIProviderConfigService:
         return [ModelOptionResponse(id=m.id, display_name=m.display_name) for m in models]
 
     def verify(self, request: VerifyRequest) -> VerifyResponse:
+        """
+        The Check button: validates the model setup, then makes one test call
+        per distinct model (main and backup). Saves nothing.
+        """
         api_key = self._resolve_api_key(request.provider, request.api_key)
-        result = self._verify_with_key(request.provider, request.model_name, api_key)
-        if result.verified:
-            self._remember_verified(request.provider, request.model_name, api_key)
-        return result
+        try:
+            assignments = validate_assignments(request.assignments())
+        except ModelAssignmentError as exc:
+            return VerifyResponse(verified=False, message=str(exc), error_code=INVALID_MODEL_SETUP)
+
+        names = distinct_model_names(assignments)
+        results: list[ModelCheckResult] = []
+        for name in names:
+            result = self._verify_with_key(request.provider, name, api_key)
+            results.append(ModelCheckResult(
+                model_name=name, verified=result.verified, message=result.message,
+                latency_ms=result.latency_ms, error_code=result.error_code,
+            ))
+            if result.verified:
+                self._remember_verified(request.provider, name, api_key)
+            elif result.error_code not in _MODEL_SPECIFIC_CODES:
+                break
+
+        failed = next((r for r in results if not r.verified), None)
+        if len(names) == 1:
+            only = results[0]
+            return VerifyResponse(
+                verified=only.verified, message=only.message, latency_ms=only.latency_ms,
+                error_code=only.error_code, results=results,
+            )
+        if failed is not None:
+            return VerifyResponse(
+                verified=False, message=f"{failed.model_name}: {failed.message}",
+                error_code=failed.error_code, results=results,
+            )
+        slowest = max(r.latency_ms or 0 for r in results)
+        return VerifyResponse(
+            verified=True,
+            message=f"All {len(results)} {LLMProviderName.LABELS[request.provider]} models responded "
+                    f"(slowest {slowest} ms).",
+            latency_ms=slowest, results=results,
+        )
 
     # ── Writes ────────────────────────────────────────────────────────
 
@@ -261,7 +356,8 @@ class AIProviderConfigService:
 
         # Re-verified server-side: the client's own "Check passed" state is
         # never trusted, so an unusable model can't be registered.
-        self._require_verified(request.provider, request.model_name, request.api_key)
+        assignments = self._validated(request.assignments())
+        self._require_all_verified(request.provider, assignments, request.api_key)
         ciphertext, key_id = self._encrypt(request.api_key)
         # The first provider registered (or any, while none is active)
         # becomes the one processing uses.
@@ -270,7 +366,13 @@ class AIProviderConfigService:
         try:
             row = self.repository.create(AIProviderConfig(
                 provider=request.provider,
-                model_name=request.model_name,
+                model_name=_extraction_model(assignments),
+                models=[
+                    AIProviderModel(
+                        usage=a.usage, model_name=a.model_name, fallback_model_name=a.fallback_model_name,
+                    )
+                    for a in assignments
+                ],
                 api_key_encrypted=ciphertext,
                 encryption_key_id=key_id,
                 api_key_last4=request.api_key[-4:],
@@ -281,7 +383,10 @@ class AIProviderConfigService:
             ))
             self._audit(ActionType.AI_PROVIDER_CONFIG_CREATED, row, updated_by, actor_role, {
                 "title": "AI provider registered",
-                "after": {"provider": row.provider, "model_name": row.model_name, "is_active": row.is_active},
+                "after": {
+                    "provider": row.provider, "model_name": row.model_name, "is_active": row.is_active,
+                    "models": _assignment_details(assignments),
+                },
             })
             self.repository.commit()
         except IntegrityError:
@@ -296,13 +401,16 @@ class AIProviderConfigService:
         self, config_id: uuid.UUID, request: UpdateAIProviderRequest, *, updated_by: str, actor_role: str | None,
     ) -> AIProviderRowResponse:
         row = self._get_row(config_id)
+        assignments = self._validated(request.assignments())
         api_key = request.api_key or self._decrypt(row)
-        self._require_verified(row.provider, request.model_name, api_key)
+        self._require_all_verified(row.provider, assignments, api_key)
         new_key = self._encrypt(request.api_key) if request.api_key else None
         before_model = row.model_name
+        before_models = _row_assignments(row)
 
         try:
-            row.model_name = request.model_name
+            row.model_name = _extraction_model(assignments)
+            self.repository.replace_models(row, assignments)
             if new_key is not None:
                 row.api_key_encrypted, row.encryption_key_id = new_key
                 row.api_key_last4 = request.api_key[-4:]
@@ -314,8 +422,11 @@ class AIProviderConfigService:
             self._audit(ActionType.AI_PROVIDER_CONFIG_UPDATED, row, updated_by, actor_role, {
                 "title": "AI provider updated",
                 "provider": row.provider,
-                "before": {"model_name": before_model},
-                "after": {"model_name": row.model_name, "api_key_replaced": new_key is not None},
+                "before": {"model_name": before_model, "models": _assignment_details(before_models)},
+                "after": {
+                    "model_name": row.model_name, "api_key_replaced": new_key is not None,
+                    "models": _assignment_details(assignments),
+                },
             })
             self.repository.commit()
         except Exception:
@@ -331,14 +442,21 @@ class AIProviderConfigService:
 
         previous = self.repository.get_active()
         previous_details = (
-            {"provider": previous.provider, "model_name": previous.model_name} if previous else None
+            {
+                "provider": previous.provider, "model_name": previous.model_name,
+                "models": _assignment_details(_row_assignments(previous)),
+            }
+            if previous else None
         )
         try:
             row = self.repository.set_active(row)
             self._audit(ActionType.AI_PROVIDER_CONFIG_ACTIVATED, row, updated_by, actor_role, {
                 "title": "Active AI provider changed",
                 "before": previous_details,
-                "after": {"provider": row.provider, "model_name": row.model_name},
+                "after": {
+                    "provider": row.provider, "model_name": row.model_name,
+                    "models": _assignment_details(_row_assignments(row)),
+                },
             })
             self.repository.commit()
         except Exception:
@@ -355,7 +473,10 @@ class AIProviderConfigService:
         try:
             self._audit(ActionType.AI_PROVIDER_CONFIG_DELETED, row, updated_by, actor_role, {
                 "title": "AI provider deleted",
-                "before": {"provider": row.provider, "model_name": row.model_name},
+                "before": {
+                    "provider": row.provider, "model_name": row.model_name,
+                    "models": _assignment_details(_row_assignments(row)),
+                },
             })
             self.repository.delete(row)
             self.repository.commit()
@@ -403,7 +524,22 @@ class AIProviderConfigService:
                 "The API key couldn't be saved securely right now. Please contact your system administrator."
             )
 
-    def _require_verified(self, provider: str, model_name: str, api_key: str) -> None:
+    @staticmethod
+    def _validated(assignments) -> list[ModelAssignment]:
+        try:
+            return validate_assignments(assignments)
+        except ModelAssignmentError as exc:
+            raise BadRequestError(_with_code(str(exc), INVALID_MODEL_SETUP))
+
+    def _require_all_verified(self, provider: str, assignments: list[ModelAssignment], api_key: str) -> None:
+        """Every model the setup can call - main and backup - must pass a check before it's saved."""
+        names = distinct_model_names(assignments)
+        for name in names:
+            self._require_verified(provider, name, api_key, name_in_message=len(names) > 1)
+
+    def _require_verified(
+        self, provider: str, model_name: str, api_key: str, *, name_in_message: bool = False,
+    ) -> None:
         """
         Save never trusts the browser's "Check passed" state. But if *this
         server* saw a Check pass for exactly these values within the last few
@@ -415,7 +551,8 @@ class AIProviderConfigService:
             return
         result = self._verify_with_key(provider, model_name, api_key)
         if not result.verified:
-            raise UnprocessableError(_with_code(result.message, result.error_code))
+            message = f"{model_name}: {result.message}" if name_in_message else result.message
+            raise UnprocessableError(_with_code(message, result.error_code))
 
     def _remember_verified(self, provider: str, model_name: str, api_key: str) -> None:
         if self.cache_service is None:
@@ -481,6 +618,7 @@ class AIProviderConfigService:
             provider=row.provider,
             provider_label=LLMProviderName.LABELS.get(row.provider, row.provider),
             model_name=row.model_name,
+            models=_assignment_responses(_row_assignments(row)),
             api_key_masked=_mask(row.api_key_last4),
             is_active=row.is_active,
             is_verified=row.is_verified,

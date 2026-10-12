@@ -1,0 +1,91 @@
+# ==============================================================================
+# AIRS - ISOLATED end-to-end stack (scoring v2 / re-parse checks).
+#
+# Everything here is local: its own Postgres (pgvector) and Redis, local file
+# storage, and email that is only ever logged. It is configured ONLY from
+# e2e/.env.e2e (made by scripts/e2e/make_env.py) - the project's .env, which
+# points at the live database, is never read: the image excludes it
+# (.dockerignore) and no service mounts it.
+#
+#   pwsh e2e/e2e.ps1 up      # start, migrate, seed
+#   pwsh e2e/e2e.ps1 test    # run the re-parse end-to-end check
+#   pwsh e2e/e2e.ps1 down    # stop and DELETE the e2e data
+#
+# See e2e/README.md.
+# ==============================================================================
+name: airs-e2e
+
+x-app: &app
+  image: airs:e2e
+  # Local-only stack: root so the fresh named storage volume is writable.
+  user: "0:0"
+  env_file: [.env.e2e]
+  environment:
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_SSLMODE: disable          # the local e2e Postgres has no TLS
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    # Never send email: the SES client is never created (log-only sender).
+    EMAIL_DELIVERY: log
+    STORAGE_BACKEND: local
+    LOCAL_STORAGE_DIR: /data/storage
+    OMP_NUM_THREADS: "1"
+  volumes:
+    # Current code, so a code change needs no image rebuild.
+    - ../app:/app/app:ro
+    - ../scripts:/app/scripts:ro
+    - ../alembic:/app/alembic:ro
+    - ../tests/fixtures:/app/tests/fixtures:ro
+    - e2e_storage:/data/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: airs_e2e
+      POSTGRES_PASSWORD: airs_e2e
+      POSTGRES_DB: airs_e2e
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: [e2e_pg:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airs_e2e -d airs_e2e"]
+      interval: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:56379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 30
+
+  worker:
+    <<: *app
+    # The normal Celery worker with a deterministic stub LLM (set E2E_LLM=real
+    # in .env.e2e, plus a key, to use a real model).
+    entrypoint: ["python"]
+    command: ["-m", "scripts.e2e.worker"]
+
+  # One-shot jobs: migrate, seed, run the e2e check (docker compose run --rm tools ...).
+  tools:
+    <<: *app
+    profiles: ["tools"]
+    entrypoint: ["python"]
+    command: ["-m", "scripts.e2e.setup_e2e"]
+
+  # Optional: scheduled jobs. Safe - email is log-only - but not needed for the check.
+  beat:
+    <<: *app
+    profiles: ["beat"]
+    command: ["beat"]
+
+volumes:
+  e2e_pg:
+  e2e_storage:

@@ -11,7 +11,11 @@ from app.models.jd.job_descriptions import JobDescription
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
-from app.services.campaign.candidate_scoring_service import CandidateScoringService
+from app.services.campaign.candidate_scoring_service import (
+    CandidateScoringService,
+    _optional_float,
+    score_threshold_rejects,
+)
 from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
@@ -346,6 +350,7 @@ class ResumeSelectionService:
         education_result = validation_service.validate_education(
             required_degree_text, candidate_education_entries, candidate_total_years,
             jd_extracted_education=jd_extracted_education,
+            required_field_text=(job_description.education_criteria or {}).get("field"),
         )
 
         breakdown = self.candidate_scoring_service.build_mandatory_skill_breakdown(
@@ -358,6 +363,7 @@ class ResumeSelectionService:
         qualification = self.candidate_scoring_service.evaluate_skill_qualification(
             breakdown, skill_score, float(campaign.deterministic_threshold),
             float(campaign.required_skill_coverage_threshold), int(campaign.max_missing_core_skills),
+            _optional_float(getattr(campaign, "max_missing_core_pct", None)),
         )
         structural_passed = qualification["coverage_passed"] and qualification["core_gap_passed"]
         domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
@@ -365,6 +371,8 @@ class ResumeSelectionService:
         return self.candidate_scoring_service._combine_deterministic_score(
             skill_score, structural_passed, experience_result, education_result,
             score_weights, float(campaign.deterministic_threshold), domain_result=domain_result,
+            # Same pass rule as the real deterministic scoring it mirrors.
+            score_rejects=score_threshold_rejects(self.candidate_scoring_service.config_repository),
         )
 
     def _score_semantic(self, resume: Resume, campaign: HiringCampaign) -> tuple[float | None, bool | None]:

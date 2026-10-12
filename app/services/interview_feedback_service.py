@@ -6,7 +6,6 @@ from app.core.encryption_service import EncryptionService
 from app.core.feedback_token import verify_feedback_token
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.interview import InterviewFeedbackRecommendation
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository

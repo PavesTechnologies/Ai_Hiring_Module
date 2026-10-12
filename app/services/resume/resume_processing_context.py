@@ -42,3 +42,16 @@ class ResumeProcessingContext:
     raw_extraction: dict | None = None
     validated_extraction: ResumeExtractionResponse | None = None
     skill_match_results: list[SkillMatchResult] | None = None
+
+    # Scoring v2 (Phase 1). parse_cache_enabled: reuse a cached extraction
+    # of identical input (on only when a campaign holding this resume has
+    # scoring_v2_enabled). bypass_parse_cache: re-parse - always ask the
+    # model, then replace the cached answer. parse_call: which
+    # provider/model produced raw_extraction (the backup model if it was).
+    parse_cache_enabled: bool = False
+    bypass_parse_cache: bool = False
+    # Re-parse of an already-parsed resume (recruiter action): the parse
+    # cache is bypassed and the resume's candidate_skills are replaced, not
+    # added to.
+    reparse: bool = False
+    parse_call: dict | None = None
