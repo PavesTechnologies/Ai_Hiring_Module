@@ -373,7 +373,7 @@ REM ----------------------------------------------------------------------------
 
 echo   [START] Starting Celery worker with AUTO-RELOAD...
 echo   [MODE]  pool=%CELERY_POOL% concurrency=%CELERY_CONC% queues=%CELERY_QUEUE_LABEL%
-echo   [WATCH] Watching: %CELERY_WATCH_DIR%
+echo   [WATCH] Watching: %CELERY_WATCH_DIR% (*.py only; __pycache__ and *.pyc ignored)
 echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
 echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
 
@@ -382,6 +382,8 @@ call "%VENV_ACTIVATE%" ^&^& ^
 watchmedo auto-restart ^
 --directory="%CELERY_WATCH_DIR%" ^
 --pattern="*.py" ^
+--ignore-patterns="*/__pycache__/*;*.pyc" ^
+--ignore-directories ^
 --recursive ^
 --debounce-interval %CELERY_DEBOUNCE_INTERVAL% ^
 -- ^

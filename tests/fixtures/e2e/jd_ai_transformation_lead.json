@@ -219,5 +219,22 @@
    "confidence": 1.0,
    "verification_status": "AUTO_VERIFIED"
   }
- ]
+ ],
+ "phase2": {
+  "_comment": "Phase 2 e2e (scripts/e2e/run_phase2_e2e.py): a second, uncalibrated copy of this JD with two skills that aren't in the catalogue. Speech Analytics appears in candidate K's experience; Agentic Workflow Design in neither candidate. The re-parse check keeps using the JD above.",
+  "title_suffix": " - Phase 2",
+  "raw_text_addition": "Must have: Agentic Workflow Design. Also valued: Speech Analytics.",
+  "unknown_skills": [
+   {
+    "raw_text": "Agentic Workflow Design",
+    "tier": "CORE",
+    "map_to": "Crew AI"
+   },
+   {
+    "raw_text": "Speech Analytics",
+    "tier": "SUPPORTING"
+   }
+  ],
+  "calibrated_min_experience_years": 6
+ }
 }

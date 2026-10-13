@@ -43,6 +43,7 @@ V2_MODULES = [
     "scripts/scoring_v2_dry_run.py",
     "scripts/e2e/export_fixtures.py",
     "scripts/e2e/run_reparse_e2e.py",
+    "scripts/e2e/run_phase2_e2e.py",
     "scripts/e2e/setup_e2e.py",
     "scripts/e2e/stub_llm.py",
     "scripts/e2e/worker.py",

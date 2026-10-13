@@ -44,8 +44,10 @@ switch ($Command) {
         Invoke-Compose @("down", "-v")                 # every run starts from an empty database
         Start-Stack
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_reparse_e2e")
+        Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_phase2_e2e")   # calibration / unknown skills
         $sent = (& docker @Compose logs worker 2>&1 | Select-String "EMAIL NOT SENT").Count
         Write-Host "Emails the worker would have sent (logged only, never sent): $sent"
+        if ($sent -ne 0) { throw "the worker tried to send $sent email(s)" }
     }
     "logs"  { Invoke-Compose @("logs", "-f", "worker") }
     "down"  { Invoke-Compose @("down", "-v") }

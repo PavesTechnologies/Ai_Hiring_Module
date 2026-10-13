@@ -54,6 +54,22 @@ routes as the test recruiter and checks:
 
 Results print as PASS/FAIL and are saved in the storage volume (`/data/storage/e2e_report.json`).
 
+Then `scripts/e2e/run_phase2_e2e.py` (JD calibration and unknown skills) runs on a second, uncalibrated
+copy of the JD that setup seeds from the fixture's `phase2` section, with an unknown core skill and an
+unknown supporting skill (in candidate K's experience):
+
+P1. creating a campaign on the uncalibrated JD is refused (409 `JD_NOT_CALIBRATED`)
+P2. calibration is refused while the core unknown skill is unresolved
+P3. the core skill is mapped (top-3 suggestions), the supporting one left; the JD is calibrated and the
+    campaign created
+P4. candidate K gets provisional credit (0.8 of the tier weight) for the supporting skill, flagged
+    provisional and outside every gate - v1 and v2 (shadow)
+P5. resolving the supporting skill marks K "score out of date" and saves a calibration version
+P6. scoring used the calibrated minimum experience; the JD's extraction is unchanged
+P7. no email (SES guard in the driver; `e2e.ps1 test` fails if the worker logged any)
+
+Report: `/data/storage/e2e_phase2_report.json`.
+
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
 
