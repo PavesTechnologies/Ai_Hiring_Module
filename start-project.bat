@@ -104,6 +104,9 @@ REM Startup settings
 REM ----------------------------------------------------------------------------
 
 set "READY_TIMEOUT_SECONDS=60"
+REM FastAPI imports the whole app before it answers; on a busy machine that
+REM takes well over a minute, so it gets its own, longer wait.
+set "FASTAPI_READY_TIMEOUT_SECONDS=180"
 set "POLL_INTERVAL_SECONDS=2"
 
 REM Bug fix: app.main serves openapi.json/docs under API_PREFIX (see
@@ -446,8 +449,8 @@ if "%_HTTP_CODE%"=="200" (
     goto :eof
 )
 
-if %_elapsed% GEQ %READY_TIMEOUT_SECONDS% (
-    echo   [ERROR] FastAPI did not become ready within %READY_TIMEOUT_SECONDS% seconds.
+if %_elapsed% GEQ %FASTAPI_READY_TIMEOUT_SECONDS% (
+    echo   [ERROR] FastAPI did not become ready within %FASTAPI_READY_TIMEOUT_SECONDS% seconds.
     exit /b 1
 )
 
