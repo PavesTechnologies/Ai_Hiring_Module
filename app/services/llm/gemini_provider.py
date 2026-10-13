@@ -1,5 +1,6 @@
 import json
 
+import httpx
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -86,6 +87,8 @@ class GeminiProvider:
         capabilities: ModelCapabilities | None = None,
     ):
         self.model = model
+        # Token usage of the last call ({"input", "output", "thinking"}), for cost comparisons.
+        self.last_usage: dict | None = None
         self.capabilities = capabilities or resolve_capabilities(self.provider_name, model)
         self.client = genai.Client(
             api_key=api_key,
@@ -113,7 +116,19 @@ class GeminiProvider:
             )
         except genai_errors.APIError as exc:
             raise self._map_error(exc) from exc
+        except httpx.TransportError as exc:
+            # The connection dropped or timed out before any reply ("Server
+            # disconnected without sending a response") - transient, not a
+            # problem with the request; without this it escaped unclassified.
+            raise LLMTransientError(f"Gemini connection error: {exc!r}",
+                                    reason=LLMErrorReason.UNAVAILABLE) from exc
 
+        usage = getattr(response, "usage_metadata", None)
+        self.last_usage = {
+            "input": getattr(usage, "prompt_token_count", None) or 0,
+            "output": getattr(usage, "candidates_token_count", None) or 0,
+            "thinking": getattr(usage, "thoughts_token_count", None) or 0,
+        } if usage is not None else None
         try:
             return json.loads(response.text)
         except (json.JSONDecodeError, TypeError) as e:

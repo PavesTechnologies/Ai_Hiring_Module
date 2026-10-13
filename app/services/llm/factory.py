@@ -106,6 +106,20 @@ def resolve_provider(db: Session, provider_name: str, purpose: str = LLMPurpose.
     return _provider_from_config(db, config, purpose)
 
 
+def resolve_provider_model(db: Session, provider_name: str, model: str) -> LLMProvider:
+    """
+    One named provider's saved key with an explicit model and NO backup - for
+    model comparisons (scripts/extraction_model_comparison.py), so every
+    answer is attributable to that model. Never changes the saved config.
+    """
+    config = AIProviderConfigRepository(db).get_by_provider(provider_name)
+    if config is None or not config.is_verified:
+        raise LLMPermanentError(f"No verified saved config for provider '{provider_name}'.",
+                                reason=LLMErrorReason.BAD_REQUEST)
+    api_key = EncryptionService(EncryptionKeyRepository(db)).decrypt(config.api_key_encrypted, config.encryption_key_id)
+    return build_provider(config.provider, api_key, model, capability_rules=load_capability_rules(db))
+
+
 def _provider_from_config(db: Session, config, purpose: str) -> LLMProvider:
     try:
         api_key = EncryptionService(EncryptionKeyRepository(db)).decrypt(

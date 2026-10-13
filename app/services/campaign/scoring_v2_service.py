@@ -130,7 +130,14 @@ class ScoringV2Service:
         acted_on: bool,
         use_llm: bool = True,
         persist: bool = True,
+        evidence_records: list | None = None,
+        use_confirmation_cache: bool = True,
     ) -> dict:
+        """
+        evidence_records / use_confirmation_cache: for comparisons - score this
+        parse's own evidence (instead of the stored rows) and ask the model
+        afresh instead of reusing a cached confirmation. Pass persist=False.
+        """
         config = self.load_config()
         tools = self.evidence_service.load_tools()
 
@@ -152,9 +159,9 @@ class ScoringV2Service:
                 alias_skill_ids=tuple(row.alias_skill_ids or ()), sense=choice.sense, sense_basis=choice.basis,
             ))
 
-        evidence_rows = self.detection_repository.list_evidence(resume.id)
-        evidence_source = "stored"
-        if not evidence_rows:
+        evidence_rows = evidence_records if evidence_records is not None else self.detection_repository.list_evidence(resume.id)
+        evidence_source = "given" if evidence_records is not None else "stored"
+        if not evidence_rows and evidence_records is None:
             records, _ = detect_stored_resume(self.evidence_service, resume, persist=persist)
             evidence_rows = self.detection_repository.list_evidence(resume.id) if persist else records
             evidence_source = "detected now from the stored resume"
@@ -177,7 +184,7 @@ class ScoringV2Service:
                 outcome = CoreSkillConfirmationService(self.provider_resolver(), self.detection_repository).confirm(
                     resume_id=resume.id, jd_id=job_description.id, core_skills=specs,
                     evidence_rows=evidence_rows, text_hash=resume_text_hash or "", persist=persist,
-                    budget=self._budget if persist else None,
+                    budget=self._budget if persist else None, use_cache=use_confirmation_cache,
                 )
                 confirmations = {r["canonical_skill_id"]: r for r in outcome.results}
                 confirmation = {"ran": not outcome.skipped_budget, "cached": outcome.cached,
