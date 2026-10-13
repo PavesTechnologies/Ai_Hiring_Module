@@ -51,7 +51,9 @@ services:
       POSTGRES_USER: airs_e2e
       POSTGRES_PASSWORD: airs_e2e
       POSTGRES_DB: airs_e2e
-    ports: ["127.0.0.1:55432:5432"]
+    # Below 49152, like Redis: Windows reserves ranges inside the dynamic port
+    # range (49152-65535) at runtime.
+    ports: ["127.0.0.1:45432:5432"]
     volumes: [e2e_pg:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airs_e2e -d airs_e2e"]
