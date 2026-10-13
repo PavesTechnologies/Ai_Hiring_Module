@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
+from app.services.skills.provisional_skill_match import PROVISIONAL_CREDIT
 
 SCORING_VERSION = "v2"
 
@@ -154,6 +155,17 @@ class EvidenceInput:
     evidence_text: str = ""
 
 
+@dataclass(frozen=True)
+class ProvisionalSkillInput:
+    """An unresolved JD unknown skill (Phase 2): scored only, never a gate."""
+    unknown_skill_id: UUID
+    name: str
+    tier: str | None                       # "CORE" / "SUPPORTING" / "PREFERRED" / None (required, unclassified)
+    found: bool
+    excerpt: str | None = None
+    scanned: bool = True
+
+
 @dataclass
 class ScoringInputs:
     jd_skills: list[JDSkillInput]
@@ -172,6 +184,7 @@ class ScoringInputs:
     allowed_missing_core: int = 0
     score_threshold_rejects: bool = False
     extra: dict = field(default_factory=dict)
+    provisional_skills: list[ProvisionalSkillInput] = field(default_factory=list)
 
 
 def definite_mismatch(skill: JDSkillInput, resume_sense: str | None) -> bool:
@@ -248,6 +261,30 @@ def _hierarchy_match(skill: JDSkillInput, pool: dict, hierarchy: dict, config: d
     return None
 
 
+def _provisional_entry(skill: ProvisionalSkillInput, config: dict) -> dict:
+    """tier weight x PROVISIONAL_CREDIT when found, 0 when not; never counts for a gate."""
+    label = (skill.tier or "").lower()
+    effective = round(_importance_weight(label if label in ("core", "supporting") else None, config), 4)
+    quality = PROVISIONAL_CREDIT if skill.found else 0.0
+    return {
+        "unknown_skill_id": str(skill.unknown_skill_id),
+        "canonical_skill_id": None,
+        "canonical_name": skill.name,
+        "provisional": True,
+        "tier": skill.tier,
+        "mandatory": skill.tier != "PREFERRED",
+        "importance": label if label in ("core", "supporting") else None,
+        "effective_weight": effective,
+        "match_type": "PROVISIONAL_TEXT" if skill.found else "MISSING",
+        "recognition": PROVISIONAL_CREDIT if skill.found else 0.0,
+        "quality": quality,
+        "contribution": round(effective * quality, 4),
+        "evidence_text": skill.excerpt,
+        "scanned": skill.scanned,
+        "counts_for_core_gate": False,
+    }
+
+
 def _ratio(entries: list[dict]) -> float | None:
     total = sum(e["effective_weight"] for e in entries)
     return (sum(e["contribution"] for e in entries) / total * 100) if total > 0 else None
@@ -317,8 +354,14 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
             _entry(skill, config, "EXACT", float(mult["EXACT"]), _best(own, config), matched_name=skill.name)
             if own else _entry(skill, config, "MISSING", 0.0, None))
 
-    required_score = _ratio(entries)
-    preferred_score = _ratio(preferred_entries)
+    # Unresolved JD unknown skills: in the skill score only (never in
+    # `entries`, which every gate below reads).
+    provisional = [_provisional_entry(p, config) for p in inputs.provisional_skills]
+    provisional_required = [p for p in provisional if p["mandatory"]]
+    provisional_preferred = [p for p in provisional if not p["mandatory"]]
+
+    required_score = _ratio(entries + provisional_required)
+    preferred_score = _ratio(preferred_entries + provisional_preferred)
     share = float(config["preferred_share"])
     if required_score is None and preferred_score is None:
         skill_score = None
@@ -412,6 +455,7 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
         "components": [{"name": n, "score": round(v, 2), "weight": w} for n, v, w in components],
         "mandatory_skills": entries,
         "preferred_skills": preferred_entries,
+        "provisional_skills": provisional,
         "core_skill_count": len(core),
         "core_confirmed_count": core_confirmed,
         "missing_core_skill_count": missing_core,

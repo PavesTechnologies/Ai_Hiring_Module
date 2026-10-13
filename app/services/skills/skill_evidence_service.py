@@ -22,6 +22,7 @@ Pure: build_evidence() takes plain inputs so it can run in the pipeline,
 in a backfill over stored resumes, and in tests alike.
 """
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -33,6 +34,8 @@ from app.services.skills.resume_sections import (
     SECTION_EXPERIENCE, STRONG_SECTIONS, heading_section, heading_text_of_line, section_of_line,
 )
 from app.services.skills.skill_sense_resolver import SenseChoice, SkillSenseResolver
+
+logger = logging.getLogger(__name__)
 
 SOURCE_SCAN = "SCAN"
 SOURCE_LLM = "LLM"
@@ -334,7 +337,30 @@ class SkillEvidenceService:
                                  job_titles=job_titles)
         if persist:
             self.detection_repository.replace_evidence(resume_id, to_rows(resume_id, records, text=text, parse=parse))
+            # Never costs the evidence above: a failed provisional scan is
+            # rolled back alone and re-run when v2 scores the resume.
+            try:
+                with self.detection_repository.db.begin_nested():
+                    self.scan_provisional_skills(resume_id, text)
+            except Exception:
+                logger.exception("Provisional skill scan failed | resume_id=%s", resume_id)
         return records
+
+    def scan_provisional_skills(self, resume_id: UUID, text: str, *, persist: bool = True) -> dict:
+        """
+        Phase 2 provisional scoring: scan this redacted text for every JD
+        unknown skill still unresolved anywhere, with the same scanner rules,
+        and store which were scanned and found. Returns {unknown_skill_id: hit}.
+        """
+        from app.repositories.provisional_skill_repository import ProvisionalSkillRepository
+        from app.services.skills.provisional_skill_match import scan_provisional
+        repo = ProvisionalSkillRepository(self.detection_repository.db)
+        terms = repo.all_pending_terms()
+        found = scan_provisional(text, terms, self.detection_repository.load_scan_rules())
+        if persist:
+            repo.replace_scan(resume_id, text_hash=text_hash(text), detection_version=DETECTION_VERSION,
+                              scanned_ids=[t.unknown_skill_id for t in terms], hits=list(found.values()))
+        return found
 
 
 def build_v2_detection(db, skill_repository, cache_service=None):

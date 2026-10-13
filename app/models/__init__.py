@@ -60,6 +60,7 @@ from .scoring_v2 import (
     CoreSkillConfirmation,
     CandidateScoringResult,
     ResumeParseVersion,
+    ResumeProvisionalSkillScan,
     SkillPatternRule,
     ScoringShadowRanking,
 )

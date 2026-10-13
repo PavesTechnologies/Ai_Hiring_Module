@@ -2,17 +2,30 @@ import math
 from enum import Enum
 from uuid import UUID
 
+from app.models.candidates import Resume
+from app.models.jd.job_descriptions import JobDescription
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.provisional_skill_repository import ProvisionalSkillRepository
+from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
+from app.services.jd.jd_skill_importance import unknown_skill_tier
+from app.services.skills.provisional_skill_match import (
+    PROVISIONAL_CREDIT, ProvisionalTerm, parsed_json_text, scan_provisional,
+)
 
 # Max child traversal depth for the hierarchy fallback: 1 = direct CHILD,
 # 2 = GRANDCHILD. Direct child always takes precedence over grandchild.
 _MAX_HIERARCHY_DEPTH = 2
 
 _DEFAULT_GRANDCHILD_MULTIPLIER = 0.50
+
+# Provisional (unresolved JD unknown skill) entries: the flat weight a
+# jd_skills row gets on creation, and how they're labelled in the breakdown.
+_PROVISIONAL_JD_SKILL_WEIGHT = 1.0
+PROVISIONAL_MATCH_TYPE = "PROVISIONAL_TEXT"
 
 # Skill-importance multipliers (core/supporting) - default to neutral 1.0
 # (no differentiation) so a JD with no importance-classified skills, or a
@@ -394,6 +407,9 @@ class CandidateScoringService:
 
         return {
             "mandatory_skills": mandatory_skills,
+            # Unresolved JD unknown skills: skill score only, never a gate.
+            "provisional_skills": self.build_provisional_skill_entries(
+                jd_id, resume_id, core_multiplier, supporting_multiplier),
             "mandatory_coverage_pct": mandatory_coverage_pct,
             "core_coverage_pct": core_coverage_pct,
             "gate_skill_scope": self._gate_scope(mandatory_skills),
@@ -401,6 +417,49 @@ class CandidateScoringService:
             "semantic_tier_available": semantic_threshold is not None,
             "NO_VERIFIED_SKILLS": no_verified_skills,
         }
+
+    def build_provisional_skill_entries(
+        self, jd_id: UUID, resume_id: UUID, core_multiplier: float = 1.0, supporting_multiplier: float = 1.0,
+    ) -> list[dict]:
+        """
+        Phase 2 provisional scoring (v1): each of the JD's unresolved unknown
+        skills, matched against the stored parse (parsed_json) with the v2
+        scanner rules. Weight = the default JD skill weight (1.0) x its tier's
+        importance multiplier; contribution = that x PROVISIONAL_CREDIT when
+        found, 0 when not. Scored only - never part of a gate.
+        """
+        db = getattr(self.skill_repository, "db", None)
+        if db is None:
+            return []
+        repo = ProvisionalSkillRepository(db)
+        pending = list(repo.pending_for_jd(jd_id))
+        if not pending:
+            return []
+        jd = db.get(JobDescription, jd_id)
+        resume = db.get(Resume, resume_id)
+        terms = [ProvisionalTerm(unknown.id, unknown.raw_text) for _, unknown in pending]
+        found = scan_provisional(parsed_json_text(getattr(resume, "parsed_json", None)), terms,
+                                 SkillDetectionRepository(db).load_scan_rules())
+        entries = []
+        for link, unknown in pending:
+            tier = unknown_skill_tier(getattr(jd, "extracted_json", None), link, unknown)
+            multiplier = {"CORE": core_multiplier, "SUPPORTING": supporting_multiplier}.get(tier, 1.0)
+            effective = round(_PROVISIONAL_JD_SKILL_WEIGHT * multiplier, 4)
+            hit = found.get(unknown.id)
+            entries.append({
+                "unknown_skill_id": str(unknown.id),
+                "canonical_skill_id": None,
+                "canonical_name": unknown.raw_text,
+                "provisional": True,
+                "tier": tier,
+                "mandatory": tier != "PREFERRED",
+                "importance": tier.lower() if tier in ("CORE", "SUPPORTING") else None,
+                "effective_jd_weight": effective,
+                "match_type": PROVISIONAL_MATCH_TYPE if hit else MandatorySkillMatchType.MISSING.value,
+                "skill_contribution": round(effective * PROVISIONAL_CREDIT, 4) if hit else 0.0,
+                "evidence_text": (hit or {}).get("excerpt"),
+            })
+        return entries
 
     @staticmethod
     def _gate_scope(mandatory_skills: list[dict]) -> str:
@@ -801,7 +860,12 @@ class CandidateScoringService:
         scored_entries = [entry for entry in mandatory_entries if entry.get("importance") != "core"]
         if not scored_entries:
             scored_entries = list(mandatory_entries)
-        preferred_entries = (preferred_breakdown or {}).get("preferred_skills") or []
+        preferred_entries = list((preferred_breakdown or {}).get("preferred_skills") or [])
+        # Unresolved JD unknown skills count in the score (any tier) - never
+        # in a gate, so a provisional core skill is scored here too.
+        provisional = mandatory_breakdown.get("provisional_skills") or []
+        scored_entries = scored_entries + [p for p in provisional if p["mandatory"]]
+        preferred_entries = preferred_entries + [p for p in provisional if not p["mandatory"]]
 
         required_score = self._weighted_ratio(scored_entries)
         preferred_score = self._weighted_ratio(preferred_entries)

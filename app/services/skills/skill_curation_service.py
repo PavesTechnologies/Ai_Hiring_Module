@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.core.cache_invalidation import CacheInvalidator
@@ -9,6 +10,7 @@ from app.models.candidates import Candidate
 from app.models.skills import (
     JDSkillImportance,
     JDSkillVerificationStatus,
+    JDUnknownSkillResolution,
     SkillOntology,
     UnknownSkill,
     UnknownSkillStatus,
@@ -25,6 +27,7 @@ from app.services.embedding_queue_service import (
     JDEmbeddingQueueError,
 )
 from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
+from app.services.jd.jd_skill_change_effects import apply_jd_skill_change_effects
 from app.services.jd.jd_skill_importance import importance_from_extraction
 from app.services.skills.skill_normalization_service import (
     SkillMatchTier,
@@ -93,6 +96,12 @@ class SkillCurationService:
         """Unknown-skill occurrences recorded for a JD, resolved or not."""
         return self.skill_repository.get_jd_unknown_skills_by_jd_id(jd_id)
 
+    def jd_extraction(self, jd_id: UUID) -> dict | None:
+        """The JD's extracted_json (tiers of its unknown skills), or None."""
+        if self.jd_repository is None:
+            return None
+        return getattr(self.jd_repository.get_by_id(jd_id=jd_id), "extracted_json", None)
+
     def list_jds_for_unknown_skill(self, unknown_skill_id: UUID):
         """Every JD version where this UnknownSkill occurs — the reverse direction of list_jd_unknown_skills."""
         self._get_unknown_skill_or_404(unknown_skill_id)
@@ -146,10 +155,13 @@ class SkillCurationService:
         unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
         target_skill = self._get_skill_or_404(target_skill_id)
 
-        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
+        jd_ids = {link.jd_id for link in self.skill_repository.get_pending_jd_links(unknown_skill.id)}
+        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id, actor_id=actor_id)
         self.skill_repository.update_unknown_skill_status(
             unknown_skill, UnknownSkillStatus.MAPPED_TO_EXISTING
         )
+        self._jd_skills_changed(jd_ids, actor_id,
+                                f"unknown skill '{unknown_skill.raw_text}' mapped to '{target_skill.canonical_name}'")
 
         if save_as_alias:
             self._append_alias_validated(target_skill, unknown_skill.raw_text, actor_id)
@@ -197,10 +209,13 @@ class SkillCurationService:
             category=category,
         )
 
-        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, new_skill.id)
+        jd_ids = {link.jd_id for link in self.skill_repository.get_pending_jd_links(unknown_skill.id)}
+        touched_jd_ids = self._create_retroactive_jd_skills(
+            unknown_skill, new_skill.id, actor_id=actor_id, resolution=JDUnknownSkillResolution.NEW_SKILL)
         self.skill_repository.update_unknown_skill_status(
             unknown_skill, UnknownSkillStatus.PROMOTED_TO_CANONICAL
         )
+        self._jd_skills_changed(jd_ids, actor_id, f"unknown skill '{unknown_skill.raw_text}' approved as a new skill")
 
         self.audit_service.log(
             actor_id=actor_id,
@@ -363,6 +378,8 @@ class SkillCurationService:
 
         migration = self._finalize_unknown_skill_resolution(
             unknown_skill, new_skill.id, affected_resume_ids, affected_jd_ids,
+            actor_id=actor_id,
+            note=f"unknown skill '{unknown_skill.raw_text}' approved as new skill '{new_skill.canonical_name}'",
         )
 
         self.audit_service.log(
@@ -421,7 +438,7 @@ class SkillCurationService:
 
         jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
         jd_ids = {link.jd_id for link in jd_links}
-        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id)
+        touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, target_skill.id, actor_id=actor_id)
         for link in jd_links:
             self.skill_repository.delete_jd_unknown_skill(link)
 
@@ -444,6 +461,8 @@ class SkillCurationService:
 
         self.skill_repository.update_unknown_skill_status(unknown_skill, UnknownSkillStatus.MAPPED_TO_EXISTING)
         self._refresh_jd_verification_status(jd_ids)
+        self._jd_skills_changed(jd_ids, actor_id,
+                                f"unknown skill '{unknown_skill.raw_text}' mapped to '{target_skill.canonical_name}'")
 
         self.audit_service.log(
             actor_id=actor_id,
@@ -464,12 +483,19 @@ class SkillCurationService:
 
     def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
         """
-        HR decides raw_text isn't a real skill (junk extraction, etc).
-        Linked JDUnknownSkill rows are left PENDING — they're just never
-        resolved further, since no JDSkill is ever created for them.
+        HR decides raw_text isn't a real skill (junk extraction, etc). Every
+        JD still waiting on it drops it (RESOLVED / DROPPED, no JDSkill), so
+        those JDs can reach VERIFIED and stop scoring it provisionally.
         """
         unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
         self.skill_repository.update_unknown_skill_status(unknown_skill, UnknownSkillStatus.DISMISSED)
+        jd_ids = set()
+        now = datetime.now(timezone.utc)
+        for link in self.skill_repository.get_pending_jd_links(unknown_skill.id):
+            link.resolution, link.resolved_by, link.resolved_at = JDUnknownSkillResolution.DROPPED, actor_id, now
+            self.skill_repository.mark_jd_unknown_skill_resolved(link)
+            jd_ids.add(link.jd_id)
+        self._jd_skills_changed(jd_ids, actor_id, f"unknown skill '{unknown_skill.raw_text}' dismissed")
 
         self.audit_service.log(
             actor_id=actor_id,
@@ -481,6 +507,7 @@ class SkillCurationService:
             details={"raw_text": unknown_skill.raw_text},
         )
         self.skill_repository.commit()
+        self._on_committed(set())
         return unknown_skill
 
     def delete_unknown_skill(self, unknown_skill_id: UUID, actor_id: str) -> dict:
@@ -530,7 +557,8 @@ class SkillCurationService:
         unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
         raw_text = unknown_skill.raw_text
 
-        counts = self._finalize_unknown_skill_resolution(unknown_skill, None)
+        counts = self._finalize_unknown_skill_resolution(
+            unknown_skill, None, actor_id=actor_id, note=f"unknown skill '{raw_text}' deleted")
 
         self.audit_service.log(
             actor_id=actor_id,
@@ -678,7 +706,10 @@ class SkillCurationService:
                 "This is the JD's last core skill. Mark another skill as core before removing or downgrading it."
             )
 
-    def _create_retroactive_jd_skills(self, unknown_skill: UnknownSkill, canonical_skill_id: UUID) -> set[UUID]:
+    def _create_retroactive_jd_skills(
+        self, unknown_skill: UnknownSkill, canonical_skill_id: UUID, *, actor_id: str | None = None,
+        resolution: JDUnknownSkillResolution = JDUnknownSkillResolution.MAPPED,
+    ) -> set[UUID]:
         """
         Returns every jd_id that actually got a NEW JDSkill row created
         here - never one that already had an independently-matched row for
@@ -687,6 +718,7 @@ class SkillCurationService:
         JD re-embedding only for JDs whose skill set truly changed.
         """
         touched_jd_ids: set[UUID] = set()
+        now = datetime.now(timezone.utc)
         for link in self.skill_repository.get_pending_jd_links(unknown_skill.id):
             # Idempotency guard: a JD could in principle already have an
             # independently-matched JDSkill row for this same canonical
@@ -701,7 +733,11 @@ class SkillCurationService:
                     canonical_skill_id=canonical_skill_id,
                     mandatory=bool(link.mandatory),
                     match_tier=SkillMatchTier.MANUAL_HR.value,
-                    verification_status=JDSkillVerificationStatus.AUTO_VERIFIED,
+                    # An HR decision: recorded as verified by that HR user.
+                    verification_status=(JDSkillVerificationStatus.HR_VERIFIED if actor_id
+                                         else JDSkillVerificationStatus.AUTO_VERIFIED),
+                    verified_by=actor_id,
+                    verified_at=now if actor_id else None,
                     confidence=1.0,
                     # Same flat weight the JD parsing pipeline assigns
                     # (M07) - this is a retroactive jd_skills row for an
@@ -713,6 +749,9 @@ class SkillCurationService:
                 )
                 self.skill_repository.bump_occurrence_count(canonical_skill_id)
                 touched_jd_ids.add(link.jd_id)
+            if actor_id:
+                link.resolution, link.resolved_canonical_skill_id = resolution, canonical_skill_id
+                link.resolved_by, link.resolved_at = actor_id, now
             self.skill_repository.mark_jd_unknown_skill_resolved(link)
         return touched_jd_ids
 
@@ -730,6 +769,9 @@ class SkillCurationService:
         canonical_skill_id: UUID | None,
         affected_resume_ids: set[UUID] | None = None,
         affected_jd_ids: set[UUID] | None = None,
+        *,
+        actor_id: str | None = None,
+        note: str | None = None,
     ) -> dict:
         """
         Common tail shared by every "resolve this UnknownSkill for good"
@@ -753,11 +795,14 @@ class SkillCurationService:
         """
         jd_skills_migrated = 0
         candidate_skills_migrated = 0
+        # JDs still waiting on this skill: their scoring inputs change now.
+        pending_jd_ids = {link.jd_id for link in self.skill_repository.get_pending_jd_links(unknown_skill.id)}
 
         if canonical_skill_id is not None:
             jd_links = self.skill_repository.get_pending_jd_links(unknown_skill.id)
             jd_ids = {link.jd_id for link in jd_links}
-            touched_jd_ids = self._create_retroactive_jd_skills(unknown_skill, canonical_skill_id)
+            touched_jd_ids = self._create_retroactive_jd_skills(
+                unknown_skill, canonical_skill_id, actor_id=actor_id, resolution=JDUnknownSkillResolution.NEW_SKILL)
             if affected_jd_ids is not None:
                 affected_jd_ids.update(touched_jd_ids)
             jd_skills_migrated = len(jd_links)
@@ -793,6 +838,8 @@ class SkillCurationService:
 
         delete_counts = self.skill_repository.delete_unknown_skill_cascade(unknown_skill)
         self._refresh_jd_verification_status(jd_ids)
+        if actor_id:
+            self._jd_skills_changed(pending_jd_ids, actor_id, note or f"unknown skill '{unknown_skill.raw_text}' resolved")
 
         return {
             "jd_skills_migrated": jd_skills_migrated,
@@ -902,6 +949,28 @@ class SkillCurationService:
         for jd_id in jd_ids:
             self.skill_repository.mark_jd_verified_if_fully_resolved(jd_id)
         self._stale_jd_ids.update(jd_ids)
+
+    def _jd_skills_changed(self, jd_ids: set[UUID], actor_id: str, note: str) -> None:
+        """
+        Every JD whose unknown skill was just resolved, before commit: is_verified
+        recomputed, a calibration version saved if the JD is calibrated, live
+        candidates marked out of date (see jd_skill_change_effects).
+        """
+        if not jd_ids:
+            return
+        results = apply_jd_skill_change_effects(
+            self.skill_repository.db, jd_ids, actor_id=actor_id, actor_role="HR_ADMIN", note=note,
+            audit_service=self.audit_service, skill_repository=self.skill_repository,
+        )
+        # Read back by JDUnknownSkillService for its response.
+        self.last_change_effects = {**getattr(self, "last_change_effects", {}), **results}
+        self._stale_jd_ids.update(jd_ids)
+
+    def on_committed(self, reembed_jd_ids: set[UUID], *, stale_jd_ids: set[UUID] = frozenset(),
+                     catalog_changed: bool = False) -> None:
+        """Public post-commit tail for callers outside this service: caches dropped, changed JDs re-embedded."""
+        self._stale_jd_ids.update(stale_jd_ids)
+        self._on_committed(set(reembed_jd_ids), catalog_changed=catalog_changed)
 
     def _on_committed(self, jd_ids: set[UUID], catalog_changed: bool = False) -> None:
         """

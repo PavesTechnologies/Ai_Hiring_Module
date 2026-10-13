@@ -56,6 +56,8 @@ class ActionType(enum.Enum):
     # JD calibration (Phase 2): first calibration, and any later change.
     JD_CALIBRATED = "JD_CALIBRATED"
     JD_CALIBRATION_CHANGED = "JD_CALIBRATION_CHANGED"
+    # An unknown skill on one JD mapped / approved as new / dropped (Phase 2).
+    JD_UNKNOWN_SKILL_RESOLVED = "JD_UNKNOWN_SKILL_RESOLVED"
     JD_SKILL_REMOVED = "JD_SKILL_REMOVED"
     ALIAS_ADDED = "ALIAS_ADDED"
     RESUME_UPLOADED = "RESUME_UPLOADED"

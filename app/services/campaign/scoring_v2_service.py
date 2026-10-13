@@ -22,6 +22,7 @@ import logging
 
 from app.models.scoring_v2 import CandidateScoringResult
 from app.models.skills import JDSkill, SkillOntology
+from app.repositories.provisional_skill_repository import ProvisionalSkillRepository
 from app.repositories.scoring_result_repository import ScoringResultRepository
 from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
@@ -30,13 +31,16 @@ from app.services.campaign.candidate_scoring_service import (
 )
 from app.services.campaign.scoring_v2 import (
     OUTCOME_NOT_RUN, OUTCOME_PENDING, SCORING_V2_CONFIG_KEY, SCORING_VERSION, EvidenceInput, JDSkillInput,
-    ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
+    ProvisionalSkillInput, ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
 )
+from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.core_skill_confirmation_service import (
     PROMPT_VERSION, CoreSkillConfirmationService, jd_core_skill_specs,
 )
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
-from app.services.skills.skill_evidence_service import SkillEvidenceService, detect_stored_resume
+from app.services.skills.skill_evidence_service import (
+    SkillEvidenceService, detect_stored_resume, redacted_resume_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,38 @@ class ScoringV2Service:
         """Daily LLM cap: True when calls_needed more confirmation calls still fit in today's cap."""
         cap = daily_llm_call_cap(self.config_repository)
         return ScoringResultRepository(self.db).v2_llm_calls_today() + calls_needed <= cap
+
+    def provisional_inputs(self, job_description, resume, *, persist: bool = True) -> list[ProvisionalSkillInput]:
+        """
+        The JD's unresolved unknown skills, found or not in this resume's
+        redacted text. Read from the scan detection stored; when that scan
+        predates one of them (a JD unknown skill added later), the stored
+        resume is scanned again now.
+        """
+        repo = ProvisionalSkillRepository(self.db)
+        pending = repo.pending_for_jd(job_description.id)
+        if not pending:
+            return []
+        scan = repo.get_scan(resume.id)
+        scanned = set(scan.scanned_unknown_skill_ids or ()) if scan is not None else set()
+        hits = {str(h.get("unknown_skill_id")): h for h in (scan.hits or [])} if scan is not None else {}
+        if any(unknown.id not in scanned for _, unknown in pending):
+            try:
+                text = redacted_resume_text(resume)
+                found = self.evidence_service.scan_provisional_skills(resume.id, text, persist=persist)
+                hits = {str(k): v for k, v in found.items()}
+                scanned = {unknown.id for _, unknown in pending} | scanned
+            except Exception:
+                logger.exception("Provisional re-scan failed | resume_id=%s", resume.id)
+        return [
+            ProvisionalSkillInput(
+                unknown_skill_id=unknown.id, name=unknown.raw_text,
+                tier=unknown_skill_tier(job_description.extracted_json, link, unknown),
+                found=str(unknown.id) in hits, excerpt=(hits.get(str(unknown.id)) or {}).get("excerpt"),
+                scanned=unknown.id in scanned,
+            )
+            for link, unknown in pending
+        ]
 
     def load_config(self) -> dict:
         return parse_config(self.config_repository.get_configs_by_keys([SCORING_V2_CONFIG_KEY]).get(SCORING_V2_CONFIG_KEY))
@@ -194,6 +230,7 @@ class ScoringV2Service:
             score_threshold_rejects=snapshot["score_threshold_rejects_config"],
             extra={"scoring_config_version": version, "confirmation": confirmation,
                    "evidence_source": evidence_source, "acted_on": acted_on},
+            provisional_skills=self.provisional_inputs(job_description, resume, persist=persist),
         ), config)
         if special_outcome is not None:
             apply_unavailable_outcome(breakdown, *special_outcome)

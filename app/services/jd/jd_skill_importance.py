@@ -35,3 +35,17 @@ def importance_from_extraction(extracted_json: dict | None, *names: str | None) 
             if candidates & wanted:
                 return importance
     return None
+
+
+def unknown_skill_tier(extracted_json: dict | None, link, unknown_skill) -> str | None:
+    """
+    A JD unknown skill's tier: PREFERRED when the JD lists it as preferred,
+    else CORE / SUPPORTING from the extraction (raw text or normalised key -
+    the same lookup resolving it into a jd_skills row uses), else None
+    (required, unclassified).
+    """
+    if getattr(link, "mandatory", None) is False:
+        return "PREFERRED"
+    importance = importance_from_extraction(extracted_json, unknown_skill.raw_text,
+                                            getattr(unknown_skill, "normalized_key", None))
+    return importance.value if importance is not None else None

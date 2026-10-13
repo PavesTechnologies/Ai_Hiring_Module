@@ -37,7 +37,7 @@ from app.services.audit_service import AuditService
 from app.services.campaign.near_miss import experience_near_miss_tolerance
 from app.services.campaign.score_out_of_date import LIVE_CAMPAIGN_STATUSES, mark_campaigns_out_of_date
 from app.services.jd.jd_calibration_rules import calibrated_min_experience
-from app.services.jd.jd_skill_importance import importance_from_extraction
+from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.skill_sense_resolver import SkillSenseResolver
 
 CORE_SKILL_WARNING_THRESHOLD = 5
@@ -95,16 +95,9 @@ class JDCalibrationService:
                 suggested_sense_basis=suggestion.basis if ambiguous else None,
             ))
 
-        unknown = []
-        for link, unknown_skill in self.repo.unknown_skill_links(jd.id):
-            importance = importance_from_extraction(jd.extracted_json, unknown_skill.raw_text)
-            tier = ("PREFERRED" if link.mandatory is False
-                    else importance.value if importance is not None else None)
-            unknown.append(CalibrationUnknownSkill(
-                unknown_skill_id=unknown_skill.id, raw_text=unknown_skill.raw_text, tier=tier,
-                status=getattr(link.status, "value", str(link.status)),
-            ))
+        unknown = self._unknown_skills(jd)
         pending = sum(1 for u in unknown if u.status == "PENDING")
+        blocking = [u.raw_text for u in unknown if u.blocks_calibration]
 
         min_years = effective_min_experience(jd)
         campaigns = self.repo.campaigns_for_jd(jd.id)
@@ -114,8 +107,12 @@ class JDCalibrationService:
 
         view_warnings = list(warnings or [])
         view_warnings += self._skill_warnings(core_count, [s for s in skills if s.ambiguous and not s.sense_key])
+        if blocking:
+            view_warnings.append("Resolve these core skills before calibrating (map, approve as new or drop): "
+                                 + ", ".join(blocking) + ".")
         if pending:
-            view_warnings.append(f"{pending} skill(s) from this JD are not in the catalogue yet (unknown skills).")
+            view_warnings.append(f"{pending} skill(s) from this JD are not in the catalogue yet (unknown skills); "
+                                 f"until resolved they're scored provisionally (text match at 0.8), never as a gate.")
 
         return JDCalibrationView(
             jd_id=jd.id, title=jd.title, version_number=jd.version_number,
@@ -133,6 +130,7 @@ class JDCalibrationService:
             education_field=(jd.education_criteria or {}).get("field"),
             live_campaigns=[CalibrationCampaign(campaign_id=c.id, name=c.name, status=c.status.value) for c in live],
             can_calibrate=can_calibrate,
+            blocking_unknown_skills=blocking,
             warnings=list(dict.fromkeys(view_warnings)),
         )
 
@@ -149,6 +147,10 @@ class JDCalibrationService:
              actor_role: str | None) -> JDCalibrationSaveResponse:
         try:
             jd = self._jd(jd_id)
+            blocking = [u.raw_text for u in self._unknown_skills(jd) if u.blocks_calibration]
+            if blocking:
+                raise UnprocessableError("Resolve these core skills before calibrating (map, approve as new or drop): "
+                                         + ", ".join(blocking) + ".")
             rows = {row.id: (row, name) for row, name in self.repo.jd_skills_with_names(jd.id)}
             resolver = SkillSenseResolver(self.repo.load_senses())
             new_skills = self._validated_skills(request, rows, resolver)
@@ -224,7 +226,58 @@ class JDCalibrationService:
             changed=True, calibration_version=jd.calibration_version, candidates_marked_out_of_date=marked,
             warnings=warnings, calibration=self.get_view(jd.id, can_calibrate=True, warnings=warnings))
 
+    def record_skill_change(self, jd_id: UUID, *, actor_id: str, actor_role: str, note: str) -> int | None:
+        """
+        A calibrated JD's skills changed outside the Calibration tab (an
+        unknown skill mapped / approved as new / dropped): save the new state
+        as the next calibration version, diffed against the last one, and
+        audit it. Not committed - part of the caller's transaction. Returns
+        the new version number, or None when the JD isn't calibrated.
+        """
+        jd = self.repo.get_jd(jd_id)
+        if jd is None or jd.calibration_status != JDCalibrationStatus.CALIBRATED:
+            return None
+        self.repo.flush()
+        after = self._snapshot(jd, {row.id: (row, name) for row, name in self.repo.jd_skills_with_names(jd.id)})
+        latest = self.repo.latest_version(jd.id)
+        before = latest.snapshot if latest is not None else {**after, "skills": {}}
+        changes = {**self._changes(before, after), "note": note}
+        now = datetime.now(timezone.utc)
+        jd.calibration_version = self.repo.latest_version_no(jd.id) + 1
+        jd.updated_at = now
+        self.repo.add_version(JDCalibrationVersion(
+            jd_id=jd.id, version_no=jd.calibration_version, snapshot=after, changes=changes,
+            calibrated_by=actor_id, calibrated_at=now,
+        ))
+        self.audit_service.log(
+            actor_id=actor_id, actor_role=actor_role, action_type=ActionType.JD_CALIBRATION_CHANGED,
+            entity_type=EntityType.JOB_DESCRIPTION, entity_id=jd.id,
+            details={"calibration_version": jd.calibration_version, "changes": changes},
+        )
+        return jd.calibration_version
+
     # --- helpers ------------------------------------------------------------
+    def _unknown_skills(self, jd) -> list[CalibrationUnknownSkill]:
+        links = self.repo.unknown_skill_links(jd.id)
+        canonical = self.repo.skill_names([link.resolved_canonical_skill_id for link, _ in links
+                                           if getattr(link, "resolved_canonical_skill_id", None)])
+        resolvers = self.repo.user_names([link.resolved_by for link, _ in links if getattr(link, "resolved_by", None)])
+        result = []
+        for link, unknown_skill in links:
+            tier = unknown_skill_tier(jd.extracted_json, link, unknown_skill)
+            status = getattr(link.status, "value", str(link.status))
+            resolution = getattr(link, "resolution", None)
+            resolved_id = getattr(link, "resolved_canonical_skill_id", None)
+            result.append(CalibrationUnknownSkill(
+                unknown_skill_id=unknown_skill.id, raw_text=unknown_skill.raw_text, tier=tier, status=status,
+                resolution=getattr(resolution, "value", resolution),
+                resolved_canonical_skill_id=resolved_id, resolved_canonical_name=canonical.get(resolved_id),
+                resolved_by_name=resolvers.get(getattr(link, "resolved_by", None)),
+                resolved_at=getattr(link, "resolved_at", None),
+                blocks_calibration=status == "PENDING" and tier == "CORE",
+            ))
+        return result
+
     def _jd(self, jd_id: UUID):
         jd = self.repo.get_jd(jd_id)
         if jd is None:
@@ -289,11 +342,17 @@ class JDCalibrationService:
         changes: dict = {}
         skill_changes = []
         for sid, new in after["skills"].items():
-            old = before["skills"].get(sid, {})
+            if sid not in before["skills"]:
+                skill_changes.append({"skill": new["name"], "field": "added", "before": None, "after": new.get("tier")})
+                continue
+            old = before["skills"][sid]
             for field in ("tier", "sense_key"):
                 if old.get(field) != new.get(field):
                     skill_changes.append({"skill": new["name"], "field": field,
                                           "before": old.get(field), "after": new.get(field)})
+        for sid, old in before["skills"].items():
+            if sid not in after["skills"]:
+                skill_changes.append({"skill": old["name"], "field": "removed", "before": old.get("tier"), "after": None})
         if skill_changes:
             changes["skills"] = skill_changes
         for field in ("min_experience_years", "experience_tolerance_years", "education_requirement"):

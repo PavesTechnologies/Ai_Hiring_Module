@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Security, status
 
 from app.dependencies.jd import get_jd_calibration_service
+from app.dependencies.jd_unknown_skills import get_jd_unknown_skill_service
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 from app.schemas.jd.calibration import (
@@ -11,9 +12,13 @@ from app.schemas.jd.calibration import (
     JDCalibrationSaveResponse,
     JDCalibrationVersionItem,
     JDCalibrationView,
+    JDUnknownSkillResolveRequest,
+    JDUnknownSkillResolveResponse,
+    UnknownSkillSuggestions,
 )
 from app.schemas.response import APIResponse
 from app.services.jd.jd_calibration_service import JDCalibrationService
+from app.services.jd.jd_unknown_skill_service import JDUnknownSkillService
 
 router = APIRouter(prefix="/job-descriptions", tags=["JD Calibration"])
 
@@ -69,3 +74,41 @@ def list_jd_calibration_versions(
     user: TokenUser = Security(require_roles(*_VIEWERS)),
 ):
     return APIResponse.ok(data=service.list_versions(jd_id))
+
+
+# --- unknown skills (Phase 2 Step 2) -------------------------------------------
+
+@router.get(
+    "/{jd_id}/unknown-skills/suggestions",
+    response_model=APIResponse[list[UnknownSkillSuggestions]],
+    status_code=status.HTTP_200_OK,
+    summary="Top-3 catalogue suggestions for each unresolved unknown skill of a JD",
+)
+def get_jd_unknown_skill_suggestions(
+    jd_id: UUID,
+    service: JDUnknownSkillService = Depends(get_jd_unknown_skill_service),
+    user: TokenUser = Security(require_roles(*_VIEWERS)),
+):
+    return APIResponse.ok(data=service.suggestions(jd_id))
+
+
+@router.post(
+    "/{jd_id}/unknown-skills/{unknown_skill_id}/resolve",
+    response_model=APIResponse[JDUnknownSkillResolveResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Map / approve as new / drop an unknown skill (HR_ADMIN)",
+    description="MAP and DROP apply to this JD only; NEW adds the skill to the catalogue and resolves every "
+                "JD with this text. Each JD resolved: verification recomputed, a calibration version if "
+                "calibrated, live campaigns' scored candidates marked 'score out of date'.",
+)
+def resolve_jd_unknown_skill(
+    jd_id: UUID,
+    unknown_skill_id: UUID,
+    request: JDUnknownSkillResolveRequest,
+    service: JDUnknownSkillService = Depends(get_jd_unknown_skill_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.resolve(jd_id, unknown_skill_id, request, actor_id=user.user_id,
+                             actor_role=user.roles[0] if user.roles else None)
+    return APIResponse.ok(data=result, message={"MAP": "Mapped.", "NEW": "Added to the catalogue.",
+                                                "DROP": "Dropped from this JD."}[request.action])

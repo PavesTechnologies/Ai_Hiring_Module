@@ -172,6 +172,8 @@ class SkillRepository:
         confidence: float | None = None,
         weight: float | None = None,
         importance: JDSkillImportance | None = None,
+        verified_by: str | None = None,
+        verified_at=None,
     ) -> JDSkill:
         jd_skill = JDSkill(
             jd_id=jd_id,
@@ -182,6 +184,8 @@ class SkillRepository:
             confidence=confidence,
             match_tier=match_tier,
             verification_status=verification_status,
+            verified_by=verified_by,
+            verified_at=verified_at,
         )
         self.db.add(jd_skill)
         self.db.flush()

@@ -30,12 +30,51 @@ class CalibrationSkill(BaseModel):
     suggested_sense_basis: str | None = None   # cue / title / assumed
 
 
+class SkillSuggestion(BaseModel):
+    canonical_skill_id: UUID
+    canonical_name: str
+    similarity: float
+
+
 class CalibrationUnknownSkill(BaseModel):
-    """A JD skill not in the catalogue (resolved in the unknown-skills flow)."""
+    """A JD skill not in the catalogue: mapped / approved as new / dropped for this JD."""
     unknown_skill_id: UUID
     raw_text: str
     tier: SkillTier | None
     status: str                       # PENDING / RESOLVED
+    resolution: str | None = None     # MAPPED / NEW_SKILL / DROPPED (resolved here)
+    resolved_canonical_skill_id: UUID | None = None
+    resolved_canonical_name: str | None = None
+    resolved_by_name: str | None = None
+    resolved_at: datetime | None = None
+    # An unresolved CORE skill blocks calibration.
+    blocks_calibration: bool = False
+
+
+class UnknownSkillSuggestions(BaseModel):
+    """Top-3 catalogue skills by embedding similarity for one pending unknown skill."""
+    unknown_skill_id: UUID
+    suggestions: list[SkillSuggestion]
+
+
+class JDUnknownSkillResolveRequest(BaseModel):
+    """MAP to a catalogue skill, approve as a NEW catalogue skill (global), or DROP from this JD."""
+    action: Literal["MAP", "NEW", "DROP"]
+    canonical_skill_id: UUID | None = None          # MAP
+    canonical_name: str | None = Field(default=None, max_length=255)   # NEW (default: the raw text)
+    aliases: list[str] = []                          # NEW
+    category: str | None = None                      # NEW
+    parent_skill_id: UUID | None = None              # NEW
+
+
+class JDUnknownSkillResolveResponse(BaseModel):
+    action: str
+    unknown_skill_id: UUID
+    canonical_skill_id: UUID | None
+    # Every JD the decision resolved (NEW is global: all JDs with this text).
+    affected_jd_ids: list[UUID]
+    candidates_marked_out_of_date: int
+    calibration: "JDCalibrationView"
 
 
 class CalibrationCampaign(BaseModel):
@@ -70,6 +109,8 @@ class JDCalibrationView(BaseModel):
     live_campaigns: list[CalibrationCampaign]
     can_calibrate: bool
     warnings: list[str] = []
+    # Unresolved CORE unknown skills: calibration is refused until they're resolved.
+    blocking_unknown_skills: list[str] = []
 
 
 class CalibrationSkillInput(BaseModel):
@@ -101,3 +142,6 @@ class JDCalibrationVersionItem(BaseModel):
     calibrated_by_name: str | None
     calibrated_at: datetime
     changes: dict | None
+
+
+JDUnknownSkillResolveResponse.model_rebuild()

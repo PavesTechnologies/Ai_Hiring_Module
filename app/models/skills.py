@@ -55,6 +55,14 @@ class JDUnknownSkillStatus(enum.Enum):
     RESOLVED = "RESOLVED"
 
 
+class JDUnknownSkillResolution(enum.Enum):
+    # How HR resolved this JD's unknown skill (Phase 2 Step 2). Status stays
+    # RESOLVED for all three; DROPPED creates no jd_skills row.
+    MAPPED = "MAPPED"
+    NEW_SKILL = "NEW_SKILL"
+    DROPPED = "DROPPED"
+
+
 class SkillOntology(Base):
     __tablename__ = "skill_ontology"
     __table_args__ = (
@@ -186,6 +194,14 @@ class JDUnknownSkill(Base):
         nullable=False,
         default=JDUnknownSkillStatus.PENDING,
     )
+    resolution: Mapped[Optional[JDUnknownSkillResolution]] = mapped_column(
+        SAEnum(JDUnknownSkillResolution, name="jd_unknown_skill_resolution_enum"), nullable=True,
+    )
+    resolved_canonical_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=True,
+    )
+    resolved_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

@@ -260,3 +260,25 @@ class ScoringShadowRanking(Base):
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     entered_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ResumeProvisionalSkillScan(Base):
+    """
+    Phase 2 provisional scoring: which unresolved JD unknown skills the v2
+    detection scanned this resume's redacted text for, and what it found
+    (same scanner rules as catalogue skills). One row per resume, replaced on
+    each scan. The text itself is never stored.
+    """
+
+    __tablename__ = "resume_provisional_skill_scans"
+    __table_args__ = (UniqueConstraint("resume_id", name="uq_resume_provisional_skill_scans_resume"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    detection_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    scanned_unknown_skill_ids = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list,
+                                              server_default=text("'{}'"))
+    # [{"unknown_skill_id", "term", "origin", "excerpt"}]
+    hits: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

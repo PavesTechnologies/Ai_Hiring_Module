@@ -164,6 +164,9 @@ class JDUnknownSkillItem(BaseModel):
     mandatory: bool | None
     status: str
     created_at: datetime
+    # CORE / SUPPORTING / PREFERRED / None (required, unclassified) - Phase 2.
+    tier: str | None = None
+    resolution: str | None = None     # MAPPED / NEW_SKILL / DROPPED
 
 
 class UnknownSkillJDItem(BaseModel):

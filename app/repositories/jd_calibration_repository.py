@@ -55,6 +55,19 @@ class JDCalibrationRepository:
         ).first()
         return row[0] if row else 0
 
+    def skill_names(self, skill_ids) -> dict:
+        ids = [i for i in dict.fromkeys(skill_ids) if i]
+        if not ids:
+            return {}
+        return dict(self.db.execute(
+            select(SkillOntology.id, SkillOntology.canonical_name).where(SkillOntology.id.in_(ids))).all())
+
+    def latest_version(self, jd_id: UUID) -> JDCalibrationVersion | None:
+        return self.db.execute(
+            select(JDCalibrationVersion).where(JDCalibrationVersion.jd_id == jd_id)
+            .order_by(JDCalibrationVersion.version_no.desc()).limit(1)
+        ).scalars().first()
+
     def add_version(self, version: JDCalibrationVersion) -> None:
         self.db.add(version)
 

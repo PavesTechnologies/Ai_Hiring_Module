@@ -66,6 +66,12 @@ class FakeRepo:
     def user_names(self, ids):
         return {"hr-1": "Jordan HR"}
 
+    def skill_names(self, ids):
+        return {i: "Mapped skill" for i in ids}
+
+    def latest_version(self, jd_id):
+        return max(self.versions, key=lambda v: v.version_no, default=None)
+
     def latest_version_no(self, jd_id):
         return max((v.version_no for v in self.versions), default=0)
 
@@ -287,3 +293,62 @@ def test_nothing_in_calibration_sends_email():
         service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
         service.save(jd.id, _request(change, python, aws, sense="ITSM"), actor_id="hr-1", actor_role="HR_ADMIN")
     send.assert_not_called()
+
+
+
+# --- unknown skills (Phase 2 Step 2) --------------------------------------------
+
+def _unknown(raw_text, mandatory=True, status=JDUnknownSkillStatus.PENDING):
+    return (SimpleNamespace(mandatory=mandatory, status=status),
+            SimpleNamespace(id=uuid4(), raw_text=raw_text, normalized_key=None))
+
+
+def test_an_unresolved_core_unknown_skill_blocks_calibration():
+    extraction = {"experience": {"min_experience_years": 10},
+                  "required_skills": {"core": ["Agentic Workflows"], "supporting": ["Prompt Design"]}}
+    service, repo, audit, jd, change, python, aws = _setup(
+        unknown=[_unknown("Agentic Workflows"), _unknown("Prompt Design")], extracted_json=extraction)
+
+    view = service.get_view(jd.id, can_calibrate=True)
+    assert view.blocking_unknown_skills == ["Agentic Workflows"]
+    assert [u.blocks_calibration for u in view.unknown_skills] == [True, False]
+
+    with pytest.raises(UnprocessableError, match="Agentic Workflows"):
+        service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+    assert repo.versions == [] and jd.calibration_status == JDCalibrationStatus.NOT_CALIBRATED
+
+
+def test_supporting_or_resolved_unknown_skills_do_not_block():
+    extraction = {"required_skills": {"core": ["Agentic Workflows"]}}
+    resolved = _unknown("Agentic Workflows", status=JDUnknownSkillStatus.RESOLVED)
+    service, repo, audit, jd, change, python, aws = _setup(
+        unknown=[resolved, _unknown("Prompt Design")], extracted_json=extraction)
+
+    result = service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+    assert result.changed and result.calibration.blocking_unknown_skills == []
+
+
+def test_a_skill_added_by_resolving_an_unknown_skill_is_saved_as_a_calibration_version():
+    service, repo, audit, jd, change, python, aws = _setup()
+    service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+    audit.reset_mock()
+    mapped = _skill(uuid4(), importance=JDSkillImportance.SUPPORTING)
+    repo.skills.append((mapped, "Prompt Engineering"))
+
+    version = service.record_skill_change(jd.id, actor_id="hr-2", actor_role="HR_ADMIN",
+                                          note="unknown skill 'prompt design' mapped to 'Prompt Engineering'")
+
+    assert version == 2 and jd.calibration_version == 2
+    latest = repo.versions[-1]
+    assert latest.calibrated_by == "hr-2"
+    assert latest.changes["skills"] == [{"skill": "Prompt Engineering", "field": "added", "before": None,
+                                         "after": "SUPPORTING"}]
+    assert "mapped to 'Prompt Engineering'" in latest.changes["note"]
+    assert audit.log.call_args.kwargs["action_type"].value == "JD_CALIBRATION_CHANGED"
+    assert repo.committed == 1                     # only the save committed; the caller owns this transaction
+
+
+def test_an_uncalibrated_jd_records_no_version():
+    service, repo, audit, jd, *_ = _setup()
+    assert service.record_skill_change(jd.id, actor_id="hr-1", actor_role="HR_ADMIN", note="x") is None
+    assert repo.versions == []

@@ -29,6 +29,7 @@ from app.schemas.skills.curation import (
     UnknownSkillJDItem,
     UnknownSkillListResponse,
 )
+from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.skill_curation_service import SkillCurationService
 
 router = APIRouter(
@@ -395,6 +396,7 @@ def list_jd_unknown_skills(
 ):
     """Unknown-skill occurrences recorded for a JD, resolved or not."""
     rows = service.list_jd_unknown_skills(jd_id)
+    extracted = service.jd_extraction(jd_id)
     return APIResponse.ok(
         data=[
             JDUnknownSkillItem(
@@ -405,6 +407,8 @@ def list_jd_unknown_skills(
                 mandatory=link.mandatory,
                 status=link.status.value,
                 created_at=link.created_at,
+                tier=unknown_skill_tier(extracted, link, unknown_skill),
+                resolution=link.resolution.value if getattr(link, "resolution", None) else None,
             )
             for link, unknown_skill in rows
         ],
