@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # the 300s visibility_timeout, reserved-but-waiting tasks can otherwise be
     # redelivered and run twice.
     celery_worker_prefetch_multiplier: int = 1
+    # Worker log file (rotating). Unset = console only (containers log to
+    # stdout). start-project.bat sets it for the local dev worker.
+    celery_worker_log_file: str | None = None
+    celery_worker_log_max_bytes: int = 10 * 1024 * 1024
+    celery_worker_log_backup_count: int = 5
     # Optional throttle on LLM tasks, e.g. "20/m". Celery applies it per
     # worker process, so the effective ceiling is this x the LLM worker's
     # concurrency. Unset = no throttle beyond the worker's concurrency.

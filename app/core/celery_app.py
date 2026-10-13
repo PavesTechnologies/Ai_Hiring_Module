@@ -1,6 +1,10 @@
+import logging
+import logging.handlers
+import os
 import platform
+from pathlib import Path
 
-from celery import Celery
+from celery import Celery, signals
 from celery.schedules import crontab
 from kombu import Queue
 
@@ -31,6 +35,8 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     broker_connection_retry_on_startup=True,
+    # 3 here limits callers that only publish (the API). The worker itself
+    # retries forever - see _worker_keeps_retrying_the_broker below.
     broker_connection_max_retries=3,
     # Redis has no real server-side ack: a task handed to a worker is moved
     # to an "unacked" set and only returned to the queue once
@@ -210,3 +216,58 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0),
     },
 }
+
+
+# ── Worker: keep retrying the broker; log to a rotating file ────────────────
+
+@signals.celeryd_init.connect
+def _worker_keeps_retrying_the_broker(conf=None, **_):
+    """
+    In the worker only: retry the Redis connection forever instead of
+    exiting after broker_connection_max_retries (3). A worker that gave up
+    exited, and under watchmedo that looked like an unexplained restart.
+    Publishers (the API) keep the limit, so a request never waits on Redis
+    indefinitely.
+    """
+    (conf or celery_app.conf).broker_connection_max_retries = None
+
+
+def _add_worker_log_file(logger: logging.Logger, format: str) -> None:
+    path = settings.celery_worker_log_file
+    if not path or any(getattr(h, "_airs_worker_log", False) for h in logger.handlers):
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        path, maxBytes=settings.celery_worker_log_max_bytes,
+        backupCount=settings.celery_worker_log_backup_count, encoding="utf-8", delay=True,
+    )
+    handler.setFormatter(logging.Formatter(format))
+    handler._airs_worker_log = True
+    logger.addHandler(handler)
+
+
+@signals.after_setup_logger.connect
+def _worker_log_file(logger=None, format=None, **_):
+    """Worker + app logs also go to CELERY_WORKER_LOG_FILE (rotating), when set."""
+    _add_worker_log_file(logger, format or "[%(asctime)s: %(levelname)s/%(processName)s] %(message)s")
+
+
+@signals.after_setup_task_logger.connect
+def _worker_task_log_file(logger=None, format=None, **_):
+    _add_worker_log_file(logger, format or "[%(asctime)s: %(levelname)s/%(processName)s] %(message)s")
+
+
+_lifecycle_log = logging.getLogger("airs.worker")
+
+
+@signals.worker_ready.connect
+def _log_worker_started(**_):
+    # A restart with no "stopping" line before it means the process was
+    # killed (e.g. watchmedo after a .py change), not that it exited itself.
+    _lifecycle_log.warning("AIRS worker started | pid=%s parent=%s", os.getpid(), os.getppid())
+
+
+@signals.worker_shutting_down.connect
+def _log_worker_stopping(sig=None, how=None, exitcode=None, **_):
+    _lifecycle_log.warning("AIRS worker stopping | pid=%s signal=%s how=%s exitcode=%s",
+                           os.getpid(), sig, how, exitcode)

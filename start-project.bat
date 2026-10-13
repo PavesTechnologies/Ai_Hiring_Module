@@ -68,6 +68,8 @@ REM
 REM For a long batch run where restarts are unacceptable, start the worker
 REM without watchmedo: celery -A app.core.celery_app worker --pool=solo
 set "CELERY_DEBOUNCE_INTERVAL=2"
+REM Worker log (rotating, 10 MB x 5) - read it after an unexplained restart.
+set "CELERY_WORKER_LOG_FILE=%PROJECT_DIR%logs\celery-worker.log"
 
 REM Pool, concurrency and queues are read from .env (CELERY_WORKER_POOL,
 REM CELERY_CONCURRENCY, CELERY_QUEUES) so this script and the app share one
@@ -374,6 +376,7 @@ REM ----------------------------------------------------------------------------
 echo   [START] Starting Celery worker with AUTO-RELOAD...
 echo   [MODE]  pool=%CELERY_POOL% concurrency=%CELERY_CONC% queues=%CELERY_QUEUE_LABEL%
 echo   [WATCH] Watching: %CELERY_WATCH_DIR% (*.py only; __pycache__ and *.pyc ignored)
+echo   [LOG]   %CELERY_WORKER_LOG_FILE%
 echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
 echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
 
