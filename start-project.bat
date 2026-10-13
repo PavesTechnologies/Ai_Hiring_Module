@@ -68,6 +68,9 @@ REM
 REM For a long batch run where restarts are unacceptable, start the worker
 REM without watchmedo: celery -A app.core.celery_app worker --pool=solo
 set "CELERY_DEBOUNCE_INTERVAL=2"
+REM Polling, not native Windows events: those include last-ACCESS-time changes,
+REM so merely reading a .py file (an import, a grep) restarted the worker. Polling
+REM compares modified time and size only - an edit restarts it, a read does not.
 REM Worker log (rotating, 10 MB x 5) - read it after an unexplained restart.
 set "CELERY_WORKER_LOG_FILE=%PROJECT_DIR%logs\celery-worker.log"
 
@@ -375,7 +378,7 @@ REM ----------------------------------------------------------------------------
 
 echo   [START] Starting Celery worker with AUTO-RELOAD...
 echo   [MODE]  pool=%CELERY_POOL% concurrency=%CELERY_CONC% queues=%CELERY_QUEUE_LABEL%
-echo   [WATCH] Watching: %CELERY_WATCH_DIR% (*.py only; __pycache__ and *.pyc ignored)
+echo   [WATCH] Watching: %CELERY_WATCH_DIR% (*.py only, polled every 1s; __pycache__ and *.pyc ignored)
 echo   [LOG]   %CELERY_WORKER_LOG_FILE%
 echo   [RELOAD] Debounced %CELERY_DEBOUNCE_INTERVAL%s. Restart is a hard kill on Windows;
 echo   [RELOAD] an interrupted task is redelivered by the broker within 5 min.
@@ -388,6 +391,8 @@ watchmedo auto-restart ^
 --ignore-patterns="*/__pycache__/*;*.pyc" ^
 --ignore-directories ^
 --recursive ^
+--debug-force-polling ^
+--interval 1 ^
 --debounce-interval %CELERY_DEBOUNCE_INTERVAL% ^
 -- ^
 celery -A %CELERY_APP% worker ^
