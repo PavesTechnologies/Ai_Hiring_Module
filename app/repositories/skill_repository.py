@@ -322,19 +322,33 @@ class SkillRepository:
         self.db.refresh(link)
         return link
 
+    @staticmethod
+    def _exact_cosine_distance(embedding: list[float]):
+        """
+        (distance expression, sort key) for an EXACT nearest-neighbour search.
+        skill_ontology.embedding has an ivfflat index, which is approximate:
+        with pgvector's default ivfflat.probes = 1 it searches one list only,
+        so a top-3 query can return fewer than 3 rows (seen: 2) or miss the
+        true nearest skill. The sort key wraps the distance in COALESCE, which
+        the index can't serve, so Postgres scans and sorts every row - exact,
+        and cheap for a catalogue of a few thousand skills.
+        """
+        distance = SkillOntology.embedding.cosine_distance(embedding)
+        return distance, func.coalesce(distance, 2.0)
+
     def find_by_embedding(self, embedding: list[float]) -> tuple[SkillOntology, float] | None:
         """
         Semantic Canonical tier: nearest active canonical skill by cosine
         distance. Canonical-name matching only — aliases are intentionally
         excluded from fuzzy/semantic search per the finalized pipeline.
         Returns (skill, similarity) where similarity = 1 - cosine_distance,
-        or None if no active skill has an embedding at all.
+        or None if no active skill has an embedding at all. Exact search.
         """
-        distance = SkillOntology.embedding.cosine_distance(embedding)
+        distance, exact_order = self._exact_cosine_distance(embedding)
         result = (
             self.db.query(SkillOntology, distance.label("distance"))
             .filter(SkillOntology.is_active.is_(True), SkillOntology.embedding.isnot(None))
-            .order_by(distance)
+            .order_by(exact_order)
             .first()
         )
         if result is None:
@@ -353,18 +367,19 @@ class SkillRepository:
         Skills with no embedding yet (still queued) are excluded rather
         than compared. Returns (candidate_skill_id, similarity) or None if
         candidate_skill_ids is empty or none of them have an embedding.
+        Exact search (an index scan here could skip the candidate's skills).
         """
         if not candidate_skill_ids:
             return None
 
-        distance = SkillOntology.embedding.cosine_distance(target_embedding)
+        distance, exact_order = self._exact_cosine_distance(target_embedding)
         result = (
             self.db.query(SkillOntology.id, distance.label("distance"))
             .filter(
                 SkillOntology.id.in_(candidate_skill_ids),
                 SkillOntology.embedding.isnot(None),
             )
-            .order_by(distance)
+            .order_by(exact_order)
             .first()
         )
         if result is None:
@@ -397,12 +412,13 @@ class SkillRepository:
         find_by_embedding (top-1, used by the deterministic matching
         pipeline), this returns a ranked page for HR review.
         Returns (skill, similarity) pairs where similarity = 1 - cosine_distance.
+        Exact search: always `limit` rows when the catalogue has that many.
         """
-        distance = SkillOntology.embedding.cosine_distance(embedding)
+        distance, exact_order = self._exact_cosine_distance(embedding)
         results = (
             self.db.query(SkillOntology, distance.label("distance"))
             .filter(SkillOntology.is_active.is_(True), SkillOntology.embedding.isnot(None))
-            .order_by(distance)
+            .order_by(exact_order)
             .limit(limit)
             .all()
         )
