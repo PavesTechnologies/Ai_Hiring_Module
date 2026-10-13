@@ -262,10 +262,15 @@ def _hierarchy_match(skill: JDSkillInput, pool: dict, hierarchy: dict, config: d
 
 
 def _provisional_entry(skill: ProvisionalSkillInput, config: dict) -> dict:
-    """tier weight x PROVISIONAL_CREDIT when found, 0 when not; never counts for a gate."""
+    """
+    tier weight x PROVISIONAL_CREDIT when found, 0 when not; never counts for
+    a gate. Not scanned (the re-scan failed): left out of the score entirely -
+    no credit, no penalty - and flagged, never counted as not found.
+    """
     label = (skill.tier or "").lower()
     effective = round(_importance_weight(label if label in ("core", "supporting") else None, config), 4)
-    quality = PROVISIONAL_CREDIT if skill.found else 0.0
+    found = skill.found and skill.scanned
+    quality = PROVISIONAL_CREDIT if found else 0.0
     return {
         "unknown_skill_id": str(skill.unknown_skill_id),
         "canonical_skill_id": None,
@@ -275,8 +280,8 @@ def _provisional_entry(skill: ProvisionalSkillInput, config: dict) -> dict:
         "mandatory": skill.tier != "PREFERRED",
         "importance": label if label in ("core", "supporting") else None,
         "effective_weight": effective,
-        "match_type": "PROVISIONAL_TEXT" if skill.found else "MISSING",
-        "recognition": PROVISIONAL_CREDIT if skill.found else 0.0,
+        "match_type": "NOT_SCANNED" if not skill.scanned else "PROVISIONAL_TEXT" if found else "MISSING",
+        "recognition": PROVISIONAL_CREDIT if found else 0.0,
         "quality": quality,
         "contribution": round(effective * quality, 4),
         "evidence_text": skill.excerpt,
@@ -357,8 +362,9 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
     # Unresolved JD unknown skills: in the skill score only (never in
     # `entries`, which every gate below reads).
     provisional = [_provisional_entry(p, config) for p in inputs.provisional_skills]
-    provisional_required = [p for p in provisional if p["mandatory"]]
-    provisional_preferred = [p for p in provisional if not p["mandatory"]]
+    scored_provisional = [p for p in provisional if p["scanned"]]
+    provisional_required = [p for p in scored_provisional if p["mandatory"]]
+    provisional_preferred = [p for p in scored_provisional if not p["mandatory"]]
 
     required_score = _ratio(entries + provisional_required)
     preferred_score = _ratio(preferred_entries + provisional_preferred)

@@ -3,7 +3,7 @@ Unresolved JD unknown skills are scored provisionally in v1 and v2: tier
 weight x 0.8 when found in the resume, 0 when not - in the skill score only,
 never in a gate (core gate, coverage, missing-core count).
 """
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -14,6 +14,7 @@ from app.services.campaign.scoring_v2 import (
 )
 
 CORE, SUP = uuid4(), uuid4()
+V1 = "app.services.campaign.candidate_scoring_service"
 NO_HIERARCHY = {"skills_by_id": {}, "children_by_parent": {}, "grandchildren_by_parent": {}}
 JD = [JDSkillInput(CORE, "Program Management", True, 1.0, "core"),
       JDSkillInput(SUP, "Stakeholder Management", True, 1.0, "supporting")]
@@ -64,6 +65,18 @@ def test_v2_preferred_provisional_skill_goes_to_the_preferred_score():
     assert result["required_skill_score"] == pytest.approx(100.0)
 
 
+def test_v2_a_skill_that_could_not_be_scanned_is_excluded_not_counted_as_not_found():
+    not_scanned = ProvisionalSkillInput(uuid4(), "Agentic Workflows", "CORE", False, None, scanned=False)
+    # found=True with scanned=False must not earn credit either
+    stale_hit = ProvisionalSkillInput(uuid4(), "Prompt Design", "SUPPORTING", True, "old", scanned=False)
+    baseline, result = _v2([]), _v2([not_scanned, stale_hit])
+
+    for key in ("required_skill_score", "preferred_skill_score", "skill_score", "deterministic_score"):
+        assert result[key] == baseline[key]
+    assert [e["match_type"] for e in result["provisional_skills"]] == ["NOT_SCANNED", "NOT_SCANNED"]
+    assert all(e["scanned"] is False and e["contribution"] == 0.0 for e in result["provisional_skills"])
+
+
 # --- v1 ----------------------------------------------------------------------
 
 def _v1_entry(importance, weight, contribution, match_type="EXACT"):
@@ -110,3 +123,25 @@ def test_v1_gates_ignore_provisional_skills():
 def test_v1_nothing_provisional_without_a_database():
     service = CandidateScoringService(MagicMock(spec=[]))
     assert service.build_provisional_skill_entries(uuid4(), uuid4()) == []
+
+
+def test_v1_a_skill_that_could_not_be_scanned_is_excluded_not_counted_as_not_found():
+    not_scanned = {**_v1_provisional("CORE", False), "match_type": "NOT_SCANNED", "scanned": False}
+    base = {"mandatory_skills": [_v1_entry("supporting", 1.0, 1.0)], "provisional_skills": []}
+    with_not_scanned = {**base, "provisional_skills": [not_scanned]}
+    service = _service()
+    assert service.compute_technical_score(with_not_scanned, None) == service.compute_technical_score(base, None) == 100.0
+
+
+def test_v1_a_failed_scan_flags_every_provisional_skill_not_scanned():
+    db = MagicMock()
+    link, unknown = MagicMock(mandatory=True), MagicMock(raw_text="Agentic Workflows", normalized_key=None)
+    repo = MagicMock()
+    repo.pending_for_jd.return_value = [(link, unknown)]
+    service = CandidateScoringService(MagicMock(db=db))
+    with patch(f"{V1}.ProvisionalSkillRepository", return_value=repo),             patch(f"{V1}.scan_provisional", side_effect=RuntimeError("scan error")):
+        entries = service.build_provisional_skill_entries(uuid4(), uuid4())
+
+    assert len(entries) == 1
+    assert entries[0]["scanned"] is False and entries[0]["match_type"] == "NOT_SCANNED"
+    assert entries[0]["skill_contribution"] == 0.0

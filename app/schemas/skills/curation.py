@@ -183,6 +183,9 @@ class UnknownSkillJDItem(BaseModel):
     # preferred or unlisted skill). Deleting a CORE one removes a hard
     # requirement from that JD - the UI warns before it does.
     importance: str | None = None
+    # CORE / SUPPORTING / PREFERRED / None (required, unclassified) - shown
+    # before a global dismiss, which needs confirming when CORE on any JD.
+    tier: str | None = None
 
 
 class UnknownSkillCandidateItem(BaseModel):

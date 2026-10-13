@@ -215,11 +215,13 @@ def bulk_approve_unknown_skills(
 )
 def dismiss_unknown_skill(
     unknown_skill_id: UUID,
+    confirm_core: bool = Query(False, description="Required when the skill is CORE on any JD that has it."),
     service: SkillCurationService = Depends(get_skill_curation_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    """HR decides an unknown skill isn't a real skill (junk extraction, etc)."""
-    unknown_skill = service.dismiss(unknown_skill_id=unknown_skill_id, actor_id=user.user_id)
+    """HR decides an unknown skill isn't a real skill (junk extraction, etc); every JD waiting on it drops it."""
+    unknown_skill = service.dismiss(unknown_skill_id=unknown_skill_id, actor_id=user.user_id,
+                                    confirm_core=confirm_core)
     return APIResponse.ok(
         data=UnknownSkillActionResponse(
             id=unknown_skill.id, raw_text=unknown_skill.raw_text, status=unknown_skill.status.value,
@@ -294,6 +296,7 @@ def list_jds_for_unknown_skill(
 ):
     """Every JD (any version) this unknown skill occurs in — the reverse of /jd/{jd_id}/unknown-skills."""
     rows = service.list_jds_for_unknown_skill(unknown_skill_id)
+    unknown_skill = service.get_unknown_skill(unknown_skill_id)
     return APIResponse.ok(
         data=[
             UnknownSkillJDItem(
@@ -307,6 +310,7 @@ def list_jds_for_unknown_skill(
                 status=link.status.value,
                 created_at=link.created_at,
                 importance=service.jd_link_importance(unknown_skill_id, link, jd),
+                tier=service.jd_link_tier(unknown_skill, link, jd),
             )
             for link, jd in rows
         ],

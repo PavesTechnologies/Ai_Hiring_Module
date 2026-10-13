@@ -1,3 +1,4 @@
+import logging
 import math
 from enum import Enum
 from uuid import UUID
@@ -16,6 +17,8 @@ from app.services.skills.provisional_skill_match import (
     PROVISIONAL_CREDIT, ProvisionalTerm, parsed_json_text, scan_provisional,
 )
 
+logger = logging.getLogger(__name__)
+
 # Max child traversal depth for the hierarchy fallback: 1 = direct CHILD,
 # 2 = GRANDCHILD. Direct child always takes precedence over grandchild.
 _MAX_HIERARCHY_DEPTH = 2
@@ -26,6 +29,7 @@ _DEFAULT_GRANDCHILD_MULTIPLIER = 0.50
 # jd_skills row gets on creation, and how they're labelled in the breakdown.
 _PROVISIONAL_JD_SKILL_WEIGHT = 1.0
 PROVISIONAL_MATCH_TYPE = "PROVISIONAL_TEXT"
+PROVISIONAL_NOT_SCANNED = "NOT_SCANNED"
 
 # Skill-importance multipliers (core/supporting) - default to neutral 1.0
 # (no differentiation) so a JD with no importance-classified skills, or a
@@ -438,8 +442,14 @@ class CandidateScoringService:
         jd = db.get(JobDescription, jd_id)
         resume = db.get(Resume, resume_id)
         terms = [ProvisionalTerm(unknown.id, unknown.raw_text) for _, unknown in pending]
-        found = scan_provisional(parsed_json_text(getattr(resume, "parsed_json", None)), terms,
-                                 SkillDetectionRepository(db).load_scan_rules())
+        try:
+            found = scan_provisional(parsed_json_text(getattr(resume, "parsed_json", None)), terms,
+                                     SkillDetectionRepository(db).load_scan_rules())
+            scanned = True
+        except Exception:
+            # Not scanned: left out of the score (no credit, no penalty), flagged.
+            logger.exception("Provisional skill scan failed | jd_id=%s resume_id=%s", jd_id, resume_id)
+            found, scanned = {}, False
         entries = []
         for link, unknown in pending:
             tier = unknown_skill_tier(getattr(jd, "extracted_json", None), link, unknown)
@@ -455,9 +465,11 @@ class CandidateScoringService:
                 "mandatory": tier != "PREFERRED",
                 "importance": tier.lower() if tier in ("CORE", "SUPPORTING") else None,
                 "effective_jd_weight": effective,
-                "match_type": PROVISIONAL_MATCH_TYPE if hit else MandatorySkillMatchType.MISSING.value,
+                "match_type": (PROVISIONAL_NOT_SCANNED if not scanned else PROVISIONAL_MATCH_TYPE if hit
+                               else MandatorySkillMatchType.MISSING.value),
                 "skill_contribution": round(effective * PROVISIONAL_CREDIT, 4) if hit else 0.0,
                 "evidence_text": (hit or {}).get("excerpt"),
+                "scanned": scanned,
             })
         return entries
 
@@ -863,7 +875,8 @@ class CandidateScoringService:
         preferred_entries = list((preferred_breakdown or {}).get("preferred_skills") or [])
         # Unresolved JD unknown skills count in the score (any tier) - never
         # in a gate, so a provisional core skill is scored here too.
-        provisional = mandatory_breakdown.get("provisional_skills") or []
+        # A skill that couldn't be scanned is left out entirely (no credit, no penalty).
+        provisional = [p for p in mandatory_breakdown.get("provisional_skills") or [] if p.get("scanned", True)]
         scored_entries = scored_entries + [p for p in provisional if p["mandatory"]]
         preferred_entries = preferred_entries + [p for p in provisional if not p["mandatory"]]
 

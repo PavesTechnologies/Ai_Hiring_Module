@@ -28,7 +28,7 @@ from app.services.embedding_queue_service import (
 )
 from app.services.jd.jd_service import _DEFAULT_JD_SKILL_WEIGHT
 from app.services.jd.jd_skill_change_effects import apply_jd_skill_change_effects
-from app.services.jd.jd_skill_importance import importance_from_extraction
+from app.services.jd.jd_skill_importance import importance_from_extraction, unknown_skill_tier
 from app.services.skills.skill_normalization_service import (
     SkillMatchTier,
     scoring_weight_for_tier,
@@ -106,6 +106,13 @@ class SkillCurationService:
         """Every JD version where this UnknownSkill occurs — the reverse direction of list_jd_unknown_skills."""
         self._get_unknown_skill_or_404(unknown_skill_id)
         return self.skill_repository.get_jd_links_by_unknown_skill_id(unknown_skill_id)
+
+    def get_unknown_skill(self, unknown_skill_id: UUID) -> UnknownSkill:
+        return self._get_unknown_skill_or_404(unknown_skill_id)
+
+    def jd_link_tier(self, unknown_skill, link, jd) -> str | None:
+        """CORE / SUPPORTING / PREFERRED / None (required, unclassified) - this skill's tier on that JD."""
+        return unknown_skill_tier(getattr(jd, "extracted_json", None), link, unknown_skill)
 
     def jd_link_importance(self, unknown_skill_id: UUID, link, jd) -> str | None:
         """CORE/SUPPORTING this JD's extraction gave the unknown skill - same lookup used when it's approved."""
@@ -481,13 +488,25 @@ class SkillCurationService:
         self._trigger_reevaluation(unknown_skill.id, affected_resume_ids)
         self._on_committed(touched_jd_ids, catalog_changed=True)
 
-    def dismiss(self, unknown_skill_id: UUID, actor_id: str) -> UnknownSkill:
+    def dismiss(self, unknown_skill_id: UUID, actor_id: str, confirm_core: bool = False) -> UnknownSkill:
         """
         HR decides raw_text isn't a real skill (junk extraction, etc). Every
         JD still waiting on it drops it (RESOLVED / DROPPED, no JDSkill), so
         those JDs can reach VERIFIED and stop scoring it provisionally.
+
+        Refused (409) while the skill is CORE on any JD that has it, unless
+        confirm_core - dismissing removes a hard requirement there. The UI
+        shows every JD and its tier first (GET /skills/unknown/{id}/jds).
         """
         unknown_skill = self._get_unknown_skill_or_404(unknown_skill_id)
+        core_jds = [jd for link, jd in self.skill_repository.get_jd_links_by_unknown_skill_id(unknown_skill.id)
+                    if self.jd_link_tier(unknown_skill, link, jd) == "CORE"]
+        if core_jds and not confirm_core:
+            names = ", ".join(f"{jd.title} (v{jd.version_number})" for jd in core_jds)
+            raise ConflictError(
+                f"'{unknown_skill.raw_text}' is a core skill on: {names}. Dismissing removes that requirement - "
+                f"confirm to dismiss it anyway."
+            )
         self.skill_repository.update_unknown_skill_status(unknown_skill, UnknownSkillStatus.DISMISSED)
         jd_ids = set()
         now = datetime.now(timezone.utc)
@@ -504,7 +523,8 @@ class SkillCurationService:
             entity_type=EntityType.UNKNOWN_SKILL,
             entity_id=unknown_skill.id,
             jurisdiction=None,
-            details={"raw_text": unknown_skill.raw_text},
+            details={"raw_text": unknown_skill.raw_text, "core_on_jds": [str(jd.id) for jd in core_jds],
+                     "confirmed_core": bool(core_jds)},
         )
         self.skill_repository.commit()
         self._on_committed(set())
