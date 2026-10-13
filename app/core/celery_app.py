@@ -110,6 +110,8 @@ celery_app.conf.imports = (
     "app.tasks.talent_pool_tasks",
     "app.tasks.interview_tasks",
     "app.tasks.export_tasks",
+    "app.tasks.email_tasks",
+    "app.tasks.unknown_skill_reevaluation_tasks",
 )
 
 
