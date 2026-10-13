@@ -36,6 +36,10 @@ V2_MODULES = [
     "app/repositories/skill_detection_repository.py",
     "app/seeds/seed_scoring_v2.py",
     "scripts/skill_detection_live_runs.py",
+    # Extraction model comparison (Phase 2 Step 3) and the LLM pieces it runs through.
+    "scripts/extraction_model_comparison.py",
+    "app/services/llm/gemini_provider.py",
+    "app/services/llm/factory.py",
     "scripts/scoring_v2_dry_run.py",
     "scripts/e2e/export_fixtures.py",
     "scripts/e2e/run_reparse_e2e.py",
