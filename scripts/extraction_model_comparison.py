@@ -54,6 +54,7 @@ PRICES = {
 }
 OUTCOME_LABEL = {"REVIEW": "HOLD"}       # v2's near-miss REVIEW lands candidates on HOLD
 PENDING_RETRIES = 3
+STOP_REASONS = {"DAILY_LIMIT", "CREDITS_EXHAUSTED", "QUOTA_EXHAUSTED", "INVALID_KEY", "NO_ACCESS"}
 
 
 class UsageMeter:
@@ -77,6 +78,12 @@ class UsageMeter:
 
     def __getattr__(self, name):
         return getattr(self._provider, name)
+
+
+def _save(report: dict, path: str) -> None:
+    """Written after every run, so a stopped comparison (quota, outage) keeps what it measured."""
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=1, default=str)
 
 
 def _delta(after: dict, before: dict) -> dict:
@@ -151,11 +158,13 @@ def main() -> None:
             text = _redacted_text(resume)
             label = _label(resume)
             candidate = {"candidate": label, "stage": cc.pipeline_stage.value, "models": {}}
+            report["candidates"].append(candidate)
             print(f"== {label}  (stage {cc.pipeline_stage.value})", flush=True)
             for model in models:
                 meter = meters[model]
                 service = ScoringV2Service(db, skill_repo, config_repo, provider_resolver=lambda m=meter: m)
                 runs = []
+                summary = candidate["models"][model] = {"runs": runs}
                 for run in range(args.runs):
                     entry = {"run": run + 1}
                     try:
@@ -182,6 +191,12 @@ def main() -> None:
                         entry["error"] = str(exc.reason)
                         runs.append(entry)
                         print(f"   {model} run {run + 1}: FAILED ({exc.reason})", flush=True)
+                        _save(report, args.out)
+                        if exc.reason in STOP_REASONS:
+                            # A daily / credit limit won't clear by retrying, and every further call
+                            # spends quota the live app may share - stop the whole comparison.
+                            report["stopped"] = f"{model}: {exc.reason}"
+                            raise SystemExit(f"Stopped: {model} hit {exc.reason}. Partial report saved.")
                         continue
                     outcome = OUTCOME_LABEL.get(breakdown["outcome"], breakdown["outcome"])
                     entry.update(
@@ -193,17 +208,20 @@ def main() -> None:
                                               for k in ("input", "output", "thinking")}),
                     )
                     runs.append(entry)
+                    used = {k: entry["parse_usage"][k] + entry["confirm_usage"][k] for k in ("input", "output", "thinking")}
+                    print(f"      tokens in {used['input']} out {used['output']} thinking {used['thinking']}"
+                          f"  cost ${entry['cost_usd'] or 0:.5f}", flush=True)
+                    _save(report, args.out)
                     print(f"   {model:<24} run {run + 1}: core {entry['confirmed_core']}/{entry['core_total']}  "
                           f"v2 {entry['v2_score']:>6}  {outcome:<7}  skills {len(matches):>3}  "
                           f"parse {entry['parse_seconds']}s  confirm {entry['confirm_seconds']}s", flush=True)
                 ok = [r for r in runs if "outcome" in r]
-                candidate["models"][model] = {
-                    "runs": runs,
+                summary.update({
                     "outcomes": [r["outcome"] for r in ok],
                     "outcome_changes_between_runs": len({r["outcome"] for r in ok}) > 1,
                     "failed_runs": len(runs) - len(ok),
-                }
-            report["candidates"].append(candidate)
+                })
+                _save(report, args.out)
             print(flush=True)
 
         report["usage_totals"] = {m: meters[m].snapshot() for m in models}
@@ -214,10 +232,11 @@ def main() -> None:
         print("Usage:", json.dumps(report["usage_totals"]))
         print("Cost (USD):", json.dumps(report["cost_totals_usd"]))
     finally:
+        if "meters" in locals():
+            report["usage_totals"] = {m: meters[m].snapshot() for m in meters}
         db.rollback()
         db.close()
-        with open(args.out, "w", encoding="utf-8") as fh:
-            json.dump(report, fh, indent=1, default=str)
+        _save(report, args.out)
 
 
 if __name__ == "__main__":
