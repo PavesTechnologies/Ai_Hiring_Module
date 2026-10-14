@@ -20,7 +20,7 @@ from app.services.campaign.domain_capability_matching_service import DomainCapab
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
-from app.services.resume.work_experience_duration import annotate_work_experience_durations
+from app.services.resume.work_experience_duration import experience_years_for_scoring
 from app.services.jd.jd_calibration_rules import (
     apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
 )
@@ -342,7 +342,8 @@ class ResumeSelectionService:
         # Same JSON-computed fallback as deterministic_scoring_tasks.py -
         # see annotate_work_experience_durations for why the date-computed
         # total is preferred over the raw (often null) extracted field.
-        candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
+        # Nothing counted (no roles, or only internships) is 0 years, not missing data.
+        candidate_total_years = experience_years_for_scoring(parsed_json)
         candidate_education_entries = parsed_json.get("education")
 
         jd_extracted_education = (job_description.extracted_json or {}).get("education")

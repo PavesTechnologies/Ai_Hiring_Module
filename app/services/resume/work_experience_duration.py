@@ -83,3 +83,35 @@ def annotate_work_experience_durations(parsed_json: dict | None) -> dict | None:
         annotated["total_experience_years"] = round(sum(countable_months) / 12, 1)
 
     return annotated
+
+
+def experience_years_for_scoring(parsed_json: dict | None) -> float | None:
+    """
+    The candidate's counted experience for the minimum-experience check.
+
+    Same total as annotate_work_experience_durations (professional roles
+    only; internships and volunteer roles excluded, dates preferred over
+    the AI's figure), except that "nothing counted" is 0 years rather than
+    missing: a fresher with no roles, or only internships / volunteer
+    roles, has 0 years against the minimum - a near-miss or a shortfall,
+    not "not applicable".
+
+    Still None (data missing - never held against the candidate) only when
+    a professional role is listed but its dates can't be read, and nothing
+    else was counted: the experience exists, the parse just couldn't
+    measure it.
+    """
+    parsed = parsed_json or {}
+    entries = parsed.get("work_experience") or []
+    if not entries:
+        stated = parsed.get("total_experience_years")
+        return float(stated) if stated is not None else 0.0
+
+    total = annotate_work_experience_durations(parsed).get("total_experience_years")
+    professional = [e for e in entries if not e.get("is_internship") and not e.get("is_volunteer")]
+    unmeasured = [e for e in professional if _compute_entry_months(e) is None]
+    if any(_compute_entry_months(e) is not None for e in professional):
+        return total
+    if unmeasured:
+        return None
+    return 0.0

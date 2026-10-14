@@ -39,7 +39,7 @@ from app.services.campaign.experience_education_validation_service import (
 )
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.services.resume.work_experience_duration import annotate_work_experience_durations
+from app.services.resume.work_experience_duration import experience_years_for_scoring
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.services.jd.jd_calibration_rules import (
@@ -78,7 +78,8 @@ def build_validation_inputs(config_repo, job_description, resume):
     # drift from what the listed dates actually add up to) over the raw
     # extracted field, which is null whenever the resume never states an
     # explicit "X years" figure even though its dates make one computable.
-    candidate_total_years = annotate_work_experience_durations(parsed_json).get("total_experience_years")
+    # Nothing counted (no roles, or only internships) is 0 years, not missing data.
+    candidate_total_years = experience_years_for_scoring(parsed_json)
     candidate_education_entries = parsed_json.get("education")
     required_degree_text = (job_description.education_criteria or {}).get("degree")
     jd_extracted_education = (job_description.extracted_json or {}).get("education")
