@@ -22,7 +22,7 @@ from app.services.campaign.experience_education_validation_service import (
 )
 from app.services.resume.work_experience_duration import experience_years_for_scoring
 from app.services.jd.jd_calibration_rules import (
-    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
+    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs, jd_internship_credit,
 )
 
 # Same platform_config keys deterministic_scoring_tasks.py already reads for
@@ -342,8 +342,9 @@ class ResumeSelectionService:
         # Same JSON-computed fallback as deterministic_scoring_tasks.py -
         # see annotate_work_experience_durations for why the date-computed
         # total is preferred over the raw (often null) extracted field.
-        # Nothing counted (no roles, or only internships) is 0 years, not missing data.
-        candidate_total_years = experience_years_for_scoring(parsed_json)
+        # Nothing counted (no roles, or only uncredited internships) is 0 years,
+        # not missing data. Internships count as the JD's calibration says.
+        candidate_total_years = experience_years_for_scoring(parsed_json, jd_internship_credit(job_description))
         candidate_education_entries = parsed_json.get("education")
 
         jd_extracted_education = (job_description.extracted_json or {}).get("education")

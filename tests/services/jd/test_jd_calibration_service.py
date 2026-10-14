@@ -27,7 +27,7 @@ def _jd(**overrides):
         education_criteria={"degree": "Bachelor", "field": "Computer Science"},
         calibration_status=JDCalibrationStatus.NOT_CALIBRATED, calibration_version=0,
         calibrated_by=None, calibrated_at=None, is_verified=JDVerificationStatus.PARTIALLY_VERIFIED,
-        updated_at=None,
+        updated_at=None, internship_credit_pct=None,
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -108,7 +108,7 @@ def _request(change, python, aws, *, change_tier="CORE", sense="ORGANISATIONAL",
                 {"jd_skill_id": python.id, "tier": python_tier},
                 {"jd_skill_id": aws.id, "tier": aws_tier}],
         min_experience_years=kw.get("min_years", 10), experience_tolerance_years=kw.get("tolerance"),
-        education_requirement=kw.get("education", "MANDATORY"))
+        education_requirement=kw.get("education", "MANDATORY"), internship_credit_pct=kw.get("internships"))
 
 
 @pytest.fixture(autouse=True)
@@ -364,3 +364,32 @@ def test_a_skill_removed_in_calibration_is_saved_as_a_calibration_version():
     assert version == 2
     assert repo.versions[-1].changes["skills"] == [{"skill": "AWS", "field": "removed", "before": "PREFERRED",
                                                     "after": None}]
+
+
+# --- internship credit (Phase 3 Step 1) -------------------------------------------
+
+def test_internship_credit_is_saved_versioned_and_shown_with_its_default():
+    service, repo, audit, jd, change, python, aws = _setup()
+    service.save(jd.id, _request(change, python, aws, min_years=1), actor_id="hr-1", actor_role="HR_ADMIN")
+    view = service.get_view(jd.id, can_calibrate=True)
+    assert (view.internship_credit_pct, view.default_internship_credit_pct, view.is_fresher_jd) == (None, 100, True)
+
+    result = service.save(jd.id, _request(change, python, aws, min_years=1, internships=50),
+                          actor_id="hr-1", actor_role="HR_ADMIN")
+
+    assert result.calibration_version == 2 and jd.internship_credit_pct == 50
+    assert repo.versions[-1].changes == {"internship_credit_pct": {"before": None, "after": 50}}
+    assert repo.versions[-1].snapshot["internship_credit_pct"] == 50
+    assert result.calibration.internship_credit_pct == 50
+
+
+def test_a_version_saved_before_internship_credit_existed_diffs_as_unset():
+    service, *_ = _setup()
+    before = {"skills": {}, "min_experience_years": 10, "experience_tolerance_years": None,
+              "education_requirement": "MANDATORY"}
+    assert service._changes(before, {**before, "internship_credit_pct": None}) == {}
+
+
+def test_internship_credit_must_be_100_50_or_0():
+    with pytest.raises(ValueError):
+        JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], internship_credit_pct=75)

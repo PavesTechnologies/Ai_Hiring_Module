@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 SkillTier = Literal["CORE", "SUPPORTING", "PREFERRED"]
 EducationRequirement = Literal["MANDATORY", "PREFERRED"]
+InternshipCreditPct = Literal[100, 50, 0]
 
 
 class SenseOption(BaseModel):
@@ -132,6 +133,11 @@ class JDCalibrationView(BaseModel):
     education_requirement: EducationRequirement
     education_degree: str | None
     education_field: str | None
+    # Internship time counted as experience (%): as calibrated (None = the default),
+    # and the default - 100 on a fresher JD (calibrated minimum <= 1 year), else 0.
+    internship_credit_pct: InternshipCreditPct | None = None
+    default_internship_credit_pct: InternshipCreditPct = 0
+    is_fresher_jd: bool = False
     live_campaigns: list[CalibrationCampaign]
     can_calibrate: bool
     warnings: list[str] = []
@@ -152,6 +158,8 @@ class JDCalibrationSaveRequest(BaseModel):
     # None = the default tolerance (max(1 year, 10% of the minimum)).
     experience_tolerance_years: float | None = Field(default=None, ge=0, le=20)
     education_requirement: EducationRequirement = "MANDATORY"
+    # None = the default (100 on a fresher JD, else 0).
+    internship_credit_pct: InternshipCreditPct | None = None
 
 
 class JDCalibrationSaveResponse(BaseModel):

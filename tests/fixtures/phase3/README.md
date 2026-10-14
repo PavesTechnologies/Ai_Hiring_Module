@@ -500,6 +500,7 @@ Incident Management, ServiceNow (end user), customer support, Windows troublesho
 - Supporting: Django/FastAPI, pytest, Linux, Docker
 - Preferred: AWS, React
 - Minimum experience: 1 year; tolerance: blank (default 1 year)
+- Internships count as experience: **100%** (the JD says its 1-year minimum includes internships; 100% is also the default for a fresher JD, minimum ≤ 1 year)
 - Education: **Mandatory** (to test the field-family rule)
 
 **JD-D (ServiceNow ITSM Consultant)**
@@ -508,6 +509,7 @@ Incident Management, ServiceNow (end user), customer support, Windows troublesho
 - Supporting: Problem Management, CMDB, Flow Designer, JavaScript, SLA management
 - Preferred: the three certifications
 - Minimum experience: 4 years; tolerance: blank (default 1 year)
+- Internships count as experience: default (not at all, for a 4-year minimum)
 - Education: **Preferred**
 
 ### Expected outcomes

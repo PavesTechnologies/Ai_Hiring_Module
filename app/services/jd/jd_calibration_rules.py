@@ -9,11 +9,53 @@ every place that validates experience/education applies them the same way.
 - education: PREFERRED is never a gate - the result is marked passed, with the
   real outcome kept in requirement_met for display. Scoring v2 counts it as a
   small score component; MANDATORY stays a gate only.
+- internships: how much internship time counts as experience (100 / 50 / 0%),
+  as calibrated; unset = 100% on a fresher JD (calibrated minimum <= 1 year),
+  else 0%.
 """
 from decimal import Decimal
 
 EDUCATION_MANDATORY = "MANDATORY"
 EDUCATION_PREFERRED = "PREFERRED"
+
+
+INTERNSHIP_CREDIT_OPTIONS = (100, 50, 0)
+FRESHER_MAX_MIN_YEARS = 1.0
+FRESHER_INTERNSHIP_CREDIT_PCT = 100
+DEFAULT_INTERNSHIP_CREDIT_PCT = 0
+
+
+def is_fresher_jd(job_description) -> bool:
+    """A calibrated JD whose minimum (calibrated, else extracted) is at most 1 year."""
+    status = getattr(getattr(job_description, "calibration_status", None), "value",
+                     getattr(job_description, "calibration_status", None))
+    if status != "CALIBRATED":
+        return False
+    minimum = calibrated_min_experience(job_description)
+    if minimum is None:
+        extracted = ((getattr(job_description, "extracted_json", None) or {}).get("experience") or {}).get(
+            "min_experience_years")
+        column = getattr(job_description, "min_experience_years", None)
+        value = extracted if extracted is not None else column
+        minimum = float(value) if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool) else None
+    return minimum is not None and minimum <= FRESHER_MAX_MIN_YEARS
+
+
+def default_internship_credit_pct(job_description) -> int:
+    return FRESHER_INTERNSHIP_CREDIT_PCT if is_fresher_jd(job_description) else DEFAULT_INTERNSHIP_CREDIT_PCT
+
+
+def jd_internship_credit_pct(job_description) -> int:
+    """The calibrated setting, else the default."""
+    value = getattr(job_description, "internship_credit_pct", None)
+    if isinstance(value, int) and not isinstance(value, bool) and value in INTERNSHIP_CREDIT_OPTIONS:
+        return value
+    return default_internship_credit_pct(job_description)
+
+
+def jd_internship_credit(job_description) -> float:
+    """The share of internship time counted as experience (1.0 / 0.5 / 0.0)."""
+    return jd_internship_credit_pct(job_description) / 100
 
 
 def jd_tolerance_years(job_description) -> float | None:

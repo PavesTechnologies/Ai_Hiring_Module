@@ -6,7 +6,7 @@ from typing import Optional
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean, DateTime, Enum as SAEnum, ForeignKey, Index,
-    Integer, Numeric, String, Text, func, text,
+    Integer, Numeric, SmallInteger, String, Text, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -119,6 +119,9 @@ class JobDescription(Base):
         SAEnum(JDEducationRequirement, name="jd_education_requirement_enum"),
         nullable=False, default=JDEducationRequirement.MANDATORY, server_default="MANDATORY",
     )
+    # How much internship time counts as experience: 100 / 50 / 0 (%). NULL =
+    # the default (100 on a fresher JD - calibrated minimum <= 1 year - else 0).
+    internship_credit_pct: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

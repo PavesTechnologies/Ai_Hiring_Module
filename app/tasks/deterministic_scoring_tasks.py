@@ -43,7 +43,7 @@ from app.services.resume.work_experience_duration import experience_years_for_sc
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.services.candidate_change_notifier import CandidateChangeNotifier
 from app.services.jd.jd_calibration_rules import (
-    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs,
+    apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs, jd_internship_credit,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,8 +78,9 @@ def build_validation_inputs(config_repo, job_description, resume):
     # drift from what the listed dates actually add up to) over the raw
     # extracted field, which is null whenever the resume never states an
     # explicit "X years" figure even though its dates make one computable.
-    # Nothing counted (no roles, or only internships) is 0 years, not missing data.
-    candidate_total_years = experience_years_for_scoring(parsed_json)
+    # Nothing counted (no roles, or only uncredited internships) is 0 years,
+    # not missing data. Internships count as the JD's calibration says.
+    candidate_total_years = experience_years_for_scoring(parsed_json, jd_internship_credit(job_description))
     candidate_education_entries = parsed_json.get("education")
     required_degree_text = (job_description.education_criteria or {}).get("degree")
     jd_extracted_education = (job_description.extracted_json or {}).get("education")

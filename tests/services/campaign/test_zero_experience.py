@@ -23,7 +23,7 @@ INTERN_A = {"title": "Software Engineering Intern", "start_date": "Jan 2026", "e
             "is_internship": True}
 INTERN_B = {"title": "Backend Developer Intern", "start_date": "Jul 2025", "end_date": "Dec 2025",
             "is_internship": True}
-JOB = {"title": "Developer", "start_date": "Jan 2020", "end_date": "Jan 2022"}   # 24 months
+JOB = {"title": "Developer", "start_date": "Jan 2020", "end_date": "Dec 2021"}   # 24 months, both ends included
 JOB_NO_DATES = {"title": "Developer", "start_date": None, "end_date": None}
 
 
@@ -32,7 +32,7 @@ JOB_NO_DATES = {"title": "Developer", "start_date": None, "end_date": None}
 @pytest.mark.parametrize("parsed, expected", [
     ({"work_experience": []}, 0.0),                                    # fresher, projects only
     ({}, 0.0),
-    ({"work_experience": [INTERN_A, INTERN_B]}, 0.0),                  # internships only
+    ({"work_experience": [INTERN_A, INTERN_B]}, 0.0),                  # internships only, not credited
     ({"work_experience": [{**JOB, "is_volunteer": True}]}, 0.0),       # volunteer only
     ({"work_experience": [JOB]}, 2.0),                                 # professional, dated
     ({"work_experience": [JOB, INTERN_A]}, 2.0),                       # internship still excluded
@@ -110,7 +110,7 @@ def test_the_scoring_inputs_use_counted_experience(monkeypatch):
     config.get_configs_by_keys.return_value = {}
     jd = SimpleNamespace(min_experience_years=1, extracted_json={}, education_criteria={},
                          experience_tolerance_years=None, calibrated_min_experience_years=1.0,
-                         calibration_status=SimpleNamespace(value="CALIBRATED"),
+                         internship_credit_pct=0, calibration_status=SimpleNamespace(value="CALIBRATED"),
                          education_requirement=SimpleNamespace(value="MANDATORY"))
     resume = SimpleNamespace(parsed_json={"work_experience": [INTERN_A, INTERN_B], "education": []})
     experience, *_ = tasks.build_validation_inputs(config, jd, resume)
