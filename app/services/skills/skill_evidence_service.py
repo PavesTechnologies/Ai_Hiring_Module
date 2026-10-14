@@ -23,7 +23,7 @@ in a backfill over stored resumes, and in tests alike.
 """
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from uuid import UUID
 
 from app.models.scoring_v2 import ResumeSkillEvidence
@@ -33,7 +33,7 @@ from app.services.skills.resume_skill_scanner import (
 from app.services.skills.resume_sections import (
     SECTION_EXPERIENCE, STRONG_SECTIONS, heading_section, heading_text_of_line, section_of_line,
 )
-from app.services.skills.skill_sense_resolver import SenseChoice, SkillSenseResolver
+from app.services.skills.skill_sense_resolver import SENSE_BASIS_RESUME, SenseChoice, SkillSenseResolver
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,19 @@ def classify_llm_match(raw_text: str, match_tier: str) -> tuple[str, str, str]:
         phrase = text.split(_FROM_MARKER, 1)[1][:-2]
         return SOURCE_DERIVED, phrase, "llm-phrase-split"
     return SOURCE_LLM, text, "llm-skills"
+
+
+def _with_resume_sense(items: list["_Occurrence"]) -> list["_Occurrence"]:
+    """
+    Uncued mentions of an ambiguous skill take the sense the rest of the
+    resume settles on - only when every resolved mention agrees. Mixed
+    senses leave the uncued ones unresolved (never guessed).
+    """
+    resolved = {o.sense.sense for o in items if o.sense.resolved and o.sense.sense}
+    if len(resolved) != 1:
+        return items
+    sense = SenseChoice(next(iter(resolved)), True, SENSE_BASIS_RESUME)
+    return [o if o.sense.resolved else replace(o, sense=sense) for o in items]
 
 
 def _llm_recognition(source: str, tier: str, recognition: dict) -> float:
@@ -236,10 +249,12 @@ def build_evidence(
 
     records: list[EvidenceRecord] = []
     for skill_id, items in occurrences.items():
+        senses_known = resolver.has_senses(skill_id)
+        if senses_known:
+            items = _with_resume_sense(items)
         groups: dict[str | None, list[_Occurrence]] = {}
         for item in items:
             groups.setdefault(item.sense.sense if item.sense.resolved else None, []).append(item)
-        senses_known = resolver.has_senses(skill_id)
         for sense, group in groups.items():
             best = min(group, key=lambda o: (-o.recognition, _SOURCE_ORDER[o.source]))
             snippets, seen = [], set()

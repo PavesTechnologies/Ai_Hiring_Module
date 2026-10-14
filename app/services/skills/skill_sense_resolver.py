@@ -5,7 +5,11 @@ words near it (skill_senses rows). Change Management next to "incident",
 is the organisational one.
 
 Resume side: the sense with the most cue hits in the window wins; none or
-a tie leaves it unresolved (sense None) - never guessed.
+a tie leaves it unresolved (sense None) - never guessed. One exception, in
+build_evidence: when every resolved mention of the skill in the same resume
+agrees on one sense, its unresolved mentions take that sense (basis
+"resume") - a bare "Change Management Lead" job title in an organisational
+change resume is the organisational sense, not "could be either".
 JD side (resolve_jd_sense): cue words in the JD text, then in the role
 title/domain; if still undecided, the skill's default sense marked
 "assumed" so the shadow report can show it.
@@ -32,7 +36,8 @@ class SenseChoice:
     sense: str | None
     resolved: bool
     # "cue" (decided by cue words), "title" (JD role title/domain),
-    # "hr" (confirmed in JD calibration), "assumed" (JD default), None (unresolved).
+    # "hr" (confirmed in JD calibration), "assumed" (JD default),
+    # "resume" (an uncued resume mention, from the same resume's other mentions), None (unresolved).
     basis: str | None = None
 
 
@@ -40,6 +45,7 @@ SENSE_BASIS_CUE = "cue"
 SENSE_BASIS_TITLE = "title"
 SENSE_BASIS_ASSUMED = "assumed"
 SENSE_BASIS_HR = "hr"
+SENSE_BASIS_RESUME = "resume"
 
 
 class SkillSenseResolver:

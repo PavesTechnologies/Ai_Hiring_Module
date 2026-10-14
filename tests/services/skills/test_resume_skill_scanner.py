@@ -187,6 +187,21 @@ def test_change_management_without_cues_stays_unresolved():
     assert [(r.sense, r.sense_resolved) for r in records] == [(None, False)]
 
 
+def test_an_uncued_mention_takes_the_sense_the_rest_of_the_resume_settles_on():
+    text = "\n\n\n".join(["Change Management Lead - Harbourstone Consulting",
+                          "Led organisational change management and adoption for 3,000 staff"])
+    records = _cm(_evidence(text))
+    assert [(r.sense, r.sense_resolved) for r in records] == [("ORGANISATIONAL", True)]
+    assert len(records[0].evidence) == 2
+
+
+def test_mixed_senses_leave_an_uncued_mention_unresolved():
+    text = "\n\n\n".join(["Change Management Lead", "Led organisational change management and adoption",
+                          "Ran ITIL change management through the CAB"])
+    senses = sorted((r.sense or "-", r.sense_resolved) for r in _cm(_evidence(text)))
+    assert senses == [("-", False), ("ITSM", True), ("ORGANISATIONAL", True)]
+
+
 def test_jd_sense_falls_back_to_title_then_assumed_default():
     resolver = SkillSenseResolver(SENSES)
     cm = IDS["Change Management"]
