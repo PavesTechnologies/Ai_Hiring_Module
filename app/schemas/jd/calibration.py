@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 SkillTier = Literal["CORE", "SUPPORTING", "PREFERRED"]
 EducationRequirement = Literal["MANDATORY", "PREFERRED"]
@@ -65,6 +65,32 @@ class JDUnknownSkillResolveRequest(BaseModel):
     aliases: list[str] = []                          # NEW
     category: str | None = None                      # NEW
     parent_skill_id: UUID | None = None              # NEW
+
+
+class JDCalibrationAddSkillRequest(BaseModel):
+    """Add a skill the extraction missed: a catalogue skill, or a new one (added to the catalogue)."""
+    canonical_skill_id: UUID | None = None
+    new_skill_name: str | None = Field(default=None, min_length=1, max_length=255)
+    tier: SkillTier
+    sense_key: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        has_name = bool(self.new_skill_name and self.new_skill_name.strip())
+        if (self.canonical_skill_id is None) == (not has_name):
+            raise ValueError("Give either canonical_skill_id (a catalogue skill) or new_skill_name, not both.")
+        return self
+
+
+class JDCalibrationSkillChangeResponse(BaseModel):
+    action: str                                   # ADDED / REMOVED
+    jd_skill_id: UUID
+    canonical_skill_id: UUID | None
+    skill: str | None
+    created_new_skill: bool
+    calibration_version: int | None               # None: the JD isn't calibrated yet (no version)
+    candidates_marked_out_of_date: int
+    calibration: "JDCalibrationView"
 
 
 class JDUnknownSkillResolveResponse(BaseModel):
@@ -145,3 +171,4 @@ class JDCalibrationVersionItem(BaseModel):
 
 
 JDUnknownSkillResolveResponse.model_rebuild()
+JDCalibrationSkillChangeResponse.model_rebuild()

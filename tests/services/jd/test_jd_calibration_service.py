@@ -352,3 +352,15 @@ def test_an_uncalibrated_jd_records_no_version():
     service, repo, audit, jd, *_ = _setup()
     assert service.record_skill_change(jd.id, actor_id="hr-1", actor_role="HR_ADMIN", note="x") is None
     assert repo.versions == []
+
+
+def test_a_skill_removed_in_calibration_is_saved_as_a_calibration_version():
+    service, repo, audit, jd, change, python, aws = _setup()
+    service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+    repo.skills = [(change, "Change Management"), (python, "Python")]          # AWS removed
+
+    version = service.record_skill_change(jd.id, actor_id="hr-1", actor_role="HR_ADMIN", note="'AWS' removed")
+
+    assert version == 2
+    assert repo.versions[-1].changes["skills"] == [{"skill": "AWS", "field": "removed", "before": "PREFERRED",
+                                                    "after": None}]

@@ -886,6 +886,10 @@ class SkillCurationService:
                 "Failed to enqueue candidate re-evaluation for unknown_skill_id=%s", unknown_skill_id,
             )
 
+    def enqueue_skill_embedding(self, skill_id: UUID) -> None:
+        """Public: queue a new catalogue skill's embedding (fire-and-forget) for callers outside this service."""
+        self._enqueue_skill_embedding(skill_id)
+
     def _enqueue_skill_embedding(self, skill_id: UUID) -> None:
         # Fire-and-forget: the caller's mutation has already committed, so a
         # broker outage here must never undo it or fail the request - only

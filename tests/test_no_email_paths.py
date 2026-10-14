@@ -38,6 +38,10 @@ V2_MODULES = [
     "scripts/skill_detection_live_runs.py",
     # Extraction model comparison (Phase 2 Step 3) and the LLM pieces it runs through.
     "scripts/extraction_model_comparison.py",
+    # JD calibration: adding / removing skills, resolving unknown skills.
+    "app/services/jd/jd_calibration_skill_service.py",
+    "app/services/jd/jd_unknown_skill_service.py",
+    "app/services/jd/jd_skill_change_effects.py",
     "app/services/llm/gemini_provider.py",
     "app/services/llm/factory.py",
     "scripts/scoring_v2_dry_run.py",

@@ -4,13 +4,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Security, status
 
 from app.dependencies.jd import get_jd_calibration_service
-from app.dependencies.jd_unknown_skills import get_jd_unknown_skill_service
+from app.dependencies.jd_unknown_skills import get_jd_calibration_skill_service, get_jd_unknown_skill_service
 from app.middleware.rbac import TokenUser, require_roles
 from app.models.identity import UserRole
 from app.schemas.jd.calibration import (
     JDCalibrationSaveRequest,
     JDCalibrationSaveResponse,
     JDCalibrationVersionItem,
+    JDCalibrationAddSkillRequest,
+    JDCalibrationSkillChangeResponse,
     JDCalibrationView,
     JDUnknownSkillResolveRequest,
     JDUnknownSkillResolveResponse,
@@ -18,6 +20,7 @@ from app.schemas.jd.calibration import (
 )
 from app.schemas.response import APIResponse
 from app.services.jd.jd_calibration_service import JDCalibrationService
+from app.services.jd.jd_calibration_skill_service import JDCalibrationSkillService
 from app.services.jd.jd_unknown_skill_service import JDUnknownSkillService
 
 router = APIRouter(prefix="/job-descriptions", tags=["JD Calibration"])
@@ -112,3 +115,41 @@ def resolve_jd_unknown_skill(
                              actor_role=user.roles[0] if user.roles else None)
     return APIResponse.ok(data=result, message={"MAP": "Mapped.", "NEW": "Added to the catalogue.",
                                                 "DROP": "Dropped from this JD."}[request.action])
+
+
+# --- add / remove skills in calibration ------------------------------------------
+
+@router.post(
+    "/{jd_id}/calibration/skills",
+    response_model=APIResponse[JDCalibrationSkillChangeResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Add a skill the extraction missed (HR_ADMIN)",
+    description="A catalogue skill (canonical_skill_id) or a new one (new_skill_name, added to the catalogue), "
+                "with a tier. Recorded as an HR decision; a calibrated JD saves a new calibration version and "
+                "live campaigns' scored candidates are marked 'score out of date'.",
+)
+def add_jd_calibration_skill(
+    jd_id: UUID,
+    request: JDCalibrationAddSkillRequest,
+    service: JDCalibrationSkillService = Depends(get_jd_calibration_skill_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.add(jd_id, request, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None)
+    return APIResponse.ok(data=result, message=f"'{result.skill}' added.")
+
+
+@router.delete(
+    "/{jd_id}/calibration/skills/{jd_skill_id}",
+    response_model=APIResponse[JDCalibrationSkillChangeResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Remove a skill from the JD, e.g. one the extraction invented (HR_ADMIN)",
+)
+def remove_jd_calibration_skill(
+    jd_id: UUID,
+    jd_skill_id: UUID,
+    service: JDCalibrationSkillService = Depends(get_jd_calibration_skill_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    result = service.remove(jd_id, jd_skill_id, actor_id=user.user_id,
+                            actor_role=user.roles[0] if user.roles else None)
+    return APIResponse.ok(data=result, message=f"'{result.skill}' removed from this JD.")
