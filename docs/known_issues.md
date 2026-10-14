@@ -7,6 +7,41 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Bulk upload: a new resume for a candidate already in the campaign becomes their active version, but the campaign keeps the old one (found 2026-10-14)
+
+**Status:** open - to fix after the Phase 3 comparison.
+
+In `app/tasks/bulk_upload_tasks.py` (`parse_file`), a ZIP file whose resume text carries the email of a
+candidate already in the campaign is fully processed first: `candidate_service.get_or_create` returns the
+existing candidate, `deactivate_active_version` runs and the new Resume is committed as version N+1 (its
+parse, skills and embedding persisted). Only then does `create_campaign_candidate` raise 409 "Candidate
+already exists in this campaign." The `except CampaignException` branch marks the file FAILED and counts it
+as a duplicate, but - unlike the generic `except Exception` branch - does not roll back or mark the parse
+failed. Result: the new file becomes the candidate's **active** resume everywhere, the existing campaign
+candidate still points at the **old** `resume_id`, nothing is re-scored, and the batch reports a
+"duplicate". (A byte-identical file is handled separately and is fine: skipped before any processing.)
+
+Seen in: planning the Phase 3 D3/D5 resume replacement (code reading; not triggered).
+
+Workaround: don't bulk-upload a changed resume for a candidate already in the campaign. Remove the
+campaign-candidate link and single-upload the file, or use `POST /campaign-candidates/{id}/update-resume`
+where the stage allows a reset to UPLOADED (there is no REJECTED -> UPLOADED transition).
+
+---
+
+## `DELETE /campaign-candidates/{id}` has no role restriction (found 2026-10-14)
+
+**Status:** open - to fix after the Phase 3 comparison.
+
+`app/api/routes/campaign_candidate.py` (`delete_campaign_candidate`) only depends on `get_current_user`,
+with no `require_roles(...)`: any authenticated user - not only HR_ADMIN / RECRUITER - can remove a
+candidate from a campaign (the application row; the shared Candidate / Resume rows stay). The service
+records the actor and role, but nothing refuses the call.
+
+Seen in: planning the Phase 3 D3/D5 resume replacement (code reading).
+
+Workaround: none in the API; rely on the UI not offering the action to other roles.
+
 ## Upload "use existing" (duplicate file) never adds the candidate to the campaign (found 2026-10-08)
 
 **Status:** resolved 2026-10-08 in f94e6ed - both paths now commit the campaign
