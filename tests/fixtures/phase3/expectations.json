@@ -1,0 +1,189 @@
+[
+  {
+    "id": "F1",
+    "jd": "JD-F",
+    "tests": [
+      "internship_counts_as_experience"
+    ],
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "All core skills with evidence; 12 months of internships meets the 1-year minimum, which the JD says includes internships",
+    "current_system_risk": "If internships aren't counted as experience: 0 years, 1 short -> HOLD"
+  },
+  {
+    "id": "F2",
+    "jd": "JD-F",
+    "tests": [
+      "project_only_skills",
+      "experience_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "4/4",
+    "reason": "Core skills clearly shown in projects (Flask REST API, PostgreSQL SQL, GitHub), but 0 years against a 1-year minimum, within tolerance -> near-miss",
+    "current_system_risk": "Project-only skills not detected (no skills section) -> core fails -> REJECT"
+  },
+  {
+    "id": "F3",
+    "jd": "JD-F",
+    "tests": [
+      "education_field_family",
+      "internship_counts_as_experience"
+    ],
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "IT is a related field; 12 months of internship meets the minimum",
+    "current_system_risk": "Mandatory CS education rejects the IT degree -> REJECT"
+  },
+  {
+    "id": "F4",
+    "jd": "JD-F",
+    "tests": [
+      "education_field_family",
+      "experience_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "4/4",
+    "reason": "ECE treated as related for software roles; 0.5 years short (within tolerance) -> one near-miss",
+    "current_system_risk": "Education rejects ECE, plus experience short -> REJECT"
+  },
+  {
+    "id": "F5",
+    "jd": "JD-F",
+    "tests": [
+      "spelling_normalisation",
+      "compound_skill_split",
+      "skill_alias"
+    ],
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "Splitting and spelling normalisation should find all four core skills; 12 months of internship",
+    "current_system_risk": "Compound phrases or \"RESTful API\" not mapped to REST APIs -> fewer core matches -> HOLD"
+  },
+  {
+    "id": "F6",
+    "jd": "JD-F",
+    "tests": [
+      "weak_fit"
+    ],
+    "expected_outcome": "REJECT",
+    "expected_core": "0/4",
+    "reason": "No core skills; unrelated degree",
+    "current_system_risk": "Low risk"
+  },
+  {
+    "id": "F7",
+    "jd": "JD-F",
+    "tests": [
+      "core_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "2/4",
+    "reason": "2 missing with 1 allowed -> one near-miss; experience met",
+    "current_system_risk": "Low risk"
+  },
+  {
+    "id": "F8",
+    "jd": "JD-F",
+    "tests": [
+      "keyword_stuffing",
+      "listed_only_skills",
+      "experience_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "4/4 (listed only)",
+    "reason": "Skills only listed, never shown in use; 0 years (within tolerance) -> near-miss; a person should check",
+    "current_system_risk": "Skills-section entries auto-confirm, so the system may treat the core as fully proven; outcome still HOLD on experience"
+  },
+  {
+    "id": "D1",
+    "jd": "JD-D",
+    "tests": [
+      "strong_domain_match",
+      "certifications"
+    ],
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "Everything matches with evidence",
+    "current_system_risk": "Low risk"
+  },
+  {
+    "id": "D2",
+    "jd": "JD-D",
+    "tests": [
+      "domain_paraphrase",
+      "functional_score"
+    ],
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "A recruiter would read these as incident, change and catalogue work on ServiceNow",
+    "current_system_risk": "Paraphrases not matched -> core 1/4 -> REJECT; functional score (word overlap) also misses them"
+  },
+  {
+    "id": "D3",
+    "jd": "JD-D",
+    "tests": [
+      "certification_mapping",
+      "implied_skill"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "3/4 (incident uncertain)",
+    "reason": "Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years meets the minimum",
+    "current_system_risk": "Without certification mapping, incident not found; could be HOLD or REJECT depending on matches"
+  },
+  {
+    "id": "D4",
+    "jd": "JD-D",
+    "tests": [
+      "skill_sense"
+    ],
+    "expected_outcome": "REJECT",
+    "expected_core": "0/4",
+    "reason": "Change Management here is the organisational sense; JD needs the ITSM sense",
+    "current_system_risk": "If senses aren't applied, Change Management matches (1/4); still REJECT"
+  },
+  {
+    "id": "D5",
+    "jd": "JD-D",
+    "tests": [
+      "experience_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "4/4",
+    "reason": "0.5 years short, within tolerance -> near-miss",
+    "current_system_risk": "Low risk"
+  },
+  {
+    "id": "D6",
+    "jd": "JD-D",
+    "tests": [
+      "no_domain_experience"
+    ],
+    "expected_outcome": "REJECT",
+    "expected_core": "0/4",
+    "reason": "No ITSM skills",
+    "current_system_risk": "Low risk"
+  },
+  {
+    "id": "D7",
+    "jd": "JD-D",
+    "tests": [
+      "other_platform",
+      "core_near_miss"
+    ],
+    "expected_outcome": "HOLD",
+    "expected_core": "2/4",
+    "reason": "Incident and change (ITSM) present; ServiceNow ITSM and Service Catalog missing (\"request types\" isn't the catalogue) -> one near-miss",
+    "current_system_risk": "\"Request types\" may be matched to Service Catalog -> 3/4 -> PASS"
+  },
+  {
+    "id": "D8",
+    "jd": "JD-D",
+    "tests": [
+      "end_user_not_implementer"
+    ],
+    "expected_outcome": "REJECT",
+    "expected_core": "1/4 (incident)",
+    "reason": "Logs tickets in ServiceNow but doesn't configure it; change and catalogue missing; ServiceNow ITSM as an implementation skill not shown",
+    "current_system_risk": "\"ServiceNow\" in the text may be confirmed as ServiceNow ITSM -> 2/4 -> HOLD"
+  }
+]
