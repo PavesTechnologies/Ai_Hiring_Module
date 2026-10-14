@@ -2,6 +2,7 @@
 
 All people, companies and institutions below are invented. Contact details use `example.invalid`.
 Each resume is built to test one or more Phase 3 rules. The expected outcomes are in section 5.
+Experience is computed from the role dates; "present" counts up to the day of the run. D3 and D5 are dated so that, as of 2026-10-14, they have exactly 4.5 and 3.5 years (the years their summaries state); later runs see more.
 
 Contents:
 1. Instructions for Claude Code
@@ -347,12 +348,12 @@ ServiceNow administrator with 4.5 years of experience.
 B.Com — Charminar College of Commerce, 2021
 
 **Experience**
-*ServiceNow Administrator* — Lotus Infotech · Jan 2022 – present
+*ServiceNow Administrator* — Lotus Infotech · Oct 2022 – present
 - Administer the ServiceNow instance for the IT service desk
 - Maintain catalogue items, assignment rules and notifications
 - Support the change process and prepare changes for approval meetings
 
-*IT Support Analyst* — Lotus Infotech · Jun 2021 – Dec 2021
+*IT Support Analyst* — Lotus Infotech · Apr 2022 – Oct 2022
 - Logged and resolved service desk tickets
 
 **Certifications**
@@ -401,12 +402,12 @@ ServiceNow developer with 3.5 years of ITSM implementation experience.
 B.E., Information Technology — Marina Institute of Engineering, 2022
 
 **Experience**
-*ServiceNow Developer* — Tidewater Tech · Jan 2023 – present
+*ServiceNow Developer* — Tidewater Tech · Oct 2023 – present
 - Configured Incident Management and Change Management modules, including CAB workflows
 - Built Service Catalog items with Flow Designer
 - Implemented ServiceNow ITSM for a mid-size client
 
-*Associate ServiceNow Developer* — Tidewater Tech · Jul 2022 – Dec 2022
+*Associate ServiceNow Developer* — Tidewater Tech · Apr 2023 – Oct 2023
 - Wrote Glide scripts and fixed UI policies
 
 **Certifications**
@@ -525,9 +526,9 @@ Incident Management, ServiceNow (end user), customer support, Windows troublesho
 | F8 | Keyword-stuffed skills list, no evidence, no experience | HOLD | 4/4 (listed only) | Skills only listed, never shown in use; 0 years (within tolerance) → near-miss; a person should check | Skills-section entries auto-confirm, so the system may treat the core as fully proven; outcome still HOLD on experience |
 | D1 | Strong domain candidate, exact terms, certifications | PASS | 4/4 | Everything matches with evidence | Low risk |
 | D2 | Domain experience in paraphrase ("ticket handling and outage response", "RFC process, release approvals", "request portal items") | PASS | 4/4 | A recruiter would read these as incident, change and catalogue work on ServiceNow | Paraphrases not matched → core 1/4 → REJECT; functional score (word overlap) also misses them |
-| D3 | Skills partly shown through certifications (ITIL 4, CSA) and admin duties | HOLD | 3/4 (incident uncertain) | Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years meets the minimum | Without certification mapping, incident not found; could be HOLD or REJECT depending on matches |
+| D3 | Skills partly shown through certifications (ITIL 4, CSA) and admin duties | HOLD | 3/4 (incident uncertain) | Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years (as of 2026-10-14) meets the minimum | Without certification mapping, incident not found; could be HOLD or REJECT depending on matches |
 | D4 | Organisational change management, no ServiceNow | REJECT | 0/4 | Change Management here is the organisational sense; JD needs the ITSM sense | If senses aren't applied, Change Management matches (1/4); still REJECT |
-| D5 | Strong ITSM, 3.5 years against a 4-year minimum | HOLD | 4/4 | 0.5 years short, within tolerance → near-miss | Low risk |
+| D5 | Strong ITSM, 3.5 years against a 4-year minimum | HOLD | 4/4 | 0.5 years short (3.5 years as of 2026-10-14), within tolerance → near-miss | Low risk |
 | D6 | Strong generalist, no domain experience | REJECT | 0/4 | No ITSM skills | Low risk |
 | D7 | ITSM processes on another platform (Remedy, Jira SM) | HOLD | 2/4 | Incident and change (ITSM) present; ServiceNow ITSM and Service Catalog missing ("request types" isn't the catalogue) → one near-miss | "Request types" may be matched to Service Catalog → 3/4 → PASS |
 | D8 | ServiceNow end user, not implementer | REJECT | 1/4 (incident) | Logs tickets in ServiceNow but doesn't configure it; change and catalogue missing; ServiceNow ITSM as an implementation skill not shown | "ServiceNow" in the text may be confirmed as ServiceNow ITSM → 2/4 → HOLD |

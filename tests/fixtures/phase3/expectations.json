@@ -127,7 +127,7 @@
     ],
     "expected_outcome": "HOLD",
     "expected_core": "3/4 (incident uncertain)",
-    "reason": "Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years meets the minimum",
+    "reason": "Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years (as of 2026-10-14) meets the minimum",
     "current_system_risk": "Without certification mapping, incident not found; could be HOLD or REJECT depending on matches"
   },
   {
@@ -149,7 +149,7 @@
     ],
     "expected_outcome": "HOLD",
     "expected_core": "4/4",
-    "reason": "0.5 years short, within tolerance -> near-miss",
+    "reason": "0.5 years short (3.5 years as of 2026-10-14), within tolerance -> near-miss",
     "current_system_risk": "Low risk"
   },
   {
