@@ -12,8 +12,10 @@ A near-miss is one of:
 Exactly one near-miss -> HOLD; two or more -> REJECT. Any other failed check
 (coverage, education, score threshold where it applies), experience short by
 more than the tolerance, or zero confirmed core skills (on a JD that has core
-skills) -> REJECT. Semantic and AI still run for a HOLD candidate and may
-still reject; their best outcome is capped at HOLD.
+skills) -> REJECT. Semantic and AI still run for a HOLD candidate. A semantic
+score below the threshold doesn't reject it - it is added to the review
+reason (add_review_note) and the candidate goes on to AI evaluation, which
+may still reject; the best outcome is capped at HOLD.
 """
 from dataclasses import dataclass, field
 
@@ -30,6 +32,17 @@ def needs_recruiter_review(campaign_candidate) -> bool:
     """True when the stored deterministic decision was a near-miss (REVIEW) - the AI step caps it at HOLD."""
     breakdown = getattr(campaign_candidate, "deterministic_breakdown", None) or {}
     return isinstance(breakdown, dict) and breakdown.get("needs_review") is True
+
+
+def add_review_note(campaign_candidate, note: str) -> None:
+    """Append a note to a review candidate's stored "Needs recruiter review" reason (a new dict, so JSONB saves)."""
+    breakdown = dict(getattr(campaign_candidate, "deterministic_breakdown", None) or {})
+    notes = [n for n in (breakdown.get("review_notes") or []) if n != note] + [note]
+    reason = breakdown.get("needs_review_reason") or NEEDS_REVIEW_REASON
+    if note not in reason:
+        reason = f"{reason}; {note}"
+    breakdown.update(review_notes=notes, needs_review_reason=reason)
+    campaign_candidate.deterministic_breakdown = breakdown
 
 
 def experience_near_miss_tolerance(min_years: float, jd_tolerance_years: float | None = None) -> float:

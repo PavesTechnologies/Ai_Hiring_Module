@@ -23,6 +23,7 @@ from app.repositories.interview_schedule_repository import InterviewScheduleRepo
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.services.audit_service import AuditService
+from app.services.campaign.near_miss import add_review_note, needs_recruiter_review
 from app.services.campaign.semantic_scoring_service import SemanticScoringService
 from app.services.campaign.stage_transition_service import StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -61,6 +62,15 @@ JD_EMBEDDING_NOT_FOUND_REASON = "JD_EMBEDDING_NOT_FOUND"
 MODEL_VERSION_MISMATCH_REASON = "MODEL_VERSION_MISMATCH"
 
 
+def _semantic_review_note(breakdown: dict) -> str:
+    score, threshold = breakdown.get("semantic_score"), breakdown.get("semantic_threshold")
+    try:
+        return (f"semantic similarity {float(score) * 100:.1f}% is below the {float(threshold) * 100:.1f}% "
+                f"threshold")
+    except (TypeError, ValueError):
+        return "semantic similarity is below the threshold"
+
+
 def _score_and_persist_semantic(
     campaign_candidate,
     campaign,
@@ -82,7 +92,13 @@ def _score_and_persist_semantic(
 
     rejection_reason = None
     stage_transition_succeeded = False
-    if not breakdown["semantic_passed"]:
+    # Already on HOLD from the deterministic layer (a near-miss): a low
+    # semantic score is one more thing for the recruiter to review, not a
+    # rejection. AI evaluation still runs and can still reject.
+    kept_for_review = not breakdown["semantic_passed"] and needs_recruiter_review(campaign_candidate)
+    if kept_for_review:
+        add_review_note(campaign_candidate, _semantic_review_note(breakdown))
+    elif not breakdown["semantic_passed"]:
         rejection_reason = breakdown["semantic_explanation"]
 
         stage_transition_succeeded = stage_transition_service.transition_to_rejected(
@@ -105,6 +121,8 @@ def _score_and_persist_semantic(
         "matching_skills_count": len(breakdown["matching_skills"]),
         "missing_skills_count": len(breakdown["missing_skills"]),
         "rejection_reason": rejection_reason,
+        "kept_for_review": kept_for_review,
+        "review_note": _semantic_review_note(breakdown) if kept_for_review else None,
         "semantic_score_breakdown": breakdown,
         # Story 538/540: surfaced at the top level (not just nested in
         # semantic_score_breakdown) so the caller can record duration_ms on
@@ -142,7 +160,7 @@ def _score_and_persist_semantic(
                 campaign_candidate.id,
             )
 
-    if breakdown["semantic_passed"]:
+    if breakdown["semantic_passed"] or kept_for_review:
         # Only after the transaction above has committed - same "commit
         # first, dispatch after" ordering calculate_deterministic_score_task
         # uses for its own auto-trigger of semantic scoring, so a worker

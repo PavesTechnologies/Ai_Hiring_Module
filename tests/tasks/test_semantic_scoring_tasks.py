@@ -1056,3 +1056,85 @@ def test_recovery_task_marks_failure_on_unexpected_exception():
 
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.FAILURE
+
+
+# ----------------------------------------------------------------------
+# Phase 3 Step 4: a candidate already on HOLD from the deterministic layer
+# (a near-miss, needs_review) is not rejected by a low semantic score - the
+# score is added to the review reason and AI evaluation still runs (it can
+# still reject). Everyone else is rejected exactly as before.
+# ----------------------------------------------------------------------
+
+def _review_candidate(campaign_id):
+    cc = _make_campaign_candidate(campaign_id, pipeline_stage=PipelineStage.SCREENING)
+    cc.deterministic_breakdown = {
+        "needs_review": True,
+        "needs_review_reason": "Needs recruiter review: experience 3.5 years, 0.5 short of the 4-year minimum",
+    }
+    return cc
+
+
+def test_low_semantic_score_keeps_a_review_candidate_for_review():
+    from app.tasks.deterministic_scoring_tasks import AI_EVALUATE_TASK_TYPE
+    from app.tasks.semantic_scoring_tasks import calculate_semantic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _review_candidate(campaign.id)
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.scoring_service_instance.calculate_and_store_semantic_score_breakdown.return_value = _breakdown(
+            passed=False, similarity=0.5716, threshold=0.65)
+
+        calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
+
+        assert cc.pipeline_stage == PipelineStage.SCREENING and cc.decision_type is None
+        h.allowed_transition_repo.is_transition_allowed.assert_not_called()
+        reason = cc.deterministic_breakdown["needs_review_reason"]
+        assert reason.startswith("Needs recruiter review: experience 3.5 years")
+        assert reason.endswith("semantic similarity 57.2% is below the 65.0% threshold")
+        assert cc.deterministic_breakdown["review_notes"] == ["semantic similarity 57.2% is below the 65.0% threshold"]
+        created_task_types = [call.args[0].task_type for call in h.task_log_repo.create.call_args_list]
+        assert AI_EVALUATE_TASK_TYPE in created_task_types
+        details = h.audit_service_instance.log.call_args.kwargs["details"]
+        assert details["kept_for_review"] is True and details["rejection_reason"] is None
+        h.queue_rejection_email_mock.assert_not_called()
+        h.email_apply_async_mock.assert_not_called()
+
+
+def test_rerunning_semantic_does_not_repeat_the_review_note():
+    from app.tasks.semantic_scoring_tasks import _semantic_review_note
+    from app.services.campaign.near_miss import add_review_note
+
+    cc = _review_candidate(uuid4())
+    note = _semantic_review_note(_breakdown(passed=False, similarity=0.5716, threshold=0.65))
+    add_review_note(cc, note)
+    add_review_note(cc, note)
+    assert cc.deterministic_breakdown["needs_review_reason"].count(note) == 1
+    assert cc.deterministic_breakdown["review_notes"] == [note]
+
+
+def test_low_semantic_score_still_rejects_a_candidate_not_under_review():
+    from app.tasks.semantic_scoring_tasks import calculate_semantic_score_task
+
+    with _Harness() as h:
+        campaign = _make_campaign()
+        cc = _make_campaign_candidate(campaign.id, pipeline_stage=PipelineStage.SCREENING)
+        cc.deterministic_breakdown = {"needs_review": False}
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.scoring_service_instance.calculate_and_store_semantic_score_breakdown.return_value = _breakdown(passed=False)
+
+        calculate_semantic_score_task(campaign_candidate_id=str(cc.id))
+
+        assert cc.pipeline_stage == PipelineStage.REJECTED and cc.decision_source == DecisionSource.SEMANTIC
+
+
+def test_ai_evaluation_applies_after_a_semantic_pass_or_a_review_kept_for_review():
+    from app.tasks.ai_evaluation_tasks import passed_or_kept_after_semantic
+
+    passed = SimpleNamespace(semantic_breakdown={"semantic_passed": True}, deterministic_breakdown={})
+    kept = SimpleNamespace(semantic_breakdown={"semantic_passed": False}, deterministic_breakdown={"needs_review": True})
+    failed = SimpleNamespace(semantic_breakdown={"semantic_passed": False}, deterministic_breakdown={"needs_review": False})
+    assert passed_or_kept_after_semantic(passed) and passed_or_kept_after_semantic(kept)
+    assert not passed_or_kept_after_semantic(failed)

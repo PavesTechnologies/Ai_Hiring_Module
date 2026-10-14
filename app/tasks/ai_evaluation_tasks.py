@@ -97,6 +97,16 @@ def _enqueue_ai_evaluation(
         )
 
 
+def passed_or_kept_after_semantic(campaign_candidate) -> bool:
+    """
+    AI evaluation applies once semantic screening passed - or, for a
+    deterministic near-miss (HOLD), when a low semantic score was kept for
+    review instead of rejecting (semantic_scoring_tasks).
+    """
+    semantic_breakdown = campaign_candidate.semantic_breakdown or {}
+    return bool(semantic_breakdown.get("semantic_passed")) or needs_recruiter_review(campaign_candidate)
+
+
 def _apply_ai_recommendation(stage_transition_service, campaign_candidate, recommendation: str, ai_response: dict) -> bool:
     """
     Moves the candidate on the AI's recommendation: REJECT -> REJECTED,
@@ -268,8 +278,7 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             )
             return
 
-        semantic_breakdown = campaign_candidate.semantic_breakdown or {}
-        if not semantic_breakdown.get("semantic_passed"):
+        if not passed_or_kept_after_semantic(campaign_candidate):
             summary = json.dumps({
                 "skipped": True,
                 "reason": "Candidate has not passed semantic screening - AI evaluation does not apply.",
