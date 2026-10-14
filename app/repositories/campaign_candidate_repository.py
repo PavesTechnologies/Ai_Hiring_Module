@@ -9,6 +9,7 @@ from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
 from app.models.embeddings import ResumeEmbedding
 from app.models.jd.job_descriptions import JobDescription
+from app.models.scoring_v2 import CandidateScoringResult, ScoringShadowRanking
 from app.models.pipeline import (
     AIEvaluationStatus,
     AIRecommendation,
@@ -318,6 +319,37 @@ class CampaignCandidateRepository:
         self.db.execute(
             delete(StageTransitionLog)
             .where(StageTransitionLog.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
+    def delete_scoring_results(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """
+        Removing a campaign candidate — removes its candidate_scoring_results
+        rows (every v1 / v2 scoring of this one application). FK to
+        campaign_candidates with no ON DELETE rule: without this, any
+        candidate that had been scored couldn't be removed or erased.
+        """
+        self.db.execute(
+            delete(CandidateScoringResult)
+            .where(CandidateScoringResult.campaign_candidate_id == campaign_candidate_id)
+        )
+        self.db.flush()
+
+    def delete_shadow_ranking(
+        self,
+        campaign_candidate_id: UUID,
+    ) -> None:
+        """
+        Removing a campaign candidate — removes its scoring_shadow_rankings
+        row (a recruiter's rank in the shadow report). Same FK reason as
+        delete_scoring_results.
+        """
+        self.db.execute(
+            delete(ScoringShadowRanking)
+            .where(ScoringShadowRanking.campaign_candidate_id == campaign_candidate_id)
         )
         self.db.flush()
 

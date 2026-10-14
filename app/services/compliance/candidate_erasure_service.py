@@ -125,6 +125,9 @@ class CandidateErasureService:
                     # interview-related email notifications).
                     self.interview_schedule_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
                 self.composite_score_history_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
+                # v1 / v2 scoring results and a shadow-report recruiter rank.
+                self.campaign_candidate_repo.delete_scoring_results(campaign_candidate.id)
+                self.campaign_candidate_repo.delete_shadow_ranking(campaign_candidate.id)
                 # DLQ before celery_task_log — dead_letter_queue.original_task_id
                 # is a NOT NULL FK to celery_task_log.task_id.
                 self.dead_letter_queue_repo.delete_by_campaign_candidate_id(campaign_candidate.id)
@@ -133,6 +136,7 @@ class CandidateErasureService:
 
             for resume in resumes:
                 self.resume_repo.delete_parse_attempts(resume.id)
+                self.resume_repo.delete_skill_detection_data(resume.id)
                 self.dead_letter_queue_repo.delete_by_resume_id(resume.id)
                 self.celery_task_log_repo.delete_by_resume_id(resume.id)
                 self._delete_resume_file(resume.file_path)

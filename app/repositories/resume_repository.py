@@ -10,6 +10,12 @@ from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Re
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
 from app.models.jd.job_descriptions import JDEmbedding
 from app.models.pipeline import CampaignCandidate, PipelineStage
+from app.models.scoring_v2 import (
+    CoreSkillConfirmation,
+    ResumeParseVersion,
+    ResumeProvisionalSkillScan,
+    ResumeSkillEvidence,
+)
 from app.models.skills import CandidateSkill, SkillOntology
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 
@@ -627,6 +633,18 @@ class ResumeRepository:
     def delete_parse_attempts(self, resume_id: UUID) -> None:
         """Candidate erasure — removes resume_parse_attempts for one resume version."""
         self.db.execute(delete(ResumeParseAttempt).where(ResumeParseAttempt.resume_id == resume_id))
+        self.db.flush()
+
+    def delete_skill_detection_data(self, resume_id: UUID) -> None:
+        """
+        Candidate erasure — removes what scoring v2 derived from one resume
+        version: skill evidence (snippets of the resume text), core-skill
+        confirmations, previous parses and provisional unknown-skill scans.
+        Each has an FK to resumes with no ON DELETE rule, so the resume row
+        can't go without them - and they hold the candidate's own text.
+        """
+        for model in (ResumeSkillEvidence, CoreSkillConfirmation, ResumeParseVersion, ResumeProvisionalSkillScan):
+            self.db.execute(delete(model).where(model.resume_id == resume_id))
         self.db.flush()
 
     def delete_embeddings_by_candidate(self, candidate_id: UUID) -> None:

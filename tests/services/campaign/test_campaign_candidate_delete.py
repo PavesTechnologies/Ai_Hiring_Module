@@ -173,6 +173,8 @@ def test_delete_campaign_candidate_clears_every_dependent_table_before_the_paren
     service.candidate_note_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
     service.interview_schedule_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
     service.composite_score_history_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
+    campaign_candidate_repo.delete_scoring_results.assert_called_once_with(cc.id)
+    campaign_candidate_repo.delete_shadow_ranking.assert_called_once_with(cc.id)
     service.dead_letter_queue_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
     service.celery_task_log_repo.delete_by_campaign_candidate_id.assert_called_once_with(cc.id)
     campaign_candidate_repo.delete.assert_called_once_with(cc)

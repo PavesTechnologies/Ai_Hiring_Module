@@ -3296,6 +3296,9 @@ class CampaignCandidateService:
             # its own docstring.
             self.interview_schedule_repo.delete_by_campaign_candidate_id(deleted_id)
             self.composite_score_history_repo.delete_by_campaign_candidate_id(deleted_id)
+            # v1 / v2 scoring results and a shadow-report recruiter rank.
+            self.campaign_candidate_repo.delete_scoring_results(deleted_id)
+            self.campaign_candidate_repo.delete_shadow_ranking(deleted_id)
             # DLQ before celery_task_log - dead_letter_queue.original_task_id
             # is a NOT NULL FK to celery_task_log.task_id.
             self.dead_letter_queue_repo.delete_by_campaign_candidate_id(deleted_id)
