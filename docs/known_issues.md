@@ -7,24 +7,36 @@ workaround is until someone actually fixes it.
 
 ---
 
-## Removing a campaign candidate never commits its audit entry (found 2026-10-15)
+## Five campaign-candidate actions never commit their audit entry (found 2026-10-15)
 
 **Status:** open - to fix after the Phase 3 comparison.
 
-`CampaignCandidateService.delete_campaign_candidate` (`app/services/campaign/campaign_candidate_service.py`)
-commits the delete (`campaign_candidate_repo.commit()`), publishes the board update, and only then calls
-`audit_service.log(CANDIDATE_REMOVED)`. `AuditRepository.create` only flushes, and nothing commits the
-session afterwards (`get_db` just closes it), so the audit row is rolled back. Through the API (one removal per
-request) **every** removal loses its audit entry. In a session that removes several, each entry is committed by
-the *next* removal's commit and only the last is lost. The fix: write the audit row before the single commit,
-in the same transaction as the delete (as the JD calibration services do).
+`AuditService.log` -> `AuditRepository.create` only flushes; the row survives only if the same session is
+committed afterwards. The request session (`get_db`) is just closed, never committed. In
+`app/services/campaign/campaign_candidate_service.py` five methods write their audit row with no commit after
+it, and their routes (`app/api/routes/campaign_candidate.py`, which has no `commit` at all) don't commit either -
+so the row is rolled back and the action leaves **no audit trail**:
 
-Seen in: Phase 3. `audit_log` holds a single `CANDIDATE_REMOVED` row ever (2026-10-14 11:48 UTC): the D3
-removal, committed by the D5 removal that followed it in the same script; D5's own entry and the 2026-10-15 D5
-removal left none.
+| Action (audit type) | Method (audit call) | Why it's lost |
+|---|---|---|
+| Remove a candidate from a campaign (`CANDIDATE_REMOVED`) | `delete_campaign_candidate` (~L3314) | the delete is committed first (~L3309), the audit row is written after |
+| Export the ranked candidates (`CANDIDATE_RANKING_EXPORTED`) | `export_ranked_campaign_candidates` (~L2012) | logs, then returns the StreamingResponse - no commit |
+| Export rejected candidates (`REJECTED_CANDIDATES_EXPORTED`) | `export_rejected_candidates` (~L2106) | same |
+| Export the override report (`OVERRIDE_REPORT_EXPORTED`) | `export_override_report` (~L2813) | same |
+| Export the deterministic rejection summary (`DETERMINISTIC_ANALYTICS_EXPORTED`) | `export_deterministic_rejection_summary` (~L3138) | same |
 
-Workaround: none - until fixed, `campaign_candidates` (not the audit log) is the only record that a removal
-happened.
+The fix: commit the audit row - for the removal, write it before the single commit (same transaction as the
+delete); for the exports, commit right after logging (as `ExportService.log_export` and the JD exports already
+do).
+
+Checked (read only, 2026-10-15): all 104 audit-write sites in `app/`; the other 99 are committed on their success
+path (several by their caller - e.g. `create_campaign_candidate`, `pipeline_transition_service`,
+`composite_scoring_service.write_audit`, `jd_calibration_service.record_skill_change`); none survive only by an
+unrelated later commit. In the dev DB: `CANDIDATE_REMOVED` has a single row ever (the Phase 3 D3 removal on
+2026-10-14, committed by the D5 removal that followed it in the same script) and the four export types have none.
+
+Workaround: none - until fixed, `campaign_candidates` is the only record that a removal happened, and these
+exports leave no record at all.
 
 ---
 
