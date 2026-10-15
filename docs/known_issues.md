@@ -7,22 +7,24 @@ workaround is until someone actually fixes it.
 
 ---
 
-## Removing a campaign candidate can leave no audit entry (found 2026-10-15)
+## Removing a campaign candidate never commits its audit entry (found 2026-10-15)
 
 **Status:** open - to fix after the Phase 3 comparison.
 
 `CampaignCandidateService.delete_campaign_candidate` (`app/services/campaign/campaign_candidate_service.py`)
-commits the delete (`campaign_candidate_repo.commit()`), publishes the board update, and only then writes
-the `CANDIDATE_REMOVED` audit entry - which `AuditRepository.create` commits separately. If the process stops
-between the two commits (killed, interrupted, or the audit insert fails), the application is gone with no
-record of who removed it or when. The fix: write the audit row in the same transaction as the delete
-(add it before the single commit), as the JD calibration services do.
+commits the delete (`campaign_candidate_repo.commit()`), publishes the board update, and only then calls
+`audit_service.log(CANDIDATE_REMOVED)`. `AuditRepository.create` only flushes, and nothing commits the
+session afterwards (`get_db` just closes it), so the audit row is rolled back. Through the API (one removal per
+request) **every** removal loses its audit entry. In a session that removes several, each entry is committed by
+the *next* removal's commit and only the last is lost. The fix: write the audit row before the single commit,
+in the same transaction as the delete (as the JD calibration services do).
 
-Seen in: Phase 3, D5's link in "[P3] ServiceNow ITSM" - an interrupted removal script on 2026-10-14
-committed the delete and left no `CANDIDATE_REMOVED` row.
+Seen in: Phase 3. `audit_log` holds a single `CANDIDATE_REMOVED` row ever (2026-10-14 11:48 UTC): the D3
+removal, committed by the D5 removal that followed it in the same script; D5's own entry and the 2026-10-15 D5
+removal left none.
 
-Workaround: none needed for normal API use (the gap is milliseconds); when a removal is interrupted, check
-`campaign_candidates` rather than the audit log to see whether it happened.
+Workaround: none - until fixed, `campaign_candidates` (not the audit log) is the only record that a removal
+happened.
 
 ---
 
