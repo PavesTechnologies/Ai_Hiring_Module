@@ -2026,6 +2026,10 @@ class CampaignCandidateService:
             },
         )
 
+        # AuditRepository.create only flushes: commit, or the row is rolled back
+        # when the request session closes (nothing else commits it).
+        self.campaign_candidate_repo.commit()
+
         return StreamingResponse(
             excel_file,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2112,6 +2116,10 @@ class CampaignCandidateService:
             campaign_id=campaign_id,
             details={"exported_count": len(rows)},
         )
+
+        # AuditRepository.create only flushes: commit, or the row is rolled back
+        # when the request session closes (nothing else commits it).
+        self.campaign_candidate_repo.commit()
 
         return StreamingResponse(
             excel_file,
@@ -2820,6 +2828,10 @@ class CampaignCandidateService:
             details={"exported_count": len(rows)},
         )
 
+        # AuditRepository.create only flushes: commit, or the row is rolled back
+        # when the request session closes (nothing else commits it).
+        self.campaign_candidate_repo.commit()
+
         return StreamingResponse(
             excel_file,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3149,6 +3161,10 @@ class CampaignCandidateService:
             },
         )
 
+        # AuditRepository.create only flushes: commit, or the row is rolled back
+        # when the request session closes (nothing else commits it).
+        self.campaign_candidate_repo.commit()
+
         return StreamingResponse(
             excel_file,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3306,11 +3322,9 @@ class CampaignCandidateService:
 
             self.campaign_candidate_repo.delete(candidate)
 
-            self.campaign_candidate_repo.commit()
-
-            CandidateChangeNotifier().removed(deleted_campaign_id, deleted_id, [deleted_resume_id])
-
-            # Audit Log
+            # Audit Log - in the same transaction as the delete, so the removal
+            # and its record are committed together (AuditRepository.create
+            # only flushes; logging after the commit left it uncommitted).
             self.audit_service.log(
                 actor_id=actor_id,
                 actor_role=actor_role,
@@ -3323,6 +3337,10 @@ class CampaignCandidateService:
                     "resume_id": str(deleted_resume_id),
                 },
             )
+
+            self.campaign_candidate_repo.commit()
+
+            CandidateChangeNotifier().removed(deleted_campaign_id, deleted_id, [deleted_resume_id])
 
         except Exception:
             self.campaign_candidate_repo.rollback()

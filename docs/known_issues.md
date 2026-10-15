@@ -9,7 +9,10 @@ workaround is until someone actually fixes it.
 
 ## Five campaign-candidate actions never commit their audit entry (found 2026-10-15)
 
-**Status:** open - to fix after the Phase 3 comparison.
+**Status:** fixed 2026-10-15 (branch `fix-audit-commit-paths`). The removal now writes `CANDIDATE_REMOVED` before
+its single commit (same transaction as the delete); the four exports commit right after logging. Tests over HTTP
+against real Postgres (`tests/db/test_audit_entries_are_committed.py`) roll the session back after each call and
+check the audit row is still there - all five fail without the fix. Rows lost before the fix are not recoverable.
 
 `AuditService.log` -> `AuditRepository.create` only flushes; the row survives only if the same session is
 committed afterwards. The request session (`get_db`) is just closed, never committed. In
@@ -35,8 +38,8 @@ path (several by their caller - e.g. `create_campaign_candidate`, `pipeline_tran
 unrelated later commit. In the dev DB: `CANDIDATE_REMOVED` has a single row ever (the Phase 3 D3 removal on
 2026-10-14, committed by the D5 removal that followed it in the same script) and the four export types have none.
 
-Workaround: none - until fixed, `campaign_candidates` is the only record that a removal happened, and these
-exports leave no record at all.
+Workaround (before the fix): none - `campaign_candidates` was the only record that a removal happened, and these
+exports left no record at all.
 
 ---
 
