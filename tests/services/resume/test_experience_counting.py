@@ -88,6 +88,16 @@ def test_unreadable_professional_dates_are_still_data_missing():
     assert _years(no_dates, _role("Jan 2020", "Dec 2021")) == 2.0  # measured professional time is used
 
 
+def test_unreadable_professional_dates_fall_back_to_the_stated_total():
+    # Seen live: five roles with no dates, the resume states 20 years.
+    parsed = {"work_experience": [_role(None, None) for _ in range(5)], "total_experience_years": 20}
+    assert experience_years_for_scoring(parsed) == 20.0
+    assert experience_years_for_scoring({**parsed, "total_experience_years": None}) is None
+    # Measured dates still win over the stated figure.
+    measured = {"work_experience": [_role("Jan 2020", "Dec 2021"), _role(None, None)], "total_experience_years": 20}
+    assert experience_years_for_scoring(measured) == 2.0
+
+
 def test_the_resume_display_total_counts_concurrent_roles_once():
     annotated = annotate_work_experience_durations(
         {"work_experience": [_role("Jan 2020", "Dec 2021"), _role("Jun 2020", "Dec 2020"), *F1]})

@@ -122,10 +122,11 @@ def experience_years_for_scoring(parsed_json: dict | None, internship_credit: fl
     internships / volunteer roles, has 0 years against the minimum - a
     near-miss or a shortfall, not "not applicable".
 
-    Still None (data missing - never held against the candidate) only when
-    a professional role is listed but its dates can't be read, and no
-    professional months were counted: the experience exists, the parse just
-    couldn't measure it.
+    When a professional role is listed but no professional months can be
+    measured (its dates can't be read), the resume's own stated total
+    (total_experience_years) is used. Only without one is it None (data
+    missing - never held against the candidate): the experience exists, the
+    parse just couldn't measure it.
     """
     parsed = parsed_json or {}
     entries = parsed.get("work_experience") or []
@@ -136,7 +137,8 @@ def experience_years_for_scoring(parsed_json: dict | None, internship_credit: fl
     professional = _professional(entries)
     professional_months = _months(professional)
     if not professional_months and any(_entry_month_range(e) is None for e in professional):
-        return None
+        stated = parsed.get("total_experience_years")
+        return float(stated) if stated is not None else None
     internship_months = _months(_internships(entries)) - professional_months
     counted = len(professional_months) + float(internship_credit) * len(internship_months)
     return round(counted / 12, 1)
