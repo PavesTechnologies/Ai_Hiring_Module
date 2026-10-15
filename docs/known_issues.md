@@ -7,6 +7,25 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Removing a campaign candidate can leave no audit entry (found 2026-10-15)
+
+**Status:** open - to fix after the Phase 3 comparison.
+
+`CampaignCandidateService.delete_campaign_candidate` (`app/services/campaign/campaign_candidate_service.py`)
+commits the delete (`campaign_candidate_repo.commit()`), publishes the board update, and only then writes
+the `CANDIDATE_REMOVED` audit entry - which `AuditRepository.create` commits separately. If the process stops
+between the two commits (killed, interrupted, or the audit insert fails), the application is gone with no
+record of who removed it or when. The fix: write the audit row in the same transaction as the delete
+(add it before the single commit), as the JD calibration services do.
+
+Seen in: Phase 3, D5's link in "[P3] ServiceNow ITSM" - an interrupted removal script on 2026-10-14
+committed the delete and left no `CANDIDATE_REMOVED` row.
+
+Workaround: none needed for normal API use (the gap is milliseconds); when a removal is interrupted, check
+`campaign_candidates` rather than the audit log to see whether it happened.
+
+---
+
 ## Bulk upload: a new resume for a candidate already in the campaign becomes their active version, but the campaign keeps the old one (found 2026-10-14)
 
 **Status:** open - to fix after the Phase 3 comparison.
