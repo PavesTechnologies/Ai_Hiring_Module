@@ -27,7 +27,7 @@ def _jd(**overrides):
         education_criteria={"degree": "Bachelor", "field": "Computer Science"},
         calibration_status=JDCalibrationStatus.NOT_CALIBRATED, calibration_version=0,
         calibrated_by=None, calibrated_at=None, is_verified=JDVerificationStatus.PARTIALLY_VERIFIED,
-        updated_at=None, internship_credit_pct=None,
+        updated_at=None, internship_credit_pct=None, role_domain=None,
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -108,7 +108,8 @@ def _request(change, python, aws, *, change_tier="CORE", sense="ORGANISATIONAL",
                 {"jd_skill_id": python.id, "tier": python_tier},
                 {"jd_skill_id": aws.id, "tier": aws_tier}],
         min_experience_years=kw.get("min_years", 10), experience_tolerance_years=kw.get("tolerance"),
-        education_requirement=kw.get("education", "MANDATORY"), internship_credit_pct=kw.get("internships"))
+        education_requirement=kw.get("education", "MANDATORY"), internship_credit_pct=kw.get("internships"),
+        role_domain=kw.get("domain"))
 
 
 @pytest.fixture(autouse=True)
@@ -393,3 +394,25 @@ def test_a_version_saved_before_internship_credit_existed_diffs_as_unset():
 def test_internship_credit_must_be_100_50_or_0():
     with pytest.raises(ValueError):
         JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], internship_credit_pct=75)
+
+
+# --- role domain (Phase 3 Step 2) ---------------------------------------------------
+
+def test_role_domain_is_suggested_saved_and_versioned():
+    service, repo, audit, jd, change, python, aws = _setup()
+    view = service.get_view(jd.id, can_calibrate=True)
+    assert (view.role_domain, view.suggested_role_domain, view.suggested_role_domain_basis) == (
+        None, "BUSINESS", "title")                                   # "AI transformation lead"
+    service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+
+    result = service.save(jd.id, _request(change, python, aws, domain="BUSINESS"), actor_id="hr-1",
+                          actor_role="HR_ADMIN")
+
+    assert result.calibration_version == 2 and jd.role_domain == "BUSINESS"
+    assert repo.versions[-1].changes == {"role_domain": {"before": None, "after": "BUSINESS"}}
+    assert result.calibration.role_domain == "BUSINESS"
+
+
+def test_role_domain_must_be_a_known_domain():
+    with pytest.raises(ValueError):
+        JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], role_domain="SPACE")

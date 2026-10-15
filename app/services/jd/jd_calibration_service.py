@@ -37,8 +37,9 @@ from app.services.audit_service import AuditService
 from app.services.campaign.near_miss import experience_near_miss_tolerance
 from app.services.campaign.score_out_of_date import LIVE_CAMPAIGN_STATUSES, mark_campaigns_out_of_date
 from app.services.jd.jd_calibration_rules import (
-    calibrated_min_experience, default_internship_credit_pct, is_fresher_jd,
+    calibrated_min_experience, default_internship_credit_pct, is_fresher_jd, jd_role_domain,
 )
+from app.services.jd.jd_role_domain import suggest_role_domain
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.skill_sense_resolver import SkillSenseResolver
 
@@ -106,6 +107,7 @@ class JDCalibrationService:
         live = [c for c in campaigns if c.status in LIVE_CAMPAIGN_STATUSES]
         names = self.repo.user_names([jd.calibrated_by]) if jd.calibrated_by else {}
         core_count = sum(1 for s in skills if s.tier == "CORE")
+        domain_suggestion = suggest_role_domain(jd.title, [s.name for s in skills if s.tier == "CORE"])
 
         view_warnings = list(warnings or [])
         view_warnings += self._skill_warnings(core_count, [s for s in skills if s.ambiguous and not s.sense_key])
@@ -133,6 +135,9 @@ class JDCalibrationService:
             internship_credit_pct=jd.internship_credit_pct,
             default_internship_credit_pct=default_internship_credit_pct(jd),
             is_fresher_jd=is_fresher_jd(jd),
+            role_domain=jd_role_domain(jd),
+            suggested_role_domain=domain_suggestion.domain,
+            suggested_role_domain_basis=domain_suggestion.basis,
             live_campaigns=[CalibrationCampaign(campaign_id=c.id, name=c.name, status=c.status.value) for c in live],
             can_calibrate=can_calibrate,
             blocking_unknown_skills=blocking,
@@ -169,6 +174,7 @@ class JDCalibrationService:
                 "experience_tolerance_years": request.experience_tolerance_years,
                 "education_requirement": education,
                 "internship_credit_pct": request.internship_credit_pct,
+                "role_domain": request.role_domain,
             }
             changes = self._changes(before, after)
             already_calibrated = jd.calibration_status == JDCalibrationStatus.CALIBRATED
@@ -195,6 +201,7 @@ class JDCalibrationService:
             jd.experience_tolerance_years = request.experience_tolerance_years
             jd.education_requirement = JDEducationRequirement(education)
             jd.internship_credit_pct = request.internship_credit_pct
+            jd.role_domain = request.role_domain
             jd.calibration_status = JDCalibrationStatus.CALIBRATED
             jd.calibrated_by = actor_id
             jd.calibrated_at = now
@@ -343,6 +350,7 @@ class JDCalibrationService:
             "experience_tolerance_years": _float(jd.experience_tolerance_years),
             "education_requirement": jd.education_requirement.value,
             "internship_credit_pct": jd.internship_credit_pct,
+            "role_domain": jd_role_domain(jd),
         }
 
     @staticmethod
@@ -365,7 +373,7 @@ class JDCalibrationService:
             changes["skills"] = skill_changes
         # .get: versions saved before a setting existed don't have it (= unset).
         for field in ("min_experience_years", "experience_tolerance_years", "education_requirement",
-                      "internship_credit_pct"):
+                      "internship_credit_pct", "role_domain"):
             if before.get(field) != after.get(field):
                 changes[field] = {"before": before.get(field), "after": after.get(field)}
         return changes

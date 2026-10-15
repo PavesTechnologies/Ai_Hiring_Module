@@ -12,6 +12,8 @@ every place that validates experience/education applies them the same way.
 - internships: how much internship time counts as experience (100 / 50 / 0%),
   as calibrated; unset = 100% on a fresher JD (calibrated minimum <= 1 year),
   else 0%.
+- role domain: set in calibration; scopes the related education fields that
+  count when education is mandatory (education_field_family_service).
 """
 from decimal import Decimal
 
@@ -56,6 +58,15 @@ def jd_internship_credit_pct(job_description) -> int:
 def jd_internship_credit(job_description) -> float:
     """The share of internship time counted as experience (1.0 / 0.5 / 0.0)."""
     return jd_internship_credit_pct(job_description) / 100
+
+
+ROLE_DOMAINS = ("SOFTWARE", "IT_OPERATIONS", "DATA", "BUSINESS", "OTHER")
+
+
+def jd_role_domain(job_description) -> str | None:
+    """The calibrated role domain, else None."""
+    value = getattr(job_description, "role_domain", None)
+    return value if isinstance(value, str) and value in ROLE_DOMAINS else None
 
 
 def jd_tolerance_years(job_description) -> float | None:

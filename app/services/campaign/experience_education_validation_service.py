@@ -42,6 +42,7 @@ from app.enums.education import DEGREE_LEVEL_RANK, RELATED_EDUCATION_FIELDS, Deg
 from app.services.education.education_matching_service import (
     classify_degree_level,
     classify_field,
+    classify_field_from_degree,
     detect_related_field_allowed,
 )
 
@@ -183,11 +184,14 @@ class ExperienceEducationValidationService:
         candidate_total_years: float | None,
         jd_extracted_education: dict | None = None,
         required_field_text: str | None = None,
+        field_families: frozenset = frozenset(),
     ) -> dict:
         """
         Degree LEVEL (hierarchy - any degree at or above the required level)
-        AND field of study (exact, or a related field when the JD allows
-        one - RELATED_EDUCATION_FIELDS). Either requirement may be absent;
+        AND field of study (exact, or a related field: when the JD allows one
+        - RELATED_EDUCATION_FIELDS - or, on a mandatory requirement, a field
+        in the same family for the JD's role domain - field_families, pairs
+        from education_field_relations). Either requirement may be absent;
         with neither, the check is SKIPPED. The candidate is judged on
         whichever education entry satisfies the most (e.g. a Master's-CS
         beats a Bachelor's-Mechanical for a Bachelor's-CS requirement).
@@ -248,7 +252,7 @@ class ExperienceEducationValidationService:
         def _assess(candidate):
             level, field, _ = candidate
             level_passed = required_level is None or level[0] >= required_level[0]
-            return level_passed, self._field_match(required_field, field, related_field_allowed)
+            return level_passed, self._field_match(required_field, field, related_field_allowed, field_families)
 
         def _quality(candidate):
             level_passed, match = _assess(candidate)
@@ -347,13 +351,23 @@ class ExperienceEducationValidationService:
     def _candidate_field(entry: dict | None) -> EducationField | None:
         entry = entry or {}
         extracted = _coerce_field(entry.get("field_normalized"))
-        field = extracted if extracted not in (None, EducationField.UNKNOWN) else classify_field(entry.get("field"))
+        if extracted not in (None, EducationField.UNKNOWN, EducationField.OTHER):
+            return extracted
+        # Not classified (or OTHER - the extraction's vocabulary may not have
+        # the field, e.g. Computer Applications): the raw field text, then the
+        # degree itself (BCA / MCA).
+        field = classify_field(entry.get("field"))
+        if field == EducationField.UNKNOWN:
+            field = classify_field_from_degree(entry.get("degree"))
+        if field != EducationField.UNKNOWN:
+            return field
         # OTHER stays - it's a known field that simply isn't the required one.
-        return field if field != EducationField.UNKNOWN else None
+        return extracted if extracted == EducationField.OTHER else None
 
     @staticmethod
     def _field_match(
         required_field: EducationField | None, candidate_field: EducationField | None, related_field_allowed: bool,
+        field_families: frozenset = frozenset(),
     ) -> str:
         if required_field is None:
             return _FIELD_NOT_REQUIRED
@@ -362,6 +376,8 @@ class ExperienceEducationValidationService:
         if candidate_field == required_field:
             return _FIELD_FULL
         if related_field_allowed and candidate_field in RELATED_EDUCATION_FIELDS.get(required_field, frozenset()):
+            return _FIELD_RELATED
+        if frozenset({required_field.value, candidate_field.value}) in field_families:
             return _FIELD_RELATED
         return _FIELD_MISMATCH
 

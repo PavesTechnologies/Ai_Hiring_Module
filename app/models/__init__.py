@@ -8,6 +8,8 @@ from .campaigns import HiringCampaign
 
 from .compliance import AuditLog
 
+from .education import EducationFieldRelation
+
 
 from .candidate_notes import CandidateNote
 

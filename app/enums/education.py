@@ -51,6 +51,7 @@ class EducationField(str, Enum):
     INFORMATION_TECHNOLOGY = "INFORMATION_TECHNOLOGY"
     SOFTWARE_ENGINEERING = "SOFTWARE_ENGINEERING"
     DATA_SCIENCE = "DATA_SCIENCE"
+    COMPUTER_APPLICATIONS = "COMPUTER_APPLICATIONS"      # BCA / MCA
     ELECTRONICS_ENGINEERING = "ELECTRONICS_ENGINEERING"
     ELECTRICAL_ENGINEERING = "ELECTRICAL_ENGINEERING"
     MECHANICAL_ENGINEERING = "MECHANICAL_ENGINEERING"
@@ -91,6 +92,19 @@ RELATED_EDUCATION_FIELDS: dict[EducationField, frozenset] = {
     EducationField.BUSINESS_ADMINISTRATION: frozenset({EducationField.COMMERCE, EducationField.ECONOMICS}),
     EducationField.ECONOMICS: frozenset({EducationField.COMMERCE, EducationField.BUSINESS_ADMINISTRATION}),
 }
+
+
+class RoleDomain(str, Enum):
+    """
+    A JD's role domain, set in JD calibration. Scopes the related education
+    fields (education_field_relations): e.g. CS <-> ECE counts as one family
+    only on a SOFTWARE JD.
+    """
+    SOFTWARE = "SOFTWARE"
+    IT_OPERATIONS = "IT_OPERATIONS"
+    DATA = "DATA"
+    BUSINESS = "BUSINESS"
+    OTHER = "OTHER"
 
 
 class EducationMatchResult(str, Enum):

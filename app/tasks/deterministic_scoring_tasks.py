@@ -42,6 +42,7 @@ from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.work_experience_duration import experience_years_for_scoring
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.services.candidate_change_notifier import CandidateChangeNotifier
+from app.services.education.education_field_family_service import field_families_for_jd
 from app.services.jd.jd_calibration_rules import (
     apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs, jd_internship_credit,
 )
@@ -113,6 +114,8 @@ def build_validation_inputs(config_repo, job_description, resume):
         required_degree_text, candidate_education_entries, candidate_total_years,
         jd_extracted_education=jd_extracted_education,
         required_field_text=(job_description.education_criteria or {}).get("field"),
+        # Related fields for the JD's role domain, when its education is mandatory.
+        field_families=field_families_for_jd(config_repo.db, job_description),
     )
     # JD calibration: the near-miss tolerance and education mandatory/preferred.
     experience_result = apply_experience_tolerance(experience_result, job_description)

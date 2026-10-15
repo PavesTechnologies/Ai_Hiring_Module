@@ -122,6 +122,9 @@ class JobDescription(Base):
     # How much internship time counts as experience: 100 / 50 / 0 (%). NULL =
     # the default (100 on a fresher JD - calibrated minimum <= 1 year - else 0).
     internship_credit_pct: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    # Role domain (RoleDomain: SOFTWARE / IT_OPERATIONS / DATA / BUSINESS / OTHER), set in calibration.
+    # Scopes the related education fields; NULL = not set (no field families apply).
+    role_domain: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

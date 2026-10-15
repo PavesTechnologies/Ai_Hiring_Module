@@ -21,6 +21,7 @@ from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
 )
 from app.services.resume.work_experience_duration import experience_years_for_scoring
+from app.services.education.education_field_family_service import field_families_for_jd
 from app.services.jd.jd_calibration_rules import (
     apply_education_requirement, apply_experience_tolerance, experience_minimum_inputs, jd_internship_credit,
 )
@@ -357,6 +358,7 @@ class ResumeSelectionService:
             required_degree_text, candidate_education_entries, candidate_total_years,
             jd_extracted_education=jd_extracted_education,
             required_field_text=(job_description.education_criteria or {}).get("field"),
+            field_families=field_families_for_jd(self.config_repo.db, job_description),
         )
         # JD calibration: the near-miss tolerance and education mandatory/preferred.
         experience_result = apply_experience_tolerance(experience_result, job_description)

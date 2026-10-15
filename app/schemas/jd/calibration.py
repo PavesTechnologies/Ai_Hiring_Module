@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 SkillTier = Literal["CORE", "SUPPORTING", "PREFERRED"]
 EducationRequirement = Literal["MANDATORY", "PREFERRED"]
 InternshipCreditPct = Literal[100, 50, 0]
+RoleDomainKey = Literal["SOFTWARE", "IT_OPERATIONS", "DATA", "BUSINESS", "OTHER"]
 
 
 class SenseOption(BaseModel):
@@ -138,6 +139,11 @@ class JDCalibrationView(BaseModel):
     internship_credit_pct: InternshipCreditPct | None = None
     default_internship_credit_pct: InternshipCreditPct = 0
     is_fresher_jd: bool = False
+    # Role domain as calibrated (None = not set), and the one suggested from the
+    # JD's title and core skills (with what it was based on: "title" / "skills").
+    role_domain: RoleDomainKey | None = None
+    suggested_role_domain: RoleDomainKey | None = None
+    suggested_role_domain_basis: str | None = None
     live_campaigns: list[CalibrationCampaign]
     can_calibrate: bool
     warnings: list[str] = []
@@ -160,6 +166,8 @@ class JDCalibrationSaveRequest(BaseModel):
     education_requirement: EducationRequirement = "MANDATORY"
     # None = the default (100 on a fresher JD, else 0).
     internship_credit_pct: InternshipCreditPct | None = None
+    # None = not set (no related education fields apply).
+    role_domain: RoleDomainKey | None = None
 
 
 class JDCalibrationSaveResponse(BaseModel):

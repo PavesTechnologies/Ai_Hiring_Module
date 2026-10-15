@@ -502,6 +502,7 @@ Incident Management, ServiceNow (end user), customer support, Windows troublesho
 - Minimum experience: 1 year; tolerance: blank (default 1 year)
 - Internships count as experience: **100%** (the JD says its 1-year minimum includes internships; 100% is also the default for a fresher JD, minimum ≤ 1 year)
 - Education: **Mandatory** (to test the field-family rule)
+- Role domain: **Software** (so the software field families apply: IT, ECE, Software Engineering and Computer Applications count as related to Computer Science)
 
 **JD-D (ServiceNow ITSM Consultant)**
 - Core: ServiceNow ITSM, Incident Management, Change Management, Service Catalog (4 core → 1 may be missing)
@@ -511,6 +512,7 @@ Incident Management, ServiceNow (end user), customer support, Windows troublesho
 - Minimum experience: 4 years; tolerance: blank (default 1 year)
 - Internships count as experience: default (not at all, for a 4-year minimum)
 - Education: **Preferred**
+- Role domain: **IT operations** (no field families apply while education is preferred)
 
 ### Expected outcomes
 

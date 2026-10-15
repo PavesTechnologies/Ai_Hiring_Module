@@ -25,6 +25,8 @@ deterministic_passed/the experience-education blend - Part 16 asks for the
 correct qualification RESULT to be established first, as its own concern,
 kept separate from the skill stage (Part 9).
 """
+import re
+
 from app.enums.education import (
     DEGREE_LEVEL_RANK,
     RELATED_EDUCATION_FIELDS,
@@ -64,6 +66,7 @@ _FIELD_KEYWORDS = (
     (EducationField.INFORMATION_TECHNOLOGY, ("information technology", "information systems", " it ")),
     (EducationField.SOFTWARE_ENGINEERING, ("software engineering",)),
     (EducationField.DATA_SCIENCE, ("data science", "data analytics")),
+    (EducationField.COMPUTER_APPLICATIONS, ("computer applications", "computer application")),
     (EducationField.ELECTRONICS_ENGINEERING, ("electronics and communication", "electronics", "ece")),
     (EducationField.ELECTRICAL_ENGINEERING, ("electrical engineering", "electrical and electronics", "eee")),
     (EducationField.MECHANICAL_ENGINEERING, ("mechanical engineering", "mechanical")),
@@ -114,6 +117,16 @@ def classify_field(text: str | None) -> EducationField:
     for field, keywords in _FIELD_KEYWORDS:
         if any(keyword in lowered for keyword in keywords):
             return field
+    return EducationField.UNKNOWN
+
+
+_COMPUTER_APPLICATIONS_DEGREE = re.compile(r"\b(?:bca|mca|b\.c\.a|m\.c\.a)\b", re.IGNORECASE)
+
+
+def classify_field_from_degree(degree_text: str | None) -> EducationField:
+    """A field implied by the degree itself (BCA / MCA -> Computer Applications), else UNKNOWN."""
+    if degree_text and _COMPUTER_APPLICATIONS_DEGREE.search(degree_text):
+        return EducationField.COMPUTER_APPLICATIONS
     return EducationField.UNKNOWN
 
 
