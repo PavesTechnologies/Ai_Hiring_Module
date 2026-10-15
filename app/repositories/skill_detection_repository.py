@@ -8,7 +8,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.scoring_v2 import (
-    CoreSkillConfirmation, ResumeParseCache, ResumeSkillEvidence, SkillPatternRule, SkillScanTerm, SkillSense,
+    Certification, CoreSkillConfirmation, ResumeParseCache, ResumeSkillEvidence, SkillPatternRule, SkillScanTerm,
+    SkillSense,
 )
 from app.services.skills.resume_skill_scanner import PatternRule, ScanTermRule, term_key
 from app.services.skills.skill_sense_resolver import SenseDef
@@ -52,6 +53,13 @@ class SkillDetectionRepository:
             )
             for row in rows
         ]
+
+    def load_certification_rules(self) -> list:
+        """Mapped certifications (with their skills) for build_evidence - Phase 3 Step 5."""
+        from app.services.skills.certification_mapping_service import rule_from
+        certifications = self.db.execute(select(Certification)).scalars().all()
+        return [rule_from(c.name, list(c.name_variants or []), [(s.canonical_skill_id, s.sense_key) for s in c.skills])
+                for c in certifications if c.skills]
 
     def load_match_blocklist(self) -> list[dict]:
         """platform_config SCORING_V2_MATCH_BLOCKLIST - a JSON list of {"term", "skill", "note"}."""

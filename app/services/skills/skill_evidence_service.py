@@ -30,10 +30,14 @@ from app.models.scoring_v2 import ResumeSkillEvidence
 from app.services.skills.resume_skill_scanner import (
     DETECTION_VERSION, ORIGIN_DERIVED, ScanIndex, pattern_hits, scan_text, squash_words, term_key, title_pattern_hits,
 )
+from app.services.skills.certification_mapping_service import match_certifications
 from app.services.skills.resume_sections import (
-    SECTION_EXPERIENCE, STRONG_SECTIONS, heading_section, heading_text_of_line, section_of_line,
+    SECTION_CERTIFICATIONS, SECTION_EXPERIENCE, STRONG_SECTIONS, heading_section, heading_text_of_line,
+    section_of_line,
 )
-from app.services.skills.skill_sense_resolver import SENSE_BASIS_RESUME, SenseChoice, SkillSenseResolver
+from app.services.skills.skill_sense_resolver import (
+    SENSE_BASIS_CERTIFICATION, SENSE_BASIS_RESUME, SenseChoice, SkillSenseResolver,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,17 +126,24 @@ def classify_llm_match(raw_text: str, match_tier: str) -> tuple[str, str, str]:
     return SOURCE_LLM, text, "llm-skills"
 
 
+CERTIFICATION_ORIGIN = "certification "
+
+
 def _with_resume_sense(items: list["_Occurrence"]) -> list["_Occurrence"]:
     """
     Uncued mentions of an ambiguous skill take the sense the rest of the
     resume settles on - only when every resolved mention agrees. Mixed
     senses leave the uncued ones unresolved (never guessed).
     """
-    resolved = {o.sense.sense for o in items if o.sense.resolved and o.sense.sense}
+    # Only the resume's own mentions decide: a certification's mapped sense
+    # (ITIL -> ITSM change) says nothing about an uncued "change management".
+    resolved = {o.sense.sense for o in items
+                if o.sense.resolved and o.sense.sense and not o.origin.startswith(CERTIFICATION_ORIGIN)}
     if len(resolved) != 1:
         return items
     sense = SenseChoice(next(iter(resolved)), True, SENSE_BASIS_RESUME)
-    return [o if o.sense.resolved else replace(o, sense=sense) for o in items]
+    return [o if o.sense.resolved or o.origin.startswith(CERTIFICATION_ORIGIN) else replace(o, sense=sense)
+            for o in items]
 
 
 def _llm_recognition(source: str, tier: str, recognition: dict) -> float:
@@ -187,6 +198,8 @@ def build_evidence(
     blocked: frozenset = frozenset(),
     patterns: list | None = None,
     job_titles: list[str] | None = None,
+    certifications: list[str] | None = None,
+    certification_rules: list | None = None,
 ) -> list[EvidenceRecord]:
     """
     blocked: (term_key, canonical_skill_id) pairs never accepted from any
@@ -228,6 +241,24 @@ def build_evidence(
             f"job title pattern rule '{hit.rule_name}'", sense, line_no,
             section=None if line_no is not None else SECTION_EXPERIENCE,
         ))
+
+    # Certifications held (never one in progress) -> DERIVED evidence for each
+    # mapped skill, in the mapped sense; always sent to the confirmation vote.
+    for match in match_certifications(certifications, certification_rules or []):
+        line_no = _find_line(lines, match.certification)
+        snippet = excerpt_at(lines, line_no) if line_no is not None else match.certification
+        for skill_id, sense_key in match.rule.skills:
+            if not resolver.has_senses(skill_id):
+                sense = SenseChoice(None, True)
+            elif sense_key:
+                sense = SenseChoice(sense_key, True, SENSE_BASIS_CERTIFICATION)
+            else:
+                sense = SenseChoice(None, False)
+            occurrences.setdefault(skill_id, []).append(_Occurrence(
+                SOURCE_DERIVED, "DERIVED", recognition[SOURCE_DERIVED], snippet,
+                f"{CERTIFICATION_ORIGIN}'{match.rule.name}'", sense, line_no,
+                section=None if line_no is not None else SECTION_CERTIFICATIONS,
+            ))
 
     for match in llm_matches:
         if match.canonical_skill_id is None:
@@ -312,6 +343,7 @@ class DetectionTools:
     resolver: SkillSenseResolver
     blocked: frozenset = frozenset()
     patterns: tuple = ()
+    certifications: tuple = ()
 
 
 def resolve_blocklist(entries: list[dict], catalog: list) -> frozenset:
@@ -340,16 +372,18 @@ class SkillEvidenceService:
             resolver=SkillSenseResolver(self.detection_repository.load_senses()),
             blocked=resolve_blocklist(self.detection_repository.load_match_blocklist(), catalog),
             patterns=tuple(self.detection_repository.load_pattern_rules()),
+            certifications=tuple(self.detection_repository.load_certification_rules()),
         )
 
     def detect(
         self, resume_id: UUID, *, text: str, llm_matches: list[LLMSkillMatch], parse: ParseInfo,
-        persist: bool = True, job_titles: list[str] | None = None,
+        persist: bool = True, job_titles: list[str] | None = None, certifications: list[str] | None = None,
     ) -> list[EvidenceRecord]:
         tools = self.load_tools()
         records = build_evidence(text=text, index=tools.index, resolver=tools.resolver,
                                  llm_matches=llm_matches, blocked=tools.blocked, patterns=list(tools.patterns),
-                                 job_titles=job_titles)
+                                 job_titles=job_titles, certifications=certifications,
+                                 certification_rules=list(tools.certifications))
         if persist:
             self.detection_repository.replace_evidence(resume_id, to_rows(resume_id, records, text=text, parse=parse))
             # Never costs the evidence above: a failed provisional scan is
@@ -437,6 +471,7 @@ def detect_stored_resume(service: SkillEvidenceService, resume, *, persist: bool
     records = service.detect(
         resume.id, text=text, llm_matches=stored_llm_matches(service.skill_repository, resume.id),
         job_titles=job_titles_of(resume.parsed_json),
+        certifications=(resume.parsed_json or {}).get("certifications"),
         # The stored parse predates per-parse model tracking - said so, not left blank.
         parse=ParseInfo(provider="STORED_PARSE", model="unknown (parsed before v2 detection)"), persist=persist,
     )

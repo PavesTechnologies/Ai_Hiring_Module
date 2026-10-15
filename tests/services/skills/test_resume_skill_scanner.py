@@ -272,3 +272,37 @@ def test_blocklist_only_blocks_that_pair():
         llm_matches=[LLMSkillMatch(IDS["AI Governance"], "AI Governance", "EXACT")], blocked=blocked,
     )
     assert IDS["AI Governance"] in {r.canonical_skill_id for r in records}
+
+
+# --- Phase 3 Step 3: F5's "RESTful API" lines -----------------------------------------
+
+F5_LINES = "\n".join([
+    "Summary",
+    "Computer Science graduate interested in backend engineering and API design.",
+    "Experience",
+    "Developed RESTful API endpoints for the organisation's customer portal",
+    "Skills",
+    "Languages: Python & SQL",
+    "RESTful API Design & Development",
+    "Version Control (Git) & Code Review",
+])
+REST = uuid4()
+
+
+def test_phase3_f5_restful_api_is_found_as_rest_apis():
+    catalog = [SimpleNamespace(id=REST, canonical_name="REST APIs", aliases=["RESTful API", "RESTful APIs"])]
+    records = build_evidence(text=F5_LINES, index=ScanIndex.build(catalog, {}), resolver=SkillSenseResolver([]),
+                             llm_matches=[])
+    rest = [r for r in records if r.canonical_skill_id == REST]
+    assert len(rest) == 1 and rest[0].best_source == SOURCE_SCAN       # the experience line, an exact alias match
+    texts = [e["text"] for e in rest[0].evidence]
+    # Both the experience line and the skills line name it outright now.
+    assert any("Developed RESTful API endpoints" in t for t in texts)
+    assert any("RESTful API Design & Development" in t for t in texts)
+
+
+def test_without_the_alias_restful_api_is_not_rest_apis():
+    catalog = [SimpleNamespace(id=REST, canonical_name="REST APIs", aliases=[])]
+    records = build_evidence(text=F5_LINES, index=ScanIndex.build(catalog, {}), resolver=SkillSenseResolver([]),
+                             llm_matches=[])
+    assert REST not in {r.canonical_skill_id for r in records}

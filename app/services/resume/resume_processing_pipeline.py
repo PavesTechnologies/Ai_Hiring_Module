@@ -339,6 +339,7 @@ class ResumeProcessingPipeline:
                 ],
                 parse=ParseInfo(call.get("provider"), call.get("model"), bool(call.get("used_fallback"))),
                 job_titles=job_titles_of(getattr(context, "validated_extraction", None)),
+                certifications=getattr(getattr(context, "validated_extraction", None), "certifications", None),
             )
             self.resume_repository.commit()
         except Exception:

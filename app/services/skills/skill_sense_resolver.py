@@ -46,6 +46,7 @@ SENSE_BASIS_TITLE = "title"
 SENSE_BASIS_ASSUMED = "assumed"
 SENSE_BASIS_HR = "hr"
 SENSE_BASIS_RESUME = "resume"
+SENSE_BASIS_CERTIFICATION = "certification"
 
 
 class SkillSenseResolver:

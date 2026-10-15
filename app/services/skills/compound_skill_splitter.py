@@ -16,7 +16,11 @@ join a single term far more often than two ("CI/CD", "AI/ML", "TCP/IP",
 "Front-end"). When the last part ends in a shared head noun ("Management",
 "Transformation", ...) that earlier parts lack, the head is carried over to
 them. A single-word last part ("Team Building & Leadership") is a skill of
-its own, so nothing is carried.
+its own, so nothing is carried - but when the first part's leading words
+are two or more, they are also offered on their own, as the phrase's shared
+head: "RESTful API Design & Development" -> RESTful API Design, Development
+and RESTful API. (A one-word head - "Team" from "Team Building &
+Leadership" - is too generic to offer.)
 
 Pure and conservative: callers keep the original phrase and only use a
 part when it matches a known skill (see ResumeProcessingPipeline), so an
@@ -53,6 +57,10 @@ def split_compound_skill(phrase: str) -> list[str]:
             p if p.split()[-1].lower() == head.lower() else f"{p} {head}"
             for p in parts[:-1]
         ] + [parts[-1]]
+    elif len(parts[0].split()) >= 3:
+        # "RESTful API Design & Development": the words the first part puts
+        # before its own last word are shared by the list - offer them too.
+        parts = parts + [" ".join(parts[0].split()[:-1])]
 
     seen: set[str] = set()
     unique = []

@@ -78,3 +78,23 @@ def test_generic_word_against_specific_skill_is_not_a_match(text, canonical):
 ])
 def test_typos_and_equal_names_are_not_blocked(text, canonical):
     assert not is_generic_word_subset(text, canonical)
+
+
+# ---------------------------------------------------------------- shared head (Phase 3 Step 3, F5's lines)
+
+@pytest.mark.parametrize("phrase, expected", [
+    ("RESTful API Design & Development", ["RESTful API Design", "Development", "RESTful API"]),
+    ("Unit Testing (pytest) & Debugging", ["Unit Testing (pytest)", "Debugging", "Unit Testing"]),
+])
+def test_a_single_word_last_part_also_offers_the_shared_head(phrase, expected):
+    assert split_compound_skill(phrase) == expected
+
+
+@pytest.mark.parametrize("phrase, expected", [
+    ("Python & SQL", ["Python", "SQL"]),                                   # one-word parts: no head
+    ("Python Scripting & Automation", ["Python Scripting", "Automation"]),  # a one-word head is too generic
+    ("IT Project & Program Management", ["IT Project Management", "Program Management"]),
+    ("Change, Incident & Problem Management", ["Change Management", "Incident Management", "Problem Management"]),
+])
+def test_other_splits_are_unchanged(phrase, expected):
+    assert split_compound_skill(phrase) == expected

@@ -14,7 +14,7 @@ from sqlalchemy import (
     Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
@@ -282,3 +282,43 @@ class ResumeProvisionalSkillScan(Base):
     # [{"unknown_skill_id", "term", "origin", "excerpt"}]
     hits: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class Certification(Base):
+    """
+    A professional certification whose holders show its skills (Phase 3
+    Step 5): a resume certification matching the name or a name variant
+    gives DERIVED evidence for each mapped skill, always sent to the core
+    confirmation vote. Edited by HR_ADMIN.
+    """
+
+    __tablename__ = "certifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    # Other ways resumes write it ("ITIL v4 Foundation"); matched after normalising.
+    name_variants = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'"))
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    skills = relationship("CertificationSkill", cascade="all, delete-orphan", lazy="selectin",
+                          order_by="CertificationSkill.created_at")
+
+
+class CertificationSkill(Base):
+    """One skill a certification shows; sense_key fixes the meaning of an ambiguous skill (e.g. ITSM)."""
+
+    __tablename__ = "certification_skills"
+    __table_args__ = (UniqueConstraint("certification_id", "canonical_skill_id",
+                                       name="uq_certification_skills_certification_skill"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    certification_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("certifications.id", ondelete="CASCADE"), nullable=False,
+    )
+    canonical_skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=False,
+    )
+    sense_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
