@@ -18,6 +18,7 @@ Usage: python scripts/paraphrase_eval.py <out.json> [--threshold 0.45]
 import argparse
 import json
 import logging
+import time
 import os
 import sys
 from pathlib import Path
@@ -54,6 +55,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("out")
     parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument("--pause", type=float, default=0.0,
+                        help="seconds to wait between candidates (stay under the provider's per-minute limit)")
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -71,7 +74,9 @@ def main() -> None:
                 .join(Resume, Resume.id == CampaignCandidate.resume_id)
                 .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
                 .order_by(HiringCampaign.name, Resume.original_filename).all())
-        for cc, resume, campaign in rows:
+        for n, (cc, resume, campaign) in enumerate(rows):
+            if n and args.pause:
+                time.sleep(args.pause)
             jd = campaign.job_description
             stored = db.execute(text("select outcome from candidate_scoring_results where campaign_candidate_id = :c "
                                      "and scoring_version = 'v2' order by created_at desc limit 1"),
