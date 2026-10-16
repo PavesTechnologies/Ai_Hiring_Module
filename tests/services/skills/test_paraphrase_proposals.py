@@ -197,7 +197,8 @@ def test_the_round_asks_again_with_the_proposals_under_its_own_cache_key():
             confirmations=confirmations, evidence_rows=[], tools=tools, config=CONFIG, text_hash="h",
             persist=True, use_cache=True)
     kwargs = confirm_cls.return_value.confirm.call_args.kwargs
-    assert kwargs["text_hash"].startswith("h:paraphrase:")
+    # Fits core_skill_confirmations.text_hash (String(64)); differs from the first round's.
+    assert len(kwargs["text_hash"]) == 64 and int(kwargs["text_hash"], 16) >= 0 and kwargs["text_hash"] != "h"
     assert {s.name for s in kwargs["core_skills"]} == {"Incident Management", "Service Catalog"}
     assert all(r["sources"] == ["DERIVED"] for r in kwargs["evidence_rows"])
     assert confirmations[str(INC)]["status"] == "CONFIRMED" and confirmations[str(INC)]["paraphrase"] is True

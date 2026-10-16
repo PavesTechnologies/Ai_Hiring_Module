@@ -467,10 +467,17 @@ class CoreSkillConfirmationService:
                              if r.get("method") == "llm" and r.get("status") in FINAL_STATUSES
                              and VOTE_FAILED not in (r.get("votes") or []) and r.get("evidence_hash")]
             if final_results:
-                self.detection_repository.put_confirmation(CoreSkillConfirmation(
-                    cache_key=cache_key, resume_id=resume_id, jd_id=jd_id, text_hash=text_hash,
-                    core_set_hash=core_hash, prompt_version=PROMPT_VERSION, detection_version=DETECTION_VERSION,
-                    provider=first_call["provider"], model=first_call["model"], used_fallback=False,
-                    results=[{k: v for k, v in r.items() if k != "cached"} for r in final_results],
-                ))
+                try:
+                    self.detection_repository.put_confirmation(CoreSkillConfirmation(
+                        cache_key=cache_key, resume_id=resume_id, jd_id=jd_id, text_hash=text_hash,
+                        core_set_hash=core_hash, prompt_version=PROMPT_VERSION, detection_version=DETECTION_VERSION,
+                        provider=first_call["provider"], model=first_call["model"], used_fallback=False,
+                        results=[{k: v for k, v in r.items() if k != "cached"} for r in final_results],
+                    ))
+                except Exception as exc:
+                    # The votes were made: keep the answer and its call count
+                    # (the daily cap counts them); only the cache entry is lost.
+                    logger.exception("Core confirmation cache write failed | resume_id=%s", resume_id)
+                    outcome.problem = "; ".join(filter(None, [outcome.problem,
+                                                              f"cache write failed: {type(exc).__name__}"]))
         return outcome

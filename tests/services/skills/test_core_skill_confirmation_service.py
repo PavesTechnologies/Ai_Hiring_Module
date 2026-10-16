@@ -290,3 +290,18 @@ def test_section_detection():
     assert heading_section("R E C O G N I T I O N") == "RECOGNITION"
     assert heading_section("RHEL 9") is None and heading_section("JANE D") is None
     assert [section_of_line(lines, i) for i in (1, 3, 5, 6, 8)] == ["SUMMARY", "RECOGNITION", "SKILLS", "SKILLS", "EXPERIENCE"]
+
+
+class FailingRepo(FakeRepo):
+    def put_confirmation(self, row):
+        raise ValueError("value too long for type character varying(64)")
+
+
+def test_a_failed_cache_write_keeps_the_answer_and_its_call_count():
+    # Phase 3 Step 6: the votes were made - the daily cap must still count them.
+    yes = {"items": [_yes(1, "Led change management")]}
+    outcome = _confirm(FakeProvider([yes, yes, yes]), [ORG_CM],
+                       [_row(CM, "Led change management", source="DERIVED")], FailingRepo())
+    assert outcome.llm_calls == 3
+    assert _by_name(outcome)["Change Management"]["status"] == "CONFIRMED"
+    assert "cache write failed: ValueError" in outcome.problem

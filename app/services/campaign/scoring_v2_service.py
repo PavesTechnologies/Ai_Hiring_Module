@@ -18,6 +18,7 @@ Outcomes beyond PASS / REJECT: PENDING when the confirmation couldn't run
 (quota, provider down, backup failing too) - the caller retries it; it is
 never turned into a REJECT. NOT_RUN when the daily cap stopped it.
 """
+import hashlib
 import logging
 
 from app.models.scoring_v2 import CandidateScoringResult
@@ -69,6 +70,11 @@ def daily_llm_call_cap(config_repository) -> int:
 def _importance(row) -> str | None:
     value = getattr(getattr(row, "importance", None), "value", getattr(row, "importance", None))
     return str(value).lower() if value else None
+
+
+def paraphrase_text_hash(text_hash: str, proposals) -> str:
+    """The paraphrase round's cache text hash: 64 hex, like every text_hash column."""
+    return hashlib.sha256(f"{text_hash}:paraphrase:{proposals_hash(proposals)}".encode("utf-8")).hexdigest()
 
 
 class ScoringV2Service:
@@ -156,7 +162,7 @@ class ScoringV2Service:
         rows += [r for r in evidence_rows if getattr(r, "canonical_skill_id", None) in proposed_ids]
         outcome = CoreSkillConfirmationService(self.provider_resolver(), self.detection_repository).confirm(
             resume_id=resume.id, jd_id=job_description.id, core_skills=asked, evidence_rows=rows,
-            text_hash=f"{text_hash}:paraphrase:{proposals_hash(proposals)}", persist=persist,
+            text_hash=paraphrase_text_hash(text_hash, proposals), persist=persist,
             budget=self._budget if persist else None, use_cache=use_cache,
         )
         info.update(ran=not outcome.skipped_budget, cached=outcome.cached, llm_calls=outcome.llm_calls,
