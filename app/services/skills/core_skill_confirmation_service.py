@@ -31,10 +31,13 @@ Excerpts are shown with their resume section, so an award title under
 check, one retry on invalid output), asked deterministically - the adapter
 sends temperature 0 only where the model is verified to support it.
 
-Cache (core_skill_confirmations): only CONFIRMED and REJECTED answers are
-stored; UNCERTAIN / UNCONFIRMED ones are asked again next time. Keyed by
-(resume text, JD core skill set with senses, prompt version, detection
-version, provider/model); a vote answered by a backup model isn't cached.
+Cache (core_skill_confirmations): CONFIRMED, REJECTED and UNCERTAIN answers
+are stored, so re-scoring the same candidate gives the same votes and
+outcome. Keyed by (resume text, JD core skill set with senses, prompt
+version, detection version, provider/model); each cached answer also
+records the hash of the excerpts it was asked about and is reused only
+while the evidence is the same. Never cached: UNCONFIRMED, an answer with
+a failed vote, or any vote answered by a backup model.
 """
 import hashlib
 import json
@@ -61,7 +64,8 @@ STATUS_UNCERTAIN = "UNCERTAIN"
 STATUS_UNCONFIRMED = "UNCONFIRMED"
 STATUS_NOT_FOUND = "NOT_FOUND"
 STATUS_SENSE_MISMATCH = "SENSE_MISMATCH"
-FINAL_STATUSES = frozenset({STATUS_CONFIRMED, STATUS_REJECTED})
+# Answers kept in the cache and reused while the evidence is unchanged.
+FINAL_STATUSES = frozenset({STATUS_CONFIRMED, STATUS_REJECTED, STATUS_UNCERTAIN})
 
 REASON_AUTO = "auto_exact_scan"
 REASON_CONFIRMED = "all_votes_yes"
@@ -239,6 +243,12 @@ def confirmation_cache_key(text_hash: str, core_hash: str, provider: str | None,
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def evidence_hash(ask) -> str:
+    """What the model was shown for one skill: excerpts (with sections) and sources."""
+    payload = json.dumps([[label, text] for label, text in ask.excerpts] + [sorted(ask.sources)])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _section_label(item: dict) -> str | None:
     """Normalised section name shown with each excerpt ("Recognition", "Skills", ...)."""
     section = item.get("section")
@@ -384,6 +394,10 @@ class CoreSkillConfirmationService:
                 remaining = []
                 for ask in asks:
                     hit = final.get(str(ask.spec.canonical_skill_id))
+                    # Reused only for the same evidence (an answer cached before
+                    # evidence hashes were kept is asked once more).
+                    if hit is not None and hit.get("evidence_hash") != evidence_hash(ask):
+                        hit = None
                     if hit is not None:
                         results[ask.spec.canonical_skill_id] = {**hit, "cached": True}
                         cached_hits += 1
@@ -411,6 +425,7 @@ class CoreSkillConfirmationService:
             entry = results[ask.spec.canonical_skill_id]
             entry.update(
                 sources=ask.sources, status=status, reason=reason, votes=votes, vote_quotes=quotes,
+                evidence_hash=evidence_hash(ask),
                 llm=calls[0] if calls else None, llm_votes=calls,
                 confirmed=status == STATUS_CONFIRMED,
                 quote=next((q for v, q in zip(votes, quotes) if v == VOTE_YES), ""),
@@ -437,7 +452,9 @@ class CoreSkillConfirmationService:
             ),
         )
         if persist and self.detection_repository is not None and not used_fallback and first_call:
-            final_results = [r for r in outcome.results if r.get("method") == "llm" and r.get("status") in FINAL_STATUSES]
+            final_results = [r for r in outcome.results
+                             if r.get("method") == "llm" and r.get("status") in FINAL_STATUSES
+                             and VOTE_FAILED not in (r.get("votes") or []) and r.get("evidence_hash")]
             if final_results:
                 self.detection_repository.put_confirmation(CoreSkillConfirmation(
                     cache_key=cache_key, resume_id=resume_id, jd_id=jd_id, text_hash=text_hash,

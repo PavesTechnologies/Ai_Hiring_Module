@@ -174,16 +174,48 @@ def test_alias_evidence_counts_for_the_core_skill():
 
 # --- cache -----------------------------------------------------------------
 
-def test_only_confirmed_and_rejected_are_cached_uncertain_is_asked_again():
+def test_uncertain_answers_are_cached_like_confirmed_and_rejected_ones():
+    repo = FakeRepo()
+    yes = {"items": [_yes(1, "AI & Digital Transformation")]}
+    no = {"items": [_no(1)]}
+    first, _ = _asked([yes, no, yes], repo)
+    assert first.results[0]["status"] == STATUS_UNCERTAIN and len(repo.rows) == 1
+    again, provider = _asked([], repo)                        # not asked again
+    assert again.cached and provider.calls == []
+    assert again.results[0]["status"] == STATUS_UNCERTAIN
+    assert again.results[0]["votes"] == first.results[0]["votes"]
+
+
+def test_a_cached_answer_is_asked_again_when_its_evidence_changes():
     repo = FakeRepo()
     yes = {"items": [_yes(1, "AI & Digital Transformation")]}
     no = {"items": [_no(1)]}
     _asked([yes, no, yes], repo)
-    assert repo.rows == {}                                     # uncertain: nothing cached
-    _asked([no, no, no], repo)
-    assert len(repo.rows) == 1                                 # rejected: cached
-    again, provider = _asked([], repo)
-    assert again.cached and provider.calls == [] and again.results[0]["status"] == STATUS_REJECTED
+    moved = {"items": [_yes(1, "AI transformation")]}
+    provider = FakeProvider([moved, moved, moved])
+    changed = _confirm(provider, [CoreSkillSpec(AT, "AI Transformation")],
+                       [_row(AT, "Led the group AI transformation programme", source="DERIVED")], repo)
+    assert len(provider.calls) == 3 and changed.results[0]["status"] == STATUS_CONFIRMED
+
+
+def test_an_answer_with_a_failed_vote_is_never_cached():
+    repo = FakeRepo()
+    yes = {"items": [_yes(1, "AI & Digital Transformation")]}
+    _asked([yes, LLMTransientError("quota", reason=LLMErrorReason.RATE_LIMITED), yes], repo)
+    assert repo.rows == {}
+
+
+def test_re_scoring_twice_gives_identical_votes_and_outcomes():
+    """Whatever the model answers the first time - here a split vote - a re-score reuses it unchanged."""
+    repo = FakeRepo()
+    yes = {"items": [_yes(1, "AI & Digital Transformation")]}
+    no = {"items": [_no(1)]}
+    first, _ = _asked([no, yes, no], repo)
+    second, provider = _asked([yes, yes, yes], repo)          # would confirm if it were asked again
+    assert provider.calls == []
+    keep = ("status", "votes", "vote_quotes", "quote", "reason")
+    assert [{k: r.get(k) for k in keep} for r in second.results] == \
+        [{k: r.get(k) for k in keep} for r in first.results]
 
 
 def test_no_votes_from_the_backup_model_are_uncertain_and_not_cached():

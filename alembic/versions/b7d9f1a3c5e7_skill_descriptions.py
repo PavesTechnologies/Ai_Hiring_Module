@@ -3,10 +3,13 @@
 - skill_ontology.description: a one-line description of what the skill means,
   compared with resume lines by the scoring v2 paraphrase search. Optional,
   edited by HR in the Skill form.
-- Seeded for the core skills of the three dev JDs (11 skills; Change
-  Management's meanings come from its senses). A skill missing from the
-  catalogue is skipped (printed); an existing description is never
-  overwritten.
+- Seeded for the core skills of the three dev JDs (11 skills). A skill
+  missing from the catalogue is skipped (printed); an existing description
+  is never overwritten.
+- Change Management's ITSM sense description gains the ITSM change wording
+  paraphrase search needs (change requests, RFC, CAB, release approvals,
+  change calendar) - in the sense, not the skill, so an organisational-change
+  JD isn't pulled towards ITSM lines.
 
 Revision ID: b7d9f1a3c5e7
 Revises: a6c8e0b2d4f5
@@ -27,7 +30,8 @@ _DESCRIPTIONS = {
     "Incident Management": "Handling IT incidents and outages: logging, prioritising, resolving and restoring "
                            "service, incident workflows and major incidents.",
     "Service Catalog": "Building and maintaining ServiceNow Service Catalog items, request forms, catalogue "
-                       "variables and request fulfilment workflows.",
+                       "variables and request fulfilment workflows: request portal, request items, catalogue items, "
+                       "request fulfilment.",
     "Change Management": "Managing change.",
     "Python": "Programming in Python: writing scripts, applications or services in the Python language.",
     "REST APIs": "Designing, building or integrating RESTful HTTP APIs and web service endpoints.",
@@ -41,6 +45,9 @@ _DESCRIPTIONS = {
 }
 
 
+_ITSM_CHANGE_WORDS = " Change requests, RFC, CAB, release approvals, change calendar."
+
+
 def upgrade() -> None:
     op.add_column("skill_ontology", sa.Column("description", sa.Text(), nullable=True))
     bind = op.get_bind()
@@ -50,7 +57,16 @@ def upgrade() -> None:
         ), {"d": description, "n": name}).rowcount
         if not updated:
             print(f"skill description seed: '{name}' not in the catalogue (or already described) - skipped")
+    updated = bind.execute(sa.text(
+        "update skill_senses set description = description || :w where sense_key = 'ITSM' "
+        "and description not like '%RFC%' and canonical_skill_id = "
+        "(select id from skill_ontology where canonical_name = 'Change Management')"
+    ), {"w": _ITSM_CHANGE_WORDS}).rowcount
+    if not updated:
+        print("Change Management ITSM sense: not found (or already has the wording) - skipped")
 
 
 def downgrade() -> None:
+    op.execute(sa.text("update skill_senses set description = replace(description, :w, '') where sense_key = 'ITSM'")
+               .bindparams(w=_ITSM_CHANGE_WORDS))
     op.drop_column("skill_ontology", "description")

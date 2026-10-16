@@ -6,9 +6,8 @@ the paraphrase targets, each target's best-matching experience lines with
 their similarity (and why any were excluded), the proposals, the votes, and
 the LLM calls.
 
-If skill_ontology.description doesn't exist yet (migration b7d9f1a3c5e7 not
-applied), the column and its seeded descriptions are added inside this
-run's transaction only - rolled back with everything else.
+Needs migration b7d9f1a3c5e7 (skill_ontology.description) applied: the run
+never changes the schema, and stops if the column is missing.
 
 The first confirmation round reuses cached answers like production; the
 paraphrase round has its own cache key, so it asks the model (persist=False:
@@ -17,7 +16,6 @@ nothing is cached, nothing counts against the daily cap).
 Usage: python scripts/paraphrase_eval.py <out.json> [--threshold 0.45]
 """
 import argparse
-import importlib.util
 import json
 import logging
 import os
@@ -43,23 +41,12 @@ from app.services.llm.factory import resolve_active_provider  # noqa: E402
 from app.services.llm.model_selection import LLMPurpose  # noqa: E402
 from app.tasks.deterministic_scoring_tasks import build_validation_inputs  # noqa: E402
 
-_MIGRATION = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "b7d9f1a3c5e7_skill_descriptions.py"
-
-
-def _descriptions_in_transaction(db) -> str:
+def _require_descriptions(db) -> str:
     exists = db.execute(text("select 1 from information_schema.columns where table_name = 'skill_ontology' "
                              "and column_name = 'description'")).first()
-    if exists:
-        return "column present"
-    spec = importlib.util.spec_from_file_location("b7d9", _MIGRATION)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    db.execute(text("set local lock_timeout = '10s'"))
-    db.execute(text("alter table skill_ontology add column description text"))
-    for name, description in module._DESCRIPTIONS.items():
-        db.execute(text("update skill_ontology set description = :d where canonical_name = :n"),
-                   {"d": description, "n": name})
-    return "added for this run only (rolled back)"
+    if not exists:
+        raise SystemExit("skill_ontology.description is missing - apply migration b7d9f1a3c5e7 first.")
+    return "column present"
 
 
 def main() -> None:
@@ -72,7 +59,7 @@ def main() -> None:
     db = SessionLocal()
     report = {"candidates": []}
     try:
-        report["descriptions"] = _descriptions_in_transaction(db)
+        report["descriptions"] = _require_descriptions(db)
         config_repo = ConfigRepository(db)
         service = ScoringV2Service(db, SkillRepository(db), config_repo,
                                    provider_resolver=lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION))

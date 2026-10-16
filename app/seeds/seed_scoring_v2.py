@@ -92,7 +92,8 @@ CHANGE_MANAGEMENT_SENSES = [
         "sense_key": "ITSM",
         "label": "IT service change management (ITSM)",
         "description": "Controlling changes to IT services and systems: change requests, CAB approval, release and "
-                       "deployment control, usually alongside incident and problem management (ITIL).",
+                       "deployment control, usually alongside incident and problem management (ITIL). "
+                       "Change requests, RFC, CAB, release approvals, change calendar.",
         "cue_words": ["ITIL", "ITSM", "incident", "incident management", "problem management", "release management",
                       "CAB", "change advisory board", "change request", "change requests", "change control", "RFC",
                       "ServiceNow", "service management", "IT service management", "CMDB", "configuration management",

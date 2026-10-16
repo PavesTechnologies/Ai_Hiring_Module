@@ -9,6 +9,12 @@ no LLM). At most the top max_lines lines at or above the threshold are
 proposed; the caller sends them to the 3-vote core confirmation as DERIVED
 evidence (never auto-confirmed).
 
+A line is paraphrase evidence for one core skill at most:
+  - a line already quoted as evidence for another JD core skill isn't
+    proposed;
+  - among the skills searched, a line goes only to the one it is most
+    similar to.
+
 A line is never proposed when:
   - it is already quoted as evidence for that skill;
   - it holds a term blocklisted for that skill (SCORING_V2_MATCH_BLOCKLIST,
@@ -96,8 +102,13 @@ class ParaphraseProposalService:
         self.blocked = blocked
 
     def propose(self, text: str, targets: list[ParaphraseTarget], evidence_rows: list, config: dict | None = None,
-                ) -> tuple[list[Proposal], dict]:
-        """(proposals, scores) - scores[skill_id] lists every candidate line's similarity, for the dry run."""
+                core_skill_ids=None) -> tuple[list[Proposal], dict]:
+        """
+        (proposals, scores) - scores[skill_id] lists every candidate line's
+        similarity (and why a line was excluded), for the dry run.
+        core_skill_ids: every JD core skill; a line quoted as evidence for any
+        of them (other than the target) is never proposed.
+        """
         config = {**DEFAULT_PARAPHRASE_CONFIG, **(config or {})}
         lines = candidate_lines(text, config)
         if not targets or not lines:
@@ -105,15 +116,32 @@ class ParaphraseProposalService:
         vectors = self.embed([skill_text(t) for t in targets] + [line for _, line, _ in lines])
         skill_vectors, line_vectors = vectors[:len(targets)], vectors[len(targets):]
         quoted = _quoted_lines(evidence_rows)
+        core_ids = {str(i) for i in (core_skill_ids or [t.canonical_skill_id for t in targets])}
         threshold, max_lines = float(config["threshold"]), int(config["max_lines"])
+        names = {str(t.canonical_skill_id): t.name for t in targets}
+
+        similarity = [[round(sum(a * b for a, b in zip(sv, lv)), 4) for lv in line_vectors] for sv in skill_vectors]
+        reasons = [[self._excluded(t, line, quoted.get(str(t.canonical_skill_id), set()))
+                    for _, line, _ in lines] for t in targets]
+        for ti, target in enumerate(targets):
+            for li, (_, line, _) in enumerate(lines):
+                if reasons[ti][li] is None:
+                    used = _quoted_for_other_core(line, quoted, core_ids, str(target.canonical_skill_id))
+                    if used:
+                        reasons[ti][li] = "evidence for another core skill"
+        # Among the skills searched, each line goes only to its most similar one.
+        for li in range(len(lines)):
+            eligible = [ti for ti in range(len(targets)) if reasons[ti][li] is None]
+            if len(eligible) > 1:
+                best = max(eligible, key=lambda ti: similarity[ti][li])
+                for ti in eligible:
+                    if ti != best:
+                        reasons[ti][li] = f"closer to {names[str(targets[best].canonical_skill_id)]}"
 
         proposals, scores = [], {}
-        for target, skill_vector in zip(targets, skill_vectors):
-            scored = []
-            for (line_no, line, section), line_vector in zip(lines, line_vectors):
-                similarity = round(sum(a * b for a, b in zip(skill_vector, line_vector)), 4)
-                reason = self._excluded(target, line, quoted.get(str(target.canonical_skill_id), set()))
-                scored.append((similarity, line_no, line, section, reason))
+        for ti, target in enumerate(targets):
+            scored = [(similarity[ti][li], line_no, line, section, reasons[ti][li])
+                      for li, (line_no, line, section) in enumerate(lines)]
             scored.sort(key=lambda s: -s[0])
             scores[str(target.canonical_skill_id)] = [
                 {"line": line, "similarity": sim, "excluded": reason} for sim, _, line, _, reason in scored]
@@ -135,6 +163,15 @@ class ParaphraseProposalService:
             if choice.resolved and choice.sense and choice.sense != target.sense:
                 return f"sense {choice.sense}"
         return None
+
+
+def _quoted_for_other_core(line: str, quoted: dict[str, set[str]], core_ids: set[str], target_id: str) -> bool:
+    squashed = squash_words(line)
+    core = squashed.strip()
+    for skill_id in core_ids - {target_id}:
+        if any(core in q or q.strip() in squashed for q in quoted.get(skill_id, ()) if q.strip()):
+            return True
+    return False
 
 
 def _quoted_lines(evidence_rows: list) -> dict[str, set[str]]:

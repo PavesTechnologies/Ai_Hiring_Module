@@ -137,7 +137,8 @@ class ScoringV2Service:
         text = redacted_resume_text(resume)
         proposer = ParaphraseProposalService(EmbeddingService(self.db).generate_embeddings, tools.resolver,
                                              tools.blocked)
-        proposals, scores = proposer.propose(text, targets, evidence_rows, config)
+        proposals, scores = proposer.propose(text, targets, evidence_rows, config,
+                                             core_skill_ids=[s.canonical_skill_id for s in specs])
         info["proposals"] = [{"canonical_skill_id": str(p.canonical_skill_id), "line": p.line,
                               "similarity": p.similarity} for p in proposals]
         info["top_similarities"] = {name: scores.get(str(t.canonical_skill_id), [])[:5]

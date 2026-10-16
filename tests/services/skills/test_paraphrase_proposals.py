@@ -130,6 +130,28 @@ def test_the_proposals_hash_depends_on_the_lines():
     assert proposals_hash(proposals) != proposals_hash(proposals[:1])
 
 
+def test_a_line_already_evidence_for_another_core_skill_is_not_proposed():
+    # Phase 3 RUBELA: "...led global AI program governance" already counts for AI Governance.
+    gov = uuid4()
+    line = "Led outage response and incident ticket triage for the service desk"
+    text = "\n".join(["Experience", line])
+    row = {"canonical_skill_id": gov, "evidence": [{"text": line}]}
+    # gov isn't a core skill here: its evidence doesn't keep the line out.
+    proposals, _ = _propose(text, targets=TARGETS[:1], rows=[row])
+    assert [p.line for p in proposals] == [line]
+    # gov is a core skill: the line is already its evidence, so it isn't proposed for Incident Management.
+    proposals, scores = ParaphraseProposalService(fake_embed, RESOLVER).propose(
+        text, TARGETS[:1], [row], CONFIG, core_skill_ids=[INC, gov])
+    assert proposals == [] and scores[str(INC)][0]["excluded"] == "evidence for another core skill"
+
+
+def test_a_line_goes_only_to_the_skill_it_is_most_similar_to():
+    text = "\n".join(["Experience", "Handled incident tickets and outage escalations through the request portal"])
+    proposals, scores = _propose(text, targets=[TARGETS[0], TARGETS[2]], config={"threshold": 0.1, "max_lines": 3})
+    assert [p.canonical_skill_id for p in proposals] == [INC]                 # more incident words than catalogue
+    assert scores[str(CAT)][0]["excluded"] == "closer to Incident Management"
+
+
 # --- the round in scoring v2 ------------------------------------------------------------
 
 def _spec(skill_id, name):
