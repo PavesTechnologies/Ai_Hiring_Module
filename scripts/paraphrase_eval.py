@@ -55,6 +55,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("out")
     parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument("--only", nargs="*", default=None, help="resume filename substrings to include")
     parser.add_argument("--pause", type=float, default=0.0,
                         help="seconds to wait between candidates (stay under the provider's per-minute limit)")
     args = parser.parse_args()
@@ -74,6 +75,8 @@ def main() -> None:
                 .join(Resume, Resume.id == CampaignCandidate.resume_id)
                 .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
                 .order_by(HiringCampaign.name, Resume.original_filename).all())
+        if args.only:
+            rows = [r for r in rows if any(o.lower() in (r[1].original_filename or "").lower() for o in args.only)]
         for n, (cc, resume, campaign) in enumerate(rows):
             if n and args.pause:
                 time.sleep(args.pause)
