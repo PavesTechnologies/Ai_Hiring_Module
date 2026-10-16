@@ -9,11 +9,9 @@ no LLM). At most the top max_lines lines at or above the threshold are
 proposed; the caller sends them to the 3-vote core confirmation as DERIVED
 evidence (never auto-confirmed).
 
-A line is paraphrase evidence for one core skill at most:
-  - a line already quoted as evidence for another JD core skill isn't
-    proposed;
-  - among the skills searched, a line goes only to the one it is most
-    similar to.
+A line already quoted as evidence for another JD core skill isn't proposed.
+Among the skills searched, a line may be proposed for several of them (at
+most max_lines per skill); each skill's vote decides.
 
 A line is never proposed when:
   - it is already quoted as evidence for that skill;
@@ -118,7 +116,6 @@ class ParaphraseProposalService:
         quoted = _quoted_lines(evidence_rows)
         core_ids = {str(i) for i in (core_skill_ids or [t.canonical_skill_id for t in targets])}
         threshold, max_lines = float(config["threshold"]), int(config["max_lines"])
-        names = {str(t.canonical_skill_id): t.name for t in targets}
 
         similarity = [[round(sum(a * b for a, b in zip(sv, lv)), 4) for lv in line_vectors] for sv in skill_vectors]
         reasons = [[self._excluded(t, line, quoted.get(str(t.canonical_skill_id), set()))
@@ -129,15 +126,6 @@ class ParaphraseProposalService:
                     used = _quoted_for_other_core(line, quoted, core_ids, str(target.canonical_skill_id))
                     if used:
                         reasons[ti][li] = "evidence for another core skill"
-        # Among the skills searched, each line goes only to its most similar one.
-        for li in range(len(lines)):
-            eligible = [ti for ti in range(len(targets)) if reasons[ti][li] is None]
-            if len(eligible) > 1:
-                best = max(eligible, key=lambda ti: similarity[ti][li])
-                for ti in eligible:
-                    if ti != best:
-                        reasons[ti][li] = f"closer to {names[str(targets[best].canonical_skill_id)]}"
-
         proposals, scores = [], {}
         for ti, target in enumerate(targets):
             scored = [(similarity[ti][li], line_no, line, section, reasons[ti][li])

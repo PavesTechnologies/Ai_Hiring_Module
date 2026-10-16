@@ -125,9 +125,9 @@
       "certification_mapping",
       "implied_skill"
     ],
-    "expected_outcome": "HOLD",
-    "expected_core": "3/4 (incident uncertain)",
-    "reason": "Catalogue and change work shown; incident management only implied by ITIL and service-desk work; 4.5 years (as of 2026-10-14) meets the minimum",
+    "expected_outcome": "PASS",
+    "expected_core": "3/4 + 1 uncertain (incident)",
+    "reason": "ServiceNow ITSM from the CSA and admin of the ServiceNow instance; change and catalogue work shown (\"support the change process\", \"maintain catalogue items\"); incident management only implied by ITIL 4 and service-desk work, so uncertain - one uncertain core skill is within the allowance of one missing; 4.5 years (as of 2026-10-14) meets the minimum",
     "current_system_risk": "Without certification mapping, incident not found; could be HOLD or REJECT depending on matches"
   },
   {

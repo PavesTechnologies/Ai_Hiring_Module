@@ -111,6 +111,35 @@ def test_prompt_asks_the_own_skill_question():
             "award title, organisation name or something they only mention?") in CONFIRMATION_PROMPT
 
 
+SNOW_ITSM = CoreSkillSpec(PM, "ServiceNow ITSM", description="Configuring or administering ServiceNow's ITSM "
+                          "modules - not only using ServiceNow to raise or log tickets.")
+
+
+def test_the_voters_see_the_skill_description_and_the_jd_sense_description():
+    # Phase 3 D8: an end user who logs tickets in ServiceNow - the description says that isn't the skill.
+    provider = FakeProvider([{"items": [_no(1), _no(2)]}] * 3)
+    _confirm(provider, [SNOW_ITSM, ORG_CM], [_row(PM, "Log, prioritise and resolve incidents in ServiceNow",
+                                                  source="DERIVED"),
+                                             _row(CM, "Led change management", source="DERIVED")])
+    prompt = provider.calls[0]["prompt"]
+    assert "What it means here: Configuring or administering ServiceNow's ITSM modules" in prompt
+    assert "sense: Organisational change management: People side" in prompt
+
+
+def test_a_cached_answer_is_asked_again_when_the_description_changes():
+    repo = FakeRepo()
+    row = [_row(PM, "Log, prioritise and resolve incidents in ServiceNow", source="DERIVED")]
+    no = {"items": [_no(1)]}
+    _confirm(FakeProvider([no, no, no]), [SNOW_ITSM], row, repo)
+    same = FakeProvider([])
+    _confirm(same, [SNOW_ITSM], row, repo)
+    assert same.calls == []                                            # unchanged: cached
+    edited = CoreSkillSpec(PM, "ServiceNow ITSM", description="Implementing ServiceNow ITSM.")
+    asked = FakeProvider([no, no, no])
+    _confirm(asked, [edited], row, repo)
+    assert len(asked.calls) == 3                                       # description changed: asked again
+
+
 # --- 3-vote majority ------------------------------------------------------
 
 def _asked(replies, repo=None, **kw):

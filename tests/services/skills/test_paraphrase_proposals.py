@@ -145,11 +145,13 @@ def test_a_line_already_evidence_for_another_core_skill_is_not_proposed():
     assert proposals == [] and scores[str(INC)][0]["excluded"] == "evidence for another core skill"
 
 
-def test_a_line_goes_only_to_the_skill_it_is_most_similar_to():
-    text = "\n".join(["Experience", "Handled incident tickets and outage escalations through the request portal"])
+def test_a_line_can_be_proposed_for_several_searched_skills_each_vote_decides():
+    # Phase 3 D2: "ticket handling ... on ServiceNow" is incident work AND ServiceNow work.
+    line = "Handled incident tickets and outage escalations through the request portal"
+    text = "\n".join(["Experience", line])
     proposals, scores = _propose(text, targets=[TARGETS[0], TARGETS[2]], config={"threshold": 0.1, "max_lines": 3})
-    assert [p.canonical_skill_id for p in proposals] == [INC]                 # more incident words than catalogue
-    assert scores[str(CAT)][0]["excluded"] == "closer to Incident Management"
+    assert sorted(str(p.canonical_skill_id) for p in proposals) == sorted([str(INC), str(CAT)])
+    assert all(s["excluded"] is None for s in scores[str(CAT)])
 
 
 # --- the round in scoring v2 ------------------------------------------------------------

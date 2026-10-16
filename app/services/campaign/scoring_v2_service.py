@@ -236,7 +236,9 @@ class ScoringV2Service:
         ]
         resume_text_hash = next((getattr(r, "text_hash", None) for r in evidence_rows if getattr(r, "text_hash", None)), None)
 
-        specs = jd_core_skill_specs(job_description, rows, names, tools.resolver)
+        descriptions = dict(self.db.query(SkillOntology.id, SkillOntology.description)
+                            .filter(SkillOntology.id.in_([r.canonical_skill_id for r in rows])).all()) if rows else {}
+        specs = jd_core_skill_specs(job_description, rows, names, tools.resolver, skill_descriptions=descriptions)
         confirmation = {"ran": False, "llm_calls": 0}
         confirmations: dict[str, dict] = {}
         special_outcome = None
