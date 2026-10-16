@@ -56,6 +56,9 @@ def main() -> None:
     parser.add_argument("out")
     parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--only", nargs="*", default=None, help="resume filename substrings to include")
+    parser.add_argument("--retries", type=int, default=0,
+                        help="re-score a PENDING candidate (provider 503 / overloaded) up to this many times")
+    parser.add_argument("--retry-wait", type=float, default=60.0)
     parser.add_argument("--pause", type=float, default=0.0,
                         help="seconds to wait between candidates (stay under the provider's per-minute limit)")
     args = parser.parse_args()
@@ -85,9 +88,16 @@ def main() -> None:
                                      "and scoring_version = 'v2' order by created_at desc limit 1"),
                                 {"c": cc.id}).scalar()
             experience, education, _, domain = build_validation_inputs(config_repo, jd, resume)
-            b = service.score(campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,
-                              experience_result=experience, education_result=education, domain_result=domain,
-                              acted_on=False, use_llm=True, persist=False)
+            attempts = 0
+            while True:
+                b = service.score(campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,
+                                  experience_result=experience, education_result=education, domain_result=domain,
+                                  acted_on=False, use_llm=True, persist=False)
+                if b["outcome"] != "PENDING" or attempts >= args.retries:
+                    break
+                attempts += 1
+                print(f"  PENDING ({resume.original_filename[:30]}) - retry {attempts} in {args.retry_wait:g}s", flush=True)
+                time.sleep(args.retry_wait)
             para = b.get("paraphrase") or {}
             entry = {
                 "campaign": campaign.name, "file": resume.original_filename, "stored_v2": stored,
@@ -102,7 +112,8 @@ def main() -> None:
                 "proposals": para.get("proposals", []),
                 "votes": [{"skill": r.get("name"), "status": r.get("status"), "votes": r.get("votes"),
                            "quotes": r.get("vote_quotes")} for r in para.get("results") or []],
-                "problem": para.get("problem"),
+                "problem": para.get("problem") or (b.get("confirmation") or {}).get("problem"),
+                "retries": attempts,
             }
             report["candidates"].append(entry)
             print(f"{campaign.name[:22]:22} {resume.original_filename[:30]:30} v2 {stored} -> {b['outcome']} "
