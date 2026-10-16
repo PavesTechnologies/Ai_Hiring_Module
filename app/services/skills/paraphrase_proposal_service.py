@@ -1,0 +1,153 @@
+"""
+Scoring v2 paraphrase proposals (Phase 3 Step 6).
+
+For a JD core skill still NOT_FOUND or UNCERTAIN after the scan,
+certification mapping and senses, compare the skill - name, aliases, short
+description, and for an ambiguous skill the JD sense's description - with the
+resume's experience lines by embedding similarity (the active local model,
+no LLM). At most the top max_lines lines at or above the threshold are
+proposed; the caller sends them to the 3-vote core confirmation as DERIVED
+evidence (never auto-confirmed).
+
+A line is never proposed when:
+  - it is already quoted as evidence for that skill;
+  - it holds a term blocklisted for that skill (SCORING_V2_MATCH_BLOCKLIST,
+    e.g. "IT governance" for AI Governance) - paraphrase can't route around
+    the blocklist;
+  - its own cue words definitely put it in another sense than the JD's
+    (organisational change lines are never proposed for ITSM change).
+"""
+import hashlib
+import re
+from dataclasses import dataclass
+
+from app.services.skills.resume_sections import section_of_line
+from app.services.skills.resume_skill_scanner import squash_words, term_key
+
+DEFAULT_PARAPHRASE_CONFIG = {
+    "enabled": True,
+    "threshold": 0.45,
+    "max_lines": 3,
+    "sections": ["EXPERIENCE"],
+    "min_words": 4,
+    "max_words": 40,
+}
+_DEFINITE_JD_SENSE = {"cue", "title", "hr"}
+_SPACES = re.compile(r"\s+")
+
+
+@dataclass(frozen=True)
+class ParaphraseTarget:
+    canonical_skill_id: object
+    name: str
+    aliases: tuple[str, ...] = ()
+    description: str | None = None
+    sense: str | None = None
+    sense_basis: str | None = None
+    sense_description: str | None = None
+
+
+@dataclass(frozen=True)
+class Proposal:
+    canonical_skill_id: object
+    line: str
+    line_no: int
+    similarity: float
+    section: str
+
+
+def skill_text(target: ParaphraseTarget) -> str:
+    parts = [target.name]
+    if target.aliases:
+        parts.append("Also: " + ", ".join(target.aliases))
+    if target.description:
+        parts.append(target.description)
+    if target.sense_description:
+        parts.append(target.sense_description)
+    return ". ".join(p.strip().rstrip(".") for p in parts if p and p.strip()) + "."
+
+
+def candidate_lines(text: str, config: dict) -> list[tuple[int, str, str]]:
+    """(line index, line, section) of the resume lines paraphrase may propose."""
+    lines = (text or "").splitlines()
+    sections = set(config.get("sections") or ["EXPERIENCE"])
+    out = []
+    for i, raw in enumerate(lines):
+        line = _SPACES.sub(" ", raw).strip(" \t•·-–")
+        words = len(line.split())
+        if words < int(config.get("min_words", 4)) or words > int(config.get("max_words", 40)):
+            continue
+        section = section_of_line(lines, i)
+        if section in sections:
+            out.append((i, line, section))
+    return out
+
+
+def proposals_hash(proposals: list[Proposal]) -> str:
+    raw = "|".join(f"{p.canonical_skill_id}:{p.line}" for p in sorted(proposals, key=lambda p: (str(p.canonical_skill_id), p.line)))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+class ParaphraseProposalService:
+    def __init__(self, embed, resolver, blocked: frozenset = frozenset()):
+        """embed: list[str] -> list[list[float]] (normalised vectors)."""
+        self.embed = embed
+        self.resolver = resolver
+        self.blocked = blocked
+
+    def propose(self, text: str, targets: list[ParaphraseTarget], evidence_rows: list, config: dict | None = None,
+                ) -> tuple[list[Proposal], dict]:
+        """(proposals, scores) - scores[skill_id] lists every candidate line's similarity, for the dry run."""
+        config = {**DEFAULT_PARAPHRASE_CONFIG, **(config or {})}
+        lines = candidate_lines(text, config)
+        if not targets or not lines:
+            return [], {}
+        vectors = self.embed([skill_text(t) for t in targets] + [line for _, line, _ in lines])
+        skill_vectors, line_vectors = vectors[:len(targets)], vectors[len(targets):]
+        quoted = _quoted_lines(evidence_rows)
+        threshold, max_lines = float(config["threshold"]), int(config["max_lines"])
+
+        proposals, scores = [], {}
+        for target, skill_vector in zip(targets, skill_vectors):
+            scored = []
+            for (line_no, line, section), line_vector in zip(lines, line_vectors):
+                similarity = round(sum(a * b for a, b in zip(skill_vector, line_vector)), 4)
+                reason = self._excluded(target, line, quoted.get(str(target.canonical_skill_id), set()))
+                scored.append((similarity, line_no, line, section, reason))
+            scored.sort(key=lambda s: -s[0])
+            scores[str(target.canonical_skill_id)] = [
+                {"line": line, "similarity": sim, "excluded": reason} for sim, _, line, _, reason in scored]
+            kept = [s for s in scored if s[4] is None and s[0] >= threshold][:max_lines]
+            proposals += [Proposal(target.canonical_skill_id, line, line_no, sim, section)
+                          for sim, line_no, line, section, _ in kept]
+        return proposals, scores
+
+    def _excluded(self, target: ParaphraseTarget, line: str, quoted: set[str]) -> str | None:
+        squashed = squash_words(line)
+        core = squashed.strip()
+        if any(core in q or q.strip() in squashed for q in quoted if q.strip()):
+            return "already evidence"
+        for term, skill_id in self.blocked:
+            if skill_id == target.canonical_skill_id and term and f" {term} " in f" {squashed} ":
+                return "blocklisted term"
+        if target.sense and target.sense_basis in _DEFINITE_JD_SENSE and self.resolver.has_senses(target.canonical_skill_id):
+            choice = self.resolver.resolve_snippet(target.canonical_skill_id, line, target.name)
+            if choice.resolved and choice.sense and choice.sense != target.sense:
+                return f"sense {choice.sense}"
+        return None
+
+
+def _quoted_lines(evidence_rows: list) -> dict[str, set[str]]:
+    quoted: dict[str, set[str]] = {}
+    for row in evidence_rows or []:
+        skill_id = row.get("canonical_skill_id") if isinstance(row, dict) else getattr(row, "canonical_skill_id", None)
+        items = row.get("evidence") if isinstance(row, dict) else getattr(row, "evidence", None)
+        for item in items or []:
+            text = (item or {}).get("text")
+            if text:
+                quoted.setdefault(str(skill_id), set()).add(squash_words(text))
+    return quoted
+
+
+__all__ = ["ParaphraseProposalService", "ParaphraseTarget", "Proposal", "candidate_lines", "proposals_hash",
+           "skill_text", "term_key", "DEFAULT_PARAPHRASE_CONFIG"]

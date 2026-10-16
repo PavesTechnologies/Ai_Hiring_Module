@@ -35,7 +35,11 @@ from app.services.campaign.scoring_v2 import (
 )
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.core_skill_confirmation_service import (
-    PROMPT_VERSION, CoreSkillConfirmationService, jd_core_skill_specs,
+    PROMPT_VERSION, STATUS_CONFIRMED, STATUS_NOT_FOUND, STATUS_UNCERTAIN, CoreSkillConfirmationService,
+    jd_core_skill_specs,
+)
+from app.services.skills.paraphrase_proposal_service import (
+    ParaphraseProposalService, ParaphraseTarget, proposals_hash,
 )
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.skill_evidence_service import (
@@ -113,6 +117,62 @@ class ScoringV2Service:
             )
             for link, unknown in pending
         ]
+
+    def _paraphrase_round(self, *, resume, job_description, specs, confirmations: dict, evidence_rows, tools,
+                          config: dict, text_hash: str, persist: bool, use_cache: bool) -> tuple[dict, list]:
+        """
+        Phase 3 Step 6: for core skills still NOT_FOUND / UNCERTAIN, propose
+        similar experience lines and ask the 3-vote confirmation again with
+        them (DERIVED, never auto-confirmed). Updates `confirmations` in place
+        for those skills; returns (paraphrase details, extra EvidenceInput).
+        Cached under its own key (text hash + proposals hash).
+        """
+        skills_by_id = {s.id: s for s in self.db.query(SkillOntology).filter(
+            SkillOntology.id.in_([s.canonical_skill_id for s in specs])).all()}
+        targets = _paraphrase_targets_for(specs, confirmations, skills_by_id)
+        info = {"ran": False, "llm_calls": 0, "targets": [t.name for t in targets], "proposals": []}
+        if not targets:
+            return info, []
+        from app.services.ai.embedding_service import EmbeddingService
+        text = redacted_resume_text(resume)
+        proposer = ParaphraseProposalService(EmbeddingService(self.db).generate_embeddings, tools.resolver,
+                                             tools.blocked)
+        proposals, scores = proposer.propose(text, targets, evidence_rows, config)
+        info["proposals"] = [{"canonical_skill_id": str(p.canonical_skill_id), "line": p.line,
+                              "similarity": p.similarity} for p in proposals]
+        info["top_similarities"] = {name: scores.get(str(t.canonical_skill_id), [])[:5]
+                                    for t, name in ((t, t.name) for t in targets)}
+        if not proposals:
+            return info, []
+
+        proposed_ids = {p.canonical_skill_id for p in proposals}
+        asked = [s for s in specs if s.canonical_skill_id in proposed_ids]
+        rows = [{"canonical_skill_id": p.canonical_skill_id, "sense": None, "sources": ["DERIVED"],
+                 "evidence": [{"text": p.line, "source": "DERIVED", "section": p.section,
+                               "origin": f"paraphrase (similarity {p.similarity:.2f})"}]}
+                for p in proposals]
+        # Proposals first (the excerpt cap keeps the first few), then what was already found.
+        rows += [r for r in evidence_rows if getattr(r, "canonical_skill_id", None) in proposed_ids]
+        outcome = CoreSkillConfirmationService(self.provider_resolver(), self.detection_repository).confirm(
+            resume_id=resume.id, jd_id=job_description.id, core_skills=asked, evidence_rows=rows,
+            text_hash=f"{text_hash}:paraphrase:{proposals_hash(proposals)}", persist=persist,
+            budget=self._budget if persist else None, use_cache=use_cache,
+        )
+        info.update(ran=not outcome.skipped_budget, cached=outcome.cached, llm_calls=outcome.llm_calls,
+                    problem=outcome.problem, skipped_budget=outcome.skipped_budget,
+                    llm_unavailable=outcome.llm_unavailable, results=outcome.results)
+        extra = []
+        if outcome.skipped_budget or outcome.llm_unavailable:
+            return info, extra
+        for result in outcome.results:
+            status = result.get("status")
+            confirmations[str(result["canonical_skill_id"])] = {**result, "paraphrase": True}
+            if status in (STATUS_CONFIRMED, STATUS_UNCERTAIN):
+                extra += [EvidenceInput(canonical_skill_id=p.canonical_skill_id, sense=None, sources=("DERIVED",),
+                                        best_source="DERIVED", match_tier="PARAPHRASE", recognition=0.8,
+                                        evidence_text=p.line[:240])
+                          for p in proposals if str(p.canonical_skill_id) == str(result["canonical_skill_id"])]
+        return info, extra
 
     def load_config(self) -> dict:
         return parse_config(self.config_repository.get_configs_by_keys([SCORING_V2_CONFIG_KEY]).get(SCORING_V2_CONFIG_KEY))
@@ -203,6 +263,26 @@ class ScoringV2Service:
                 confirmation = {"ran": False, "problem": problem, "llm_calls": 0}
                 special_outcome = (OUTCOME_PENDING, problem)
 
+        paraphrase = {"ran": False, "llm_calls": 0}
+        paraphrase_config = config.get("paraphrase") or {}
+        if (specs and use_llm and self.provider_resolver is not None and special_outcome is None
+                and paraphrase_config.get("enabled")):
+            try:
+                paraphrase, extra_evidence = self._paraphrase_round(
+                    resume=resume, job_description=job_description, specs=specs, confirmations=confirmations,
+                    evidence_rows=evidence_rows, tools=tools, config=paraphrase_config,
+                    text_hash=resume_text_hash or "", persist=persist, use_cache=use_confirmation_cache,
+                )
+                evidence += extra_evidence
+                # Counted with the confirmation calls, so the daily cap sees them.
+                confirmation["llm_calls"] = int(confirmation.get("llm_calls") or 0) + paraphrase["llm_calls"]
+                if paraphrase.get("llm_unavailable"):
+                    special_outcome = (OUTCOME_PENDING, paraphrase.get("problem") or "confirmation LLM unavailable")
+            except Exception as exc:
+                # The first-round result stands; paraphrase never fails scoring.
+                logger.exception("v2 paraphrase round failed | campaign_candidate_id=%s", campaign_candidate.id)
+                paraphrase = {"ran": False, "llm_calls": 0, "problem": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
         core_count = sum(1 for s in jd_skills if s.mandatory and s.importance == "core")
         allowed = allowed_missing_core(
             core_count, int(getattr(campaign, "max_missing_core_skills", 3) or 3),
@@ -236,7 +316,7 @@ class ScoringV2Service:
             allowed_missing_core=allowed,
             score_threshold_rejects=snapshot["score_threshold_rejects_config"],
             extra={"scoring_config_version": version, "confirmation": confirmation,
-                   "evidence_source": evidence_source, "acted_on": acted_on},
+                   "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on},
             provisional_skills=self.provisional_inputs(job_description, resume, persist=persist),
         ), config)
         if special_outcome is not None:
@@ -250,6 +330,21 @@ class ScoringV2Service:
                 config_snapshot=snapshot, acted_on=acted_on,
             ))
         return breakdown
+
+
+def _paraphrase_targets_for(specs, confirmations: dict, skills_by_id: dict) -> list[ParaphraseTarget]:
+    targets = []
+    for spec in specs:
+        status = (confirmations.get(str(spec.canonical_skill_id)) or {}).get("status", STATUS_NOT_FOUND)
+        if status not in (STATUS_NOT_FOUND, STATUS_UNCERTAIN):
+            continue                       # CONFIRMED / REJECTED / SENSE_MISMATCH (decided) / UNCONFIRMED
+        skill = skills_by_id.get(spec.canonical_skill_id)
+        targets.append(ParaphraseTarget(
+            canonical_skill_id=spec.canonical_skill_id, name=spec.name,
+            aliases=tuple(getattr(skill, "aliases", None) or ()), description=getattr(skill, "description", None),
+            sense=spec.sense, sense_basis=spec.sense_basis, sense_description=spec.sense_description,
+        ))
+    return targets
 
 
 def v1_result_row(campaign, campaign_candidate, breakdown: dict, *, acted_on: bool, score_weights: dict | None):

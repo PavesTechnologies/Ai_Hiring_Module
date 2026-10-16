@@ -47,6 +47,7 @@ class SkillOntologyUpdateRequest(BaseModel, ConfidenceSourceNormalizationMixin):
     remove_aliases: Optional[list[str]] = None
     confirm_alias_removal: bool = False
     category: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=500)
     parent_skill_id: Optional[UUID] = None
     confidence: Optional[Literal["verified", "unverified"]] = None
     source: Optional[Literal["seed", "manual entry", "jd extraction", "resume extraction"]] = None
@@ -59,6 +60,7 @@ class SkillCreateRequest(BaseModel, ConfidenceSourceNormalizationMixin):
     canonical_name: str = Field(..., min_length=1)
     aliases: list[str] = Field(default_factory=list)
     category: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=500)
     parent_skill_id: Optional[UUID] = None
     confidence: Literal["verified", "unverified"] = "unverified"
     source: Literal[

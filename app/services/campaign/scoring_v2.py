@@ -66,6 +66,11 @@ DEFAULT_CONFIG: dict = {
     # Old informational "would be REVIEW" margins - no longer read; the REVIEW
     # rule lives in near_miss.py. Kept so existing config versions still hash.
     "near_miss": {"extra_missing_core": 1, "experience_years": 1.0, "score_points": 5.0},
+    # Phase 3 Step 6: paraphrase proposals for core skills still NOT_FOUND /
+    # UNCERTAIN (paraphrase_proposal_service) - cosine similarity threshold,
+    # lines per skill, resume sections searched, line length in words.
+    "paraphrase": {"enabled": True, "threshold": 0.45, "max_lines": 3, "sections": ["EXPERIENCE"],
+                   "min_words": 4, "max_words": 40},
 }
 
 STATUS_CONFIRMED = "CONFIRMED"

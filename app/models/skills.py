@@ -79,6 +79,9 @@ class SkillOntology(Base):
     canonical_name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     aliases = mapped_column(ARRAY(String), nullable=True)
     category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # A one-line description of what the skill means here (scoring v2 paraphrase
+    # search compares it with resume lines). Optional; edited by HR.
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     parent_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("skill_ontology.id"), nullable=True)
     embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
     confidence: Mapped[str] = mapped_column(Text, nullable=False, default="unverified")

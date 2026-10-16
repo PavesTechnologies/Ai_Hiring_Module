@@ -27,6 +27,7 @@ class SkillOntologyListResponse(BaseModel):
     canonical_name: str
     aliases: list[str]
     category: Optional[str]
+    description: Optional[str] = None
     parent_skill_name: Optional[str]
     confidence: str
     source: Optional[str]
@@ -56,6 +57,7 @@ class SkillOntologyResponse(BaseModel):
     canonical_name: str
     aliases: list[str]
     category: Optional[str]
+    description: Optional[str] = None
     parent_skill_name: Optional[str]
     confidence: str
     source: Optional[str]

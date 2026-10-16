@@ -158,6 +158,7 @@ class SkillOntologyService:
                 canonical_name=skill.canonical_name,
                 aliases=skill.aliases or [],
                 category=skill.category,
+                description=getattr(skill, "description", None),
                 parent_skill_name=parent_name,
                 confidence=skill.confidence,
                 source=skill.source,
@@ -259,6 +260,15 @@ class SkillOntologyService:
                     after["category"] = new_value
                 skill.category = new_value
 
+            if "description" in update_data:
+                description = update_data["description"]
+                old_value = skill.description
+                new_value = description.strip() if description and description.strip() else None
+                if new_value != old_value:
+                    before["description"] = old_value
+                    after["description"] = new_value
+                skill.description = new_value
+
             parent_change: dict | None = None
             if "parent_skill_id" in update_data:
                 old_parent_id = skill.parent_skill_id
@@ -355,6 +365,7 @@ class SkillOntologyService:
                 canonical_name=canonical_name,
                 aliases=aliases,
                 category=request.category.strip() if request.category else None,
+                description=request.description.strip() if request.description and request.description.strip() else None,
                 parent_skill_id=parent_skill_id,
                 confidence=request.confidence,
                 source=request.source,
@@ -1132,6 +1143,7 @@ class SkillOntologyService:
             canonical_name=skill.canonical_name,
             aliases=skill.aliases or [],
             category=skill.category,
+            description=getattr(skill, "description", None),
             parent_skill_name=parent_name,
             confidence=skill.confidence,
             source=skill.source,
