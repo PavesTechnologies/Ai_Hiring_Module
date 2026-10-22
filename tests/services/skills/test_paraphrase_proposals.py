@@ -194,11 +194,18 @@ def test_the_round_asks_again_with_the_proposals_under_its_own_cache_key():
             patch.object(svc, "CoreSkillConfirmationService") as confirm_cls:
         embedding.return_value.generate_embeddings.side_effect = fake_embed
         confirm_cls.return_value.confirm.return_value = outcome
+        roles = {"work_experience": [{"title": "ServiceNow Administrator", "company": "Northwind IT",
+                                      "description": "; ".join(D2.splitlines()[3:6])}]}
         info, extra = service._paraphrase_round(
-            resume=SimpleNamespace(id=uuid4()), job_description=SimpleNamespace(id=uuid4()), specs=specs,
-            confirmations=confirmations, evidence_rows=[], tools=tools, config=CONFIG, text_hash="h",
+            resume=SimpleNamespace(id=uuid4(), parsed_json=roles),
+            job_description=SimpleNamespace(id=uuid4(), title="ServiceNow ITSM Consultant", role_domain="IT_OPERATIONS"),
+            specs=specs, confirmations=confirmations, evidence_rows=[], tools=tools, config=CONFIG, text_hash="h",
             persist=True, use_cache=True)
     kwargs = confirm_cls.return_value.confirm.call_args.kwargs
+    # Like any experience excerpt, a proposed line carries its role; the vote sees the job and its domain.
+    assert {item.get("role") for r in kwargs["evidence_rows"] for item in r["evidence"]} == {
+        "ServiceNow Administrator, Northwind IT"}
+    assert (kwargs["job"].title, kwargs["job"].role_domain) == ("ServiceNow ITSM Consultant", "IT operations")
     # Fits core_skill_confirmations.text_hash (String(64)); differs from the first round's.
     assert len(kwargs["text_hash"]) == 64 and int(kwargs["text_hash"], 16) >= 0 and kwargs["text_hash"] != "h"
     assert {s.name for s in kwargs["core_skills"]} == {"Incident Management", "Service Catalog"}

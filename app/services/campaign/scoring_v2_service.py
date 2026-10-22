@@ -45,6 +45,8 @@ from app.services.skills.core_skill_confirmation_service import (
 from app.services.skills.paraphrase_proposal_service import (
     ParaphraseProposalService, ParaphraseTarget, proposals_hash,
 )
+from app.services.skills.evidence_rules import role_for_line, roles_of
+from app.services.skills.resume_sections import SECTION_EXPERIENCE
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.skill_evidence_service import (
     CERTIFICATION_ORIGIN, SkillEvidenceService, detect_stored_resume, redacted_resume_text,
@@ -158,10 +160,17 @@ class ScoringV2Service:
 
         proposed_ids = {p.canonical_skill_id for p in proposals}
         asked = [s for s in specs if s.canonical_skill_id in proposed_ids]
+        lines, roles = text.splitlines(), roles_of(getattr(resume, "parsed_json", None) or {})
+
+        def proposed(p):
+            item = {"text": p.line, "source": "DERIVED", "section": p.section,
+                    "origin": f"paraphrase (similarity {p.similarity:.2f})"}
+            # The voters see the role the line belongs to, like any experience excerpt.
+            role = role_for_line(lines, p.line_no, roles) if p.section == SECTION_EXPERIENCE else None
+            return {**item, "role": role} if role else item
+
         rows = [{"canonical_skill_id": p.canonical_skill_id, "sense": None, "sources": ["DERIVED"],
-                 "evidence": [{"text": p.line, "source": "DERIVED", "section": p.section,
-                               "origin": f"paraphrase (similarity {p.similarity:.2f})"}]}
-                for p in proposals]
+                 "evidence": [proposed(p)]} for p in proposals]
         # Proposals first (the excerpt cap keeps the first few), then what was already found.
         rows += [r for r in evidence_rows if getattr(r, "canonical_skill_id", None) in proposed_ids]
         outcome = CoreSkillConfirmationService(self.provider_resolver(), self.detection_repository).confirm(
