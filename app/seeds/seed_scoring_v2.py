@@ -11,7 +11,8 @@ is missing, never overwrites an edited row.
 - skill_senses: Change Management - ITSM vs Organisational
 - platform_config SCORING_V2_CONFIG (weights/multipliers) and
   SCORING_V2_DAILY_LLM_CALL_CAP (v2 confirmation calls per day)
-- skill_pattern_rules: wording patterns -> DERIVED evidence (AI near governance)
+- skill_pattern_rules: wording patterns -> DERIVED evidence (AI near governance),
+  and implied-skill rules (GitHub / GitLab / Bitbucket -> Git)
 - platform_config SCORING_V2_MATCH_BLOCKLIST: known wrong matches v2 never
   accepts from any source (v1 is not affected)
 """
@@ -84,6 +85,18 @@ PATTERN_RULES = [
         "match_scope": "JOB_TITLE",
         "note": "A held job title such as 'Senior Programme Manager' or 'Program Director'. Parsed work-experience "
                 "titles only (not 'target roles'). DERIVED - always confirmed by the 3-vote LLM check.",
+    },
+    {
+        "skill": "git",
+        "name": "GitHub / GitLab / Bitbucket imply Git",
+        "anchor_terms": ["GitHub", "GitLab", "Bitbucket"],
+        "near_terms": [],                     # implied-skill rule: the anchor alone
+        "max_gap_words": 0,
+        "sections": ["EXPERIENCE", "PROJECTS", "SKILLS"],
+        "anchor_case_sensitive": False,
+        "note": "Phase 3: e.g. 'version-controlled on GitHub with pull requests' in a project line (a single-word "
+                "alias only matches as a skills-list item). DERIVED (0.8) - always confirmed by the 3-vote LLM "
+                "check, never auto-confirmed. Not Summary: the header (contact links) counts as Summary.",
     },
 ]
 

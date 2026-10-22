@@ -219,6 +219,8 @@ class PatternRule:
     anchor_case_sensitive: bool = True
     # LINE: resume text lines in `sections`; JOB_TITLE: parsed job titles.
     match_scope: str = "LINE"
+    # No near_terms = an implied-skill rule: the anchor alone implies the
+    # skill ("on GitHub" -> Git). Still DERIVED, so always voted on.
 
 
 def _find_terms(tokens: list[str], terms: tuple[str, ...], case_sensitive: bool) -> list[tuple[int, int]]:
@@ -243,7 +245,9 @@ def pattern_hits(lines: list[str], line_sections: list[str], rules: list[Pattern
     """
     DERIVED hits for wording patterns (skill_pattern_rules): an anchor term
     within max_gap_words of a near term, on a line in one of the rule's
-    sections - e.g. "led global AI program governance" -> AI Governance.
+    sections - e.g. "led global AI program governance" -> AI Governance. A
+    rule without near terms is an implied-skill rule: the anchor alone
+    ("version-controlled on GitHub" -> Git).
     """
     hits = []
     for rule in rules:
@@ -252,11 +256,7 @@ def pattern_hits(lines: list[str], line_sections: list[str], rules: list[Pattern
         for line_no, line in enumerate(lines):
             if line_sections[line_no] not in rule.sections:
                 continue
-            tokens = _TOKEN.findall(line)
-            anchors = _find_terms(tokens, rule.anchor_terms, rule.anchor_case_sensitive)
-            nears = _find_terms(tokens, rule.near_terms, False)
-            if any(min(abs(n_start - a_end), abs(a_start - n_end)) <= rule.max_gap_words
-                   for a_start, a_end in anchors for n_start, n_end in nears):
+            if _pattern_matches(rule, line):
                 hits.append(ScanHit(rule.skill_id, rule.name, ORIGIN_DERIVED, line_no, line,
                                     note=f"pattern rule '{rule.name}'"))
     return hits
@@ -265,6 +265,8 @@ def pattern_hits(lines: list[str], line_sections: list[str], rules: list[Pattern
 def _pattern_matches(rule: PatternRule, text: str) -> bool:
     tokens = _TOKEN.findall(text)
     anchors = _find_terms(tokens, rule.anchor_terms, rule.anchor_case_sensitive)
+    if not rule.near_terms:
+        return bool(anchors)                                    # implied-skill rule
     nears = _find_terms(tokens, rule.near_terms, False)
     return any(min(abs(n_start - a_end), abs(a_start - n_end)) <= rule.max_gap_words
                for a_start, a_end in anchors for n_start, n_end in nears)

@@ -205,3 +205,55 @@ def test_profile_ai_governance_is_auto_confirmed_from_profile_not_recognition():
 def test_profile_it_governance_line_adds_nothing():
     texts = [e["text"] for r in _profile_records() for e in r.evidence]
     assert not any("IT governance" in t for t in texts)
+
+
+# --- implied-skill rule: GitHub / GitLab / Bitbucket -> Git (Phase 3) ----------
+
+GIT = uuid4()
+GIT_CATALOG = CATALOG + [SimpleNamespace(id=GIT, canonical_name="git", aliases=["git version control", "github"])]
+GIT_RULE = PatternRule(GIT, "GitHub / GitLab / Bitbucket imply Git", ("GitHub", "GitLab", "Bitbucket"), (), 0,
+                       frozenset({"EXPERIENCE", "PROJECTS", "SKILLS"}), False)
+F2_PROJECT = ("Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL "
+              "with hand-written SQL queries; version-controlled on GitHub with pull requests from two teammates.")
+
+
+def _git_records(text):
+    return [r for r in build_evidence(text=text, index=ScanIndex.build(GIT_CATALOG, {}), resolver=SkillSenseResolver([]),
+                                      llm_matches=[], patterns=[GIT_RULE]) if r.canonical_skill_id == GIT]
+
+
+def test_github_in_a_project_line_is_derived_git_evidence():
+    # Phase 3 F2: the single-word alias "github" only matches as a skills-list item, never in prose.
+    assert GIT not in {h.skill_id for h in scan_text(F2_PROJECT, ScanIndex.build(GIT_CATALOG, {}))}
+    [record] = _git_records("Projects\n" + F2_PROJECT)
+    assert record.best_source == SOURCE_DERIVED and float(record.recognition) == 0.8
+    assert record.evidence[0]["section"] == "PROJECTS"
+    assert record.evidence[0]["origin"] == "pattern rule 'GitHub / GitLab / Bitbucket imply Git'"
+
+
+@pytest.mark.parametrize("text", [
+    "Work Experience\nMaintained CI pipelines in GitLab for three services",
+    "Experience\nMigrated repositories from Bitbucket to Azure DevOps",
+    "Projects\nPortfolio site; code on github, deployed with Netlify",          # any casing
+])
+def test_gitlab_bitbucket_and_any_casing(text):
+    assert len(_git_records(text)) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "Diya Raman\ngithub.com/diya - Chennai\nProjects\nWeather Dashboard in Python",   # header link (Summary)
+    "Achievements\nGitHub Universe 2025 scholarship",                                # not an evidence section
+    "Projects\nBuilt a gitignore generator in Go",                                   # no anchor word
+])
+def test_implied_rule_does_not_fire(text):
+    assert _git_records(text) == []
+
+
+def test_implied_git_goes_to_the_vote_never_auto_confirmed():
+    [record] = _git_records("Projects\n" + F2_PROJECT)
+    fresher = frozenset({"SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"})
+    assert auto_confirm_evidence(CoreSkillSpec(GIT, "git"), [record], fresher) is None
+
+
+def test_a_rule_with_near_terms_still_needs_them():
+    assert not _pattern("Work Experience\nLed global AI programs")                  # anchor without "governance"
