@@ -317,3 +317,23 @@ def test_the_breakdown_shows_listed_only_on_the_core_skill():
     assert (entry["confirmation_status"], entry["confirmation_note"]) == ("UNCERTAIN", LISTED_ONLY_NOTE)
     assert result["core_confirmed_count"] == 0 and result["core_uncertain"] == ["Service Catalog"]
 
+
+def test_on_a_template_that_allows_it_the_vote_confirms_a_listed_only_skill():
+    # Fresher: freshers list languages they used in coursework - the vote decides (F5, F8).
+    repo, row = _Repo(), _item_row(INC, ("SKILLS", "Languages: Python & SQL, Service Catalog"))
+    outcome = CoreSkillConfirmationService(_YesProvider(), repo).confirm(
+        resume_id=uuid4(), jd_id=uuid4(), core_skills=[CoreSkillSpec(INC, "Service Catalog")], evidence_rows=[row],
+        text_hash="h", cap_listed_only_skills=False)
+    assert outcome.results[0]["status"] == "CONFIRMED" and outcome.results[0]["reason"] != REASON_LISTED_ONLY
+
+
+@pytest.mark.parametrize("template, expected", [
+    (SimpleNamespace(key="FRESHER", listed_only_can_confirm=True), True),
+    (SimpleNamespace(key="DOMAIN", listed_only_can_confirm=False), False),
+    (None, False),                                                     # no template: at most UNCERTAIN
+])
+def test_the_setting_comes_from_the_jd_template(template, expected):
+    from app.services.jd.jd_profile_templates import jd_listed_only_can_confirm
+    jd = SimpleNamespace(profile_template=getattr(template, "key", None), profile=template)
+    assert jd_listed_only_can_confirm(jd) is expected
+

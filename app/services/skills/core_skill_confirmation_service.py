@@ -403,6 +403,7 @@ class CoreSkillConfirmationService:
         auto_sections=AUTO_CONFIRM_SECTIONS,
         rules: EvidenceRules | None = None,
         job: JobContext | None = None,
+        cap_listed_only_skills: bool = True,
     ) -> ConfirmationOutcome:
         """
         budget: optional callable(n_calls) -> bool, asked before any LLM call
@@ -411,7 +412,8 @@ class CoreSkillConfirmationService:
         auto_sections / rules: where and when an exact scan auto-confirms
         (experience, plus projects on a Fresher JD; a line where the
         candidate does the work). job: the JD's title and role domain,
-        shown to the voters.
+        shown to the voters. cap_listed_only_skills: a listed-only skill is at
+        most UNCERTAIN (off when the JD's template lets the vote confirm it).
         """
         by_skill: dict[UUID, list] = {}
         for row in evidence_rows:
@@ -452,7 +454,7 @@ class CoreSkillConfirmationService:
                     if text and text not in [t for _, t in excerpts]:
                         excerpts.append((_section_label(item), text))
             results[spec.canonical_skill_id] = {**base, "method": "llm"}
-            listed[spec.canonical_skill_id] = listed_only(compatible, rules)
+            listed[spec.canonical_skill_id] = cap_listed_only_skills and listed_only(compatible, rules)
             asks.append(_Ask(len(asks) + 1, spec, excerpts[:3],
                              sorted({s for r in compatible for s in (_attr(r, "sources") or [])}), job))
 

@@ -15,6 +15,8 @@ class JDProfileTemplateItem(BaseModel):
     experience_tolerance_years: float | None        # None = the system default
     education_requirement: Literal["MANDATORY", "PREFERRED"]
     evidence_sections: list[str]
+    # Listed-only core skills can be confirmed by vote (else at most UNCERTAIN).
+    listed_only_can_confirm: bool = False
     updated_by: str | None = None
     updated_at: datetime | None = None
 
@@ -40,6 +42,7 @@ class JDProfileTemplateUpdate(BaseModel):
     experience_tolerance_years: float | None = Field(default=None, ge=0, le=20)
     education_requirement: Literal["MANDATORY", "PREFERRED"]
     evidence_sections: list[str] = Field(..., min_length=1)
+    listed_only_can_confirm: bool
 
 
 class JDProfileTemplateUpdateResponse(BaseModel):

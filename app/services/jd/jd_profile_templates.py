@@ -72,6 +72,16 @@ def jd_auto_confirm_sections(job_description) -> frozenset:
     return (jd_evidence_sections(job_description) & NARRATIVE_SECTIONS) or frozenset({SECTION_EXPERIENCE})
 
 
+def jd_listed_only_can_confirm(job_description) -> bool:
+    """
+    Whether a listed-only core skill (only a skills-list line, or lines where
+    the candidate sells / demos / supports / attends) can be confirmed by the
+    vote: the template's setting (on for Fresher); no template = no, it is at
+    most UNCERTAIN.
+    """
+    return getattr(jd_profile(job_description), "listed_only_can_confirm", False) is True
+
+
 def jd_paraphrase_sections(job_description, configured: list | None) -> list[str]:
     """The narrative evidence sections of the JD's template, else the configured ones."""
     if jd_profile(job_description) is None:

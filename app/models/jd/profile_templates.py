@@ -10,7 +10,7 @@ three rows are fixed (seeded); HR_ADMIN edits their values (audited).
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, SmallInteger, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, SmallInteger, String, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,11 @@ class JDProfileTemplate(Base):
     education_requirement: Mapped[str] = mapped_column(String(20), nullable=False)        # MANDATORY / PREFERRED
     # Resume sections that count as evidence, e.g. ["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"].
     evidence_sections: Mapped[list] = mapped_column(JSONB, nullable=False)
+    # Listed-only core skills (only a skills-list line, or lines where the
+    # candidate sells / demos / supports / attends) can be confirmed by the
+    # vote. Off = such a skill is at most UNCERTAIN. On for Fresher.
+    listed_only_can_confirm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                          server_default=false())
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True,
                                                            onupdate=func.now())

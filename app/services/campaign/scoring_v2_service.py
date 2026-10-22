@@ -35,7 +35,9 @@ from app.services.campaign.scoring_v2 import (
     ProvisionalSkillInput, ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
 )
 from app.services.jd.jd_calibration_rules import jd_profile, jd_role_domain
-from app.services.jd.jd_profile_templates import jd_auto_confirm_sections, jd_evidence_sections, jd_paraphrase_sections
+from app.services.jd.jd_profile_templates import (
+    jd_auto_confirm_sections, jd_evidence_sections, jd_listed_only_can_confirm, jd_paraphrase_sections,
+)
 from app.services.jd.jd_role_domain import suggest_role_domain
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.core_skill_confirmation_service import (
@@ -178,6 +180,7 @@ class ScoringV2Service:
             text_hash=paraphrase_text_hash(text_hash, proposals), persist=persist,
             budget=self._budget if persist else None, use_cache=use_cache,
             rules=tools.rules, job=job_context(job_description, [getattr(s, "name", None) for s in specs]),
+            cap_listed_only_skills=not jd_listed_only_can_confirm(job_description),
         )
         info.update(ran=not outcome.skipped_budget, cached=outcome.cached, llm_calls=outcome.llm_calls,
                     problem=outcome.problem, skipped_budget=outcome.skipped_budget,
@@ -278,6 +281,7 @@ class ScoringV2Service:
                     evidence_rows=evidence_rows, text_hash=resume_text_hash or "", persist=persist,
                     budget=self._budget if persist else None, use_cache=use_confirmation_cache,
                     auto_sections=auto_sections, rules=tools.rules, job=job,
+                    cap_listed_only_skills=not jd_listed_only_can_confirm(job_description),
                 )
                 confirmations = {r["canonical_skill_id"]: r for r in outcome.results}
                 confirmation = {"ran": not outcome.skipped_budget, "cached": outcome.cached,
@@ -355,6 +359,7 @@ class ScoringV2Service:
                    "profile_template": {"key": getattr(jd_profile(job_description), "key", None),
                                         "evidence_sections": sorted(evidence_sections),
                                         "auto_confirm_sections": sorted(auto_sections),
+                                        "listed_only_can_confirm": jd_listed_only_can_confirm(job_description),
                                         "paraphrase_sections": paraphrase_config.get("sections")},
                    "job_context": {"title": job.title, "role_domain": job.role_domain}},
             provisional_skills=self.provisional_inputs(job_description, resume, persist=persist),

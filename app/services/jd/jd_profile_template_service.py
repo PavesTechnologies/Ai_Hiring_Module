@@ -2,8 +2,8 @@
 JD profile templates (Phase 3 Step 7): HR_ADMIN edits the values of the
 three seeded templates (audited, with before / after).
 
-A change that affects scoring - internship credit, tolerance or evidence
-sections - marks the scored candidates of live campaigns whose JD uses the
+A change that affects scoring - internship credit, tolerance, evidence
+sections or whether listed-only skills can be confirmed - marks the scored candidates of live campaigns whose JD uses the
 template "score out of date", as a calibration change does. Education is
 only the form's default for new choices, so it marks nothing.
 """
@@ -18,7 +18,8 @@ from app.schemas.jd_profile_template import JDProfileTemplateUpdate
 from app.services.campaign.score_out_of_date import mark_campaigns_out_of_date
 from app.services.jd.jd_profile_templates import EVIDENCE_SECTION_OPTIONS, REQUIRED_EVIDENCE_SECTIONS
 
-_SCORING_FIELDS = ("internship_credit_pct", "experience_tolerance_years", "evidence_sections")
+_SCORING_FIELDS = ("internship_credit_pct", "experience_tolerance_years", "evidence_sections",
+                   "listed_only_can_confirm")
 
 
 def template_entity_id(key: str) -> uuid.UUID:
@@ -34,6 +35,7 @@ def _snapshot(template: JDProfileTemplate) -> dict:
         "experience_tolerance_years": float(tolerance) if tolerance is not None else None,
         "education_requirement": template.education_requirement,
         "evidence_sections": list(template.evidence_sections or []),
+        "listed_only_can_confirm": template.listed_only_can_confirm is True,
     }
 
 
@@ -69,6 +71,7 @@ class JDProfileTemplateService:
                 "experience_tolerance_years": request.experience_tolerance_years,
                 "education_requirement": request.education_requirement,
                 "evidence_sections": validated_sections(request.evidence_sections),
+                "listed_only_can_confirm": request.listed_only_can_confirm,
             }
             if not after["label"]:
                 raise UnprocessableError("A template needs a name.")

@@ -14,9 +14,9 @@ _payload = {}
 _TEMPLATE = SimpleNamespace(key="FRESHER", label="Fresher", description=None, internship_credit_pct=100,
                             experience_tolerance_years=None, education_requirement="MANDATORY",
                             evidence_sections=["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"],
-                            updated_by=None, updated_at=None)
+                            listed_only_can_confirm=True, updated_by=None, updated_at=None)
 _BODY = {"label": "Fresher", "internship_credit_pct": 100, "education_requirement": "MANDATORY",
-         "evidence_sections": ["EXPERIENCE"]}
+         "evidence_sections": ["EXPERIENCE"], "listed_only_can_confirm": True}
 
 
 def _decode(token):

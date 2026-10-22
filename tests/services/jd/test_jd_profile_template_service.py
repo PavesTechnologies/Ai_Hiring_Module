@@ -17,7 +17,7 @@ def _fresher():
     return SimpleNamespace(key="FRESHER", label="Fresher", description="Early career", internship_credit_pct=100,
                            experience_tolerance_years=None, education_requirement="MANDATORY",
                            evidence_sections=["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"],
-                           updated_by=None, updated_at=None)
+                           listed_only_can_confirm=True, updated_by=None, updated_at=None)
 
 
 class FakeRepo:
@@ -45,7 +45,7 @@ class FakeRepo:
 def _request(**kw):
     values = dict(label="Fresher", description="Early career", internship_credit_pct=100,
                   experience_tolerance_years=None, education_requirement="MANDATORY",
-                  evidence_sections=["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"])
+                  evidence_sections=["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"], listed_only_can_confirm=True)
     values.update(kw)
     return JDProfileTemplateUpdate(**values)
 
@@ -109,3 +109,13 @@ def test_sections_are_validated(sections, message):
 def test_unknown_template():
     with pytest.raises(NotFoundError):
         _update(FakeRepo(None), _request())
+
+
+def test_turning_off_listed_only_confirmation_is_a_scoring_change():
+    live = uuid4()
+    repo = FakeRepo(_fresher(), live_ids=[live])
+    (template, changed, marked), audit, mark = _update(repo, _request(listed_only_can_confirm=False))
+    assert changed and marked == 7 and template.listed_only_can_confirm is False
+    assert audit.log.call_args.kwargs["details"]["changes"] == {
+        "listed_only_can_confirm": {"before": True, "after": False}}
+
