@@ -374,6 +374,13 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
         else:
             entries.append(_entry(skill, config, "MISSING", 0.0, None, status=status, gate=False))
 
+    # How a capped core skill shows: confirmation_status UNCERTAIN with
+    # confirmation_note "listed only, not shown in work" (reason listed_only).
+    for entry in entries:
+        if entry["importance"] == "core":
+            confirmation = inputs.confirmations.get(entry["canonical_skill_id"]) or {}
+            entry["confirmation_note"] = confirmation.get("note")
+
     preferred_entries = []
     for skill in preferred:
         own = [ev for skill_id in skill.own_ids for ev in pool.get(skill_id, [])

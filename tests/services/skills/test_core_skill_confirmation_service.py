@@ -47,7 +47,7 @@ class FakeRepo:
         self.rows[row.cache_key] = row
 
 
-def _row(skill_id, text, *, source="SCAN", section="SKILLS", sense=None, sources=None):
+def _row(skill_id, text, *, source="SCAN", section="SUMMARY", sense=None, sources=None):
     return {"canonical_skill_id": skill_id, "sense": sense, "sources": list(sources or [source]),
             "evidence": [{"text": text, "source": source, "origin": "x", "section": section}]}
 

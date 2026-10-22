@@ -231,3 +231,89 @@ def test_stale_stored_evidence_is_detected_again(stored_version, redetected):
                           acted_on=False, persist=False)
     assert detect.called is redetected
 
+
+# --- listed only: at most UNCERTAIN, whatever the votes (H6) ----------------------------
+
+from app.services.skills.core_skill_confirmation_service import (  # noqa: E402
+    LISTED_ONLY_NOTE, REASON_LISTED_ONLY, cap_listed_only, listed_only,
+)
+
+H6_SKILLS = "ServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL"
+
+
+def _item_row(skill_id, *items):
+    return {"canonical_skill_id": skill_id, "sense": None, "sources": ["SCAN"],
+            "evidence": [{"text": t, "source": "SCAN", "origin": "text-scan", "section": s} for s, t in items]}
+
+
+@pytest.mark.parametrize("items, expected", [
+    ([("SKILLS", H6_SKILLS)], True),
+    ([("EXPERIENCE", "Sold ServiceNow ITSM implementation services to mid-market clients"), ("SKILLS", H6_SKILLS)], True),
+    ([("EXPERIENCE", "Ran product demos of incident and change modules with the presales team")], True),
+    ([("SKILLS", H6_SKILLS), ("EXPERIENCE", "Configured incident and change modules on ServiceNow")], False),
+    ([("PROJECTS", "Python, Flask, PostgreSQL, deployed with Docker")], False),      # a project, not a list
+    ([("SUMMARY", "ServiceNow ITSM consultant with 6 years of implementation experience")], False),
+])
+def test_listed_only(items, expected):
+    assert listed_only([_item_row(SNOW, *items)]) is expected
+
+
+def test_the_cap_keeps_the_votes_and_says_why():
+    confirmed = {"status": "CONFIRMED", "confirmed": True, "reason": "all_votes_yes", "votes": ["yes"] * 3}
+    capped = cap_listed_only(confirmed, True)
+    assert (capped["status"], capped["confirmed"], capped["reason"], capped["note"], capped["votes"]) == (
+        "UNCERTAIN", False, REASON_LISTED_ONLY, LISTED_ONLY_NOTE, ["yes"] * 3)
+    assert capped["vote_reason"] == "all_votes_yes"
+    assert cap_listed_only({"status": "REJECTED"}, True) == {"status": "REJECTED"}      # a "no" stays a no
+    assert cap_listed_only(confirmed, False) is confirmed
+
+
+class _Repo:
+    def __init__(self):
+        self.rows = {}
+
+    def get_confirmation(self, key):
+        return self.rows.get(key)
+
+    def put_confirmation(self, row):
+        self.rows[row.cache_key] = row
+
+
+class _YesProvider:
+    def __init__(self):
+        self.calls = []
+
+    def generate_json(self, prompt, response_schema, *, deterministic=False):
+        self.calls.append(prompt)
+        return {"items": [{"number": 1, "present": True, "quote": "Service Catalog"}]}
+
+
+def test_three_yes_on_a_skills_list_is_uncertain_and_stays_so_from_the_cache():
+    repo, row = _Repo(), _item_row(INC, ("SKILLS", H6_SKILLS.replace("Incident Management, ", "") + ", Service Catalog"))
+    spec = CoreSkillSpec(INC, "Service Catalog")
+
+    def confirm(provider):
+        return CoreSkillConfirmationService(provider, repo).confirm(
+            resume_id=uuid4(), jd_id=uuid4(), core_skills=[spec], evidence_rows=[row], text_hash="h")
+
+    first = confirm(_YesProvider())
+    result = first.results[0]
+    assert (result["status"], result["reason"], result["votes"]) == ("UNCERTAIN", REASON_LISTED_ONLY, ["yes"] * 3)
+    assert [r["status"] for r in next(iter(repo.rows.values())).results] == ["CONFIRMED"]   # the votes as answered
+    again_provider = _YesProvider()
+    again = confirm(again_provider)
+    assert again_provider.calls == [] and again.results[0]["status"] == "UNCERTAIN"
+
+
+def test_the_breakdown_shows_listed_only_on_the_core_skill():
+    from app.services.campaign.scoring_v2 import EvidenceInput, JDSkillInput, ScoringInputs, merge_config, score_v2
+    jd = [JDSkillInput(INC, "Service Catalog", True, 1.0, "core")]
+    capped = cap_listed_only({"canonical_skill_id": str(INC), "status": "CONFIRMED"}, True)
+    result = score_v2(ScoringInputs(
+        jd_skills=jd, evidence=[EvidenceInput(INC, None, ("SCAN",), "SCAN", "SCAN", 1.0, H6_SKILLS)],
+        confirmations={str(INC): capped}, hierarchy={"skills_by_id": {}, "children_by_parent": {},
+                                                     "grandchildren_by_parent": {}}), merge_config(None))
+    entry = result["mandatory_skills"][0]
+    assert (entry["confirmation_status"], entry["confirmation_note"]) == ("UNCERTAIN", LISTED_ONLY_NOTE)
+    assert result["core_confirmed_count"] == 0 and result["core_uncertain"] == ["Service Catalog"]
+

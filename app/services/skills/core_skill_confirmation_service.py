@@ -51,7 +51,7 @@ from app.models.scoring_v2 import CoreSkillConfirmation
 from app.services.llm.base import LLMError, LLMProvider
 from app.services.llm.structured_call import InvalidLLMOutput, LLMCallInfo, call_info, structured_call
 from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules
-from app.services.skills.resume_sections import SECTION_EXPERIENCE
+from app.services.skills.resume_sections import SECTION_EXPERIENCE, SECTION_SKILLS
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.text_evidence import evidence_found_in
 
@@ -76,6 +76,10 @@ REASON_NO_FROM_BACKUP = "no_votes_include_backup_model"
 REASON_LLM_FAILED = "llm_failed"
 REASON_NOT_FOUND = "not_found"
 REASON_SENSE_MISMATCH = "sense_mismatch"
+# Capped at UNCERTAIN whatever the votes: the only evidence is a skills-list
+# line or lines where the candidate sells / demos / supports / attends.
+REASON_LISTED_ONLY = "listed_only"
+LISTED_ONLY_NOTE = "listed only, not shown in work"
 
 VOTE_YES, VOTE_NO, VOTE_INVALID, VOTE_FAILED = "yes", "no", "invalid", "failed"
 
@@ -263,6 +267,26 @@ def auto_confirm_evidence(spec: CoreSkillSpec, rows: list, auto_sections=AUTO_CO
     return None
 
 
+def listed_only(rows: list, rules: EvidenceRules | None = None) -> bool:
+    """
+    Every evidence item for the skill is a skills-list line or a line with a
+    not-work verb ("Sold ServiceNow ITSM services") - nothing shows the
+    candidate doing the work.
+    """
+    rules = rules or DEFAULT_RULES
+    items = [item for row in rows for item in (_attr(row, "evidence") or [])]
+    return bool(items) and all(
+        item.get("section") == SECTION_SKILLS or rules.not_doing_the_work(item.get("text")) for item in items)
+
+
+def cap_listed_only(result: dict, is_listed_only: bool) -> dict:
+    """A listed-only skill is at most UNCERTAIN, never CONFIRMED, whatever the votes (the votes are kept)."""
+    if not is_listed_only or result.get("status") not in (STATUS_CONFIRMED, STATUS_UNCERTAIN):
+        return result
+    return {**result, "status": STATUS_UNCERTAIN, "confirmed": False, "reason": REASON_LISTED_ONLY,
+            "vote_reason": result.get("reason"), "note": LISTED_ONLY_NOTE}
+
+
 def core_set_hash(core_skills: list[CoreSkillSpec]) -> str:
     keys = sorted(
         f"{s.canonical_skill_id}:{s.sense or ''}:{s.sense_basis or ''}:{','.join(sorted(map(str, s.alias_skill_ids)))}"
@@ -394,6 +418,7 @@ class CoreSkillConfirmationService:
             by_skill.setdefault(_attr(row, "canonical_skill_id"), []).append(row)
 
         results: dict[UUID, dict] = {}
+        listed: dict[UUID, bool] = {}
         asks: list[_Ask] = []
         for spec in core_skills:
             rows = [row for skill_id in spec.skill_ids for row in by_skill.get(skill_id, [])]
@@ -427,12 +452,17 @@ class CoreSkillConfirmationService:
                     if text and text not in [t for _, t in excerpts]:
                         excerpts.append((_section_label(item), text))
             results[spec.canonical_skill_id] = {**base, "method": "llm"}
+            listed[spec.canonical_skill_id] = listed_only(compatible, rules)
             asks.append(_Ask(len(asks) + 1, spec, excerpts[:3],
                              sorted({s for r in compatible for s in (_attr(r, "sources") or [])}), job))
 
         ordered = lambda: [results[s.canonical_skill_id] for s in core_skills]  # noqa: E731
+        # What scoring gets: listed-only skills capped at UNCERTAIN. The cache
+        # keeps the votes as answered, so the cap is applied on every read.
+        capped = lambda: [cap_listed_only(results[s.canonical_skill_id], listed.get(s.canonical_skill_id, False))  # noqa: E731
+                          for s in core_skills]
         if not asks:
-            return ConfirmationOutcome(results=ordered())
+            return ConfirmationOutcome(results=capped())
 
         core_hash = core_set_hash(core_skills)
         cache_key = confirmation_cache_key(text_hash, core_hash, getattr(self.provider, "provider_name", None),
@@ -458,14 +488,14 @@ class CoreSkillConfirmationService:
                         remaining.append(ask)
                 asks = [_Ask(i + 1, a.spec, a.excerpts, a.sources, a.job) for i, a in enumerate(remaining)]
         if not asks:
-            return ConfirmationOutcome(results=ordered(), cached=True, cache_key=cache_key,
+            return ConfirmationOutcome(results=capped(), cached=True, cache_key=cache_key,
                                        call=LLMCallInfo(cached_row.provider, cached_row.model, cached_row.used_fallback))
 
         if budget is not None and not budget(self.votes):
             for ask in asks:
                 results[ask.spec.canonical_skill_id].update(
                     sources=ask.sources, status=STATUS_UNCONFIRMED, reason="daily_llm_cap_reached")
-            return ConfirmationOutcome(results=ordered(), skipped_budget=True, cache_key=cache_key,
+            return ConfirmationOutcome(results=capped(), skipped_budget=True, cache_key=cache_key,
                                        problem="daily LLM call cap reached")
 
         rounds = [self._vote_once(asks) for _ in range(self.votes)]
@@ -495,7 +525,7 @@ class CoreSkillConfirmationService:
                     entry.update(status=STATUS_UNCERTAIN, reason=REASON_NO_FROM_BACKUP)
         first_call = next((c for c in calls), None)
         outcome = ConfirmationOutcome(
-            results=ordered(), call=LLMCallInfo(**first_call) if first_call else None,
+            results=capped(), call=LLMCallInfo(**first_call) if first_call else None,
             problem="; ".join(dict.fromkeys(problems)) or None, cache_key=cache_key,
             cached=cached_hits > 0, llm_calls=sum(attempts for _, _, _, attempts in rounds),
             # Any vote lost to the provider (quota, outage, backup failing too)
@@ -505,7 +535,7 @@ class CoreSkillConfirmationService:
             ),
         )
         if persist and self.detection_repository is not None and not used_fallback and first_call:
-            final_results = [r for r in outcome.results
+            final_results = [r for r in ordered()
                              if r.get("method") == "llm" and r.get("status") in FINAL_STATUSES
                              and VOTE_FAILED not in (r.get("votes") or []) and r.get("evidence_hash")]
             if final_results:

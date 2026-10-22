@@ -76,6 +76,10 @@ class EvidenceRules:
         words = set(term_key(line or "").split())
         return bool(words & self.work_verbs) and not (words & self.non_work_verbs)
 
+    def not_doing_the_work(self, line: str | None) -> bool:
+        """A not-work verb on the line ("sold", "demoed", "attended", "supported", ...)."""
+        return bool(set(term_key(line or "").split()) & self.non_work_verbs)
+
 
 DEFAULT_RULES = EvidenceRules.from_config(None)
 
