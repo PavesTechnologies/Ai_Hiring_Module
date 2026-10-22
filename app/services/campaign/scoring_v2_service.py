@@ -264,9 +264,11 @@ class ScoringV2Service:
         ]
         resume_text_hash = next((getattr(r, "text_hash", None) for r in evidence_rows if getattr(r, "text_hash", None)), None)
 
-        descriptions = dict(self.db.query(SkillOntology.id, SkillOntology.description)
-                            .filter(SkillOntology.id.in_([r.canonical_skill_id for r in rows])).all()) if rows else {}
-        specs = jd_core_skill_specs(job_description, rows, names, tools.resolver, skill_descriptions=descriptions)
+        texts = (self.db.query(SkillOntology.id, SkillOntology.description, SkillOntology.not_description)
+                 .filter(SkillOntology.id.in_([r.canonical_skill_id for r in rows])).all()) if rows else []
+        specs = jd_core_skill_specs(job_description, rows, names, tools.resolver,
+                                    skill_descriptions={i: d for i, d, _ in texts},
+                                    skill_not_descriptions={i: n for i, _, n in texts})
         # Phase 3 Step 7: the JD profile template decides which resume sections count as evidence.
         evidence_sections = jd_evidence_sections(job_description)
         auto_sections = jd_auto_confirm_sections(job_description)

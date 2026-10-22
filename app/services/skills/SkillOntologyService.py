@@ -159,6 +159,7 @@ class SkillOntologyService:
                 aliases=skill.aliases or [],
                 category=skill.category,
                 description=getattr(skill, "description", None),
+                not_description=getattr(skill, "not_description", None),
                 parent_skill_name=parent_name,
                 confidence=skill.confidence,
                 source=skill.source,
@@ -269,6 +270,15 @@ class SkillOntologyService:
                     after["description"] = new_value
                 skill.description = new_value
 
+            if "not_description" in update_data:
+                not_description = update_data["not_description"]
+                old_value = getattr(skill, "not_description", None)
+                new_value = not_description.strip() if not_description and not_description.strip() else None
+                if new_value != old_value:
+                    before["not_description"] = old_value
+                    after["not_description"] = new_value
+                skill.not_description = new_value
+
             parent_change: dict | None = None
             if "parent_skill_id" in update_data:
                 old_parent_id = skill.parent_skill_id
@@ -366,6 +376,8 @@ class SkillOntologyService:
                 aliases=aliases,
                 category=request.category.strip() if request.category else None,
                 description=request.description.strip() if request.description and request.description.strip() else None,
+                not_description=(request.not_description.strip()
+                                 if request.not_description and request.not_description.strip() else None),
                 parent_skill_id=parent_skill_id,
                 confidence=request.confidence,
                 source=request.source,
@@ -1144,6 +1156,7 @@ class SkillOntologyService:
             aliases=skill.aliases or [],
             category=skill.category,
             description=getattr(skill, "description", None),
+            not_description=getattr(skill, "not_description", None),
             parent_skill_name=parent_name,
             confidence=skill.confidence,
             source=skill.source,

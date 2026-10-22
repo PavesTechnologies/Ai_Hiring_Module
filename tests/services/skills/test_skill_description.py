@@ -50,3 +50,16 @@ def test_a_blank_description_clears_it():
 def test_a_description_is_at_most_500_characters():
     with pytest.raises(ValueError):
         SkillOntologyUpdateRequest(description="x" * 501)
+
+
+def test_a_not_this_skill_text_is_saved_trimmed_and_audited():
+    skill = _skill(description="ServiceNow catalogue items")
+    service, audit = _service(skill)
+    response = service.update_skill(
+        skill.id, SkillOntologyUpdateRequest(not_description="  not a customer-facing product catalogue  "),
+        updated_by="hr-1", actor_role="HR_ADMIN")
+    assert skill.not_description == "not a customer-facing product catalogue"
+    assert skill.description == "ServiceNow catalogue items"                  # the description is untouched
+    details = str(audit.log.call_args_list[0].kwargs["details"])
+    assert "not_description" in details and response.not_description == "not a customer-facing product catalogue"
+

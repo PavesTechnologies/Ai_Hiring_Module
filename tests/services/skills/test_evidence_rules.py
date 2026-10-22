@@ -337,3 +337,29 @@ def test_the_setting_comes_from_the_jd_template(template, expected):
     jd = SimpleNamespace(profile_template=getattr(template, "key", None), profile=template)
     assert jd_listed_only_can_confirm(jd) is expected
 
+
+# --- "Not this skill": the voters see it, the paraphrase search never does --------------
+
+def test_the_voters_see_not_this_skill_and_a_change_asks_again():
+    provider = _YesProvider()
+    spec = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages",
+                         not_description="not handling customer support cases")
+    row = _item_row(INC, ("SUMMARY", "Case management and incident escalation rules"))   # voted on
+    CoreSkillConfirmationService(provider).confirm(resume_id=uuid4(), jd_id=uuid4(), core_skills=[spec],
+                                                   evidence_rows=[row], text_hash="h")
+    assert ("What it means here: Handling IT incidents and outages" + chr(10)
+            + "   Not this skill: not handling customer support cases") in provider.calls[0]
+    plain = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages")
+    ask = lambda s: _Ask(1, s, [("Experience", "line")], ["SCAN"])  # noqa: E731
+    assert evidence_hash(ask(spec)) != evidence_hash(ask(plain))
+
+
+def test_the_paraphrase_search_text_never_includes_not_this_skill():
+    from app.services.campaign.scoring_v2_service import _paraphrase_targets_for
+    from app.services.skills.paraphrase_proposal_service import skill_text
+    spec = CoreSkillSpec(INC, "Incident Management", not_description="not handling customer support cases")
+    skill = SimpleNamespace(aliases=[], description="Handling IT incidents and outages",
+                            not_description="not handling customer support cases")
+    [target] = _paraphrase_targets_for([spec], {}, {INC: skill}, [])
+    assert "customer support" not in skill_text(target) and "Handling IT incidents" in skill_text(target)
+

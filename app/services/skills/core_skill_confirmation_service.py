@@ -153,6 +153,8 @@ class CoreSkillSpec:
     # The skill's short description (skill_ontology.description), shown to the
     # voters with the sense, e.g. "...not only using ServiceNow to log tickets".
     description: str | None = None
+    # What it is not (skill_ontology.not_description) - shown to the voters only.
+    not_description: str | None = None
 
     @property
     def skill_ids(self) -> tuple[UUID, ...]:
@@ -193,7 +195,8 @@ def _attr(row, name, default=None):
 
 
 def jd_core_skill_specs(jd, jd_skills: list, skill_names: dict, resolver,
-                        skill_descriptions: dict | None = None) -> list[CoreSkillSpec]:
+                        skill_descriptions: dict | None = None,
+                        skill_not_descriptions: dict | None = None) -> list[CoreSkillSpec]:
     """
     CoreSkillSpec for each CORE jd_skills row, with the JD's sense of it:
     cue words in the JD text, then title/domain, else the default sense
@@ -218,6 +221,7 @@ def jd_core_skill_specs(jd, jd_skills: list, skill_names: dict, resolver,
             sense_basis=choice.basis,
             alias_skill_ids=tuple(row.alias_skill_ids or ()),
             description=(skill_descriptions or {}).get(row.canonical_skill_id),
+            not_description=(skill_not_descriptions or {}).get(row.canonical_skill_id),
         ))
     return specs
 
@@ -307,7 +311,8 @@ def evidence_hash(ask) -> str:
     asked again when any of them changes.
     """
     payload = json.dumps([[label, text] for label, text in ask.excerpts] + [sorted(ask.sources)]
-                         + [[ask.spec.description or "", ask.spec.sense_label or "", ask.spec.sense_description or ""]]
+                         + [[ask.spec.description or "", ask.spec.sense_label or "", ask.spec.sense_description or "",
+                             ask.spec.not_description or ""]]
                          + [[job.title or "", job.role_domain or ""] if (job := ask.job) else []])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -331,6 +336,8 @@ def _render_items(asks: list[_Ask]) -> str:
             f'   - [{label or "section unknown"}] "{text}"' for label, text in ask.excerpts
         )
         described = f"\n   What it means here: {ask.spec.description}" if ask.spec.description else ""
+        if ask.spec.not_description:
+            described += f"\n   Not this skill: {ask.spec.not_description}"
         blocks.append(f"[{ask.number}] Skill: {ask.spec.name}{sense}{described}\n   Excerpts:\n{excerpts}")
     return "\n\n".join(blocks)
 
