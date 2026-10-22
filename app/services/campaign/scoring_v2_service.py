@@ -34,6 +34,8 @@ from app.services.campaign.scoring_v2 import (
     OUTCOME_NOT_RUN, OUTCOME_PENDING, SCORING_V2_CONFIG_KEY, SCORING_VERSION, EvidenceInput, JDSkillInput,
     ProvisionalSkillInput, ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
 )
+from app.services.jd.jd_calibration_rules import jd_profile
+from app.services.jd.jd_profile_templates import jd_evidence_sections, jd_paraphrase_sections
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.core_skill_confirmation_service import (
     PROMPT_VERSION, STATUS_CONFIRMED, STATUS_NOT_FOUND, STATUS_UNCERTAIN, CoreSkillConfirmationService,
@@ -245,6 +247,8 @@ class ScoringV2Service:
         descriptions = dict(self.db.query(SkillOntology.id, SkillOntology.description)
                             .filter(SkillOntology.id.in_([r.canonical_skill_id for r in rows])).all()) if rows else {}
         specs = jd_core_skill_specs(job_description, rows, names, tools.resolver, skill_descriptions=descriptions)
+        # Phase 3 Step 7: the JD profile template decides which resume sections count as evidence.
+        evidence_sections = jd_evidence_sections(job_description)
         confirmation = {"ran": False, "llm_calls": 0}
         confirmations: dict[str, dict] = {}
         special_outcome = None
@@ -254,6 +258,7 @@ class ScoringV2Service:
                     resume_id=resume.id, jd_id=job_description.id, core_skills=specs,
                     evidence_rows=evidence_rows, text_hash=resume_text_hash or "", persist=persist,
                     budget=self._budget if persist else None, use_cache=use_confirmation_cache,
+                    strong_sections=evidence_sections,
                 )
                 confirmations = {r["canonical_skill_id"]: r for r in outcome.results}
                 confirmation = {"ran": not outcome.skipped_budget, "cached": outcome.cached,
@@ -274,6 +279,8 @@ class ScoringV2Service:
 
         paraphrase = {"ran": False, "llm_calls": 0}
         paraphrase_config = config.get("paraphrase") or {}
+        paraphrase_config = {**paraphrase_config,
+                             "sections": jd_paraphrase_sections(job_description, paraphrase_config.get("sections"))}
         if (specs and use_llm and self.provider_resolver is not None and special_outcome is None
                 and paraphrase_config.get("enabled")):
             try:
@@ -325,7 +332,10 @@ class ScoringV2Service:
             allowed_missing_core=allowed,
             score_threshold_rejects=snapshot["score_threshold_rejects_config"],
             extra={"scoring_config_version": version, "confirmation": confirmation,
-                   "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on},
+                   "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on,
+                   "profile_template": {"key": getattr(jd_profile(job_description), "key", None),
+                                        "evidence_sections": sorted(evidence_sections),
+                                        "paraphrase_sections": paraphrase_config.get("sections")}},
             provisional_skills=self.provisional_inputs(job_description, resume, persist=persist),
         ), config)
         if special_outcome is not None:

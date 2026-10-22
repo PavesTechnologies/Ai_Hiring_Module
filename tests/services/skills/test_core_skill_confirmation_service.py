@@ -305,3 +305,17 @@ def test_a_failed_cache_write_keeps_the_answer_and_its_call_count():
     assert outcome.llm_calls == 3
     assert _by_name(outcome)["Change Management"]["status"] == "CONFIRMED"
     assert "cache write failed: ValueError" in outcome.problem
+
+
+def test_a_projects_scan_is_auto_confirmed_only_when_the_jd_template_counts_projects():
+    # Phase 3 Step 7: a Fresher JD counts academic / personal projects as evidence.
+    evidence = [_row(PM, "Capstone: Program Management dashboard in Python", section="PROJECTS")]
+    asked = FakeProvider([{"items": [_yes(1, "Program Management dashboard")]}] * 3)
+    _confirm(asked, [CoreSkillSpec(PM, "Program Management")], evidence)
+    assert len(asked.calls) == 3                                           # standard sections: voted on
+
+    fresher = FakeProvider([])
+    outcome = _confirm(fresher, [CoreSkillSpec(PM, "Program Management")], evidence,
+                       strong_sections=frozenset({"SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"}))
+    assert fresher.calls == [] and (outcome.results[0]["method"], outcome.results[0]["section"]) == ("auto", "PROJECTS")
+

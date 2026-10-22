@@ -14,6 +14,10 @@ every place that validates experience/education applies them the same way.
   else 0%.
 - role domain: set in calibration; scopes the related education fields that
   count when education is mandatory (education_field_family_service).
+- profile template (Fresher / Experienced / Domain, jd_profile_templates):
+  chosen in calibration; a setting the JD leaves unset (internship credit,
+  tolerance) takes the template's default before the rules above.
+  Education is always set on the JD - the template only prefills the form.
 """
 from decimal import Decimal
 
@@ -43,7 +47,20 @@ def is_fresher_jd(job_description) -> bool:
     return minimum is not None and minimum <= FRESHER_MAX_MIN_YEARS
 
 
+def jd_profile(job_description):
+    """The JD's profile template row (jd_profile_templates), else None."""
+    key = getattr(job_description, "profile_template", None)
+    if not isinstance(key, str):
+        return None
+    profile = getattr(job_description, "profile", None)
+    return profile if getattr(profile, "key", None) == key else None
+
+
 def default_internship_credit_pct(job_description) -> int:
+    """The profile template's default, else 100 on a fresher JD, else 0."""
+    value = getattr(jd_profile(job_description), "internship_credit_pct", None)
+    if isinstance(value, int) and not isinstance(value, bool) and value in INTERNSHIP_CREDIT_OPTIONS:
+        return value
     return FRESHER_INTERNSHIP_CREDIT_PCT if is_fresher_jd(job_description) else DEFAULT_INTERNSHIP_CREDIT_PCT
 
 
@@ -69,9 +86,16 @@ def jd_role_domain(job_description) -> str | None:
     return value if isinstance(value, str) and value in ROLE_DOMAINS else None
 
 
-def jd_tolerance_years(job_description) -> float | None:
-    value = getattr(job_description, "experience_tolerance_years", None)
+def _years(value) -> float | None:
     return float(value) if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool) else None
+
+
+def jd_tolerance_years(job_description) -> float | None:
+    """The calibrated tolerance, else the profile template's, else None (the default)."""
+    value = _years(getattr(job_description, "experience_tolerance_years", None))
+    if value is not None:
+        return value
+    return _years(getattr(jd_profile(job_description), "experience_tolerance_years", None))
 
 
 def jd_education_requirement(job_description) -> str:

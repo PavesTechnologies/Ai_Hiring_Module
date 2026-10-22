@@ -109,7 +109,7 @@ def _request(change, python, aws, *, change_tier="CORE", sense="ORGANISATIONAL",
                 {"jd_skill_id": aws.id, "tier": aws_tier}],
         min_experience_years=kw.get("min_years", 10), experience_tolerance_years=kw.get("tolerance"),
         education_requirement=kw.get("education", "MANDATORY"), internship_credit_pct=kw.get("internships"),
-        role_domain=kw.get("domain"))
+        role_domain=kw.get("domain"), profile_template=kw.get("template"))
 
 
 @pytest.fixture(autouse=True)
@@ -416,3 +416,78 @@ def test_role_domain_is_suggested_saved_and_versioned():
 def test_role_domain_must_be_a_known_domain():
     with pytest.raises(ValueError):
         JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], role_domain="SPACE")
+
+
+# --- profile template (Phase 3 Step 7) ------------------------------------------------
+
+_TEMPLATES = {
+    key: SimpleNamespace(key=key, label=key.title(), description=None, internship_credit_pct=pct,
+                         experience_tolerance_years=tolerance, education_requirement=education,
+                         evidence_sections=sections, updated_by=None, updated_at=None)
+    for key, pct, tolerance, education, sections in [
+        ("FRESHER", 100, None, "MANDATORY", ["SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"]),
+        ("EXPERIENCED", 0, 2.5, "PREFERRED", ["SUMMARY", "EXPERIENCE", "SKILLS"]),
+        ("DOMAIN", 0, None, "PREFERRED", ["SUMMARY", "EXPERIENCE", "SKILLS"]),
+    ]
+}
+
+
+class FakeTemplates:
+    def __init__(self, db):
+        pass
+
+    def list_all(self):
+        return list(_TEMPLATES.values())
+
+    def get(self, key):
+        return _TEMPLATES.get(key)
+
+
+@pytest.fixture
+def templates():
+    with patch(f"{SERVICE}.JDProfileTemplateRepository", FakeTemplates):
+        yield
+
+
+def test_template_is_suggested_and_listed_with_its_defaults(templates):
+    service, repo, audit, jd, *_ = _setup()
+    view = service.get_view(jd.id, can_calibrate=True)
+    assert (view.profile_template, view.suggested_profile_template, view.suggested_profile_template_basis) == (
+        None, "EXPERIENCED", "default")                             # AI transformation lead, 10 years
+    assert [t.key for t in view.profile_templates] == ["FRESHER", "EXPERIENCED", "DOMAIN"]
+    assert view.profile_templates[0].evidence_sections[-1] == "PROJECTS"
+
+
+def test_a_fresher_jd_is_suggested_fresher(templates):
+    service, repo, audit, jd, *_ = _setup(title="Junior Python Developer", calibrated_min_experience_years=None,
+                                          extracted_json={"experience": {"min_experience_years": 1}})
+    assert service.get_view(jd.id, can_calibrate=True).suggested_profile_template == "FRESHER"
+
+
+def test_template_is_saved_versioned_and_its_tolerance_is_the_default_shown(templates):
+    service, repo, audit, jd, change, python, aws = _setup()
+    service.save(jd.id, _request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+
+    result = service.save(jd.id, _request(change, python, aws, template="EXPERIENCED"), actor_id="hr-1",
+                          actor_role="HR_ADMIN")
+
+    assert jd.profile_template == "EXPERIENCED" and jd.profile is _TEMPLATES["EXPERIENCED"]
+    assert repo.versions[-1].changes == {"profile_template": {"before": None, "after": "EXPERIENCED"}}
+    assert result.calibration.profile_template == "EXPERIENCED"
+    assert result.calibration.default_experience_tolerance_years == 2.5   # the template's, not max(1, 10%)
+    assert result.calibration.default_internship_credit_pct == 0
+    # The JD's own settings stay as sent - the template doesn't overwrite them.
+    assert jd.education_requirement.value == "MANDATORY" and jd.experience_tolerance_years is None
+
+
+def test_unknown_template_is_refused(templates):
+    service, repo, audit, jd, change, python, aws = _setup()
+    with patch.object(FakeTemplates, "get", return_value=None), pytest.raises(UnprocessableError, match="profile template"):
+        service.save(jd.id, _request(change, python, aws, template="DOMAIN"), actor_id="hr-1", actor_role="HR_ADMIN")
+    assert repo.rolled_back == 1
+
+
+def test_template_must_be_one_of_the_three():
+    with pytest.raises(ValueError):
+        JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], profile_template="SENIOR")
+

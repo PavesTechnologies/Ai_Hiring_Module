@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.jd_profile_template import JDProfileTemplateItem, ProfileTemplateKey
+
 SkillTier = Literal["CORE", "SUPPORTING", "PREFERRED"]
 EducationRequirement = Literal["MANDATORY", "PREFERRED"]
 InternshipCreditPct = Literal[100, 50, 0]
@@ -144,6 +146,14 @@ class JDCalibrationView(BaseModel):
     role_domain: RoleDomainKey | None = None
     suggested_role_domain: RoleDomainKey | None = None
     suggested_role_domain_basis: str | None = None
+    # Profile template (Phase 3 Step 7) as calibrated (None = none), the one
+    # suggested from the JD (basis: experience / title / role domain /
+    # certifications / default), and the templates with their defaults - the
+    # form prefills the settings from the one chosen.
+    profile_template: ProfileTemplateKey | None = None
+    suggested_profile_template: ProfileTemplateKey | None = None
+    suggested_profile_template_basis: str | None = None
+    profile_templates: list[JDProfileTemplateItem] = []
     live_campaigns: list[CalibrationCampaign]
     can_calibrate: bool
     warnings: list[str] = []
@@ -168,6 +178,8 @@ class JDCalibrationSaveRequest(BaseModel):
     internship_credit_pct: InternshipCreditPct | None = None
     # None = not set (no related education fields apply).
     role_domain: RoleDomainKey | None = None
+    # None = no template (unset settings use the rules above; standard evidence sections).
+    profile_template: ProfileTemplateKey | None = None
 
 
 class JDCalibrationSaveResponse(BaseModel):

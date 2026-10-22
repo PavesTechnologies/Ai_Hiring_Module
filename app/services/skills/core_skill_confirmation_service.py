@@ -220,17 +220,18 @@ def _sense_matches(spec: CoreSkillSpec, resume_sense: str | None) -> bool:
     return bool(resume_sense) and resume_sense == spec.sense and spec.sense_basis in _DEFINITE_JD_SENSE
 
 
-def auto_confirm_evidence(spec: CoreSkillSpec, rows: list) -> dict | None:
+def auto_confirm_evidence(spec: CoreSkillSpec, rows: list, strong_sections=STRONG_SECTIONS) -> dict | None:
     """
     The evidence item that auto-confirms this core skill without an LLM
     call: an exact catalogue scan (SCAN - never DERIVED/INFERRED/LLM-only),
-    sense definitely matching, in a summary / experience / skills section.
+    sense definitely matching, in a strong section - summary / experience /
+    skills, or the JD profile template's evidence sections.
     """
     for row in rows:
         if not _sense_matches(spec, _attr(row, "sense")):
             continue
         for item in _attr(row, "evidence") or []:
-            if item.get("source") == "SCAN" and item.get("section") in STRONG_SECTIONS:
+            if item.get("source") == "SCAN" and item.get("section") in strong_sections:
                 return item
     return None
 
@@ -341,11 +342,14 @@ class CoreSkillConfirmationService:
         use_cache: bool = True,
         persist: bool = True,
         budget=None,
+        strong_sections=STRONG_SECTIONS,
     ) -> ConfirmationOutcome:
         """
         budget: optional callable(n_calls) -> bool, asked before any LLM call
         (scoring v2's daily cap). False -> nothing is asked and the outcome
         is skipped_budget.
+        strong_sections: where an exact scan match auto-confirms (the JD
+        profile template's evidence sections).
         """
         by_skill: dict[UUID, list] = {}
         for row in evidence_rows:
@@ -370,7 +374,7 @@ class CoreSkillConfirmationService:
                 results[spec.canonical_skill_id] = {
                     **base, "status": STATUS_SENSE_MISMATCH, "reason": REASON_SENSE_MISMATCH}
                 continue
-            auto = auto_confirm_evidence(spec, compatible)
+            auto = auto_confirm_evidence(spec, compatible, strong_sections)
             if auto is not None:
                 results[spec.canonical_skill_id] = {
                     **base, "status": STATUS_CONFIRMED, "reason": REASON_AUTO, "method": "auto",

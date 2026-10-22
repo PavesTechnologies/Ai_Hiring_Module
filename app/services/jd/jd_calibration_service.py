@@ -36,9 +36,12 @@ from app.schemas.jd.calibration import (
 from app.services.audit_service import AuditService
 from app.services.campaign.near_miss import experience_near_miss_tolerance
 from app.services.campaign.score_out_of_date import LIVE_CAMPAIGN_STATUSES, mark_campaigns_out_of_date
+from app.repositories.jd_profile_template_repository import JDProfileTemplateRepository
+from app.schemas.jd_profile_template import JDProfileTemplateItem
 from app.services.jd.jd_calibration_rules import (
-    calibrated_min_experience, default_internship_credit_pct, is_fresher_jd, jd_role_domain,
+    calibrated_min_experience, default_internship_credit_pct, is_fresher_jd, jd_profile, jd_role_domain,
 )
+from app.services.jd.jd_profile_templates import suggest_profile_template
 from app.services.jd.jd_role_domain import suggest_role_domain
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.skill_sense_resolver import SkillSenseResolver
@@ -108,6 +111,12 @@ class JDCalibrationService:
         names = self.repo.user_names([jd.calibrated_by]) if jd.calibrated_by else {}
         core_count = sum(1 for s in skills if s.tier == "CORE")
         domain_suggestion = suggest_role_domain(jd.title, [s.name for s in skills if s.tier == "CORE"])
+        template_suggestion = suggest_profile_template(
+            title=jd.title, min_years=min_years, role_domain=jd_role_domain(jd) or domain_suggestion.domain,
+            certification_count=len((jd.extracted_json or {}).get("certifications") or []),
+        )
+        profile = jd_profile(jd)
+        template_tolerance = getattr(profile, "experience_tolerance_years", None)
 
         view_warnings = list(warnings or [])
         view_warnings += self._skill_warnings(core_count, [s for s in skills if s.ambiguous and not s.sense_key])
@@ -128,7 +137,10 @@ class JDCalibrationService:
             min_experience_years=min_years,
             extracted_min_experience_years=extracted_min_experience(jd),
             experience_tolerance_years=_float(jd.experience_tolerance_years),
-            default_experience_tolerance_years=experience_near_miss_tolerance(min_years) if min_years is not None else None,
+            # What a blank tolerance means: the template's, else max(1 year, 10% of the minimum).
+            default_experience_tolerance_years=(
+                float(template_tolerance) if template_tolerance is not None
+                else experience_near_miss_tolerance(min_years) if min_years is not None else None),
             education_requirement=jd.education_requirement.value,
             education_degree=(jd.education_criteria or {}).get("degree"),
             education_field=(jd.education_criteria or {}).get("field"),
@@ -138,6 +150,11 @@ class JDCalibrationService:
             role_domain=jd_role_domain(jd),
             suggested_role_domain=domain_suggestion.domain,
             suggested_role_domain_basis=domain_suggestion.basis,
+            profile_template=jd.profile_template if profile is not None else None,
+            suggested_profile_template=template_suggestion.key,
+            suggested_profile_template_basis=template_suggestion.basis,
+            profile_templates=[JDProfileTemplateItem.model_validate(t)
+                               for t in JDProfileTemplateRepository(self.repo.db).list_all()],
             live_campaigns=[CalibrationCampaign(campaign_id=c.id, name=c.name, status=c.status.value) for c in live],
             can_calibrate=can_calibrate,
             blocking_unknown_skills=blocking,
@@ -166,6 +183,10 @@ class JDCalibrationService:
             new_skills = self._validated_skills(request, rows, resolver)
             min_years = request.min_experience_years
             education = request.education_requirement
+            template = (JDProfileTemplateRepository(self.repo.db).get(request.profile_template)
+                        if request.profile_template else None)
+            if request.profile_template and template is None:
+                raise UnprocessableError(f"Unknown profile template: {request.profile_template}.")
 
             before = self._snapshot(jd, {sid: (row, name) for sid, (row, name) in rows.items()})
             after = {
@@ -175,6 +196,7 @@ class JDCalibrationService:
                 "education_requirement": education,
                 "internship_credit_pct": request.internship_credit_pct,
                 "role_domain": request.role_domain,
+                "profile_template": request.profile_template,
             }
             changes = self._changes(before, after)
             already_calibrated = jd.calibration_status == JDCalibrationStatus.CALIBRATED
@@ -202,6 +224,9 @@ class JDCalibrationService:
             jd.education_requirement = JDEducationRequirement(education)
             jd.internship_credit_pct = request.internship_credit_pct
             jd.role_domain = request.role_domain
+            # Both sides, so scoring in this same session reads the new template.
+            jd.profile = template
+            jd.profile_template = request.profile_template
             jd.calibration_status = JDCalibrationStatus.CALIBRATED
             jd.calibrated_by = actor_id
             jd.calibrated_at = now
@@ -351,6 +376,7 @@ class JDCalibrationService:
             "education_requirement": jd.education_requirement.value,
             "internship_credit_pct": jd.internship_credit_pct,
             "role_domain": jd_role_domain(jd),
+            "profile_template": getattr(jd, "profile_template", None),
         }
 
     @staticmethod
@@ -373,7 +399,7 @@ class JDCalibrationService:
             changes["skills"] = skill_changes
         # .get: versions saved before a setting existed don't have it (= unset).
         for field in ("min_experience_years", "experience_tolerance_years", "education_requirement",
-                      "internship_credit_pct", "role_domain"):
+                      "internship_credit_pct", "role_domain", "profile_template"):
             if before.get(field) != after.get(field):
                 changes[field] = {"before": before.get(field), "after": after.get(field)}
         return changes

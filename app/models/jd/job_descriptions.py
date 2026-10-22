@@ -9,7 +9,7 @@ from sqlalchemy import (
     Integer, Numeric, SmallInteger, String, Text, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
@@ -125,6 +125,12 @@ class JobDescription(Base):
     # Role domain (RoleDomain: SOFTWARE / IT_OPERATIONS / DATA / BUSINESS / OTHER), set in calibration.
     # Scopes the related education fields; NULL = not set (no field families apply).
     role_domain: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # Profile template (Phase 3 Step 7: FRESHER / EXPERIENCED / DOMAIN), chosen in calibration.
+    # Supplies the defaults for settings left unset and the resume sections that
+    # count as evidence; NULL = none (scoring as before templates).
+    profile_template: Mapped[Optional[str]] = mapped_column(
+        String(20), ForeignKey("jd_profile_templates.key"), nullable=True)
+    profile: Mapped[Optional["JDProfileTemplate"]] = relationship("JDProfileTemplate", lazy="select")  # noqa: F821
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

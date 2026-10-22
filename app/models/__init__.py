@@ -3,6 +3,7 @@ from .identity import User, Organization
 from .embeddings import EmbeddingModelVersion, ResumeEmbedding
 
 from .jd.job_descriptions import JobDescription, JDEmbedding, JDCalibrationVersion
+from .jd.profile_templates import JDProfileTemplate
 
 from .campaigns import HiringCampaign
 

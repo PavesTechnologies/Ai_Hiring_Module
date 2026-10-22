@@ -16,6 +16,7 @@ from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import jd_calibration_routes
 from app.api.routes import education_field_routes
+from app.api.routes import jd_profile_template_routes
 from app.api.routes import certification_routes
 from app.api.routes import campaign_routes
 from app.api.routes.campaign_candidate import router as campaign_candidate_router
@@ -186,6 +187,7 @@ def health():
 app.include_router(router=router, prefix=API_PREFIX, tags=["Job Descriptions"])
 app.include_router(router=jd_calibration_routes.router, prefix=API_PREFIX, tags=["JD Calibration"])
 app.include_router(router=education_field_routes.router, prefix=API_PREFIX, tags=["Education Fields"])
+app.include_router(router=jd_profile_template_routes.router, prefix=API_PREFIX, tags=["JD Profile Templates"])
 app.include_router(router=certification_routes.router, prefix=API_PREFIX, tags=["Certifications"])
 app.include_router(router=campaign_routes.router, prefix=API_PREFIX, tags=["Campaigns"])
 app.include_router(router=campaign_candidate_router, prefix=API_PREFIX, tags=["Campaign Candidates"])
