@@ -491,3 +491,40 @@ def test_template_must_be_one_of_the_three():
     with pytest.raises(ValueError):
         JDCalibrationSaveRequest(skills=[{"jd_skill_id": uuid4(), "tier": "CORE"}], profile_template="SENIOR")
 
+
+# --- required core skills (hard negatives H8) ---------------------------------------
+
+def _required_request(change, python, aws, *, change_required=False, python_tier="SUPPORTING", python_required=False):
+    return JDCalibrationSaveRequest(
+        skills=[{"jd_skill_id": change.id, "tier": "CORE", "sense_key": "ORGANISATIONAL", "required": change_required},
+                {"jd_skill_id": python.id, "tier": python_tier, "required": python_required},
+                {"jd_skill_id": aws.id, "tier": "PREFERRED"}],
+        min_experience_years=10)
+
+
+def test_a_core_skill_is_marked_required_and_versioned():
+    service, repo, audit, jd, change, python, aws = _setup()
+    service.save(jd.id, _required_request(change, python, aws), actor_id="hr-1", actor_role="HR_ADMIN")
+    assert change.required is False
+
+    result = service.save(jd.id, _required_request(change, python, aws, change_required=True), actor_id="hr-1",
+                          actor_role="HR_ADMIN")
+
+    assert change.required is True and result.changed is True
+    assert repo.versions[-1].changes == {"skills": [
+        {"skill": "Change Management", "field": "required", "before": False, "after": True}]}
+    assert next(s for s in result.calibration.skills if s.name == "Change Management").required is True
+
+
+def test_only_a_core_skill_can_be_required():
+    service, repo, audit, jd, change, python, aws = _setup()
+    with pytest.raises(UnprocessableError, match="Only a core skill can be required: Python"):
+        service.save(jd.id, _required_request(change, python, aws, python_required=True), actor_id="hr-1",
+                     actor_role="HR_ADMIN")
+
+
+def test_versions_saved_before_the_flag_show_no_change_for_it():
+    before = {"skills": {"1": {"name": "Python", "tier": "CORE", "sense_key": None}}}
+    after = {"skills": {"1": {"name": "Python", "tier": "CORE", "sense_key": None, "required": False}}}
+    assert JDCalibrationService._changes(before, after) == {}
+

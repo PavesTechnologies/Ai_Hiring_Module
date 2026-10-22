@@ -20,6 +20,12 @@ the defaults stored with the evidence.
 
 Pure: build_evidence() takes plain inputs so it can run in the pipeline,
 in a backfill over stored resumes, and in tests alike.
+
+Evidence rules (evidence_rules.py, config SCORING_V2_CONFIG["evidence"]): a
+line holding a qualifier ("currently learning", "familiar with", ...) gives
+no evidence from any source, and a certification its own text marks as in
+progress is never mapped. Experience excerpts carry the job title and
+company of their role, for the voters.
 """
 import hashlib
 import logging
@@ -30,10 +36,11 @@ from app.models.scoring_v2 import ResumeSkillEvidence
 from app.services.skills.resume_skill_scanner import (
     DETECTION_VERSION, ORIGIN_DERIVED, ScanIndex, pattern_hits, scan_text, squash_words, term_key, title_pattern_hits,
 )
-from app.services.skills.certification_mapping_service import match_certifications
+from app.services.skills.certification_mapping_service import in_progress_in_text, match_certifications
+from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules, role_for_line, roles_of
 from app.services.skills.resume_sections import (
-    SECTION_CERTIFICATIONS, SECTION_EXPERIENCE, STRONG_SECTIONS, heading_section, heading_text_of_line,
-    section_of_line,
+    SECTION_CERTIFICATIONS, SECTION_EXPERIENCE, SECTION_PROJECTS, STRONG_SECTIONS, heading_section,
+    heading_text_of_line, section_of_line,
 )
 from app.services.skills.skill_sense_resolver import (
     SENSE_BASIS_CERTIFICATION, SENSE_BASIS_RESUME, SenseChoice, SkillSenseResolver,
@@ -65,9 +72,18 @@ _SNIPPET_CHARS = 360
 _MAX_SNIPPETS = 3
 
 
-def _strong_scan(item: "_Occurrence", lines: list[str]) -> bool:
-    return (item.source == SOURCE_SCAN and item.line_no is not None
-            and section_of_line(lines, item.line_no) in STRONG_SECTIONS)
+def _snippet_rank(item: "_Occurrence", lines: list[str], rules: EvidenceRules) -> int:
+    """
+    Which snippets survive the cap first: an exact scan on an experience /
+    projects line where the candidate does the work (what can auto-confirm),
+    then other exact scans in a strong section, then the rest.
+    """
+    if item.source != SOURCE_SCAN or item.line_no is None:
+        return 2
+    section = section_of_line(lines, item.line_no)
+    if section in (SECTION_EXPERIENCE, SECTION_PROJECTS) and rules.does_the_work(item.snippet):
+        return 0
+    return 1 if section in STRONG_SECTIONS else 2
 
 
 def text_hash(text: str | None) -> str:
@@ -200,19 +216,27 @@ def build_evidence(
     job_titles: list[str] | None = None,
     certifications: list[str] | None = None,
     certification_rules: list | None = None,
+    rules: EvidenceRules | None = None,
+    roles: list[dict] | None = None,
 ) -> list[EvidenceRecord]:
     """
     blocked: (term_key, canonical_skill_id) pairs never accepted from any
     source - known wrong matches such as "IT governance" -> AI Governance
     (platform_config SCORING_V2_MATCH_BLOCKLIST).
+    rules: evidence rules (qualifier lines, work verbs); roles: the parsed
+    work history, to label experience excerpts with their job title and
+    company.
     """
     recognition = {**DEFAULT_RECOGNITION, **(recognition or {})}
+    rules = rules or DEFAULT_RULES
     lines = (text or "").splitlines()
     occurrences: dict[UUID, list[_Occurrence]] = {}
+    # Lines holding a qualifier ("currently learning: Python, SQL") are no evidence for anything on them.
+    qualified = {i for i, line in enumerate(lines) if rules.qualified(line)}
 
     line_sections = [section_of_line(lines, i) for i in range(len(lines))]
     for hit in scan_text(text, index) + pattern_hits(lines, line_sections, patterns or []):
-        if (term_key(hit.term), hit.skill_id) in blocked:
+        if (term_key(hit.term), hit.skill_id) in blocked or hit.line_no in qualified:
             continue
         source = SOURCE_DERIVED if hit.origin == ORIGIN_DERIVED else SOURCE_SCAN
         sense = resolver.resolve_occurrence(hit.skill_id, lines, hit.line_no, hit.term)
@@ -233,6 +257,8 @@ def build_evidence(
         if (term_key(hit.title), hit.skill_id) in blocked:
             continue
         line_no = _find_line(lines, hit.title)
+        if line_no in qualified:
+            continue
         snippet = excerpt_at(lines, line_no) if line_no is not None else hit.title
         sense = (resolver.resolve_occurrence(hit.skill_id, lines, line_no, hit.title) if line_no is not None
                  else resolver.resolve_snippet(hit.skill_id, hit.title, hit.title))
@@ -246,6 +272,11 @@ def build_evidence(
     # mapped skill, in the mapped sense; always sent to the confirmation vote.
     for match in match_certifications(certifications, certification_rules or []):
         line_no = _find_line(lines, match.certification)
+        if line_no in qualified:
+            continue
+        # The parse can drop "(appearing, Dec 2026)": the resume's own line decides too.
+        if line_no is not None and in_progress_in_text(excerpt_at(lines, line_no), match.certification):
+            continue
         snippet = excerpt_at(lines, line_no) if line_no is not None else match.certification
         for skill_id, sense_key in match.rule.skills:
             if not resolver.has_senses(skill_id):
@@ -268,6 +299,8 @@ def build_evidence(
             continue
         source, snippet, origin = classify_llm_match(match.raw_text, match.match_tier)
         line_no = _find_line(lines, snippet)
+        if line_no in qualified or (line_no is None and rules.qualified(snippet)):
+            continue
         if line_no is not None:
             sense = resolver.resolve_occurrence(match.canonical_skill_id, lines, line_no, own)
             snippet = excerpt_at(lines, line_no)
@@ -291,16 +324,22 @@ def build_evidence(
             snippets, seen = [], set()
             # An exact scan hit in a strong section first: it is what the
             # core confirmation auto-confirms on, so it must survive the cap.
-            for item in sorted(group, key=lambda o: (not _strong_scan(o, lines), -o.recognition, _SOURCE_ORDER[o.source])):
+            for item in sorted(group, key=lambda o: (_snippet_rank(o, lines, rules), -o.recognition,
+                                                     _SOURCE_ORDER[o.source])):
                 key = term_key(item.snippet)
                 if key in seen:
                     continue
                 seen.add(key)
-                snippets.append({
+                section = section_of_line(lines, item.line_no) if item.line_no is not None else item.section
+                snippet = {
                     "text": item.snippet[:_SNIPPET_CHARS], "source": item.source, "origin": item.origin,
-                    "section": section_of_line(lines, item.line_no) if item.line_no is not None else item.section,
+                    "section": section,
                     "heading": heading_text_of_line(lines, item.line_no) if item.line_no is not None else None,
-                })
+                }
+                role = role_for_line(lines, item.line_no, roles) if section == SECTION_EXPERIENCE else None
+                if role:
+                    snippet["role"] = role
+                snippets.append(snippet)
             records.append(EvidenceRecord(
                 canonical_skill_id=skill_id,
                 sense=sense,
@@ -344,6 +383,7 @@ class DetectionTools:
     blocked: frozenset = frozenset()
     patterns: tuple = ()
     certifications: tuple = ()
+    rules: EvidenceRules = DEFAULT_RULES
 
 
 def resolve_blocklist(entries: list[dict], catalog: list) -> frozenset:
@@ -367,23 +407,27 @@ class SkillEvidenceService:
     def load_tools(self) -> "DetectionTools":
         from app.services.skills.skill_normalization_service import load_cached_active_skills
         catalog = load_cached_active_skills(self.skill_repository, self.cache_service)
+        index = ScanIndex.build(catalog, self.detection_repository.load_scan_rules())
         return DetectionTools(
-            index=ScanIndex.build(catalog, self.detection_repository.load_scan_rules()),
+            index=index,
             resolver=SkillSenseResolver(self.detection_repository.load_senses()),
             blocked=resolve_blocklist(self.detection_repository.load_match_blocklist(), catalog),
             patterns=tuple(self.detection_repository.load_pattern_rules()),
             certifications=tuple(self.detection_repository.load_certification_rules()),
+            rules=EvidenceRules.from_config(self.detection_repository.load_evidence_rules_config(),
+                                            catalog_terms=index.entries.keys()),
         )
 
     def detect(
         self, resume_id: UUID, *, text: str, llm_matches: list[LLMSkillMatch], parse: ParseInfo,
         persist: bool = True, job_titles: list[str] | None = None, certifications: list[str] | None = None,
+        roles: list[dict] | None = None,
     ) -> list[EvidenceRecord]:
         tools = self.load_tools()
         records = build_evidence(text=text, index=tools.index, resolver=tools.resolver,
                                  llm_matches=llm_matches, blocked=tools.blocked, patterns=list(tools.patterns),
                                  job_titles=job_titles, certifications=certifications,
-                                 certification_rules=list(tools.certifications))
+                                 certification_rules=list(tools.certifications), rules=tools.rules, roles=roles)
         if persist:
             self.detection_repository.replace_evidence(resume_id, to_rows(resume_id, records, text=text, parse=parse))
             # Never costs the evidence above: a failed provisional scan is
@@ -472,6 +516,7 @@ def detect_stored_resume(service: SkillEvidenceService, resume, *, persist: bool
         resume.id, text=text, llm_matches=stored_llm_matches(service.skill_repository, resume.id),
         job_titles=job_titles_of(resume.parsed_json),
         certifications=(resume.parsed_json or {}).get("certifications"),
+        roles=roles_of(resume.parsed_json or {}),
         # The stored parse predates per-parse model tracking - said so, not left blank.
         parse=ParseInfo(provider="STORED_PARSE", model="unknown (parsed before v2 detection)"), persist=persist,
     )

@@ -99,6 +99,7 @@ class JDCalibrationService:
                 sense_key=row.sense_key if ambiguous else None,
                 suggested_sense_key=suggestion.sense if ambiguous else None,
                 suggested_sense_basis=suggestion.basis if ambiguous else None,
+                required=_tier(row.mandatory, row.importance) == "CORE" and getattr(row, "required", False) is True,
             ))
 
         unknown = self._unknown_skills(jd)
@@ -214,6 +215,7 @@ class JDCalibrationService:
                 row.mandatory = value["tier"] != "PREFERRED"
                 row.importance = JDSkillImportance(value["tier"]) if value["tier"] in ("CORE", "SUPPORTING") else None
                 row.sense_key = value["sense_key"]
+                row.required = value["required"]
                 row.verification_status = JDSkillVerificationStatus.HR_VERIFIED   # confirmed by HR in calibration
                 row.verified_by = actor_id
                 row.verified_at = now
@@ -337,6 +339,9 @@ class JDCalibrationService:
             raise UnprocessableError(f"Every JD skill must be confirmed; missing: {names}.")
         if not any(s.tier == "CORE" for s in request.skills):
             raise UnprocessableError("A calibrated JD needs at least one core skill.")
+        not_core = [rows[s.jd_skill_id][1] for s in request.skills if s.required and s.tier != "CORE"]
+        if not_core:
+            raise UnprocessableError("Only a core skill can be required: " + ", ".join(sorted(not_core)) + ".")
         result = {}
         unset = []
         for item in request.skills:
@@ -347,7 +352,7 @@ class JDCalibrationService:
                 if item.sense_key not in valid:
                     unset.append(name)
                 sense_key = item.sense_key
-            result[item.jd_skill_id] = {"tier": item.tier, "sense_key": sense_key}
+            result[item.jd_skill_id] = {"tier": item.tier, "sense_key": sense_key, "required": item.required}
         if unset:
             raise UnprocessableError(
                 "Choose the meaning of each ambiguous skill before calibrating: " + ", ".join(sorted(unset)) + ".")
@@ -369,7 +374,8 @@ class JDCalibrationService:
     def _snapshot(jd, rows: dict) -> dict:
         return {
             "skills": {str(sid): {"name": name, "canonical_skill_id": str(row.canonical_skill_id),
-                                  "tier": _tier(row.mandatory, row.importance), "sense_key": row.sense_key}
+                                  "tier": _tier(row.mandatory, row.importance), "sense_key": row.sense_key,
+                                  "required": getattr(row, "required", False) is True}
                        for sid, (row, name) in rows.items()},
             "min_experience_years": effective_min_experience(jd),
             "experience_tolerance_years": _float(jd.experience_tolerance_years),
@@ -392,6 +398,10 @@ class JDCalibrationService:
                 if old.get(field) != new.get(field):
                     skill_changes.append({"skill": new["name"], "field": field,
                                           "before": old.get(field), "after": new.get(field)})
+            # Versions saved before the flag existed have no "required" (= not required).
+            if bool(old.get("required")) != bool(new.get("required")):
+                skill_changes.append({"skill": new["name"], "field": "required",
+                                      "before": bool(old.get("required")), "after": bool(new.get("required"))})
         for sid, old in before["skills"].items():
             if sid not in after["skills"]:
                 skill_changes.append({"skill": old["name"], "field": "removed", "before": old.get("tier"), "after": None})

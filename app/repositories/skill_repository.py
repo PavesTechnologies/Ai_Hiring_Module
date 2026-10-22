@@ -794,6 +794,7 @@ class SkillRepository:
                 JDSkill.mandatory.label("mandatory"),
                 JDSkill.importance.label("importance"),
                 JDSkill.alias_skill_ids.label("alias_skill_ids"),
+                JDSkill.required.label("required"),
                 CandidateSkill.scoring_weight.label("candidate_scoring_weight"),
                 CandidateSkill.match_tier.label("match_tier"),
                 CandidateSkill.confidence.label("confidence"),

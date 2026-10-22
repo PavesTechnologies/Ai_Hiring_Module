@@ -61,6 +61,21 @@ class SkillDetectionRepository:
         return [rule_from(c.name, list(c.name_variants or []), [(s.canonical_skill_id, s.sense_key) for s in c.skills])
                 for c in certifications if c.skills]
 
+    def load_evidence_rules_config(self) -> dict | None:
+        """SCORING_V2_CONFIG["evidence"] (qualifiers, work verbs) - None = the defaults."""
+        import json
+        from app.models.config import PlatformConfig
+        from app.services.campaign.scoring_v2 import SCORING_V2_CONFIG_KEY
+        row = self.db.execute(
+            select(PlatformConfig).where(PlatformConfig.key == SCORING_V2_CONFIG_KEY)
+        ).scalar_one_or_none()
+        try:
+            value = json.loads(row.value) if row is not None and row.value else {}
+        except ValueError:
+            return None
+        evidence = value.get("evidence") if isinstance(value, dict) else None
+        return evidence if isinstance(evidence, dict) else None
+
     def load_match_blocklist(self) -> list[dict]:
         """platform_config SCORING_V2_MATCH_BLOCKLIST - a JSON list of {"term", "skill", "note"}."""
         from app.models.config import PlatformConfig

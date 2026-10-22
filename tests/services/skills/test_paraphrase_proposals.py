@@ -13,6 +13,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.skills.evidence_rules import DEFAULT_RULES
+
 from app.services.skills.paraphrase_proposal_service import (
     ParaphraseProposalService, ParaphraseTarget, candidate_lines, proposals_hash, skill_text,
 )
@@ -183,7 +185,7 @@ def test_the_round_asks_again_with_the_proposals_under_its_own_cache_key():
         skipped_budget=False, cached=False, llm_calls=3, problem=None, llm_unavailable=False,
         results=[{"canonical_skill_id": str(INC), "status": "CONFIRMED"},
                  {"canonical_skill_id": str(CAT), "status": "REJECTED"}])
-    tools = SimpleNamespace(resolver=RESOLVER, blocked=frozenset())
+    tools = SimpleNamespace(resolver=RESOLVER, blocked=frozenset(), rules=DEFAULT_RULES)
     targets = [ParaphraseTarget(INC, "Incident Management", description="incidents tickets outage"),
                ParaphraseTarget(CAT, "Service Catalog", description="catalogue request portal fulfilment")]
     with patch.object(svc, "redacted_resume_text", return_value=D2), \
@@ -221,7 +223,7 @@ def test_no_proposal_means_no_llm_call():
         info, extra = service._paraphrase_round(
             resume=SimpleNamespace(id=uuid4()), job_description=SimpleNamespace(id=uuid4()),
             specs=[_spec(INC, "Incident Management")], confirmations={}, evidence_rows=[],
-            tools=SimpleNamespace(resolver=RESOLVER, blocked=frozenset()), config=CONFIG, text_hash="h",
+            tools=SimpleNamespace(resolver=RESOLVER, blocked=frozenset(), rules=DEFAULT_RULES), config=CONFIG, text_hash="h",
             persist=True, use_cache=True)
     confirm_cls.return_value.confirm.assert_not_called()
     assert info["llm_calls"] == 0 and extra == []

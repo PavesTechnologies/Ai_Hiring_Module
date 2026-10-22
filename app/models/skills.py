@@ -160,6 +160,9 @@ class JDSkill(Base):
     # by JD calibration. NULL = not confirmed: scoring resolves it from the
     # JD text/title, or assumes the default sense.
     sense_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # A core skill that may never be missing (JD calibration, core skills
+    # only): the missing-core allowance covers only the other core skills.
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     # Who confirmed this skill in JD calibration, and when (status HR_VERIFIED).
     verified_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

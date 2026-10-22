@@ -34,19 +34,20 @@ from app.services.campaign.scoring_v2 import (
     OUTCOME_NOT_RUN, OUTCOME_PENDING, SCORING_V2_CONFIG_KEY, SCORING_VERSION, EvidenceInput, JDSkillInput,
     ProvisionalSkillInput, ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
 )
-from app.services.jd.jd_calibration_rules import jd_profile
-from app.services.jd.jd_profile_templates import jd_evidence_sections, jd_paraphrase_sections
+from app.services.jd.jd_calibration_rules import jd_profile, jd_role_domain
+from app.services.jd.jd_profile_templates import jd_auto_confirm_sections, jd_evidence_sections, jd_paraphrase_sections
+from app.services.jd.jd_role_domain import suggest_role_domain
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.core_skill_confirmation_service import (
-    PROMPT_VERSION, STATUS_CONFIRMED, STATUS_NOT_FOUND, STATUS_UNCERTAIN, CoreSkillConfirmationService,
-    jd_core_skill_specs,
+    PROMPT_VERSION, STATUS_CONFIRMED, STATUS_NOT_FOUND, STATUS_REJECTED, STATUS_UNCERTAIN,
+    CoreSkillConfirmationService, JobContext, jd_core_skill_specs,
 )
 from app.services.skills.paraphrase_proposal_service import (
     ParaphraseProposalService, ParaphraseTarget, proposals_hash,
 )
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.skill_evidence_service import (
-    SkillEvidenceService, detect_stored_resume, redacted_resume_text,
+    CERTIFICATION_ORIGIN, SkillEvidenceService, detect_stored_resume, redacted_resume_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,7 +138,7 @@ class ScoringV2Service:
         """
         skills_by_id = {s.id: s for s in self.db.query(SkillOntology).filter(
             SkillOntology.id.in_([s.canonical_skill_id for s in specs])).all()}
-        targets = _paraphrase_targets_for(specs, confirmations, skills_by_id)
+        targets = _paraphrase_targets_for(specs, confirmations, skills_by_id, evidence_rows)
         info = {"ran": False, "llm_calls": 0, "targets": [t.name for t in targets], "proposals": []}
         if not targets:
             return info, []
@@ -146,7 +147,8 @@ class ScoringV2Service:
         proposer = ParaphraseProposalService(EmbeddingService(self.db).generate_embeddings, tools.resolver,
                                              tools.blocked)
         proposals, scores = proposer.propose(text, targets, evidence_rows, config,
-                                             core_skill_ids=[s.canonical_skill_id for s in specs])
+                                             core_skill_ids=[s.canonical_skill_id for s in specs],
+                                             exclude_line=tools.rules.qualified)
         info["proposals"] = [{"canonical_skill_id": str(p.canonical_skill_id), "line": p.line,
                               "similarity": p.similarity} for p in proposals]
         info["top_similarities"] = {name: scores.get(str(t.canonical_skill_id), [])[:5]
@@ -166,6 +168,7 @@ class ScoringV2Service:
             resume_id=resume.id, jd_id=job_description.id, core_skills=asked, evidence_rows=rows,
             text_hash=paraphrase_text_hash(text_hash, proposals), persist=persist,
             budget=self._budget if persist else None, use_cache=use_cache,
+            rules=tools.rules, job=job_context(job_description, [getattr(s, "name", None) for s in specs]),
         )
         info.update(ran=not outcome.skipped_budget, cached=outcome.cached, llm_calls=outcome.llm_calls,
                     problem=outcome.problem, skipped_budget=outcome.skipped_budget,
@@ -226,14 +229,19 @@ class ScoringV2Service:
                 weight=float(row.weight) if row.weight is not None else None,
                 importance=_importance(row) if row.mandatory else None,
                 alias_skill_ids=tuple(row.alias_skill_ids or ()), sense=choice.sense, sense_basis=choice.basis,
+                required=getattr(row, "required", False) is True,
             ))
 
         evidence_rows = evidence_records if evidence_records is not None else self.detection_repository.list_evidence(resume.id)
         evidence_source = "given" if evidence_records is not None else "stored"
-        if not evidence_rows and evidence_records is None:
+        stale = evidence_records is None and any(
+            getattr(r, "detection_version", DETECTION_VERSION) != DETECTION_VERSION for r in evidence_rows)
+        if (not evidence_rows or stale) and evidence_records is None:
+            # None stored yet, or stored by older detection rules: detected again from the stored resume.
             records, _ = detect_stored_resume(self.evidence_service, resume, persist=persist)
             evidence_rows = self.detection_repository.list_evidence(resume.id) if persist else records
-            evidence_source = "detected now from the stored resume"
+            evidence_source = ("re-detected (stored evidence predates the current detection rules)" if stale
+                               else "detected now from the stored resume")
         evidence = [
             EvidenceInput(
                 canonical_skill_id=r.canonical_skill_id, sense=r.sense, sources=tuple(r.sources or ()),
@@ -249,6 +257,8 @@ class ScoringV2Service:
         specs = jd_core_skill_specs(job_description, rows, names, tools.resolver, skill_descriptions=descriptions)
         # Phase 3 Step 7: the JD profile template decides which resume sections count as evidence.
         evidence_sections = jd_evidence_sections(job_description)
+        auto_sections = jd_auto_confirm_sections(job_description)
+        job = job_context(job_description, [getattr(s, "name", None) for s in specs])
         confirmation = {"ran": False, "llm_calls": 0}
         confirmations: dict[str, dict] = {}
         special_outcome = None
@@ -258,7 +268,7 @@ class ScoringV2Service:
                     resume_id=resume.id, jd_id=job_description.id, core_skills=specs,
                     evidence_rows=evidence_rows, text_hash=resume_text_hash or "", persist=persist,
                     budget=self._budget if persist else None, use_cache=use_confirmation_cache,
-                    strong_sections=evidence_sections,
+                    auto_sections=auto_sections, rules=tools.rules, job=job,
                 )
                 confirmations = {r["canonical_skill_id"]: r for r in outcome.results}
                 confirmation = {"ran": not outcome.skipped_budget, "cached": outcome.cached,
@@ -335,7 +345,9 @@ class ScoringV2Service:
                    "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on,
                    "profile_template": {"key": getattr(jd_profile(job_description), "key", None),
                                         "evidence_sections": sorted(evidence_sections),
-                                        "paraphrase_sections": paraphrase_config.get("sections")}},
+                                        "auto_confirm_sections": sorted(auto_sections),
+                                        "paraphrase_sections": paraphrase_config.get("sections")},
+                   "job_context": {"title": job.title, "role_domain": job.role_domain}},
             provisional_skills=self.provisional_inputs(job_description, resume, persist=persist),
         ), config)
         if special_outcome is not None:
@@ -351,11 +363,35 @@ class ScoringV2Service:
         return breakdown
 
 
-def _paraphrase_targets_for(specs, confirmations: dict, skills_by_id: dict) -> list[ParaphraseTarget]:
+ROLE_DOMAIN_LABELS = {"SOFTWARE": "Software", "IT_OPERATIONS": "IT operations", "DATA": "Data",
+                      "BUSINESS": "Business", "OTHER": "Other"}
+
+
+def job_context(job_description, core_skill_names: list[str]) -> JobContext:
+    """The JD's title and role domain for the voters - as calibrated, else the suggested one (unset JDs only)."""
+    title = getattr(job_description, "title", None)
+    title = title if isinstance(title, str) and title.strip() else None
+    names = [n for n in core_skill_names if isinstance(n, str)]
+    domain = jd_role_domain(job_description) or suggest_role_domain(title, names).domain
+    return JobContext(title=title, role_domain=ROLE_DOMAIN_LABELS.get(domain, domain) if domain else None)
+
+
+def _certification_only(evidence_rows: list, spec) -> bool:
+    """Every evidence item for this core skill (or its JD aliases) comes from a certification."""
+    items = [item for row in evidence_rows if getattr(row, "canonical_skill_id", None) in spec.skill_ids
+             for item in (getattr(row, "evidence", None) or [])]
+    return bool(items) and all(str(item.get("origin") or "").startswith(CERTIFICATION_ORIGIN) for item in items)
+
+
+def _paraphrase_targets_for(specs, confirmations: dict, skills_by_id: dict,
+                            evidence_rows: list | None = None) -> list[ParaphraseTarget]:
     targets = []
     for spec in specs:
         status = (confirmations.get(str(spec.canonical_skill_id)) or {}).get("status", STATUS_NOT_FOUND)
-        if status not in (STATUS_NOT_FOUND, STATUS_UNCERTAIN):
+        # A "no" to certification evidence alone ("ITIL 4 Foundation") says
+        # nothing about the work history: the skill stays open for paraphrase.
+        reopened = status == STATUS_REJECTED and _certification_only(evidence_rows or [], spec)
+        if status not in (STATUS_NOT_FOUND, STATUS_UNCERTAIN) and not reopened:
             continue                       # CONFIRMED / REJECTED / SENSE_MISMATCH (decided) / UNCONFIRMED
         skill = skills_by_id.get(spec.canonical_skill_id)
         targets.append(ParaphraseTarget(

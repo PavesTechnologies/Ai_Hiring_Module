@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
+from app.services.skills.evidence_rules import DEFAULT_EVIDENCE_RULES
 from app.services.skills.provisional_skill_match import PROVISIONAL_CREDIT
 
 SCORING_VERSION = "v2"
@@ -71,6 +72,10 @@ DEFAULT_CONFIG: dict = {
     # lines per skill, resume sections searched, line length in words.
     "paraphrase": {"enabled": True, "threshold": 0.45, "max_lines": 3, "sections": ["EXPERIENCE"],
                    "min_words": 4, "max_words": 40},
+    # Evidence rules (evidence_rules.py): qualifier phrases whose line is no
+    # evidence ("currently learning"), and the verbs that make an exact
+    # experience match auto-confirm (work) or go to the vote (not work).
+    "evidence": copy.deepcopy(DEFAULT_EVIDENCE_RULES),
 }
 
 STATUS_CONFIRMED = "CONFIRMED"
@@ -129,6 +134,16 @@ def parse_config(raw: str | None) -> dict:
     return merge_config(value if isinstance(value, dict) else None)
 
 
+def required_core_allowance(allowed: int, missing_core: int, required_missing: int) -> int:
+    """
+    The missing-core allowance actually applied (v1 and v2): it covers only
+    the missing core skills not marked required, so each required one
+    missing is always over the limit - the near-miss rule then decides
+    (HOLD alone, REJECT with another near-miss).
+    """
+    return min(int(allowed), max(0, missing_core - required_missing))
+
+
 def config_version(snapshot: dict) -> str:
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
 
@@ -143,6 +158,8 @@ class JDSkillInput:
     alias_skill_ids: tuple[UUID, ...] = ()
     sense: str | None = None
     sense_basis: str | None = None
+    # A core skill that may never be missing (jd_skills.required).
+    required: bool = False
 
     @property
     def own_ids(self) -> tuple[UUID, ...]:
@@ -239,6 +256,7 @@ def _entry(skill: JDSkillInput, config: dict, match_type: str, multiplier: float
         "jd_sense_basis": skill.sense_basis,
         "confirmation_status": status,
         "counts_for_core_gate": gate,
+        "required": bool(skill.required) and skill.importance == "core",
     }
 
 
@@ -400,11 +418,15 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
     if core:
         core_confirmed = sum(1 for e in entries if e["importance"] == "core" and e["counts_for_core_gate"])
         missing_core = len(core) - core_confirmed
-        core_gap_passed = missing_core <= inputs.allowed_missing_core
+        required_missing = [e["canonical_name"] for e in entries if e["importance"] == "core"
+                            and e.get("required") and not e["counts_for_core_gate"]]
+        allowed_core = required_core_allowance(inputs.allowed_missing_core, missing_core, len(required_missing))
+        core_gap_passed = missing_core <= allowed_core
         coverage_pct = round(core_confirmed / len(core) * 100, 2)
     else:
         covered = sum(1 for e in entries if e["counts_for_core_gate"])
         core_confirmed, missing_core, core_gap_passed = 0, 0, True
+        required_missing, allowed_core = [], inputs.allowed_missing_core
         coverage_pct = round(covered / len(entries) * 100, 2) if entries else 100.0
     coverage_passed = coverage_pct >= float(inputs.required_skill_coverage_threshold)
     experience = inputs.experience_result or {}
@@ -417,7 +439,8 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
     checks = [
         {"check": "Core skills", "passed": core_gap_passed, "applies": bool(core),
          "detail": f"{core_confirmed} of {len(core)} core skills confirmed; up to "
-                   f"{inputs.allowed_missing_core} may be missing - {missing_core} missing."},
+                   f"{inputs.allowed_missing_core} may be missing - {missing_core} missing."
+                   + (f" Required, never allowed missing: {', '.join(required_missing)}." if required_missing else "")},
         {"check": "Core skill coverage" if core else "Required skill coverage", "passed": coverage_passed,
          "applies": float(inputs.required_skill_coverage_threshold) > 0,
          "detail": f"{coverage_pct}% covered; at least {inputs.required_skill_coverage_threshold}% required."},
@@ -444,7 +467,7 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
                          if e["importance"] == "core" and not e["counts_for_core_gate"]]
         near_miss = evaluate_near_miss(
             core_skill_count=len(core), confirmed_core_count=core_confirmed,
-            allowed_missing_core=inputs.allowed_missing_core,
+            allowed_missing_core=allowed_core,
             definite_missing_core=missing_core - len(uncertain), uncertain_core=len(uncertain),
             over_limit_names=missing_names, experience=experience, other_failed_checks=other_failed,
         )
@@ -470,7 +493,9 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
         "core_skill_count": len(core),
         "core_confirmed_count": core_confirmed,
         "missing_core_skill_count": missing_core,
-        "allowed_missing_core_skills": inputs.allowed_missing_core,
+        "allowed_missing_core_skills": allowed_core,
+        "configured_allowed_missing_core_skills": inputs.allowed_missing_core,
+        "required_core_missing": required_missing,
         "core_coverage_pct": coverage_pct,
         "core_confirmed": names(lambda e: e["counts_for_core_gate"]),
         # Shown as "found, not confirmed as core" - supporting evidence only.

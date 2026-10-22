@@ -71,8 +71,11 @@ def skill_text(target: ParaphraseTarget) -> str:
     return ". ".join(p.strip().rstrip(".") for p in parts if p and p.strip()) + "."
 
 
-def candidate_lines(text: str, config: dict) -> list[tuple[int, str, str]]:
-    """(line index, line, section) of the resume lines paraphrase may propose."""
+def candidate_lines(text: str, config: dict, exclude_line=None) -> list[tuple[int, str, str]]:
+    """
+    (line index, line, section) of the resume lines paraphrase may propose.
+    exclude_line(line) -> True: never proposed (a qualifier line, "currently learning ...").
+    """
     lines = (text or "").splitlines()
     sections = set(config.get("sections") or ["EXPERIENCE"])
     out = []
@@ -82,7 +85,7 @@ def candidate_lines(text: str, config: dict) -> list[tuple[int, str, str]]:
         if words < int(config.get("min_words", 4)) or words > int(config.get("max_words", 40)):
             continue
         section = section_of_line(lines, i)
-        if section in sections:
+        if section in sections and not (exclude_line and exclude_line(raw)):
             out.append((i, line, section))
     return out
 
@@ -100,7 +103,7 @@ class ParaphraseProposalService:
         self.blocked = blocked
 
     def propose(self, text: str, targets: list[ParaphraseTarget], evidence_rows: list, config: dict | None = None,
-                core_skill_ids=None) -> tuple[list[Proposal], dict]:
+                core_skill_ids=None, exclude_line=None) -> tuple[list[Proposal], dict]:
         """
         (proposals, scores) - scores[skill_id] lists every candidate line's
         similarity (and why a line was excluded), for the dry run.
@@ -108,7 +111,7 @@ class ParaphraseProposalService:
         of them (other than the target) is never proposed.
         """
         config = {**DEFAULT_PARAPHRASE_CONFIG, **(config or {})}
-        lines = candidate_lines(text, config)
+        lines = candidate_lines(text, config, exclude_line)
         if not targets or not lines:
             return [], {}
         vectors = self.embed([skill_text(t) for t in targets] + [line for _, line, _ in lines])

@@ -34,7 +34,7 @@ from app.services.skills.spelling import normalise_word
 
 # Bump when scan/split/sense/union behaviour changes: it is part of the
 # parse and confirmation cache keys and stored on every evidence row.
-DETECTION_VERSION = "2026.10.3"
+DETECTION_VERSION = "2026.10.4"
 
 POLICY_EXCLUDE = "EXCLUDE"
 POLICY_REQUIRE_CUE = "REQUIRE_CUE"

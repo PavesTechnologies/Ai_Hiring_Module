@@ -32,6 +32,9 @@ class CalibrationSkill(BaseModel):
     sense_key: str | None = None
     suggested_sense_key: str | None = None
     suggested_sense_basis: str | None = None   # cue / title / assumed
+    # Core skills only: never allowed missing (the missing-core allowance
+    # covers only the other core skills).
+    required: bool = False
 
 
 class SkillSuggestion(BaseModel):
@@ -165,6 +168,8 @@ class CalibrationSkillInput(BaseModel):
     jd_skill_id: UUID
     tier: SkillTier
     sense_key: str | None = None
+    # Only a CORE skill can be required.
+    required: bool = False
 
 
 class JDCalibrationSaveRequest(BaseModel):

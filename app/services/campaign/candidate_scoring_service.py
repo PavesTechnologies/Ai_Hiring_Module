@@ -12,6 +12,7 @@ from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
+from app.services.campaign.scoring_v2 import required_core_allowance
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.provisional_skill_match import (
     PROVISIONAL_CREDIT, ProvisionalTerm, parsed_json_text, scan_provisional,
@@ -73,6 +74,7 @@ def allowed_missing_core(core_skill_count: int, max_missing_core_skills: int, ma
         return int(max_missing_core_skills)
     by_pct = math.floor(core_skill_count * float(max_missing_core_pct) / 100 + 1e-9)
     return max(0, min(by_pct, int(max_missing_core_skills)))
+
 
 # No prior concept of a coverage gate exists - 0.0 (always satisfied)
 # keeps every caller that doesn't pass this explicitly behaving exactly as
@@ -372,6 +374,8 @@ class CandidateScoringService:
             )
             if entry["match_type"] in _COVERED_MATCH_TYPE_VALUES:
                 matched_count += 1
+            # A required core skill is never covered by the missing-core allowance.
+            entry["required"] = entry.get("importance") == "core" and getattr(row, "required", False) is True
             mandatory_skills.append(entry)
 
         total_mandatory = len(mandatory_skills)
@@ -949,7 +953,14 @@ class CandidateScoringService:
             if skill["match_type"] == MandatorySkillMatchType.MISSING.value and skill.get("importance") == "core"
         )
         core_skill_count = sum(1 for skill in breakdown["mandatory_skills"] if skill.get("importance") == "core")
-        allowed = allowed_missing_core(core_skill_count, max_missing_core_skills, max_missing_core_pct)
+        configured_allowed = allowed_missing_core(core_skill_count, max_missing_core_skills, max_missing_core_pct)
+        required_missing = [
+            skill.get("canonical_name") or str(skill.get("canonical_skill_id"))
+            for skill in breakdown["mandatory_skills"]
+            if skill.get("importance") == "core" and skill.get("required")
+            and skill["match_type"] == MandatorySkillMatchType.MISSING.value
+        ]
+        allowed = required_core_allowance(configured_allowed, missing_core_skill_count, len(required_missing))
         core_gap_passed = missing_core_skill_count <= allowed
 
         # No scorable skills (skill_score None) - nothing to fail on here.
@@ -962,8 +973,11 @@ class CandidateScoringService:
             "missing_core_skill_count": missing_core_skill_count,
             "max_missing_core_skills": max_missing_core_skills,
             "max_missing_core_pct": max_missing_core_pct,
-            # The effective limit actually applied (percentage capped by the count).
+            # The effective limit actually applied (percentage capped by the count,
+            # and never covering a required core skill).
             "allowed_missing_core_skills": allowed,
+            "configured_allowed_missing_core_skills": configured_allowed,
+            "required_core_missing": required_missing,
             "core_gap_passed": core_gap_passed,
             "skill_qualification_passed": coverage_passed and score_passed and core_gap_passed,
         }
@@ -984,16 +998,19 @@ class CandidateScoringService:
         core = [s for s in breakdown.get("mandatory_skills") or [] if s.get("importance") == "core"]
         if is_core_scope and core and breakdown.get("core_gap_passed") is not None:
             missing = breakdown.get("missing_core_skill_count") or 0
-            allowed = breakdown.get("allowed_missing_core_skills", breakdown.get("max_missing_core_skills"))
+            allowed = breakdown.get("configured_allowed_missing_core_skills",
+                                    breakdown.get("allowed_missing_core_skills", breakdown.get("max_missing_core_skills")))
             pct = breakdown.get("max_missing_core_pct")
             rule = (f" ({float(pct):g}% of {len(core)}, max {breakdown.get('max_missing_core_skills')})"
                     if pct is not None else "")
+            required = breakdown.get("required_core_missing") or []
+            required_note = (f" Required, never allowed missing: {', '.join(required)}." if required else "")
             checks.append({
                 "check": "Core skills",
                 "passed": bool(breakdown.get("core_gap_passed")),
                 "can_reject": True,
                 "detail": f"{len(core) - missing} of {len(core)} core skills matched; "
-                          f"up to {allowed} may be missing{rule} - {missing} missing.",
+                          f"up to {allowed} may be missing{rule} - {missing} missing.{required_note}",
             })
 
         if breakdown.get("coverage_passed") is not None and float(breakdown.get("required_skill_coverage_threshold") or 0) > 0:

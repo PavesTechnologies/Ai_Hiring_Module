@@ -45,6 +45,42 @@ def is_in_progress(certification: str | None) -> bool:
     return bool(_IN_PROGRESS.search(certification or ""))
 
 
+_SEGMENT_SEPARATORS = ";|•·,"
+
+
+def _segments(text: str) -> list[tuple[int, int]]:
+    """(start, end) of the list items on a line: split at ; | • · and commas outside brackets."""
+    spans, start, depth = [], 0, 0
+    for i, ch in enumerate(text):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+        elif ch in _SEGMENT_SEPARATORS and depth == 0:
+            spans.append((start, i))
+            start = i + 1
+    spans.append((start, len(text)))
+    return spans
+
+
+def in_progress_in_text(text: str | None, certification: str | None) -> bool:
+    """
+    The resume's own text says this certification is still in progress -
+    the parse can drop "(appearing, Dec 2026)" from the name. Only the
+    certification's own item on the line is read, so "ITIL 4 Foundation;
+    ServiceNow CSA (appearing)" keeps ITIL.
+    """
+    words = certification_words(certification)
+    if not text or not words:
+        return False
+    pattern = re.compile(r"[^a-z0-9]*(?:v(?=\d))?".join(re.escape(w) for w in words), re.IGNORECASE)
+    found = pattern.search(text)
+    if found is None:
+        return False
+    return any(_IN_PROGRESS.search(text[start:end]) for start, end in _segments(text)
+               if start < found.end() and found.start() < end)
+
+
 def _contains(words: tuple[str, ...], variant: tuple[str, ...]) -> bool:
     n = len(variant)
     return n > 0 and any(words[i:i + n] == variant for i in range(len(words) - n + 1))

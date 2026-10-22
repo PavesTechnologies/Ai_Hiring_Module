@@ -60,6 +60,18 @@ def jd_evidence_sections(job_description) -> frozenset:
     return valid if valid else STRONG_SECTIONS
 
 
+def jd_auto_confirm_sections(job_description) -> frozenset:
+    """
+    Where an exact scan may auto-confirm (on a line where the candidate does
+    the work): the narrative sections among the template's evidence
+    sections - Experience, plus Projects on a Fresher template - else
+    Experience alone. Skills lists and summaries always go to the vote.
+    """
+    if jd_profile(job_description) is None:
+        return frozenset({SECTION_EXPERIENCE})
+    return (jd_evidence_sections(job_description) & NARRATIVE_SECTIONS) or frozenset({SECTION_EXPERIENCE})
+
+
 def jd_paraphrase_sections(job_description, configured: list | None) -> list[str]:
     """The narrative evidence sections of the JD's template, else the configured ones."""
     if jd_profile(job_description) is None:

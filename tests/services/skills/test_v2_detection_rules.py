@@ -196,10 +196,11 @@ def test_target_roles_line_is_not_a_held_title():
     assert PM not in {r.canonical_skill_id for r in records}
 
 
-def test_profile_ai_governance_is_auto_confirmed_from_profile_not_recognition():
+def test_profile_ai_governance_comes_from_the_profile_not_recognition_and_goes_to_the_vote():
     record = next(r for r in _profile_records() if r.canonical_skill_id == AIG)
-    item = auto_confirm_evidence(CoreSkillSpec(AIG, "AI Governance"), [record])
-    assert item is not None and item["section"] == "SUMMARY" and item["text"].startswith("AI GRC & security")
+    assert record.evidence[0]["section"] == "SUMMARY" and record.evidence[0]["text"].startswith("AI GRC & security")
+    # A summary line never auto-confirms (hard negatives): the 3-vote check decides.
+    assert auto_confirm_evidence(CoreSkillSpec(AIG, "AI Governance"), [record]) is None
 
 
 def test_profile_it_governance_line_adds_nothing():

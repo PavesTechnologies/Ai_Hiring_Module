@@ -2,6 +2,8 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from app.services.llm.base import LLMErrorReason, LLMTransientError
 from app.services.skills.core_skill_confirmation_service import (
     CONFIRMATION_PROMPT, REASON_AUTO, STATUS_CONFIRMED, STATUS_NOT_FOUND, STATUS_REJECTED, STATUS_SENSE_MISMATCH,
@@ -73,13 +75,25 @@ ORG_CM = CoreSkillSpec(CM, "Change Management", sense="ORGANISATIONAL", sense_la
 
 # --- auto-confirm (no LLM) -----------------------------------------------
 
-def test_exact_scan_in_strong_section_is_auto_confirmed_without_llm():
-    for section in ("SKILLS", "EXPERIENCE", "SUMMARY"):
-        provider = FakeProvider([])
-        outcome = _confirm(provider, [CoreSkillSpec(PM, "Program Management")],
-                           [_row(PM, "IT Project & Program Management", section=section)])
-        pm = outcome.results[0]
-        assert provider.calls == [] and (pm["status"], pm["reason"], pm["method"]) == (STATUS_CONFIRMED, REASON_AUTO, "auto")
+def test_exact_scan_on_an_experience_line_doing_the_work_is_auto_confirmed_without_llm():
+    provider = FakeProvider([])
+    outcome = _confirm(provider, [CoreSkillSpec(PM, "Program Management")],
+                       [_row(PM, "Implemented IT Project & Program Management for 4 regions", section="EXPERIENCE")])
+    pm = outcome.results[0]
+    assert provider.calls == [] and (pm["status"], pm["reason"], pm["method"]) == (STATUS_CONFIRMED, REASON_AUTO, "auto")
+
+
+@pytest.mark.parametrize("text, section", [
+    ("IT Project & Program Management", "SKILLS"),                                  # a skills list: voted on
+    ("Implemented IT Project & Program Management", "SUMMARY"),                     # a summary: voted on
+    ("IT Project & Program Management office, 2019-2023", "EXPERIENCE"),            # no work verb
+    ("Sold Program Management consulting to mid-market clients", "EXPERIENCE"),    # sells it
+    ("Supported and implemented Program Management tooling", "EXPERIENCE"),         # a not-work verb too
+])
+def test_other_exact_scans_go_to_the_vote(text, section):
+    provider = FakeProvider([{"items": [_no(1)]}] * 3)
+    outcome = _confirm(provider, [CoreSkillSpec(PM, "Program Management")], [_row(PM, text, section=section)])
+    assert len(provider.calls) == 3 and outcome.results[0]["method"] == "llm"
 
 
 def test_not_auto_confirmed_when_derived_inferred_weak_section_or_unclear_sense():
@@ -184,7 +198,8 @@ def test_definite_sense_mismatch_skips_the_llm():
 
 def test_auto_confirm_needs_the_definite_matching_sense():
     provider = FakeProvider([])
-    outcome = _confirm(provider, [ORG_CM], [_row(CM, "Led change management", sense="ORGANISATIONAL", section="EXPERIENCE")])
+    outcome = _confirm(provider, [ORG_CM], [_row(CM, "Designed the change management approach", sense="ORGANISATIONAL",
+                                                section="EXPERIENCE")])
     assert provider.calls == [] and outcome.results[0]["status"] == STATUS_CONFIRMED
 
 
@@ -197,7 +212,7 @@ def test_alias_evidence_counts_for_the_core_skill():
     alias = uuid4()
     provider = FakeProvider([])
     outcome = _confirm(provider, [CoreSkillSpec(PM, "ServiceNow SPM", alias_skill_ids=(alias,))],
-                       [_row(alias, "ITBM roadmap delivery", section="EXPERIENCE")])
+                       [_row(alias, "Implemented ITBM roadmap delivery", section="EXPERIENCE")])
     assert outcome.results[0]["status"] == STATUS_CONFIRMED
 
 
@@ -309,13 +324,13 @@ def test_a_failed_cache_write_keeps_the_answer_and_its_call_count():
 
 def test_a_projects_scan_is_auto_confirmed_only_when_the_jd_template_counts_projects():
     # Phase 3 Step 7: a Fresher JD counts academic / personal projects as evidence.
-    evidence = [_row(PM, "Capstone: Program Management dashboard in Python", section="PROJECTS")]
+    evidence = [_row(PM, "Capstone: built a Program Management dashboard in Python", section="PROJECTS")]
     asked = FakeProvider([{"items": [_yes(1, "Program Management dashboard")]}] * 3)
     _confirm(asked, [CoreSkillSpec(PM, "Program Management")], evidence)
     assert len(asked.calls) == 3                                           # standard sections: voted on
 
     fresher = FakeProvider([])
     outcome = _confirm(fresher, [CoreSkillSpec(PM, "Program Management")], evidence,
-                       strong_sections=frozenset({"SUMMARY", "EXPERIENCE", "SKILLS", "PROJECTS"}))
+                       auto_sections=frozenset({"EXPERIENCE", "PROJECTS"}))
     assert fresher.calls == [] and (outcome.results[0]["method"], outcome.results[0]["section"]) == ("auto", "PROJECTS")
 
