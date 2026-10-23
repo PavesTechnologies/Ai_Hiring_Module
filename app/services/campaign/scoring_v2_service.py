@@ -47,6 +47,7 @@ from app.services.skills.core_skill_confirmation_service import (
 from app.services.skills.paraphrase_proposal_service import (
     ParaphraseProposalService, ParaphraseTarget, proposals_hash,
 )
+from app.services.llm.call_log import calls_in_quota_day, llm_call_source
 from app.services.skills.evidence_rules import role_for_line, roles_of
 from app.services.skills.resume_sections import SECTION_EXPERIENCE
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
@@ -95,9 +96,14 @@ class ScoringV2Service:
         self.evidence_service = SkillEvidenceService(self.detection_repository, skill_repository, cache_service)
 
     def _budget(self, calls_needed: int) -> bool:
-        """Daily LLM cap: True when calls_needed more confirmation calls still fit in today's cap."""
+        """
+        Daily LLM cap: True when calls_needed more confirmation calls still fit
+        in today's cap. Counts every LLM request logged in the provider's
+        quota day (llm_call_log - parsing, AI evaluation, dry runs too), not
+        only v2's own.
+        """
         cap = daily_llm_call_cap(self.config_repository)
-        return ScoringResultRepository(self.db).v2_llm_calls_today() + calls_needed <= cap
+        return calls_in_quota_day(self.db) + calls_needed <= cap
 
     def provisional_inputs(self, job_description, resume, *, persist: bool = True) -> list[ProvisionalSkillInput]:
         """
@@ -309,11 +315,12 @@ class ScoringV2Service:
         if (specs and use_llm and self.provider_resolver is not None and special_outcome is None
                 and paraphrase_config.get("enabled")):
             try:
-                paraphrase, extra_evidence = self._paraphrase_round(
-                    resume=resume, job_description=job_description, specs=specs, confirmations=confirmations,
-                    evidence_rows=evidence_rows, tools=tools, config=paraphrase_config,
-                    text_hash=resume_text_hash or "", persist=persist, use_cache=use_confirmation_cache,
-                )
+                with llm_call_source("paraphrase_confirmation"):
+                    paraphrase, extra_evidence = self._paraphrase_round(
+                        resume=resume, job_description=job_description, specs=specs, confirmations=confirmations,
+                        evidence_rows=evidence_rows, tools=tools, config=paraphrase_config,
+                        text_hash=resume_text_hash or "", persist=persist, use_cache=use_confirmation_cache,
+                    )
                 evidence += extra_evidence
                 # Counted with the confirmation calls, so the daily cap sees them.
                 confirmation["llm_calls"] = int(confirmation.get("llm_calls") or 0) + paraphrase["llm_calls"]

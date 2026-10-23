@@ -23,6 +23,7 @@ from app.services.skills.compound_skill_splitter import split_compound_skill
 from app.services.llm.structured_call import call_info
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.evidence_rules import roles_of
+from app.services.llm.call_log import llm_call_source
 from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
 from app.services.skills.text_evidence import evidence_found_in  # noqa: F401 - re-exported
 from app.services.skills.skill_normalization_service import SkillMatchTier, SkillNormalizationService
@@ -230,11 +231,12 @@ class ResumeProcessingPipeline:
                                           "used_fallback": False, "cache_hit": True}
                     return
 
-        context.raw_extraction = self.extraction_service.extract_raw(
-            context.redacted_text,
-            prompt=prompt_template.template_text,
-            response_schema=ResumeExtractionGenerationSchema,
-        )
+        with llm_call_source("resume_parse"):
+            context.raw_extraction = self.extraction_service.extract_raw(
+                context.redacted_text,
+                prompt=prompt_template.template_text,
+                response_schema=ResumeExtractionGenerationSchema,
+            )
         call = call_info(provider)
         context.parse_call = {**call.as_dict(), "cache_hit": False}
         if cache_key is not None:

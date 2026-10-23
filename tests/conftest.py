@@ -25,6 +25,17 @@ def _block_real_celery_dispatch(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _llm_calls_are_not_logged_to_the_database():
+    """CountedProvider records each LLM request; in tests the rows go to a list, never to the live DB."""
+    from app.services.llm import call_log
+    rows: list[dict] = []
+    original = call_log._recorder
+    call_log.set_recorder(rows.append)
+    yield rows
+    call_log.set_recorder(original)
+
+
+@pytest.fixture(autouse=True)
 def _email_is_log_only():
     """Fails loudly if anything switched the test run back to real SES delivery."""
     from app.core.config import settings

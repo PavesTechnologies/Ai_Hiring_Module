@@ -18,6 +18,7 @@ from app.services.jd.hash_service import HashService
 from app.services.jd.jd_processing_context import JDProcessingContext
 from app.services.jd.jd_service import JDService
 from app.services.document_processing.retry_policy import STAGE_ORDER
+from app.services.llm.call_log import llm_call_source
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.storage_service import StorageService
 
@@ -314,9 +315,10 @@ class JDProcessingPipeline:
         prompt_template = self.jd_service.prompt_template_repository.get_by_id(context.prompt_template_id)
         if prompt_template is None:
             raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
-        context.raw_extraction = self.extraction_service.extract_raw(
-            context.cleaned_text, prompt=prompt_template.template_text,
-        )
+        with llm_call_source("jd_parse"):
+            context.raw_extraction = self.extraction_service.extract_raw(
+                context.cleaned_text, prompt=prompt_template.template_text,
+            )
 
     def _run_json_validation(self, context: JDProcessingContext) -> None:
         context.extraction = JDExtractionResponse.model_validate(context.raw_extraction)

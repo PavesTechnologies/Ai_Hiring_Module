@@ -7,6 +7,7 @@ from app.repositories.campaign_candidate_ai_evaluation_repository import Campaig
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.ai.ai_evaluation_response import AIEvaluationGenerationSchema, AIEvaluationResponse
 from app.services.extractions.llm_extraction_service import LLMExtractionService
+from app.services.llm.call_log import llm_call_source
 
 
 class AIEvaluationService:
@@ -40,10 +41,11 @@ class AIEvaluationService:
         prompt_template_text: str,
     ) -> dict:
         rendered_prompt = self._render_prompt(prompt_template_text, resume_json, jd_json)
-        raw_response = self.extraction_service.generate_structured(
-            prompt=rendered_prompt,
-            response_schema=AIEvaluationGenerationSchema,
-        )
+        with llm_call_source("ai_evaluation"):
+            raw_response = self.extraction_service.generate_structured(
+                prompt=rendered_prompt,
+                response_schema=AIEvaluationGenerationSchema,
+            )
         try:
             validated = AIEvaluationResponse.model_validate(raw_response)
         except Exception as exc:

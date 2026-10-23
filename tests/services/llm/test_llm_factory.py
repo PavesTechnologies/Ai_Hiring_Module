@@ -22,6 +22,13 @@ def _env_gemini_key(monkeypatch):
     monkeypatch.setattr(factory.settings, "gemini_api_key", "test-gemini-key")
 
 
+def _raw(provider):
+    """The concrete provider inside the call-log wrapper (every built provider is wrapped)."""
+    from app.services.llm.call_log import CountedProvider
+    assert isinstance(provider, CountedProvider)
+    return provider.inner
+
+
 def _row(**overrides):
     values = dict(
         provider="ANTHROPIC", model_name="claude-opus-5", is_verified=True,
@@ -35,14 +42,14 @@ def test_no_saved_config_falls_back_to_env_gemini():
     with patch(_REPO) as repo:
         repo.return_value.get_active.return_value = None
         provider = factory.resolve_active_provider(MagicMock())
-    assert isinstance(provider, GeminiProvider)
+    assert isinstance(_raw(provider), GeminiProvider)
 
 
 def test_unverified_config_is_ignored():
     with patch(_REPO) as repo:
         repo.return_value.get_active.return_value = _row(is_verified=False)
         provider = factory.resolve_active_provider(MagicMock())
-    assert isinstance(provider, GeminiProvider)
+    assert isinstance(_raw(provider), GeminiProvider)
 
 
 def test_verified_config_builds_the_saved_provider_with_decrypted_key():
@@ -50,7 +57,7 @@ def test_verified_config_builds_the_saved_provider_with_decrypted_key():
         repo.return_value.get_active.return_value = _row()
         enc.return_value.decrypt.return_value = "sk-ant-real"
         provider = factory.resolve_active_provider(MagicMock())
-    assert isinstance(provider, AnthropicProvider)
+    assert isinstance(_raw(provider), AnthropicProvider)
     assert provider.model == "claude-opus-5"
 
 
@@ -59,7 +66,7 @@ def test_undecryptable_key_falls_back_to_env_gemini():
         repo.return_value.get_active.return_value = _row()
         enc.return_value.decrypt.side_effect = RuntimeError("missing key material")
         provider = factory.resolve_active_provider(MagicMock())
-    assert isinstance(provider, GeminiProvider)
+    assert isinstance(_raw(provider), GeminiProvider)
 
 
 @pytest.mark.parametrize("name,cls", [
@@ -67,7 +74,7 @@ def test_undecryptable_key_falls_back_to_env_gemini():
     ("OPENAI", OpenAIProvider), ("GROQ", GroqProvider),
 ])
 def test_build_provider_maps_every_provider(name, cls):
-    assert isinstance(factory.build_provider(name, "key", "model"), cls)
+    assert isinstance(_raw(factory.build_provider(name, "key", "model")), cls)
 
 
 def test_build_provider_rejects_unknown_provider():

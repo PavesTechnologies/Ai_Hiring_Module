@@ -50,6 +50,7 @@ from pydantic import BaseModel, Field
 from app.models.scoring_v2 import CoreSkillConfirmation
 from app.services.llm.base import LLMError, LLMProvider
 from app.services.llm.structured_call import InvalidLLMOutput, LLMCallInfo, call_info, structured_call
+from app.services.llm.call_log import current_source, llm_call_source
 from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules
 from app.services.skills.resume_sections import SECTION_EXPERIENCE, SECTION_SKILLS
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
@@ -375,8 +376,10 @@ class CoreSkillConfirmationService:
         job = next((a.job for a in asks if a.job is not None), None)
         prompt = CONFIRMATION_PROMPT.format(job=job.render() if job else "", items=_render_items(asks))
         try:
-            answer = structured_call(self.provider, prompt, CoreSkillCheckResponse,
-                                     check=check, deterministic=True, accept_invalid=True)
+            # A caller's label (the paraphrase round) wins over the default.
+            with llm_call_source(current_source() or "skill_confirmation"):
+                answer = structured_call(self.provider, prompt, CoreSkillCheckResponse,
+                                         check=check, deterministic=True, accept_invalid=True)
         except LLMError as exc:
             logger.warning("Core-skill confirmation call failed (%s)", exc.reason)
             return ({n: (VOTE_FAILED, "") for n in by_number}, call_info(self.provider).as_dict(),

@@ -14,6 +14,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from app.services.llm.call_log import calls_in_quota_day
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.candidates import Candidate, ParseStatus, Resume
@@ -22,7 +23,6 @@ from app.models.scoring_v2 import CandidateScoringResult, ScoringShadowRanking
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.config_repository import ConfigRepository
-from app.repositories.scoring_result_repository import ScoringResultRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.scoring_v2_service import daily_llm_call_cap
 
@@ -173,7 +173,8 @@ class ScoringShadowReportService:
             "campaign_name": campaign.name,
             "scoring_v2_shadow": bool(getattr(campaign, "scoring_v2_shadow", False)),
             "scoring_v2_enabled": bool(getattr(campaign, "scoring_v2_enabled", False)),
-            "daily_llm_calls_used": ScoringResultRepository(self.db).v2_llm_calls_today(),
+            # Every LLM request in the provider's quota day (llm_call_log), as the cap counts it.
+            "daily_llm_calls_used": calls_in_quota_day(self.db),
             "daily_llm_call_cap": daily_llm_call_cap(ConfigRepository(self.db)),
             "assumed_jd_senses": sorted(assumed_senses),
             "v2_outcome_counts": counts,

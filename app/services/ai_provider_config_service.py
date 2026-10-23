@@ -36,6 +36,7 @@ from app.schemas.ai_provider.ai_provider_schema import (
 from app.services.audit_service import AuditService
 from app.services.cache_service import CacheService
 from app.services.llm.base import LLMError, LLMErrorReason, LLMProviderName
+from app.services.llm.call_log import llm_call_source
 from app.services.llm.factory import AI_PROVIDER_KEY_PURPOSE, build_provider
 from app.services.llm.model_selection import (
     LLMPurpose,
@@ -598,7 +599,8 @@ class AIProviderConfigService:
                 provider_key, api_key, model_name,
                 timeout_seconds=settings.llm_verify_timeout_seconds,
             )
-            result = provider.generate_json(_VERIFY_PROMPT, _VerifySchema)
+            with llm_call_source("settings_check"):
+                result = provider.generate_json(_VERIFY_PROMPT, _VerifySchema)
             _VerifySchema.model_validate(result)
         except Exception as exc:
             code, message = _describe_error(exc, provider=provider_key, model=model_name, action="check")

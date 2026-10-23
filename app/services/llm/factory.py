@@ -8,6 +8,7 @@ from app.repositories.ai_provider_config_repository import AIProviderConfigRepos
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.services.llm.anthropic_provider import AnthropicProvider
 from app.services.llm.base import LLMErrorReason, LLMPermanentError, LLMProvider, LLMProviderName
+from app.services.llm.call_log import CountedProvider
 from app.services.llm.capabilities import load_capability_rules, resolve_capabilities
 from app.services.llm.fallback_provider import FallbackLLMProvider
 from app.services.llm.gemini_provider import GeminiProvider
@@ -26,14 +27,22 @@ def build_provider(
     *,
     timeout_seconds: float | None = None,
     capability_rules: list[dict] | None = None,
+    purpose: str | None = None,
 ) -> LLMProvider:
     """
     Builds a provider client from explicit values - used both for the saved
     config and for the Settings "Check" button's unsaved values.
     `capability_rules` (platform_config LLM_MODEL_CAPABILITIES) decides
     which request settings the adapter sends for this model; None uses the
-    built-in defaults (see capabilities.py).
+    built-in defaults (see capabilities.py). Every request it makes is
+    recorded in llm_call_log (call_log.CountedProvider).
     """
+    return CountedProvider(_build_raw_provider(provider, api_key, model, timeout_seconds=timeout_seconds,
+                                               capability_rules=capability_rules), purpose=purpose)
+
+
+def _build_raw_provider(provider: str, api_key: str, model: str, *, timeout_seconds: float | None,
+                        capability_rules: list[dict] | None) -> LLMProvider:
     timeout = timeout_seconds or settings.gemini_timeout_ms / 1000
     capabilities = resolve_capabilities(provider, model, capability_rules)
     if provider == LLMProviderName.GOOGLE:
@@ -51,9 +60,10 @@ def build_provider(
     raise LLMPermanentError(f"Unsupported AI provider '{provider}'.", reason=LLMErrorReason.BAD_REQUEST)
 
 
-def build_env_fallback_provider() -> LLMProvider:
-    """The pre-existing behaviour: Gemini configured from .env."""
-    return GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+def build_env_fallback_provider(purpose: str | None = None) -> LLMProvider:
+    """The pre-existing behaviour: Gemini configured from .env (requests recorded like any other)."""
+    return CountedProvider(GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model),
+                           purpose=purpose)
 
 
 def _model_cache():
@@ -89,7 +99,7 @@ def resolve_active_provider(db: Session, purpose: str = LLMPurpose.EXTRACTION) -
     if config is None or not config.is_verified:
         logger.info("LLM provider: .env fallback (provider=%s model=%s)",
                     LLMProviderName.GOOGLE, settings.gemini_model)
-        return build_env_fallback_provider()
+        return build_env_fallback_provider(purpose)
     return _provider_from_config(db, config, purpose)
 
 
@@ -130,11 +140,11 @@ def _provider_from_config(db: Session, config, purpose: str) -> LLMProvider:
             "LLM provider: could not decrypt the saved %s API key; falling back to .env Gemini.",
             config.provider,
         )
-        return build_env_fallback_provider()
+        return build_env_fallback_provider(purpose)
 
     assignment = select_assignment(getattr(config, "models", None) or [], purpose, default_model=config.model_name)
     rules = load_capability_rules(db)
-    primary = build_provider(config.provider, api_key, assignment.model_name, capability_rules=rules)
+    primary = build_provider(config.provider, api_key, assignment.model_name, capability_rules=rules, purpose=purpose)
     if not assignment.fallback_model_name:
         logger.info("LLM provider: saved config (provider=%s purpose=%s model=%s)",
                     config.provider, purpose, assignment.model_name)
@@ -144,6 +154,7 @@ def _provider_from_config(db: Session, config, purpose: str) -> LLMProvider:
                 config.provider, purpose, assignment.model_name, assignment.fallback_model_name)
     return FallbackLLMProvider(
         primary,
-        build_provider(config.provider, api_key, assignment.fallback_model_name, capability_rules=rules),
+        build_provider(config.provider, api_key, assignment.fallback_model_name, capability_rules=rules,
+                       purpose=purpose),
         _model_cache(),
     )
