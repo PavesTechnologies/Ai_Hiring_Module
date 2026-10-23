@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.ai_provider_config import get_ai_provider_config_service
-from app.middleware.rbac import TokenUser, require_roles, resolve_actor_role
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.ai_provider.ai_provider_schema import (
     ActiveProviderResponse,
@@ -107,7 +107,7 @@ def register_provider(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """Registers a provider after verifying it server-side. 409 if it's already registered."""
-    row = service.create(request, updated_by=user.user_id, actor_role=resolve_actor_role(user))
+    row = service.create(request, updated_by=user.user_id, actor_role=authorising_role(user))
     message = (
         f"{row.provider_label} registered and set as the active provider."
         if row.is_active else f"{row.provider_label} registered."
@@ -129,7 +129,7 @@ def update_provider(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """Changes the model and optionally the key, after verifying again server-side."""
-    row = service.update(config_id, request, updated_by=user.user_id, actor_role=resolve_actor_role(user))
+    row = service.update(config_id, request, updated_by=user.user_id, actor_role=authorising_role(user))
     message = f"{row.provider_label} updated."
     if row.warnings:
         message += " Warning: " + " ".join(row.warnings)
@@ -147,7 +147,7 @@ def activate_provider(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """Makes this provider the one all processing uses."""
-    row = service.activate(config_id, updated_by=user.user_id, actor_role=resolve_actor_role(user))
+    row = service.activate(config_id, updated_by=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(data=row, message=f"{row.provider_label} is now the active provider.")
 
 
@@ -162,5 +162,5 @@ def delete_provider(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     """Deletes a provider. 409 for the active provider or the last one remaining."""
-    service.delete(config_id, updated_by=user.user_id, actor_role=resolve_actor_role(user))
+    service.delete(config_id, updated_by=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(message="AI provider deleted.")

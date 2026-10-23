@@ -90,11 +90,12 @@ def resolve_actor_role(user: TokenUser) -> str | None:
     return next((r for r in user.roles if r in LocalUserRole.__members__), None)
 
 
-def authorising_role(user_or_roles, allowed=None) -> str | None:
+def authorising_roles(user_or_roles, allowed=None) -> list[str]:
     """
-    The role that authorised an action, for its audit entry - never the raw
-    first entry on the sign-in (some tokens list an org/department label
-    such as "General" first).
+    Every role the user holds that may authorise the action, in order of
+    preference - never an org/department label such as "General" that some
+    tokens list first. For checks that any one of them may satisfy, e.g. a
+    stage transition (the first one the transition permits is recorded).
 
     allowed: the roles that may authorise it, in order of preference, e.g.
     (HR_ADMIN, RECRUITER). Omitted, it is the roles the route's
@@ -104,7 +105,15 @@ def authorising_role(user_or_roles, allowed=None) -> str | None:
     if allowed is None:
         allowed = getattr(user_or_roles, "authorised_roles", ()) or ROLE_PRECEDENCE
     values = [getattr(role, "value", role) for role in allowed]
-    return next((role for role in values if role in roles), None)
+    return [role for role in values if role in roles]
+
+
+def authorising_role(user_or_roles, allowed=None) -> str | None:
+    """
+    The role that authorised an action, for its audit entry: the first of
+    authorising_roles(user_or_roles, allowed).
+    """
+    return next(iter(authorising_roles(user_or_roles, allowed)), None)
 
 
 def _new_user_from_token(user: TokenUser) -> User:

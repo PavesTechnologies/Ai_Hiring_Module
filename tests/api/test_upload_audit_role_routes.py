@@ -44,9 +44,9 @@ def test_upload_records_the_authorising_role(roles, expected):
 
 
 @pytest.mark.parametrize("roles, expected", [
-    (["General", "RECRUITER"], "RECRUITER"),          # used to send "General" - refused by every transition
-    (["HR_ADMIN", "RECRUITER"], "RECRUITER"),         # -> UPLOADED is RECRUITER-only: the role that allows it
-    (["General", "HR_ADMIN"], "HR_ADMIN"),
+    (["General", "RECRUITER"], ["RECRUITER"]),        # used to send "General" - refused by every transition
+    (["HR_ADMIN", "RECRUITER"], ["HR_ADMIN", "RECRUITER"]),   # the service moves on whichever the transition permits
+    (["General", "HR_ADMIN"], ["HR_ADMIN"]),
 ])
 def test_resubmission_sends_the_role_that_authorises_the_transition(roles, expected):
     from app.dependencies.campaign_candidate import get_campaign_candidate_service
@@ -68,4 +68,5 @@ def test_resubmission_sends_the_role_that_authorises_the_transition(roles, expec
         finally:
             app.dependency_overrides.clear()
     service.update_resume_for_resubmission.assert_called_once()
-    assert service.update_resume_for_resubmission.call_args.kwargs["actor_role"] == expected
+    kwargs = service.update_resume_for_resubmission.call_args.kwargs
+    assert kwargs["actor_roles"] == expected and kwargs["actor_role"] == expected[0]

@@ -472,12 +472,23 @@ class CampaignCandidateService:
 
     def add_campaign_candidate(
         self, request, actor_id: str | None, actor_role: str | None = None,
+        actor_roles: list[str] | None = None,
     ) -> CampaignCandidateResponse:
         """
         create_campaign_candidate + commit, for callers that own no wider
         transaction (the direct POST /campaign-candidates route). The response
         is returned only after the commit succeeded.
+
+        actor_roles (from the route): only an HR_ADMIN or the campaign's
+        assigned recruiter (hiring_campaigns.recruiter_id) may add a candidate.
         """
+        if actor_roles is not None and "HR_ADMIN" not in actor_roles:
+            campaign = self.campaign_repo.get_by_id(request.campaign_id)
+            # a missing campaign falls through to create_campaign_candidate's own 404
+            if campaign is not None and ("RECRUITER" not in actor_roles or campaign.recruiter_id != actor_id):
+                raise CampaignException(
+                    "Only an HR admin or the campaign's assigned recruiter can add candidates to it.", 403,
+                )
         response = self.create_campaign_candidate(request, actor_id=actor_id, actor_role=actor_role)
         try:
             self.campaign_candidate_repo.commit()
@@ -527,6 +538,7 @@ class CampaignCandidateService:
         actor_role: str | None = None,
         reason: str | None = None,
         content_type: str | None = None,
+        actor_roles: list[str] | None = None,
     ) -> UpdateResumeResubmissionResponse:
         """
         Epic 3 (M05-E03) Phase C5 — the "update resume" resolution action:
@@ -545,6 +557,12 @@ class CampaignCandidateService:
             raise CampaignException("Campaign candidate not found.", 404)
 
         try:
+            # Any of the caller's roles that the -> UPLOADED transition permits
+            # authorises it; that role is what the history and audit record.
+            if actor_roles:
+                actor_role = self.pipeline_transition_service.permitted_role(
+                    campaign_candidate, PipelineStage.UPLOADED, actor_roles,
+                )
             self.pipeline_transition_service.transition_stage(
                 campaign_candidate,
                 to_stage=PipelineStage.UPLOADED,

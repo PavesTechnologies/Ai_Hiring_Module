@@ -171,8 +171,13 @@ class BulkStageMoveService:
         reason: str | None,
         actor_id: str,
         actor_role: str | None,
+        actor_roles: list[str] | None = None,
     ) -> SingleStageMoveResultResponse:
         """
+        actor_roles: every role the caller holds that the route allows; the
+        move is made if the transition permits any of them, and that role is
+        what the history and audit record (actor_role is then ignored).
+
         M11-E04-S03-T01. Deliberately not implemented as bulk_move([one]) —
         a single move audits the candidate as the entity, which is what the
         candidate's own activity timeline reads, whereas a batch audits the
@@ -189,6 +194,8 @@ class BulkStageMoveService:
             raise CampaignException("Candidate is already in that stage.", 409)
 
         try:
+            if actor_roles:
+                actor_role = self.pipeline_transition_service.permitted_role(cc, to_stage, actor_roles)
             self.pipeline_transition_service.transition_stage(
                 cc,
                 to_stage,
@@ -244,6 +251,7 @@ class BulkStageMoveService:
         reason: str,
         actor_id: str,
         actor_role: str | None,
+        actor_roles: list[str] | None = None,
     ) -> SingleStageMoveResultResponse:
         """
         M11-E04-S03-T03 — manual rejection from the candidate list.
@@ -263,6 +271,7 @@ class BulkStageMoveService:
             reason=reason,
             actor_id=actor_id,
             actor_role=actor_role,
+            actor_roles=actor_roles,
         )
 
     def get_allowed_transitions(
@@ -270,7 +279,8 @@ class BulkStageMoveService:
         *,
         campaign_id: UUID,
         campaign_candidate_id: UUID,
-        actor_role: str | None,
+        actor_role: str | None = None,
+        actor_roles: list[str] | None = None,
     ) -> CandidateAllowedTransitionsResponse:
         """
         The read side of move_one - what the UI must call before offering any
@@ -280,11 +290,13 @@ class BulkStageMoveService:
         target that will be accepted.
 
         Returns only what this caller can actually do: rows whose
-        allowed_roles doesn't contain actor_role are dropped, as are
+        allowed_roles contain none of actor_roles (or actor_role) are dropped
+        - the same "any of the caller's roles" rule move_one applies - as are
         SYSTEM-only rows (automated scoring transitions, never a button).
         Read-only - never audited, nothing is written.
         """
         cc = self._load_in_campaign(campaign_id, campaign_candidate_id)
+        roles = list(actor_roles or ([actor_role] if actor_role else []))
 
         rows = self.pipeline_transition_service.allowed_transition_repo.list_eligible(
             cc.pipeline_stage, previous_stage=cc.previous_stage,
@@ -297,7 +309,7 @@ class BulkStageMoveService:
                 notes=row.notes,
             )
             for row in rows
-            if actor_role is not None and actor_role in (row.allowed_roles or [])
+            if any(role in (row.allowed_roles or []) for role in roles)
         ]
         allowed.sort(key=lambda t: t.to_stage)
 

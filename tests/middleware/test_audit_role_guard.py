@@ -122,3 +122,12 @@ def test_never_an_org_label():
     assert authorising_role(["General"]) is None
     assert authorising_role(TokenUser(user_id="u", email="", roles=["General"])) is None
     assert authorising_role(None, (UserRole.HR_ADMIN,)) is None
+
+
+def test_routes_never_record_resolve_actor_role():
+    """resolve_actor_role picks the first recognised role, not one the route allowed - routes use authorising_role."""
+    offenders = [f"{path.name}:{node.lineno}"
+                 for path in sorted(ROUTES.glob("*.py"))
+                 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig")))
+                 if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "resolve_actor_role"]
+    assert offenders == [], f"use authorising_role(user) / authorising_roles(user) instead: {offenders}"

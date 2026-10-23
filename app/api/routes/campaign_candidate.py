@@ -8,7 +8,7 @@ from app.dependencies.campaign_candidate import (
 )
 
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from app.middleware.rbac import TokenUser, authorising_role, get_current_user, require_roles, resolve_actor_role
+from app.middleware.rbac import TokenUser, authorising_role, authorising_roles, get_current_user, require_roles
 from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
@@ -68,14 +68,16 @@ def create_campaign_candidate(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
 
     # Committed inside add_campaign_candidate - 201 only after a successful commit.
+    # HR_ADMIN, or the campaign's assigned recruiter (checked in the service).
     candidate = service.add_campaign_candidate(
         request,
         actor_id=user.user_id,
         actor_role=authorising_role(user),
+        actor_roles=authorising_roles(user),
     )
 
     return APIResponse.ok(
@@ -626,8 +628,9 @@ def update_resume_for_resubmission(
         file_bytes=file_bytes,
         filename=filename,
         actor_id=user.user_id,
-        # The -> UPLOADED transition is RECRUITER-only: RECRUITER authorises it when held.
-        actor_role=authorising_role(user, (UserRole.RECRUITER, UserRole.HR_ADMIN)),
+        # Any of these the -> UPLOADED transition permits authorises it (and is recorded).
+        actor_role=authorising_role(user),
+        actor_roles=authorising_roles(user),
         reason=reason,
         content_type=file.content_type,
     )
@@ -708,7 +711,7 @@ def get_candidate_deterministic(
 ):
     # Scoring v2 shadow panel: HR_ADMIN only (read-only, never decides).
     deterministic = service.get_candidate_deterministic(
-        campaign_candidate_id, include_shadow=resolve_actor_role(user) == UserRole.HR_ADMIN.value,
+        campaign_candidate_id, include_shadow=UserRole.HR_ADMIN.value in authorising_roles(user),
     )
 
     return APIResponse.ok(
@@ -814,7 +817,7 @@ def reparse_candidate_resume(
 ):
     result = ResumeReparseService(db).request(
         campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id,
-        actor_role=resolve_actor_role(user), reason=request.reason,
+        actor_role=authorising_role(user), actor_roles=authorising_roles(user), reason=request.reason,
     )
     return APIResponse.ok(data=ReparseResponse(**result), message="Re-parse queued.")
 
@@ -836,7 +839,7 @@ def rescore_candidate(
     user: TokenUser = Security(require_roles(UserRole.RECRUITER)),
 ):
     result = ResumeReparseService(db).rescore_out_of_date(
-        campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id, actor_role=resolve_actor_role(user),
+        campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=RescoreResponse(**result), message="Re-score queued.")
 
@@ -981,7 +984,7 @@ def delete_campaign_candidate(
     service.delete_campaign_candidate(
         campaign_candidate_id,
         actor_id=user.user_id,
-        actor_role=resolve_actor_role(user),
+        actor_role=authorising_role(user),
         actor_roles=list(user.roles or []),
     )
 

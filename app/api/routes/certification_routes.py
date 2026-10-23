@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.campaign import get_audit_service
-from app.middleware.rbac import TokenUser, require_roles, resolve_actor_role
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.repositories.certification_repository import CertificationRepository
 from app.repositories.skill_detection_repository import SkillDetectionRepository
@@ -88,7 +88,7 @@ def add_certification(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     certification = service.add_certification(name=request.name, variants=request.name_variants, note=request.note,
-                                              actor_id=user.user_id, actor_role=resolve_actor_role(user))
+                                              actor_id=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(data=_item(certification, {}), message="Certification added.")
 
 
@@ -99,7 +99,7 @@ def remove_certification(
     service: CertificationMappingService = Depends(get_certification_mapping_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    service.remove_certification(certification_id, actor_id=user.user_id, actor_role=resolve_actor_role(user))
+    service.remove_certification(certification_id, actor_id=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(message="Certification removed.")
 
 
@@ -112,7 +112,7 @@ def add_certification_skill(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     service.add_skill(certification_id, canonical_skill_id=request.canonical_skill_id, sense_key=request.sense_key,
-                      actor_id=user.user_id, actor_role=resolve_actor_role(user))
+                      actor_id=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(message="Skill mapped.")
 
 
@@ -125,5 +125,5 @@ def remove_certification_skill(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     service.remove_skill(certification_id, canonical_skill_id, actor_id=user.user_id,
-                         actor_role=resolve_actor_role(user))
+                         actor_role=authorising_role(user))
     return APIResponse.ok(message="Skill removed from the certification.")

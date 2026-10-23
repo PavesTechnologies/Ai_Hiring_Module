@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.campaign import get_audit_service
-from app.middleware.rbac import TokenUser, require_roles, resolve_actor_role
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.repositories.jd_profile_template_repository import JDProfileTemplateRepository
 from app.schemas.jd_profile_template import (
@@ -60,7 +60,7 @@ def update_jd_profile_template(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     template, changed, marked = service.update(key, request, actor_id=user.user_id,
-                                               actor_role=resolve_actor_role(user))
+                                               actor_role=authorising_role(user))
     return APIResponse.ok(data=JDProfileTemplateUpdateResponse(
         template=JDProfileTemplateItem.model_validate(template), changed=changed,
         candidates_marked_out_of_date=marked,

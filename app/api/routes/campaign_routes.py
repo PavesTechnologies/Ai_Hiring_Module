@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.campaign_candidate import get_encryption_service
-from app.middleware.rbac import resolve_actor_role
 from app.schemas.campaign.scoring_shadow_schema import (
     RecruiterRankingRequest, ShadowReportResponse, ShadowSwitchRequest, ShadowSwitchResponse,
 )
@@ -713,7 +712,7 @@ def save_scoring_shadow_recruiter_ranking(
 ):
     report = ScoringShadowReportService(db, encryption_service).save_recruiter_ranking(
         campaign_id, rankings=[r.model_dump() for r in request.rankings], ranked_by_name=request.ranked_by_name,
-        actor_id=user.user_id, actor_role=resolve_actor_role(user),
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=ShadowReportResponse(**report), message="Recruiter ranking saved.")
 
@@ -731,6 +730,6 @@ def set_scoring_v2_shadow(
 ):
     result = ScoringShadowReportService(db).set_shadow(
         campaign_id, enabled=request.enabled, backfill=request.backfill,
-        actor_id=user.user_id, actor_role=resolve_actor_role(user),
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=ShadowSwitchResponse(**result), message="Scoring v2 shadow updated.")

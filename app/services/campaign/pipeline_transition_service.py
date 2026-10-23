@@ -31,6 +31,24 @@ _INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
 )
 
 
+def permitted_role(allowed_transition_repo, campaign_candidate, to_stage, actor_roles) -> str:
+    """
+    The first of actor_roles (in the caller's order of preference) that the
+    candidate's transition to to_stage permits - the role that authorises the
+    move, and what its audit records. Raises exactly like transition_stage:
+    InvalidPipelineTransitionException when there is no such transition,
+    ForbiddenPipelineRoleException when none of the roles may make it.
+    """
+    from_stage = campaign_candidate.pipeline_stage
+    transition = allowed_transition_repo.get(from_stage, to_stage, previous_stage=campaign_candidate.previous_stage)
+    if transition is None:
+        raise InvalidPipelineTransitionException(from_stage.value, to_stage.value)
+    role = next((r for r in actor_roles if r in (transition.allowed_roles or [])), None)
+    if role is None:
+        raise ForbiddenPipelineRoleException(from_stage.value, to_stage.value, list(actor_roles))
+    return role
+
+
 class PipelineTransitionService:
     """
     Epic 3 (M05-E03) Phase C0 — the one generic, validated way to move a
@@ -73,6 +91,11 @@ class PipelineTransitionService:
         # Optional so pre-existing construction sites keep working; when it is
         # absent the openings cap simply isn't enforced by this service.
         self.campaign_repo = campaign_repo
+
+    def permitted_role(self, campaign_candidate: CampaignCandidate, to_stage: PipelineStage,
+                       actor_roles) -> str:
+        """See the module-level permitted_role."""
+        return permitted_role(self.allowed_transition_repo, campaign_candidate, to_stage, actor_roles)
 
     def transition_stage(
         self,

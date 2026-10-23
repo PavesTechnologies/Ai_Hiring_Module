@@ -173,10 +173,29 @@ class ResumeReparseService:
         self.campaign_repo = CampaignRepository(db)
         self.resume_repo = ResumeRepository(db)
         self.audit_service = AuditService(AuditRepository(db))
+        from app.repositories.allowed_transition_repository import AllowedTransitionRepository
+        self.allowed_transition_repo = AllowedTransitionRepository(db)
+
+    def _screening_role(self, cc, actor_roles: list[str]) -> str | None:
+        """The first of actor_roles that the REJECTED -> SCREENING transition permits, or None."""
+        from app.exceptions.pipeline_transition_exceptions import (
+            ForbiddenPipelineRoleException, InvalidPipelineTransitionException,
+        )
+        from app.services.campaign.pipeline_transition_service import permitted_role
+        try:
+            return permitted_role(self.allowed_transition_repo, cc, PipelineStage.SCREENING, actor_roles)
+        except (InvalidPipelineTransitionException, ForbiddenPipelineRoleException):
+            return None
 
     # --- request (API) -------------------------------------------------------
     def request(self, *, campaign_candidate_id: UUID, actor_id: str, actor_role: str | None,
-                reason: str | None) -> dict:
+                reason: str | None, actor_roles: list[str] | None = None) -> dict:
+        """
+        actor_roles (from the route): every role the caller holds that the
+        route allows. A rejected candidate goes back to SCREENING when the
+        transition permits any of them, and that role is recorded; otherwise
+        actor_role (the route's authorising role) is.
+        """
         cc = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if cc is None:
             raise CampaignException("Candidate not found.", 404)
@@ -191,7 +210,12 @@ class ResumeReparseService:
 
         reason = (reason or "").strip() or None
         rejected = cc.pipeline_stage == PipelineStage.REJECTED
-        move_to_screening = rejected and actor_role == UserRole.RECRUITER.value
+        if actor_roles:
+            screening_role = self._screening_role(cc, actor_roles) if rejected else None
+            move_to_screening = screening_role is not None
+            actor_role = screening_role or actor_role      # else the route's authorising role
+        else:
+            move_to_screening = rejected and actor_role == UserRole.RECRUITER.value
         if move_to_screening and not reason:
             raise CampaignException("A reason is required to re-parse and reconsider a rejected candidate.", 422)
 
