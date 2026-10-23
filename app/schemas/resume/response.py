@@ -16,6 +16,14 @@ class ResumeUploadAcceptedResponse(BaseModel):
     campaign_name: str
     pipeline_stage: str
     parse_status: str
+    # What the upload did: UPLOADED (new resume), LINKED_EXISTING ("use
+    # existing" duplicate), KEPT_EXISTING (candidate already in the campaign,
+    # nothing stored - resume_id is their existing resume, task_id null) or
+    # NEW_VERSION_USED (the file became their next resume version; resume_id
+    # is the new version, previous_resume_id the one this campaign used).
+    outcome: str = "UPLOADED"
+    previous_resume_id: UUID | None = None
+    version_number: int | None = None
 
 
 class ResumeRetryResponse(BaseModel):

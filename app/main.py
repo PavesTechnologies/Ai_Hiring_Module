@@ -25,6 +25,7 @@ from app.api.routes.skill_routes import router as skill_router
 from app.api.routes import skill_ontology_routes
 from app.api.routes.resume_routes import router as resume_router
 from app.api.routes.bulk_upload_routes import router as bulk_upload_router
+from app.api.routes.upload_decision_routes import router as upload_decision_router
 from app.api.routes.monitoring_routes import router as monitoring_router
 from app.api.routes import unknown_skill_routes
 from app.api.routes import unknown_skill_suggestion_routes
@@ -196,6 +197,7 @@ app.include_router(router=skill_router, prefix=API_PREFIX, tags=["Skill Ontology
 app.include_router(router=skill_ontology_routes.router, prefix=API_PREFIX, tags=["Skill Ontology"])
 app.include_router(router=resume_router, prefix=API_PREFIX, tags=["Resume Intake"])
 app.include_router(router=bulk_upload_router, prefix=API_PREFIX, tags=["Bulk Resume Upload"])
+app.include_router(router=upload_decision_router, prefix=API_PREFIX, tags=["Upload Decisions"])
 app.include_router(router=monitoring_router, prefix=API_PREFIX, tags=["Ops Monitoring"])
 app.include_router(router=unknown_skill_suggestion_routes.router, prefix=API_PREFIX, tags=["Unknown Skill Suggestions"])
 app.include_router(router=unknown_skill_routes.router, prefix=API_PREFIX, tags=["Unknown Skills"])

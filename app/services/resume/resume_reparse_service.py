@@ -329,17 +329,32 @@ class ResumeReparseService:
         cc = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if cc is None:
             raise CampaignException("Candidate not found.", 404)
-        resume = self.resume_repo.get_by_id(cc.resume_id)
+        # A newer resume version became the candidate's active one in another
+        # campaign ("use new version"): once it is parsed, this re-score uses it.
+        repointed = None
+        active = self.resume_repo.get_active_by_candidate(cc.candidate_id)
+        if active is not None and active.id != cc.resume_id and active.parse_status == ParseStatus.PARSED:
+            previous = self.resume_repo.get_by_id(cc.resume_id) if cc.resume_id else None
+            repointed = {"from_resume_id": str(cc.resume_id) if cc.resume_id else None,
+                         "from_version_number": previous.version_number if previous else None,
+                         "to_resume_id": str(active.id), "to_version_number": active.version_number}
+            cc.resume_id = active.id
+        resume = active if repointed else self.resume_repo.get_by_id(cc.resume_id)
         if resume is None or resume.parse_status != ParseStatus.PARSED:
+            self.db.rollback()
             raise CampaignException("The resume isn't parsed - it can't be re-scored right now.", 409)
+        details = {"stage": cc.pipeline_stage.value, "score_out_of_date_reason": cc.score_out_of_date_reason}
+        if repointed:
+            details["repointed_to_active_version"] = repointed
         self.audit_service.log(
             actor_id=actor_id, actor_role=actor_role, action_type=ActionType.CANDIDATE_RESCORE_REQUESTED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=cc.campaign_id,
-            details={"stage": cc.pipeline_stage.value, "score_out_of_date_reason": cc.score_out_of_date_reason},
+            details=details,
         )
         self.db.commit()
         outcome = request_rescore(self.db, cc)
-        return {"campaign_candidate_id": cc.id, "stage": cc.pipeline_stage.value, "rescore": outcome}
+        return {"campaign_candidate_id": cc.id, "stage": cc.pipeline_stage.value, "rescore": outcome,
+                "resume_id": cc.resume_id, "repointed_to_active_version": repointed is not None}
 
     # --- read (API) -------------------------------------------------------------
     def list_changes(self, campaign_candidate_id: UUID) -> dict:

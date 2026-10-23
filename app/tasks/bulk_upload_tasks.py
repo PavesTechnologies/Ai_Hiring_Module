@@ -62,6 +62,8 @@ from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_processing_pipeline import ResumeProcessingPipeline
 from app.services.resume.resume_service import ResumeService
+from app.services.resume.upload_decision_service import UploadDecisionService
+from app.services.campaign.score_out_of_date import stamp_other_campaigns_for_new_version
 from app.services.skills.skill_normalization_service import SkillNormalizationService
 from app.core.redis_client import get_redis_client
 from app.services.cache_service import CacheService
@@ -74,6 +76,15 @@ logger = logging.getLogger(__name__)
 BULK_UPLOAD_STORAGE_BUCKET = "airs_resumes"
 BULK_UPLOAD_CONSENT_SOURCE = "BULK_UPLOAD_FORM"
 BULK_RESUME_PARSE_TASK_TYPE = "BULK_RESUME_PARSE"
+# celery_task_log.output_summary of each outcome - the file log shows it as the reason.
+_SKIPPED_IN_CAMPAIGN_SUMMARY = "Skipped - this exact file is already a candidate's resume in this campaign."
+_SKIPPED_EARLIER_VERSION_SUMMARY = (
+    "Skipped - this exact file is an earlier resume of a candidate already in this campaign."
+)
+_NEEDS_DECISION_SUMMARY = (
+    "Candidate already in this campaign with a different resume - waiting for a decision "
+    "(keep existing or use new version)."
+)
 _JUNK_PATH_PREFIXES = ("__MACOSX/",)
 _IMAGE_FORMATS = (FileFormat.PNG, FileFormat.JPEG)
 # PDF/DOCX only — validation_result.file_format is already guaranteed to be
@@ -318,6 +329,12 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
     immediately, unchanged from Phase B4 — retrying those could never
     succeed differently. Either way, a single file's outcome is recorded
     on the job's counters and does not affect any other file's processing.
+
+    Duplicate resume decisions: a file identical to a resume already in this
+    campaign is SKIPPED_DUPLICATE (before any parsing); a file whose
+    candidate (email) is already in this campaign is held as NEEDS_DECISION
+    (an upload_decisions row) right after identity extraction - before any
+    Resume version is created or deactivated.
     """
     db = SessionLocal()
     stage_db = SessionLocal()
@@ -361,6 +378,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             skill_repo, embedding_service, cache_service=CacheService(get_redis_client())
         )
         resume_service = ResumeService(resume_repo, audit_service)
+        upload_decision_service = UploadDecisionService(
+            db, storage_service=storage_service, encryption_service=encryption_service,
+        )
         stage_tracker = StageExecutionService(stage_repo)
         skill_evidence_service, detection_repository = build_v2_detection(
             db, skill_repo, skill_normalization_service.cache_service,
@@ -457,6 +477,18 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         # comes entirely from the matched file's own candidate; this file's
         # AI extraction never runs at all.
         file_hash = hashlib.md5(file_bytes).hexdigest()
+
+        # Duplicate resume decisions: this exact file is already a candidate's
+        # current resume in THIS campaign - skipped, nothing created.
+        in_campaign = campaign_candidate_repo.get_by_campaign_and_file_hash(job.campaign_id, file_hash)
+        if in_campaign is not None:
+            _skip_duplicate_in_campaign(
+                in_campaign, _SKIPPED_IN_CAMPAIGN_SUMMARY, job=job, job_file=job_file, file_hash=file_hash,
+                file_repo=file_repo, job_repo=job_repo, task_log=task_log, task_log_service=task_log_service,
+                upload_decision_service=upload_decision_service,
+            )
+            return
+
         matched_resume = resume_repo.get_by_file_hash_global(file_hash)
         if matched_resume is not None:
             matched_candidate = candidate_repo.get_by_id(matched_resume.candidate_id)
@@ -464,27 +496,33 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             already_linked = campaign_candidate_repo.get_by_campaign_and_candidate(
                 job.campaign_id, matched_candidate.id,
             )
-            added_campaign_candidate = None
-            if already_linked is None:
-                added_campaign_candidate = campaign_candidate_service.create_campaign_candidate(
-                    CampaignCandidateCreateRequest(
-                        campaign_id=job.campaign_id,
-                        candidate_id=matched_candidate.id,
-                        resume_id=matched_resume.id,
-                    ),
-                    actor_id=job.uploaded_by,
+            if already_linked is not None:
+                # The file is an earlier version of a candidate already here.
+                _skip_duplicate_in_campaign(
+                    already_linked, _SKIPPED_EARLIER_VERSION_SUMMARY, job=job, job_file=job_file,
+                    file_hash=file_hash, file_repo=file_repo, job_repo=job_repo, task_log=task_log,
+                    task_log_service=task_log_service, upload_decision_service=upload_decision_service,
                 )
+                return
+
+            # Identical file that exists only in another campaign: link the
+            # existing candidate (unchanged behaviour).
+            added_campaign_candidate = campaign_candidate_service.create_campaign_candidate(
+                CampaignCandidateCreateRequest(
+                    campaign_id=job.campaign_id,
+                    candidate_id=matched_candidate.id,
+                    resume_id=matched_resume.id,
+                ),
+                actor_id=job.uploaded_by,
+            )
 
             file_repo.update_status(job_file.id, BulkUploadFileStatus.PROCESSED)
             job_repo.increment_duplicate_count(job.id)
             job_repo.commit()
 
             # WebSocket board update - published only after the commit above,
-            # and only when this file actually linked a new campaign_candidate
-            # (already_linked is None); a file whose candidate was already on
-            # this campaign's board makes no board-visible change.
-            if added_campaign_candidate is not None:
-                CandidateChangeNotifier().added(job.campaign_id, added_campaign_candidate)
+            # which persists the new campaign_candidate link.
+            CandidateChangeNotifier().added(job.campaign_id, added_campaign_candidate)
 
             _maybe_finalize_job(job_repo, job.id)
 
@@ -547,6 +585,41 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
                 "Could not identify a candidate name and email from this resume."
             )
 
+        page_count = (
+            TextExtractionService.get_pdf_page_count(file_bytes)
+            if validation_result.file_format == FileFormat.PDF
+            else None
+        )
+
+        # Duplicate resume decisions: the candidate (same email) is already in
+        # this campaign with a different file. Held for the uploader's "keep
+        # existing / use new version" decision BEFORE any Resume version is
+        # created or deactivated - nothing else changes (the stored file is
+        # kept for the decision).
+        known_candidate = candidate_repo.get_by_email_hash(EncryptionService.generate_hash(email))
+        existing_in_campaign = (
+            campaign_candidate_repo.get_by_campaign_and_candidate(job.campaign_id, known_candidate.id)
+            if known_candidate is not None else None
+        )
+        if existing_in_campaign is not None:
+            upload_decision_service.hold_for_decision(
+                job=job, job_file=job_file, cc=existing_in_campaign, file_hash=file_hash,
+                file_format=validation_result.file_format, file_size_bytes=len(file_bytes), page_count=page_count,
+            )
+            file_repo.update_status(job_file.id, BulkUploadFileStatus.NEEDS_DECISION)
+            job_repo.increment_needs_decision_count(job.id)
+            job_repo.commit()
+            if checkpoint_repo.get(task_id) is not None:
+                checkpoint_repo.delete(task_id)
+                checkpoint_repo.commit()
+            _maybe_finalize_job(job_repo, job.id)
+            task_log_service.mark_success(task_log, summary=_NEEDS_DECISION_SUMMARY)
+            logger.info(
+                "Bulk file held for a decision | file_id=%s campaign_candidate_id=%s",
+                job_file.id, existing_in_campaign.id,
+            )
+            return
+
         candidate = candidate_service.get_or_create(
             full_name=full_name,
             email=email,
@@ -557,12 +630,6 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             ip_address=job.ip_address,
             user_agent=job.user_agent,
             actor_id=job.uploaded_by,
-        )
-
-        page_count = (
-            TextExtractionService.get_pdf_page_count(file_bytes)
-            if validation_result.file_format == FileFormat.PDF
-            else None
         )
 
         # Epic 3 (M05-E03) Phase C1 — same versioning logic as individual
@@ -580,7 +647,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             candidate_id=candidate.id,
             file_path=job_file.storage_path,
             file_format=validation_result.file_format,
-            file_hash=hashlib.md5(file_bytes).hexdigest(),
+            file_hash=file_hash,
             original_filename=job_file.original_filename,
             file_size_bytes=len(file_bytes),
             version_number=version_number,
@@ -624,6 +691,11 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             ),
             actor_id=job.uploaded_by,
         )
+
+        # A known candidate's new file became their active version: their
+        # campaign candidates in other campaigns still score the old one.
+        if existing_active is not None:
+            stamp_other_campaigns_for_new_version(campaign_candidate_repo, candidate.id, campaign)
 
         audit_service.log(
             actor_id=job.uploaded_by,
@@ -759,10 +831,25 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         stage_db.close()
 
 
+def _skip_duplicate_in_campaign(campaign_candidate, summary: str, *, job, job_file, file_hash: str, file_repo,
+                                job_repo, task_log, task_log_service, upload_decision_service) -> None:
+    """An identical file already in this campaign: SKIPPED_DUPLICATE, counted as a duplicate, audited."""
+    file_repo.update_status(job_file.id, BulkUploadFileStatus.SKIPPED_DUPLICATE)
+    job_repo.increment_duplicate_count(job.id)
+    upload_decision_service.log_duplicate_skipped(
+        campaign_candidate, filename=job_file.original_filename, file_hash=file_hash, actor_id=job.uploaded_by,
+        actor_role=None, bulk_upload_job_id=job.id,
+    )
+    job_repo.commit()
+    _maybe_finalize_job(job_repo, job.id)
+    task_log.resume_id = campaign_candidate.resume_id
+    task_log_service.mark_success(task_log, summary=summary)
+
+
 def _maybe_finalize_job(job_repo: BulkUploadJobRepository, job_id: UUID) -> None:
     """
-    Once every staged file has resolved (processed + failed + duplicate ==
-    total_files), transitions the job out of PROCESSING into its terminal
+    Once every staged file has resolved (processed + failed + duplicate +
+    needs-decision == total_files), transitions the job out of PROCESSING into its terminal
     state. Idempotent — safe to call after every file resolves even though
     only the last one to finish actually changes anything.
 
@@ -778,7 +865,8 @@ def _maybe_finalize_job(job_repo: BulkUploadJobRepository, job_id: UUID) -> None
     if job.total_files == 0:
         return
 
-    resolved = job.processed_count + job.failed_count + job.duplicate_count
+    needs_decision = getattr(job, "needs_decision_count", 0) or 0
+    resolved = job.processed_count + job.failed_count + job.duplicate_count + needs_decision
     if resolved < job.total_files:
         return
 
@@ -791,7 +879,7 @@ def _maybe_finalize_job(job_repo: BulkUploadJobRepository, job_id: UUID) -> None
     # only failures) is genuinely FAILED.
     if job.failed_count == 0:
         status = BulkUploadStatus.COMPLETED
-    elif job.processed_count > 0 or job.duplicate_count > 0:
+    elif job.processed_count > 0 or job.duplicate_count > 0 or needs_decision > 0:
         status = BulkUploadStatus.PARTIAL_FAILURE
     else:
         status = BulkUploadStatus.FAILED

@@ -61,6 +61,12 @@ class BulkUploadJobRepository:
     def increment_duplicate_count(self, job_id: UUID, by: int = 1) -> None:
         self._atomic_increment(job_id, BulkUploadJob.duplicate_count, by)
 
+    def increment_needs_decision_count(self, job_id: UUID, by: int = 1) -> None:
+        self._atomic_increment(job_id, BulkUploadJob.needs_decision_count, by)
+
+    def decrement_needs_decision_count(self, job_id: UUID, by: int = 1) -> None:
+        self._atomic_increment(job_id, BulkUploadJob.needs_decision_count, -by)
+
     def decrement_failed_count(self, job_id: UUID, by: int = 1) -> None:
         self._atomic_increment(job_id, BulkUploadJob.failed_count, -by)
 

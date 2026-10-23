@@ -102,11 +102,13 @@ def _v2_enabled_for_resume(db, resume_id) -> bool:
     return False
 
 
-def replay_payload(resume_id, prompt_template_id, reparse: dict | None) -> dict:
+def replay_payload(resume_id, prompt_template_id, reparse: dict | None, new_version: dict | None = None) -> dict:
     """What a dead-letter replay needs to re-run this task exactly (stored as the DLQ input_payload)."""
     payload = {"resume_id": str(resume_id), "prompt_template_id": str(prompt_template_id)}
     if reparse:
         payload["reparse"] = reparse
+    if new_version:
+        payload["new_version"] = new_version
     return payload
 
 
@@ -119,7 +121,53 @@ def replay_kwargs(entry, default_prompt_template_id=None) -> dict:
         kwargs["prompt_template_id"] = str(prompt)
     if payload.get("reparse"):
         kwargs["reparse"] = payload["reparse"]
+    if payload.get("new_version"):
+        kwargs["new_version"] = payload["new_version"]
     return kwargs
+
+
+# A "use new version" parse (UploadDecisionService.use_new_version) carries
+# its campaign candidate in the task log's idempotency key, so the recovery
+# scans redispatch it in new-version mode rather than as a first parse.
+_NEW_VERSION_KEY_MARKER = ":new_version:"
+
+
+def new_version_idempotency_key(resume_id, campaign_candidate_id) -> str:
+    return f"{RESUME_DOCUMENT_PROCESSING_TASK_TYPE}:{resume_id}{_NEW_VERSION_KEY_MARKER}{campaign_candidate_id}"
+
+
+def _recovery_kwargs(task_log, campaign) -> dict:
+    """process_resume_document kwargs for a recovery redispatch - keeps new-version mode when it was one."""
+    kwargs = {"resume_id": str(task_log.resume_id), "prompt_template_id": str(campaign.prompt_template_id)}
+    key = task_log.idempotency_key if isinstance(getattr(task_log, "idempotency_key", None), str) else ""
+    if _NEW_VERSION_KEY_MARKER in key:
+        kwargs["new_version"] = {"campaign_candidate_id": key.rsplit(_NEW_VERSION_KEY_MARKER, 1)[1]}
+    return kwargs
+
+
+def _finish_new_version(db, resume_id, new_version: dict, task_log_service: CeleryTaskLogService) -> str:
+    """
+    After a "use new version" parse: embed the new version, then re-score only
+    the campaign candidate that chose it, under request_rescore (SCREENING ->
+    the normal screening re-score; any other stage -> score only). The
+    first-parse path (move UPLOADED -> SCREENING, first deterministic scoring)
+    never runs for it - a stage only moves by a recruiter's decision.
+    """
+    from app.services.resume.resume_reparse_service import request_rescore
+
+    try:
+        _enqueue_resume_embedding(db, resume_id, task_log_service)
+    except Exception:
+        logger.exception("Failed to enqueue resume embedding after new version %s parsed.", resume_id)
+
+    campaign_candidate = CampaignCandidateRepository(db).get_by_id(UUID(new_version["campaign_candidate_id"]))
+    if campaign_candidate is None or str(campaign_candidate.resume_id) != str(resume_id):
+        logger.info("New version parsed but its campaign candidate no longer uses it | resume_id=%s", resume_id)
+        return "skipped: candidate no longer on this resume"
+    campaign = CampaignRepository(db).get_by_id(campaign_candidate.campaign_id)
+    if campaign is None or campaign.status not in _SCOREABLE_CAMPAIGN_STATUSES:
+        return "skipped: campaign not scoreable"
+    return request_rescore(db, campaign_candidate)
 
 
 def _mark_reparse_failed(db, reparse: dict | None, error) -> None:
@@ -223,7 +271,9 @@ def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLo
 
 
 @celery_app.task(name="resume.process_document", bind=True)
-def process_resume_document(self, resume_id: str, prompt_template_id: str, reparse: dict | None = None) -> None:
+def process_resume_document(
+    self, resume_id: str, prompt_template_id: str, reparse: dict | None = None, new_version: dict | None = None,
+) -> None:
     """
     Background Resume document-processing pipeline: Text Extraction ->
     Text Cleaning -> AI Extraction -> JSON Validation -> Skill Normalization
@@ -238,6 +288,10 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str, repar
 
     Stage tracking runs on its own session (`stage_db`), separate from the
     business-write session (`db`), same reasoning as process_jd_document.
+
+    new_version={"campaign_candidate_id": ...}: a "use new version" upload
+    decision (UploadDecisionService.use_new_version) - after the parse, only
+    that candidate is re-scored (request_rescore); no stage move.
     """
     db = SessionLocal()
     stage_db = SessionLocal()
@@ -345,14 +399,24 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str, repar
         # Before the notification below, so caches are dropped and boards
         # told only once SCREENING is committed too. Never allowed to affect
         # the committed parse success.
-        try:
-            _move_parsed_candidates_to_screening(db, processed_resume_id)
-        except Exception:
-            logger.exception(
-                "Failed to move candidates to SCREENING after resume %s parsed.", processed_resume_id,
-            )
+        if not new_version:
+            try:
+                _move_parsed_candidates_to_screening(db, processed_resume_id)
+            except Exception:
+                logger.exception(
+                    "Failed to move candidates to SCREENING after resume %s parsed.", processed_resume_id,
+                )
 
         _notify_resume_changed(db, processed_resume_id)
+
+        if new_version:
+            try:
+                outcome = _finish_new_version(db, processed_resume_id, new_version, task_log_service)
+                logger.info("New version parsed | resume_id=%s rescore=%s", processed_resume_id, outcome)
+            except Exception:
+                logger.exception("New-version finish failed | resume_id=%s", processed_resume_id)
+                db.rollback()
+            return
 
         # M08-E01: enqueued BEFORE deterministic scoring, not after -
         # calculate_deterministic_score_task's own auto-trigger calls
@@ -413,7 +477,7 @@ def process_resume_document(self, resume_id: str, prompt_template_id: str, repar
                 resume_id=resume.id if resume is not None else None,
                 # The task's own arguments - a replay of a re-parse must run
                 # as a re-parse (same version, reason, actor), not a first parse.
-                input_payload=replay_payload(resume_id, prompt_template_id, reparse),
+                input_payload=replay_payload(resume_id, prompt_template_id, reparse, new_version),
             )
         if not should_retry:
             db.rollback()
@@ -521,10 +585,7 @@ def recover_stalled_resume_uploads(db=None) -> int:
 
             try:
                 process_resume_document.apply_async(
-                    kwargs={
-                        "resume_id": str(task_log.resume_id),
-                        "prompt_template_id": str(campaign.prompt_template_id),
-                    },
+                    kwargs=_recovery_kwargs(task_log, campaign),
                     task_id=task_log.task_id,
                 )
                 recovered += 1
@@ -638,10 +699,7 @@ def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_
 
         try:
             process_resume_document.apply_async(
-                kwargs={
-                    "resume_id": str(task_log.resume_id),
-                    "prompt_template_id": str(campaign.prompt_template_id),
-                },
+                kwargs=_recovery_kwargs(task_log, campaign),
                 task_id=task_log.task_id,
             )
             recovered += 1

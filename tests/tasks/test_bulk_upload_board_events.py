@@ -72,8 +72,10 @@ class _Harness:
         self.campaign_repo.get_by_id.return_value = self.job
 
         self.campaign_candidate_repo = MagicMock()
+        # The file is not already a resume in this campaign.
+        self.campaign_candidate_repo.get_by_campaign_and_file_hash.return_value = None
         self.campaign_candidate_repo.get_by_campaign_and_candidate.return_value = (
-            SimpleNamespace(id=uuid4()) if already_linked else None
+            SimpleNamespace(id=uuid4(), campaign_id=self.campaign_id, resume_id=uuid4()) if already_linked else None
         )
 
         self.task_log_repo = MagicMock()

@@ -433,6 +433,26 @@ class CampaignCandidateRepository:
             .first()
         )
 
+    def get_by_campaign_and_file_hash(
+        self,
+        campaign_id: UUID,
+        file_hash: str,
+    ) -> CampaignCandidate | None:
+        """
+        The campaign candidate in this campaign whose CURRENT resume is this
+        exact file (same MD5) - an identical file already in the campaign is
+        skipped on upload, never re-added or re-asked about.
+        """
+        return (
+            self.db.query(CampaignCandidate)
+            .join(Resume, Resume.id == CampaignCandidate.resume_id)
+            .filter(
+                CampaignCandidate.campaign_id == campaign_id,
+                Resume.file_hash == file_hash,
+            )
+            .first()
+        )
+
     def get_existing_candidate_ids(
         self,
         campaign_id: UUID,

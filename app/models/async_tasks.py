@@ -39,6 +39,12 @@ class BulkUploadFileStatus(enum.Enum):
     PROCESSED = "PROCESSED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    # An identical file is already in this campaign - nothing stored or
+    # created, counted in duplicate_count.
+    SKIPPED_DUPLICATE = "SKIPPED_DUPLICATE"
+    # The candidate is already in this campaign with a different file - held
+    # as an upload_decisions row until the uploader (or an HR admin) decides.
+    NEEDS_DECISION = "NEEDS_DECISION"
 
 
 class DocumentType(enum.Enum):
@@ -185,6 +191,9 @@ class BulkUploadJob(Base):
     processed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Files held for a "keep existing / use new version" decision. Counts as
+    # resolved for job finalisation; moved to processed/duplicate when decided.
+    needs_decision_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     status: Mapped[BulkUploadStatus] = mapped_column(SAEnum(BulkUploadStatus, name="bulk_upload_status_enum"), nullable=False, default=BulkUploadStatus.PENDING)
     error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

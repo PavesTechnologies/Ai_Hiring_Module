@@ -224,6 +224,33 @@ class ResumeUploadService:
         )
         return UploadResumeResult(resume=resume, requires_processing=True, duplicate_found=False)
 
+    def store_file(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        content_type: str | None = None,
+        org_id: UUID | None = None,
+    ):
+        """
+        Validate and store a file only - no candidate, no Resume row. For the
+        "use new version" resolution, whose Resume is created by
+        UploadDecisionService.use_new_version. Returns (object_path,
+        validation_result, file_hash).
+        """
+        validation_result = self.file_validation_service.validate(file_bytes, filename)
+        object_path = self._build_object_path(org_id, validation_result.file_format)
+        try:
+            self.storage_service.upload_file(
+                bucket_name=self.RESUME_STORAGE_BUCKET,
+                file_path=object_path,
+                file_content=file_bytes,
+                content_type=content_type,
+            )
+        except StorageException:
+            self._safe_record_infra_failure(STORAGE_SERVICE_NAME)
+            raise
+        return object_path, validation_result, self._hash_file_bytes(file_bytes)
+
     def _create_next_version(
         self,
         candidate: Candidate,

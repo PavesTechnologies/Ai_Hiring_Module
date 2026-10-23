@@ -73,3 +73,46 @@ class DeadLetterEntryNotReplayableException(ResumeException):
 
     def __init__(self, message: str, data: Any | None = None):
         super().__init__(message, status_code=409, data=data)
+
+
+class DuplicateFileInCampaignException(ResumeException):
+    """
+    The identical file (same hash) is already the current resume of a
+    campaign candidate in this campaign - skipped, never asked about.
+    `data` carries a DuplicateFileInCampaignResponse (error_code
+    DUPLICATE_FILE_IN_CAMPAIGN).
+    """
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)
+
+
+class CandidateInCampaignNewFileException(ResumeException):
+    """
+    The candidate (same email) is already in this campaign and this is a
+    different file - the uploader resends with resolution keep_existing or
+    use_new_version. `data` carries a CandidateInCampaignNewFileResponse
+    (error_code CANDIDATE_IN_CAMPAIGN_NEW_FILE).
+    """
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)
+
+
+class UploadDecisionNotFoundException(ResumeException):
+    def __init__(self, message: str = "Upload decision not found.", data: Any | None = None):
+        super().__init__(message, status_code=404, data=data)
+
+
+class UploadDecisionForbiddenException(ResumeException):
+    """Only the uploader of the held file or an HR admin may decide."""
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=403, data=data)
+
+
+class UploadDecisionNotPendingException(ResumeException):
+    """Already decided (or expired), or can no longer be applied."""
+
+    def __init__(self, message: str, data: Any | None = None):
+        super().__init__(message, status_code=409, data=data)

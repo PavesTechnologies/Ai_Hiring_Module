@@ -48,12 +48,18 @@ def _make_harness(requires_processing=True, race_existing_log=None):
     else:
         task_log_repo.create_if_new_idempotency_key.side_effect = lambda log: (log, True)
 
+    # Not already in the campaign (no identical file, no same-email candidate).
+    upload_decision_service = MagicMock()
+    upload_decision_service.find_identical_file_in_campaign.return_value = None
+    upload_decision_service.find_candidate_in_campaign.return_value = None
+
     service = ResumeIntakeService(
         resume_service=resume_service,
         campaign_candidate_service=campaign_candidate_service,
         campaign_repo=campaign_repo,
         audit_service=audit_service,
         task_log_repo=task_log_repo,
+        upload_decision_service=upload_decision_service,
     )
     return service, campaign, resume, resume_service, campaign_repo, task_log_repo
 
@@ -81,7 +87,7 @@ def test_creates_and_commits_celery_task_log_before_apply_async():
     service, campaign, resume, *_ , task_log_repo = _make_harness()
 
     with patch(f"{MODULE}.process_resume_document") as mock_task:
-        _resume, _cc, _campaign, task_id, requires_processing = _upload(service, campaign)
+        _resume, _cc, _campaign, task_id, requires_processing, *_ = _upload(service, campaign)
 
     assert requires_processing is True
     task_log_repo.create_if_new_idempotency_key.assert_called_once()
@@ -113,7 +119,9 @@ def test_apply_async_failure_never_fails_the_upload():
         mock_task.apply_async.side_effect = Exception("Connection refused - broker unreachable")
 
         # Must not raise.
-        result_resume, campaign_candidate, result_campaign, task_id, requires_processing = _upload(service, campaign)
+        result_resume, campaign_candidate, result_campaign, task_id, requires_processing, *_ = _upload(
+            service, campaign,
+        )
 
     assert result_resume is resume
     assert requires_processing is True
@@ -156,7 +164,7 @@ def test_lost_idempotency_race_reuses_existing_task_id_and_never_dispatches():
     service, campaign, resume, resume_service, *_ = _make_harness(race_existing_log=existing_log)
 
     with patch(f"{MODULE}.process_resume_document") as mock_task:
-        _resume, _cc, _campaign, task_id, requires_processing = _upload(service, campaign)
+        _resume, _cc, _campaign, task_id, requires_processing, *_ = _upload(service, campaign)
 
     assert requires_processing is True
     assert task_id == UUID(existing_task_id)
@@ -193,7 +201,7 @@ def test_use_existing_resolution_never_touches_celery_task_log():
     resume.task_id = str(uuid4())
 
     with patch(f"{MODULE}.process_resume_document") as mock_task:
-        _resume, _cc, _campaign, task_id, requires_processing = _upload(service, campaign)
+        _resume, _cc, _campaign, task_id, requires_processing, *_ = _upload(service, campaign)
 
     assert requires_processing is False
     assert task_id == UUID(resume.task_id)

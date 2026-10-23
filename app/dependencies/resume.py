@@ -47,6 +47,7 @@ from app.services.resume.resume_intake_service import ResumeIntakeService
 from app.services.resume.resume_monitoring_service import ResumeMonitoringService
 from app.services.resume.resume_processing_status_service import ResumeProcessingStatusService
 from app.services.resume.resume_upload_service import ResumeUploadService
+from app.services.resume.upload_decision_service import UploadDecisionService
 from app.dependencies.cache import get_cache_service
 from app.services.cache_service import CacheService
 
@@ -154,12 +155,21 @@ def get_resume_service(
     )
 
 
+def get_upload_decision_service(
+    db: Session = Depends(get_db),
+    storage_service: StorageService = Depends(get_storage_service),
+    encryption_service: EncryptionService = Depends(get_encryption_service),
+) -> UploadDecisionService:
+    return UploadDecisionService(db, storage_service=storage_service, encryption_service=encryption_service)
+
+
 def get_resume_intake_service(
     resume_service: ResumeUploadService = Depends(get_resume_service),
     campaign_candidate_service: CampaignCandidateService = Depends(get_campaign_candidate_service),
     campaign_repo: CampaignRepository = Depends(get_campaign_repository),
     audit_service: AuditService = Depends(get_audit_service),
     task_log_repo: CeleryTaskLogRepository = Depends(get_celery_task_log_repository),
+    upload_decision_service: UploadDecisionService = Depends(get_upload_decision_service),
 ) -> ResumeIntakeService:
     return ResumeIntakeService(
         resume_service=resume_service,
@@ -167,6 +177,7 @@ def get_resume_intake_service(
         campaign_repo=campaign_repo,
         audit_service=audit_service,
         task_log_repo=task_log_repo,
+        upload_decision_service=upload_decision_service,
     )
 
 

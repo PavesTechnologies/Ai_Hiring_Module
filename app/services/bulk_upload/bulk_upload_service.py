@@ -36,6 +36,8 @@ _TERMINAL_FILE_STATUSES = (
     BulkUploadFileStatus.PROCESSED,
     BulkUploadFileStatus.FAILED,
     BulkUploadFileStatus.CANCELLED,
+    BulkUploadFileStatus.SKIPPED_DUPLICATE,
+    BulkUploadFileStatus.NEEDS_DECISION,
 )
 
 # Epic 4 (M05-E04) Phase D5 — the exact wording C3 (Epic 3) writes to
@@ -48,6 +50,8 @@ _DUPLICATE_FILE_OUTPUT_SUMMARY_MARKER = "Duplicate file detected"
 
 _DEFAULT_FAILURE_REASON = "Processing failed for an unspecified reason."
 _SKIPPED_FILE_REASON = "Job was cancelled before this file could be processed."
+_SKIPPED_DUPLICATE_REASON = "This exact file is already in this campaign."
+_NEEDS_DECISION_REASON = "Candidate already in this campaign with a different resume - waiting for a decision."
 
 
 class BulkUploadService:
@@ -322,7 +326,8 @@ class BulkUploadService:
         if job is None:
             raise BulkUploadJobNotFoundException("Bulk upload job not found.")
 
-        resolved_count = job.processed_count + job.failed_count + job.duplicate_count
+        resolved_count = (job.processed_count + job.failed_count + job.duplicate_count
+                          + (getattr(job, "needs_decision_count", 0) or 0))
         remaining_count = max(job.total_files - resolved_count, 0)
 
         if job.total_files > 0:
@@ -396,6 +401,15 @@ class BulkUploadService:
         elif job_file.status == BulkUploadFileStatus.FAILED:
             result = BulkUploadFileLogResult.FAILED
             reason = self._resolve_failure_reason(task_log)
+        elif job_file.status == BulkUploadFileStatus.SKIPPED_DUPLICATE:
+            # An identical file already in the campaign, or a held file whose
+            # decision kept the existing resume - the task log says which.
+            result = BulkUploadFileLogResult.DUPLICATE
+            reason = (task_log.output_summary if task_log is not None and task_log.output_summary
+                      else _SKIPPED_DUPLICATE_REASON)
+        elif job_file.status == BulkUploadFileStatus.NEEDS_DECISION:
+            result = BulkUploadFileLogResult.NEEDS_DECISION
+            reason = _NEEDS_DECISION_REASON
         elif self._is_duplicate_file_outcome(task_log):
             result = BulkUploadFileLogResult.DUPLICATE
             reason = None
@@ -405,6 +419,8 @@ class BulkUploadService:
 
         return BulkUploadFileLogEntry(
             filename=job_file.original_filename,
+            file_id=job_file.id,
+            status=job_file.status.value,
             result=result,
             reason=reason,
             timestamp=self._resolve_file_log_timestamp(job_file, task_log, job),

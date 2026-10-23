@@ -59,7 +59,9 @@ def upload_resume(
     candidate_phone: str | None = Form(default=None, max_length=50),
     jurisdiction: str = Form(default=Jurisdiction.GLOBAL.value),
     consent_confirmed: bool = Form(...),
-    resolution: Literal["use_existing", "upload_anyway"] | None = Form(default=None),
+    resolution: Literal["use_existing", "upload_anyway", "keep_existing", "use_new_version"] | None = Form(
+        default=None,
+    ),
     file: UploadFile = File(...),
     service: ResumeIntakeService = Depends(get_resume_intake_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
@@ -76,6 +78,16 @@ def upload_resume(
     HTTP 409 with a DuplicateFileWarningResponse instead (raised as
     DuplicateResumeFileException and handled by the existing global
     ResumeException handler — no special-casing needed here).
+
+    Duplicate resume decisions (checked first, nothing stored on a 409):
+    - the identical file is already a candidate's resume in this campaign:
+      409, data.error_code DUPLICATE_FILE_IN_CAMPAIGN (never asked about);
+    - the candidate (email) is already in this campaign with another file:
+      409, data.error_code CANDIDATE_IN_CAMPAIGN_NEW_FILE; resend with
+      resolution=keep_existing (nothing stored, outcome KEPT_EXISTING) or
+      resolution=use_new_version (outcome NEW_VERSION_USED: the file becomes
+      their next resume version for this campaign, re-scored after parsing,
+      stage unchanged).
     """
     try:
         validated = ResumeUploadRequest(
@@ -93,7 +105,7 @@ def upload_resume(
     file_bytes = file.file.read()
     filename = file.filename or "resume"
 
-    resume, campaign_candidate, campaign, task_id, requires_processing = service.upload_resume(
+    result = service.upload_resume(
         campaign_id=validated.campaign_id,
         file_bytes=file_bytes,
         filename=filename,
@@ -109,23 +121,33 @@ def upload_resume(
         resolution=validated.resolution,
     )
 
+    resume, campaign_candidate, campaign = result.resume, result.campaign_candidate, result.campaign
     masked_name = validated.candidate_full_name.split(" ")[0]
-    message = (
-        "Resume uploaded successfully and queued for processing."
-        if requires_processing
-        else "Existing resume linked to the campaign — no reprocessing needed."
-    )
+    if result.outcome == "KEPT_EXISTING":
+        message = "The candidate's existing resume was kept — the new file was not stored."
+    elif result.outcome == "NEW_VERSION_USED":
+        message = (
+            f"The new file is now the candidate's resume (version {resume.version_number}) and is queued "
+            "for processing — their stage is unchanged."
+        )
+    elif result.requires_processing:
+        message = "Resume uploaded successfully and queued for processing."
+    else:
+        message = "Existing resume linked to the campaign — no reprocessing needed."
 
     return APIResponse.ok(
         data=ResumeUploadAcceptedResponse(
             resume_id=resume.id,
             campaign_candidate_id=campaign_candidate.id,
-            task_id=task_id,
+            task_id=result.task_id,
             candidate_name_masked=masked_name,
             file_name=filename,
             campaign_name=campaign.name,
             pipeline_stage=campaign_candidate.pipeline_stage.value,
             parse_status=resume.parse_status.value,
+            outcome=result.outcome,
+            previous_resume_id=result.previous_resume_id,
+            version_number=getattr(resume, "version_number", None),
         ),
         message=message,
     )

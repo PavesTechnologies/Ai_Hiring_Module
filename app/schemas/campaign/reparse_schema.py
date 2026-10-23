@@ -26,6 +26,10 @@ class RescoreResponse(BaseModel):
     stage: str
     # What was done: "re-scored (screening)" or "scores updated, stage unchanged (...)".
     rescore: str
+    # The resume scored. repointed_to_active_version: the candidate was moved
+    # onto their newer active resume version (uploaded in another campaign).
+    resume_id: UUID | None = None
+    repointed_to_active_version: bool = False
 
 
 class ParseVersionItem(BaseModel):

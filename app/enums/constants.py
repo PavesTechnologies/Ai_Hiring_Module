@@ -123,6 +123,14 @@ class ActionType(enum.Enum):
     # Duplicate-file upload: the warning shown, and the "use existing" choice.
     RESUME_DUPLICATE_DETECTED = "RESUME_DUPLICATE_DETECTED"
     RESUME_DUPLICATE_USE_EXISTING = "RESUME_DUPLICATE_USE_EXISTING"
+    # Duplicate resume decisions (migration d6f8a0c2e4b7): an identical file
+    # already in the campaign skipped, and the "keep existing" / "use new
+    # version" choice for a candidate already in the campaign (single upload
+    # or a held bulk file), plus a held bulk file's 30-day expiry.
+    RESUME_DUPLICATE_SKIPPED = "RESUME_DUPLICATE_SKIPPED"
+    RESUME_KEPT_EXISTING = "RESUME_KEPT_EXISTING"
+    RESUME_NEW_VERSION_USED = "RESUME_NEW_VERSION_USED"
+    UPLOAD_DECISION_EXPIRED = "UPLOAD_DECISION_EXPIRED"
     RESUME_REPARSE_REQUESTED = "RESUME_REPARSE_REQUESTED"
     RESUME_REPARSED = "RESUME_REPARSED"
     CANDIDATE_RESCORE_REQUESTED = "CANDIDATE_RESCORE_REQUESTED"
@@ -210,6 +218,7 @@ class EntityType(enum.Enum):
     CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
     PROMPT_TEMPLATE = "PROMPT_TEMPLATE"
     AI_PROVIDER_CONFIG = "AI_PROVIDER_CONFIG"
+    UPLOAD_DECISION = "UPLOAD_DECISION"
 
 
 S3_RESUME_PREFIX = "resumes/"

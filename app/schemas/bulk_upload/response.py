@@ -31,6 +31,9 @@ class BulkUploadProgressResponse(BaseModel):
     processed_count: int
     failed_count: int
     duplicate_count: int
+    # Files held for a "keep existing / use new version" decision (resolved
+    # for progress; GET /bulk-uploads/{id}/decisions lists them).
+    needs_decision_count: int = 0
     remaining_count: int
     # Clamped to 100.0 - a guard against counter inconsistencies, never
     # itself the source of truth (the raw counters above always are).
@@ -47,13 +50,21 @@ class BulkUploadFileLogResult(str, enum.Enum):
     FAILED = "FAILED"
     DUPLICATE = "DUPLICATE"
     SKIPPED = "SKIPPED"
+    # Held: the candidate is already in the campaign with a different file.
+    NEEDS_DECISION = "NEEDS_DECISION"
 
 
 class BulkUploadFileLogEntry(BaseModel):
     filename: str
     result: BulkUploadFileLogResult
-    # Always populated for FAILED/SKIPPED, always None for SUCCESS/DUPLICATE.
+    # Always populated for FAILED/SKIPPED/NEEDS_DECISION and for a
+    # SKIPPED_DUPLICATE file (DUPLICATE); None for SUCCESS and the older
+    # "duplicate linked" DUPLICATE.
     reason: str | None = None
+    file_id: UUID | None = None
+    # The raw bulk_upload_job_files status (PROCESSED, FAILED, CANCELLED,
+    # SKIPPED_DUPLICATE, NEEDS_DECISION).
+    status: str | None = None
     timestamp: datetime
 
 
@@ -73,6 +84,7 @@ class BulkUploadJobSummary(BaseModel):
     processed_count: int
     failed_count: int
     duplicate_count: int
+    needs_decision_count: int = 0
     created_at: datetime
     completed_at: datetime | None
     # M04-E04-S02-T01: shown when expanding a FAILED/PARTIAL_FAILURE job in
@@ -137,6 +149,7 @@ class BulkUploadJobDetailResponse(BaseModel):
     processed_count: int
     failed_count: int
     duplicate_count: int
+    needs_decision_count: int = 0
     error_summary: str | None
     created_at: datetime
     completed_at: datetime | None

@@ -18,7 +18,9 @@ class ResumeUploadRequest(BaseModel):
     consent_confirmed: bool
     # Epic 3 (M05-E03) Phase C2 — how to resolve an exact-duplicate file
     # match; None means "not yet resolved" (a warning is returned).
-    resolution: Optional[Literal["use_existing", "upload_anyway"]] = None
+    # keep_existing / use_new_version answer the CANDIDATE_IN_CAMPAIGN_NEW_FILE
+    # 409 (the candidate is already in this campaign with another file).
+    resolution: Optional[Literal["use_existing", "upload_anyway", "keep_existing", "use_new_version"]] = None
 
     @field_validator("candidate_full_name")
     @classmethod

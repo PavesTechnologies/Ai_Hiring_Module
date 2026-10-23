@@ -140,7 +140,7 @@ def _reparse_service(stage):
     service = ResumeReparseService.__new__(ResumeReparseService)
     campaign = SimpleNamespace(id=uuid4(), jd_id=uuid4(), prompt_template_id=uuid4(), name="t")
     resume = SimpleNamespace(id=uuid4(), parse_status=ParseStatus.PARSED, parsed_json={})
-    cc = SimpleNamespace(id=uuid4(), campaign_id=campaign.id, resume_id=resume.id, pipeline_stage=stage,
+    cc = SimpleNamespace(id=uuid4(), campaign_id=campaign.id, candidate_id=uuid4(), resume_id=resume.id, pipeline_stage=stage,
                          score_out_of_date_reason=None)
     service.db = MagicMock()
     service.db.execute.return_value.scalar_one.return_value = 0

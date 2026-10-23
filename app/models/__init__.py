@@ -41,11 +41,14 @@ from .async_tasks import (
     CeleryTaskLog,
     DeadLetterQueue,
     BulkUploadJob,
+    BulkUploadJobFile,
     DocumentProcessingStageExecution,
     DocumentType,
     ProcessingStage,
     StageExecutionStatus,
 )
+
+from .upload_decisions import UploadDecision
 
 from .skills import (
     SkillOntology,

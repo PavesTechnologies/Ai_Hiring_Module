@@ -1,8 +1,14 @@
 import logging
+from typing import NamedTuple
 from uuid import UUID, uuid4
 
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
+from app.exceptions.resume_exceptions import (
+    CandidateInCampaignNewFileException,
+    DuplicateFileInCampaignException,
+    ResumeException,
+)
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.candidates import ParseStatus, Resume
@@ -10,12 +16,14 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignCandidateCreateRequest,
-    CampaignCandidateResponse,
 )
+from app.schemas.resume.upload_decision import NEW_FILE_RESOLUTIONS
 from app.services.audit_service import AuditService
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from app.services.campaign.score_out_of_date import stamp_other_campaigns_for_new_version
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.resume.resume_upload_service import ResumeUploadService
+from app.services.resume.upload_decision_service import UploadDecisionService
 from app.tasks.resume_processing_tasks import (
     RESUME_DOCUMENT_PROCESSING_TASK_TYPE,
     _enqueue_deterministic_scoring,
@@ -26,6 +34,22 @@ from app.services.candidate_change_notifier import CandidateChangeNotifier
 logger = logging.getLogger(__name__)
 
 UPLOAD_CONSENT_SOURCE = "UPLOAD_FORM"
+
+OUTCOME_UPLOADED = "UPLOADED"
+OUTCOME_LINKED_EXISTING = "LINKED_EXISTING"
+OUTCOME_KEPT_EXISTING = "KEPT_EXISTING"
+OUTCOME_NEW_VERSION_USED = "NEW_VERSION_USED"
+
+
+class ResumeIntakeResult(NamedTuple):
+    resume: Resume
+    campaign_candidate: object
+    campaign: HiringCampaign
+    task_id: UUID | None
+    requires_processing: bool
+    # OUTCOME_*: what the upload did (see ResumeUploadAcceptedResponse.outcome).
+    outcome: str = OUTCOME_UPLOADED
+    previous_resume_id: UUID | None = None
 
 
 class ResumeIntakeService:
@@ -44,6 +68,7 @@ class ResumeIntakeService:
         campaign_repo: CampaignRepository,
         audit_service: AuditService,
         task_log_repo: CeleryTaskLogRepository,
+        upload_decision_service: UploadDecisionService | None = None,
     ):
         self.resume_service = resume_service
         self.campaign_candidate_service = campaign_candidate_service
@@ -51,6 +76,8 @@ class ResumeIntakeService:
         self.audit_service = audit_service
         self.task_log_repo = task_log_repo
         self.task_log_service = CeleryTaskLogService(task_log_repo)
+        # Same session as the repositories above (the request's).
+        self.upload_decision_service = upload_decision_service or UploadDecisionService(task_log_repo.db)
 
     def _queue_scoring_for_existing_resume(self, resume, campaign_candidate_id) -> None:
         """
@@ -96,17 +123,33 @@ class ResumeIntakeService:
         ip_address: str | None = None,
         user_agent: str | None = None,
         resolution: str | None = None,
-    ) -> tuple[Resume, CampaignCandidateResponse, HiringCampaign, UUID | None, bool]:
+    ) -> ResumeIntakeResult:
         campaign = self._precheck_campaign_eligibility(campaign_id)
 
-        # Fast, non-authoritative — rejects a candidate who already has a
-        # campaign_candidates row for this campaign before any file upload
-        # or Resume row is created, instead of only being caught afterward
-        # by create_campaign_candidate's own identical check (which used to
-        # leave an orphaned, unprocessed Resume row behind on every rejection).
-        self.campaign_candidate_service.check_no_existing_campaign_membership(
-            campaign_id, candidate_email,
-        )
+        # Duplicate resume decisions - both checked before anything is stored:
+        # 1. this exact file is already a candidate's resume in this campaign:
+        #    skipped (409 DUPLICATE_FILE_IN_CAMPAIGN), never asked about;
+        # 2. the candidate (email) is already in this campaign with another
+        #    file: the uploader decides keep_existing / use_new_version (409
+        #    CANDIDATE_IN_CAMPAIGN_NEW_FILE until a resolution is sent).
+        # This replaces the old "Candidate already exists in this campaign"
+        # pre-check; create_campaign_candidate's locked check still backs the
+        # insert below.
+        file_hash = ResumeUploadService._hash_file_bytes(file_bytes)
+        identical = self.upload_decision_service.find_identical_file_in_campaign(campaign_id, file_hash)
+        if identical is not None:
+            self._skip_identical_file(identical, filename, file_hash, uploaded_by, actor_role)
+
+        existing = self.upload_decision_service.find_candidate_in_campaign(campaign_id, candidate_email)
+        if existing is not None:
+            return self._resolve_candidate_in_campaign(
+                existing, campaign, file_bytes=file_bytes, filename=filename, content_type=content_type,
+                uploaded_by=uploaded_by, actor_role=actor_role, resolution=resolution,
+            )
+        if resolution in NEW_FILE_RESOLUTIONS:
+            raise ResumeException(
+                f"'{resolution}' only applies to a candidate already in this campaign - this one isn't.", 400,
+            )
 
         # Epic 3 (M05-E03) Phase C2 — may raise DuplicateResumeFileException
         # (no route-level handling needed; the global ResumeException
@@ -170,9 +213,16 @@ class ResumeIntakeService:
             )
             self._queue_scoring_for_existing_resume(resume, campaign_candidate.id)
             existing_task_id = UUID(resume.task_id) if resume.task_id else None
-            return resume, campaign_candidate, campaign, existing_task_id, False
+            return ResumeIntakeResult(resume, campaign_candidate, campaign, existing_task_id, False,
+                                      OUTCOME_LINKED_EXISTING)
 
         try:
+            # A known candidate's new file became their active version: their
+            # campaign candidates in other campaigns still score the old one.
+            if (getattr(resume, "version_number", 1) or 1) > 1:
+                stamp_other_campaigns_for_new_version(
+                    self.upload_decision_service.campaign_candidate_repo, resume.candidate_id, campaign,
+                )
             self.audit_service.log(
                 actor_id=uploaded_by,
                 actor_role=None,
@@ -234,7 +284,7 @@ class ResumeIntakeService:
             logger.info(
                 "Task already created for resume_id=%s (race) - reusing task_id=%s", resume.id, task_id,
             )
-            return resume, campaign_candidate, campaign, task_id, True
+            return ResumeIntakeResult(resume, campaign_candidate, campaign, task_id, True)
 
         logger.info("Task created | resume_id=%s task_id=%s", resume.id, task_id)
 
@@ -254,7 +304,80 @@ class ResumeIntakeService:
             )
             self.task_log_service.mark_dispatch_failed(task_log, str(exc))
 
-        return resume, campaign_candidate, campaign, task_id, True
+        return ResumeIntakeResult(resume, campaign_candidate, campaign, task_id, True)
+
+    def _skip_identical_file(self, campaign_candidate, filename, file_hash, uploaded_by, actor_role) -> None:
+        """Audited (best-effort, committed) and raised as the 409 - nothing is stored."""
+        decisions = self.upload_decision_service
+        data = decisions.duplicate_file_in_campaign_data(campaign_candidate)
+        try:
+            decisions.log_duplicate_skipped(
+                campaign_candidate, filename=filename, file_hash=file_hash, actor_id=uploaded_by,
+                actor_role=actor_role,
+            )
+            self.campaign_repo.commit()
+        except Exception:
+            logger.exception("Could not audit the skipped duplicate | campaign_candidate_id=%s", campaign_candidate.id)
+            self.campaign_repo.rollback()
+        logger.info(
+            "Identical file already in campaign - skipped | campaign_candidate_id=%s by=%s",
+            campaign_candidate.id, uploaded_by,
+        )
+        owner = data.candidate_name or "another candidate"
+        raise DuplicateFileInCampaignException(
+            f"This exact file is already in this campaign as {owner}'s resume - nothing was uploaded.",
+            data=data,
+        )
+
+    def _resolve_candidate_in_campaign(
+        self, campaign_candidate, campaign, *, file_bytes, filename, content_type, uploaded_by, actor_role,
+        resolution,
+    ) -> ResumeIntakeResult:
+        decisions = self.upload_decision_service
+        if resolution not in NEW_FILE_RESOLUTIONS:
+            raise CandidateInCampaignNewFileException(
+                "This candidate is already in this campaign with a different resume. Keep the existing "
+                "resume, or use the new file as their new resume version.",
+                data=decisions.candidate_in_campaign_data(campaign_candidate),
+            )
+
+        if resolution == "keep_existing":
+            decisions.keep_existing_for_upload(
+                campaign_candidate, filename=filename, actor_id=uploaded_by, actor_role=actor_role,
+            )
+            resume = decisions.resume_repo.get_by_id(campaign_candidate.resume_id)
+            task_id = UUID(resume.task_id) if resume is not None and resume.task_id else None
+            return ResumeIntakeResult(resume, campaign_candidate, campaign, task_id, False, OUTCOME_KEPT_EXISTING)
+
+        object_path, validation_result, file_hash = self.resume_service.store_file(
+            file_bytes, filename, content_type,
+        )
+        try:
+            resume, previous, task_id = decisions.use_new_version(
+                campaign_candidate, campaign,
+                storage_path=object_path,
+                file_format=validation_result.file_format,
+                file_hash=file_hash,
+                original_filename=filename,
+                file_size_bytes=len(file_bytes),
+                page_count=None,
+                uploaded_by=uploaded_by,
+                actor_id=uploaded_by,
+                actor_role=actor_role,
+            )
+        except Exception:
+            # Nothing was committed - don't leave the stored file behind.
+            try:
+                self.resume_service.storage_service.delete_file(
+                    ResumeUploadService.RESUME_STORAGE_BUCKET, object_path,
+                )
+            except Exception:
+                logger.exception("Could not delete the stored file after a failed new version | %s", object_path)
+            raise
+        return ResumeIntakeResult(
+            resume, campaign_candidate, campaign, task_id, True, OUTCOME_NEW_VERSION_USED,
+            previous.id if previous is not None else None,
+        )
 
     def _precheck_campaign_eligibility(self, campaign_id: UUID) -> HiringCampaign:
         """

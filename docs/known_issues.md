@@ -63,7 +63,14 @@ exports left no record at all.
 
 ## Bulk upload: a new resume for a candidate already in the campaign becomes their active version, but the campaign keeps the old one (found 2026-10-14)
 
-**Status:** open - to fix after the Phase 3 comparison.
+**Status:** fixed 2026-10-23 (branch `feat/duplicate-resume-decisions`, migration `d6f8a0c2e4b7`). After
+identity extraction and before any Resume version is created or deactivated, a file whose candidate is already
+in the campaign is held as an `upload_decisions` row (file kept in storage, job file `NEEDS_DECISION`, nothing
+else changed) until the uploader or an HR admin chooses "keep existing" (file discarded) or "use new version"
+(next version created, this campaign's candidate pointed at it and re-scored with the stage unchanged, other
+campaigns marked score out of date); undecided after 30 days -> keep existing. A byte-identical file already
+in the campaign is now `SKIPPED_DUPLICATE`. Tests: `tests/tasks/test_bulk_upload_duplicate_decisions.py`,
+`tests/services/resume/test_upload_decision_service.py`. Original report kept for history.
 
 In `app/tasks/bulk_upload_tasks.py` (`parse_file`), a ZIP file whose resume text carries the email of a
 candidate already in the campaign is fully processed first: `candidate_service.get_or_create` returns the

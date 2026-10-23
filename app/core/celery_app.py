@@ -118,6 +118,7 @@ celery_app.conf.imports = (
     "app.tasks.export_tasks",
     "app.tasks.email_tasks",
     "app.tasks.unknown_skill_reevaluation_tasks",
+    "app.tasks.upload_decision_tasks",
 )
 
 
@@ -204,6 +205,12 @@ celery_app.conf.beat_schedule = {
         # upload leaves a candidate's resume unprocessed for as long as
         # this interval.
         "schedule": crontab(minute="*/5"),
+    },
+    "expire-upload-decisions": {
+        "task": "resume.expire_upload_decisions",
+        # Duplicate resume decisions: a held bulk file nobody decided on in
+        # 30 days keeps the existing resume. Daily, off-peak, its own hour.
+        "schedule": crontab(minute=30, hour=4),
     },
     "request-interview-feedback-for-ended-rounds": {
         "task": "interview.request_feedback_for_ended_rounds",
