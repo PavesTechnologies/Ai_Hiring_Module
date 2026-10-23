@@ -7,6 +7,28 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Worker and task logs contain candidate names and emails; production logs must not (found 2026-10-23)
+
+**Status:** open - must be fixed before production holds real candidate data.
+
+The Celery worker log (`logs/celery-worker.log*`) and the `celery_task_log` /
+`dead_letter_queue` tables quote candidates' personal data: uploaded file names
+(often the candidate's name) in bulk-parse task titles and summaries, and
+recipient names/emails in `EMAIL_SEND` errors. Found while cleaning up the six
+real candidates in dev: 37 mentions across three rotated worker log files, 9
+task-log rows and 5 dead-letter rows.
+
+Since 2026-10-23 candidate erasure deletes task-log and dead-letter rows that
+name the candidate (and their bulk-upload file rows and ZIP entries), but that
+is a clean-up after the fact. Log *files* are never erased by the app.
+
+**Required before production:** no personal data in logs at all - log ids
+(candidate, resume, campaign-candidate, notification) instead of names, emails
+and file names, in both the worker/application log output and the task-log
+and dead-letter rows; treat exception messages from the email provider as
+personal data (they echo the recipient). Until then: keep log retention
+short, and delete rotated worker logs after any real-data test.
+
 ## Dev runs on the Gemini free tier; production needs the paid tier before any real candidate data (found 2026-10-23)
 
 **Status:** open - a deployment prerequisite, not a code fix.
