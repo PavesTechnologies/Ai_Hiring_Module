@@ -48,9 +48,11 @@ def test_get_current_route_is_registered_as_get():
     assert route.path == _GET_CURRENT_PATH
 
 
-def test_get_current_allows_hiring_manager_and_hr_admin():
+def test_get_current_allows_hiring_manager_recruiter_and_hr_admin():
+    # RECRUITER was added deliberately in 2368c4f; the service scopes a recruiter to their own
+    # campaigns (fix/recruiter-interview-scope).
     allowed = _allowed_roles(_get_route(_GET_CURRENT_PATH, "GET"))
-    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.RECRUITER.value, UserRole.HR_ADMIN.value})
 
 
 def test_schedule_route_is_registered_as_post():
@@ -73,14 +75,18 @@ def test_schedule_allows_hiring_manager_and_hr_admin():
     assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
 
 
-def test_reschedule_allows_hiring_manager_and_hr_admin():
+def test_reschedule_allows_hiring_manager_recruiter_and_hr_admin():
+    # RECRUITER was added deliberately in 2368c4f; the service scopes a recruiter to their own
+    # campaigns (fix/recruiter-interview-scope).
     allowed = _allowed_roles(_get_route(_RESCHEDULE_PATH, "PATCH"))
-    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.RECRUITER.value, UserRole.HR_ADMIN.value})
 
 
-def test_cancel_allows_hiring_manager_and_hr_admin():
+def test_cancel_allows_hiring_manager_recruiter_and_hr_admin():
+    # RECRUITER was added deliberately in 2368c4f; the service scopes a recruiter to their own
+    # campaigns (fix/recruiter-interview-scope).
     allowed = _allowed_roles(_get_route(_CANCEL_PATH, "PATCH"))
-    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.RECRUITER.value, UserRole.HR_ADMIN.value})
 
 
 # ----------------------------------------------------------------------

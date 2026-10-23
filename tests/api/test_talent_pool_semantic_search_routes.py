@@ -50,10 +50,15 @@ def test_semantic_search_route_allows_hr_admin_recruiter_and_hiring_manager():
 
 
 def test_normal_search_route_is_unaffected_by_the_new_semantic_route():
-    """Section 27 - Normal Search must keep its own exact path, method, and HR_ADMIN-only RBAC."""
+    """
+    Section 27 - Normal Search keeps its own exact path and method. Its roles
+    were widened deliberately (HIRING_MANAGER in 2368c4f, RECRUITER in
+    8229d24, with the route description updated each time).
+    """
     route = _get_route(_NORMAL_SEARCH_PATH, "GET")
     assert route.path == _NORMAL_SEARCH_PATH
-    assert _allowed_roles(route) == frozenset({UserRole.HR_ADMIN.value})
+    assert _allowed_roles(route) == frozenset(
+        {UserRole.HR_ADMIN.value, UserRole.HIRING_MANAGER.value, UserRole.RECRUITER.value})
 
 
 """Query validation (section 6) - enforced at the request-schema level, the

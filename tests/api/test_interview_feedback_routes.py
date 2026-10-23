@@ -86,6 +86,7 @@ def test_get_feedback_requires_an_authenticated_user():
     assert _depends_on_get_current_user(_get_route(_GET_FEEDBACK_PATH, "GET"))
 
 
-def test_get_feedback_allows_hiring_manager_and_hr_admin():
+def test_get_feedback_allows_hiring_manager_recruiter_and_hr_admin():
+    # RECRUITER was added deliberately in 2368c4f ("recruiter UI").
     allowed = _allowed_roles(_get_route(_GET_FEEDBACK_PATH, "GET"))
-    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.HR_ADMIN.value})
+    assert allowed == frozenset({UserRole.HIRING_MANAGER.value, UserRole.RECRUITER.value, UserRole.HR_ADMIN.value})

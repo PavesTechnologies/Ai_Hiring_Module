@@ -127,21 +127,36 @@ def test_search_filters_by_entity_type_and_entity_id(db, real_ids, seeded_rows):
 
 
 def test_search_filters_by_actor_id(db, real_ids, seeded_rows):
+    # Anchored on the fresh entity_x, so the real user's own audit history
+    # (hundreds of rows on the dev DB) can never push the seeded rows off a page.
     repo = AuditRepository(db)
 
-    rows, total = repo.search(actor_id=real_ids["users"][0], page_size=50)
+    rows, total = repo.search(actor_id=real_ids["users"][0], entity_id=seeded_rows["entity_x"], page_size=50)
+    assert total == 2
+    assert _ids(rows) == {seeded_rows["A"].id, seeded_rows["D"].id}
 
-    assert total >= 2
-    assert {seeded_rows["A"].id, seeded_rows["D"].id} <= _ids(rows)
+    # The actor filter really filters: the same entity, another actor - nothing.
+    rows, total = repo.search(actor_id=real_ids["users"][1], entity_id=seeded_rows["entity_x"], page_size=50)
+    assert total == 0 and rows == []
 
 
 def test_search_filters_by_campaign_id(db, real_ids, seeded_rows):
-    repo = AuditRepository(db)
+    # Every page, not just the first: the real campaign's own history grows on the dev DB.
+    from app.enums.constants import MAX_PAGE_SIZE
 
-    rows, total = repo.search(campaign_id=real_ids["campaigns"][0], page_size=200)
+    repo = AuditRepository(db)
+    _, total = repo.search(campaign_id=real_ids["campaigns"][0], page=1, page_size=1)
+    ids, page = set(), 1
+    while len(ids) < total:
+        rows, _ = repo.search(campaign_id=real_ids["campaigns"][0], page=page, page_size=MAX_PAGE_SIZE)
+        assert rows, "a page came back empty before every row was seen"
+        assert all(row.campaign_id == real_ids["campaigns"][0] for row in rows)
+        ids |= _ids(rows)
+        page += 1
 
     assert total >= 2
-    assert {seeded_rows["A"].id, seeded_rows["B"].id} <= _ids(rows)
+    assert {seeded_rows["A"].id, seeded_rows["B"].id} <= ids
+    assert seeded_rows["C"].id not in ids and seeded_rows["D"].id not in ids     # the other campaign
 
 
 def test_search_filters_by_action_type(db, real_ids, seeded_rows):
