@@ -7,6 +7,24 @@ workaround is until someone actually fixes it.
 
 ---
 
+## Dev runs on the Gemini free tier; production needs the paid tier before any real candidate data (found 2026-10-23)
+
+**Status:** open - a deployment prerequisite, not a code fix.
+
+Dev stays on the Gemini free tier: 500 requests/day per model (seen in a 429:
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, quotaValue 500, gemini-3.1-flash-lite; the day resets at
+midnight Pacific). Production must use the **paid tier before any real candidate data**, because of both volume
+and the free tier's data terms; billing will be enabled for production. Then set
+`SCORING_V2_DAILY_LLM_CALL_CAP` to about 80% of the paid per-day limit (dev: 400, about 80% of 500).
+
+Every LLM request is logged in `llm_call_log` and counts toward that cap (parsing, AI evaluation, skill
+confirmation, dry runs); retries inside the provider SDK on one request are not visible there.
+
+Dev should use only synthetic data. The six real candidates in "AI transformation lead Sep" are not to be
+re-scored in dev.
+
+---
+
 ## Five campaign-candidate actions never commit their audit entry (found 2026-10-15)
 
 **Status:** fixed 2026-10-15 (branch `fix-audit-commit-paths`). The removal now writes `CANDIDATE_REMOVED` before
