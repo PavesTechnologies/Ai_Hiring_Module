@@ -102,6 +102,8 @@ class AIProviderRowResponse(BaseModel):
     is_verified: bool
     verified_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Saved despite these (a model's daily limit used up at check time).
+    warnings: list[str] = []
 
 
 class AIProviderListResponse(BaseModel):
@@ -162,6 +164,9 @@ class ModelCheckResult(BaseModel):
     message: str
     latency_ms: Optional[int] = None
     error_code: Optional[str] = None
+    # Set when the model counts as checked but couldn't answer: its daily
+    # limit is used up (DAILY_LIMIT) - the key and model were accepted.
+    warning: Optional[str] = None
 
 
 class VerifyResponse(BaseModel):
@@ -174,3 +179,5 @@ class VerifyResponse(BaseModel):
     error_code: Optional[str] = None
     # One entry per distinct model checked (main and backup models).
     results: list[ModelCheckResult] = []
+    # Models saved with a warning (daily limit used up), one message each.
+    warnings: list[str] = []

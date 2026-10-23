@@ -356,9 +356,6 @@ _GEMINI_PER_DAY = (
     (LLMTransientError("Rate limit reached", status_code=429), "RATE_LIMITED",
      "Google Gemini is limiting how often this key can be used for gemini-3.8-flash. "
      "Wait a minute and try again. Free-tier keys allow only a few requests per minute."),
-    (LLMPermanentError(_GEMINI_PER_DAY, status_code=429), "DAILY_LIMIT",
-     "This key has used up its daily Google Gemini limit for gemini-3.8-flash (20 requests per day). "
-     "Try again tomorrow, pick a different model, or enable billing on the provider account for higher limits."),
     (LLMPermanentError("You exceeded your current quota. code: insufficient_quota", status_code=429), "CREDITS_EXHAUSTED",
      "The Google Gemini account for this key has no credits left or has reached its spending limit. "
      "Add credits or raise the limit in the provider's billing settings, then try again."),
@@ -688,3 +685,77 @@ def test_rows_expose_models_and_legacy_rows_read_as_both():
     assert [(m.usage, m.model_name) for m in row.models] == [("BOTH", "claude-opus-5")]
     active = service.get_active_provider()
     assert [(m.usage, m.model_name) for m in active.models] == [("BOTH", "claude-opus-5")]
+
+
+# ---------------------------------------------------------------- daily limit used up: save with a warning
+
+_DAILY_MESSAGE = ("This key has used up its daily Google Gemini limit for gemini-3.8-flash (20 requests per day). "
+                  "Try again tomorrow, pick a different model, or enable billing on the provider account for higher limits.")
+
+
+def _daily_limit():
+    return _failing(LLMPermanentError(_GEMINI_PER_DAY, status_code=429))
+
+
+def test_a_check_failing_only_on_the_daily_limit_passes_with_a_warning():
+    service, *_ = _make_service()
+    with patch(_BUILD, return_value=_daily_limit()):
+        result = service.verify(VerifyRequest(provider="GOOGLE", model_name="gemini-3.8-flash", api_key="AIza-k"))
+    assert result.verified is True and result.error_code == "DAILY_LIMIT"
+    assert result.warnings == [result.message]
+    assert result.message.startswith("gemini-3.8-flash: saved without a test answer - " + _DAILY_MESSAGE)
+    assert result.results[0].verified is True and result.results[0].warning == result.message
+    _assert_friendly(result.message)
+
+
+def test_one_model_on_its_daily_limit_does_not_block_the_others():
+    service, *_ = _make_service()
+    models = _setup(("BOTH", "gemini-3.8-flash", "gemini-3.5-flash-lite"))
+
+    def build(provider, key, model, **kw):
+        return _daily_limit() if model == "gemini-3.8-flash" else _working()
+
+    with patch(_BUILD, side_effect=build):
+        result = service.verify(VerifyRequest(provider="GOOGLE", api_key="AIza-k", models=models))
+    assert result.verified is True and len(result.warnings) == 1
+    assert result.message.startswith("1 of 2 models responded; gemini-3.8-flash: saved without a test answer")
+
+
+def test_register_saves_with_the_warning_recorded_and_audited():
+    service, repo, encryption, audit, rows = _make_service()
+    with patch(_BUILD, return_value=_daily_limit()):
+        row = service.create(CreateAIProviderRequest(provider="GOOGLE", model_name="gemini-3.8-flash", api_key="AIza-k"),
+                             updated_by="u1", actor_role="HR_ADMIN")
+    assert row.is_verified is True and len(row.warnings) == 1 and "daily" in row.warnings[0]
+    assert rows[0].last_error == row.warnings[0]
+    details = audit.log.call_args.kwargs["details"]
+    assert details["title"] == "AI provider registered (with a warning)" and details["warnings"] == row.warnings
+    repo.commit.assert_called_once()
+
+
+def test_edit_saves_with_the_warning_and_a_later_clean_check_clears_it():
+    existing = _row(provider="GOOGLE", key="AIza-old", model="gemini-3.8-flash")
+    service, repo, encryption, audit, rows = _make_service([existing])
+    with patch(_BUILD, return_value=_daily_limit()):
+        row = service.update(existing.id, UpdateAIProviderRequest(model_name="gemini-3.8-flash", api_key=""),
+                             updated_by="u1", actor_role="HR_ADMIN")
+    assert row.warnings and existing.last_error == row.warnings[0]
+    with patch(_BUILD, return_value=_working()):
+        row = service.update(existing.id, UpdateAIProviderRequest(model_name="gemini-3.8-flash", api_key=""),
+                             updated_by="u1", actor_role="HR_ADMIN")
+    assert row.warnings == [] and existing.last_error is None
+
+
+@pytest.mark.parametrize("error, code", [
+    (LLMPermanentError(_GEMINI_PER_MINUTE, status_code=429), "RATE_LIMITED"),
+    (LLMPermanentError("You exceeded your current quota. code: insufficient_quota", status_code=429), "CREDITS_EXHAUSTED"),
+    (LLMPermanentError(_RAW_GEMINI_ERROR, status_code=400), "INVALID_KEY"),
+])
+def test_any_other_check_failure_still_blocks_saving(error, code):
+    service, repo, *_ = _make_service()
+    with patch(_BUILD, return_value=_failing(error)), pytest.raises(HTTPException) as err:
+        service.create(CreateAIProviderRequest(provider="GOOGLE", model_name="gemini-3.8-flash", api_key="AIza-k"),
+                       updated_by="u1", actor_role="HR_ADMIN")
+    assert err.value.status_code == 422 and code in err.value.detail
+    repo.create.assert_not_called()
+

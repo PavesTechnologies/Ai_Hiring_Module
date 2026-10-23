@@ -184,6 +184,17 @@ INVALID_MODEL_SETUP = "INVALID_MODEL_SETUP"
 # (bad key, key for another provider, rate limit, no credits, outage) would
 # fail every model the same way - checking stops there instead of spending
 # more provider calls.
+# A check that fails only because the model's daily limit is used up still
+# proves the key works and the model exists: the setup can be saved, with a
+# warning (it answers again after the provider's daily reset).
+_SAVE_WITH_WARNING_CODES = frozenset({LLMErrorReason.DAILY_LIMIT})
+
+
+def _daily_limit_warning(model_name: str, message: str) -> str:
+    return (f"{model_name}: saved without a test answer - {message} It will work again after the provider's "
+            "daily limit resets.")
+
+
 _MODEL_SPECIFIC_CODES = frozenset({
     LLMErrorReason.MODEL_NOT_FOUND, LLMErrorReason.NO_ACCESS, LLMErrorReason.BAD_REQUEST,
     LLMErrorReason.BAD_OUTPUT, LLMErrorReason.REFUSED,
@@ -318,33 +329,37 @@ class AIProviderConfigService:
         results: list[ModelCheckResult] = []
         for name in names:
             result = self._verify_with_key(request.provider, name, api_key)
+            warning = (_daily_limit_warning(name, result.message)
+                       if not result.verified and result.error_code in _SAVE_WITH_WARNING_CODES else None)
             results.append(ModelCheckResult(
-                model_name=name, verified=result.verified, message=result.message,
-                latency_ms=result.latency_ms, error_code=result.error_code,
+                model_name=name, verified=result.verified or warning is not None, message=result.message,
+                latency_ms=result.latency_ms, error_code=result.error_code, warning=warning,
             ))
             if result.verified:
                 self._remember_verified(request.provider, name, api_key)
-            elif result.error_code not in _MODEL_SPECIFIC_CODES:
+            elif warning is None and result.error_code not in _MODEL_SPECIFIC_CODES:
                 break
 
+        warnings = [r.warning for r in results if r.warning]
         failed = next((r for r in results if not r.verified), None)
         if len(names) == 1:
             only = results[0]
             return VerifyResponse(
-                verified=only.verified, message=only.message, latency_ms=only.latency_ms,
-                error_code=only.error_code, results=results,
+                verified=only.verified, message=only.warning or only.message, latency_ms=only.latency_ms,
+                error_code=only.error_code, results=results, warnings=warnings,
             )
         if failed is not None:
             return VerifyResponse(
                 verified=False, message=f"{failed.model_name}: {failed.message}",
-                error_code=failed.error_code, results=results,
+                error_code=failed.error_code, results=results, warnings=warnings,
             )
-        slowest = max(r.latency_ms or 0 for r in results)
+        answered = [r.latency_ms or 0 for r in results if not r.warning]
+        slowest = max(answered) if answered else None
+        message = (f"All {len(results)} {LLMProviderName.LABELS[request.provider]} models responded "
+                   f"(slowest {slowest} ms)." if not warnings else
+                   f"{len(results) - len(warnings)} of {len(results)} models responded; " + " ".join(warnings))
         return VerifyResponse(
-            verified=True,
-            message=f"All {len(results)} {LLMProviderName.LABELS[request.provider]} models responded "
-                    f"(slowest {slowest} ms).",
-            latency_ms=slowest, results=results,
+            verified=True, message=message, latency_ms=slowest, results=results, warnings=warnings,
         )
 
     # ── Writes ────────────────────────────────────────────────────────
@@ -358,7 +373,7 @@ class AIProviderConfigService:
         # Re-verified server-side: the client's own "Check passed" state is
         # never trusted, so an unusable model can't be registered.
         assignments = self._validated(request.assignments())
-        self._require_all_verified(request.provider, assignments, request.api_key)
+        warnings = self._require_all_verified(request.provider, assignments, request.api_key)
         ciphertext, key_id = self._encrypt(request.api_key)
         # The first provider registered (or any, while none is active)
         # becomes the one processing uses.
@@ -380,14 +395,16 @@ class AIProviderConfigService:
                 is_active=make_active,
                 is_verified=True,
                 verified_at=datetime.now(timezone.utc),
+                last_error=" ".join(warnings) or None,
                 updated_by=updated_by,
             ))
             self._audit(ActionType.AI_PROVIDER_CONFIG_CREATED, row, updated_by, actor_role, {
-                "title": "AI provider registered",
+                "title": "AI provider registered" + (" (with a warning)" if warnings else ""),
                 "after": {
                     "provider": row.provider, "model_name": row.model_name, "is_active": row.is_active,
                     "models": _assignment_details(assignments),
                 },
+                **({"warnings": warnings} if warnings else {}),
             })
             self.repository.commit()
         except IntegrityError:
@@ -396,7 +413,7 @@ class AIProviderConfigService:
             raise _already_registered(request.provider)
         except Exception:
             self._fail("Registering the AI provider failed.")
-        return self._to_row(row)
+        return self._to_row(row, warnings)
 
     def update(
         self, config_id: uuid.UUID, request: UpdateAIProviderRequest, *, updated_by: str, actor_role: str | None,
@@ -404,7 +421,7 @@ class AIProviderConfigService:
         row = self._get_row(config_id)
         assignments = self._validated(request.assignments())
         api_key = request.api_key or self._decrypt(row)
-        self._require_all_verified(row.provider, assignments, api_key)
+        warnings = self._require_all_verified(row.provider, assignments, api_key)
         new_key = self._encrypt(request.api_key) if request.api_key else None
         before_model = row.model_name
         before_models = _row_assignments(row)
@@ -417,11 +434,12 @@ class AIProviderConfigService:
                 row.api_key_last4 = request.api_key[-4:]
             row.is_verified = True
             row.verified_at = datetime.now(timezone.utc)
-            row.last_error = None
+            row.last_error = " ".join(warnings) or None
             row.updated_by = updated_by
             row = self.repository.update(row)
             self._audit(ActionType.AI_PROVIDER_CONFIG_UPDATED, row, updated_by, actor_role, {
-                "title": "AI provider updated",
+                "title": "AI provider updated" + (" (with a warning)" if warnings else ""),
+                **({"warnings": warnings} if warnings else {}),
                 "provider": row.provider,
                 "before": {"model_name": before_model, "models": _assignment_details(before_models)},
                 "after": {
@@ -432,7 +450,7 @@ class AIProviderConfigService:
             self.repository.commit()
         except Exception:
             self._fail("Updating the AI provider failed.")
-        return self._to_row(row)
+        return self._to_row(row, warnings)
 
     def activate(self, config_id: uuid.UUID, *, updated_by: str, actor_role: str | None) -> AIProviderRowResponse:
         row = self._get_row(config_id)
@@ -532,15 +550,23 @@ class AIProviderConfigService:
         except ModelAssignmentError as exc:
             raise BadRequestError(_with_code(str(exc), INVALID_MODEL_SETUP))
 
-    def _require_all_verified(self, provider: str, assignments: list[ModelAssignment], api_key: str) -> None:
-        """Every model the setup can call - main and backup - must pass a check before it's saved."""
+    def _require_all_verified(self, provider: str, assignments: list[ModelAssignment], api_key: str) -> list[str]:
+        """
+        Every model the setup can call - main and backup - must pass a check
+        before it's saved. Returns the warnings for models saved without a
+        test answer because their daily limit is used up.
+        """
         names = distinct_model_names(assignments)
+        warnings = []
         for name in names:
-            self._require_verified(provider, name, api_key, name_in_message=len(names) > 1)
+            warning = self._require_verified(provider, name, api_key, name_in_message=len(names) > 1)
+            if warning:
+                warnings.append(warning)
+        return warnings
 
     def _require_verified(
         self, provider: str, model_name: str, api_key: str, *, name_in_message: bool = False,
-    ) -> None:
+    ) -> str | None:
         """
         Save never trusts the browser's "Check passed" state. But if *this
         server* saw a Check pass for exactly these values within the last few
@@ -549,11 +575,14 @@ class AIProviderConfigService:
         expires after _VERIFIED_TTL_SECONDS, so an old Check never counts.
         """
         if self._recently_verified(provider, model_name, api_key):
-            return
+            return None
         result = self._verify_with_key(provider, model_name, api_key)
+        if not result.verified and result.error_code in _SAVE_WITH_WARNING_CODES:
+            return _daily_limit_warning(model_name, result.message)
         if not result.verified:
             message = f"{model_name}: {result.message}" if name_in_message else result.message
             raise UnprocessableError(_with_code(message, result.error_code))
+        return None
 
     def _remember_verified(self, provider: str, model_name: str, api_key: str) -> None:
         if self.cache_service is None:
@@ -614,7 +643,7 @@ class AIProviderConfigService:
         )
 
     @staticmethod
-    def _to_row(row: AIProviderConfig) -> AIProviderRowResponse:
+    def _to_row(row: AIProviderConfig, warnings: list[str] | None = None) -> AIProviderRowResponse:
         return AIProviderRowResponse(
             id=row.id,
             provider=row.provider,
@@ -626,4 +655,5 @@ class AIProviderConfigService:
             is_verified=row.is_verified,
             verified_at=row.verified_at,
             updated_at=row.updated_at,
+            warnings=list(warnings or []),
         )

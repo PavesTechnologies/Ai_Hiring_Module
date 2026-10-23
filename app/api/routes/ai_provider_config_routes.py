@@ -112,6 +112,8 @@ def register_provider(
         f"{row.provider_label} registered and set as the active provider."
         if row.is_active else f"{row.provider_label} registered."
     )
+    if row.warnings:
+        message += " Warning: " + " ".join(row.warnings)
     return APIResponse.ok(data=row, message=message)
 
 
@@ -128,7 +130,10 @@ def update_provider(
 ):
     """Changes the model and optionally the key, after verifying again server-side."""
     row = service.update(config_id, request, updated_by=user.user_id, actor_role=resolve_actor_role(user))
-    return APIResponse.ok(data=row, message=f"{row.provider_label} updated.")
+    message = f"{row.provider_label} updated."
+    if row.warnings:
+        message += " Warning: " + " ".join(row.warnings)
+    return APIResponse.ok(data=row, message=message)
 
 
 @router.post(
