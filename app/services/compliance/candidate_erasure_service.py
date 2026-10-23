@@ -1,6 +1,8 @@
+import io
 import logging
+import zipfile
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.enums.constants import ActionType, EntityType
 from app.exception_handler.exceptions import NotFoundError
@@ -61,6 +63,9 @@ class CandidateErasureService:
         interview_schedule_repo: InterviewScheduleRepository | None = None,
         notifier: CandidateChangeNotifier | None = None,
         upload_decision_service=None,
+        encryption_service=None,
+        bulk_upload_job_repo=None,
+        bulk_upload_job_file_repo=None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -82,6 +87,11 @@ class CandidateErasureService:
         # Duplicate resume decisions (UploadDecisionService) - optional like
         # the two above; the DI provider always supplies it.
         self.upload_decision_service = upload_decision_service
+        # Bulk-upload and task-log traces (_erase_upload_and_log_traces) -
+        # optional like the above; the DI provider always supplies all three.
+        self.encryption_service = encryption_service
+        self.bulk_upload_job_repo = bulk_upload_job_repo
+        self.bulk_upload_job_file_repo = bulk_upload_job_file_repo
 
     def erase_candidate(
         self,
@@ -109,6 +119,10 @@ class CandidateErasureService:
                 held_files = self.upload_decision_service.discard_for_erased_candidate(candidate_id)
             for path in held_files:
                 self._delete_resume_file(path)
+
+            # Their bulk-upload file rows, their entries in stored zips, and
+            # task-log / dead-letter rows that name them (EMAIL_SEND included).
+            traces = self._erase_upload_and_log_traces(candidate, resumes)
 
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
@@ -167,6 +181,7 @@ class CandidateErasureService:
                     "resume_versions_deleted": len(resumes),
                     "campaign_candidates_deleted": len(campaign_candidates),
                     "upload_decision_files_deleted": len(held_files),
+                    **traces,
                     "had_bulk_origin": had_bulk_origin,
                     "reason": reason,
                 },
@@ -248,6 +263,110 @@ class CandidateErasureService:
         except Exception:
             self.candidate_repo.rollback()
             raise
+
+    # --- bulk-upload and task-log traces -----------------------------------------------
+
+    def _personal_terms(self, candidate) -> list[str]:
+        """The candidate's name, email and phone, decrypted - what task logs may quote."""
+        if self.encryption_service is None:
+            return []
+        terms = []
+        for field, minimum in (("full_name_encrypted", 5), ("email_encrypted", 3), ("phone_encrypted", 7)):
+            blob = getattr(candidate, field, None)
+            if not blob:
+                continue
+            try:
+                value = self.encryption_service.decrypt(blob, candidate.encryption_key_id).strip()
+            except Exception:
+                logger.exception("Erasure: could not decrypt %s for candidate %s", field, candidate.id)
+                continue
+            if len(value) >= minimum:          # too short to search for safely
+                terms.append(value)
+        return terms
+
+    def _erase_upload_and_log_traces(self, candidate, resumes) -> dict:
+        """
+        What the row-by-row erasure misses: the bulk-upload job-file rows of
+        the candidate's files (they carry the uploaded file names), the
+        candidate's entries inside the stored ZIPs (rebuilt without them, or
+        deleted when nothing else remains), and task-log / dead-letter rows
+        that quote their name, email, phone or - within their own bulk jobs
+        only - their file names. Does not commit.
+        """
+        resume_paths = {resume.file_path for resume in resumes if resume.file_path}
+        file_names = {resume.original_filename for resume in resumes if resume.original_filename}
+        job_ids = sorted({resume.bulk_upload_job_id for resume in resumes if resume.bulk_upload_job_id},
+                         key=str)
+
+        job_files_deleted, zips_rebuilt, zips_deleted, zip_failures = 0, 0, 0, 0
+        if self.bulk_upload_job_file_repo is not None:
+            for job_id in job_ids:
+                mine = [f for f in self.bulk_upload_job_file_repo.get_by_job_id(job_id)
+                        if f.storage_path in resume_paths or f.original_filename in file_names]
+                names_in_job = {f.original_filename for f in mine}
+                file_names |= names_in_job
+                for job_file in mine:
+                    if job_file.storage_path not in resume_paths:      # e.g. a skipped duplicate's copy
+                        self._delete_resume_file(job_file.storage_path)
+                self.bulk_upload_job_file_repo.delete_by_ids([f.id for f in mine])
+                job_files_deleted += len(mine)
+                outcome = self._strip_zip(job_id, names_in_job)
+                zips_rebuilt += outcome == "rebuilt"
+                zips_deleted += outcome == "deleted"
+                zip_failures += outcome == "failed"
+
+        terms = self._personal_terms(candidate)
+        task_ids = self.celery_task_log_repo.find_task_ids_mentioning(
+            terms, scoped_terms=[name for name in file_names if len(name) >= 5], bulk_upload_job_ids=job_ids,
+        )
+        self.dead_letter_queue_repo.delete_for_erasure(task_ids, terms)
+        self.celery_task_log_repo.delete_by_task_ids(task_ids)
+
+        return {
+            "bulk_upload_job_files_deleted": job_files_deleted,
+            "bulk_zips_rebuilt": zips_rebuilt,
+            "bulk_zips_deleted": zips_deleted,
+            "bulk_zip_failures": zip_failures,
+            "task_logs_naming_candidate_deleted": len(task_ids),
+        }
+
+    def _strip_zip(self, job_id: UUID, names: set[str]) -> str:
+        """
+        Removes the candidate's entries (matched by file name, as the
+        extraction names them) from one job's stored ZIP: rebuilt under a new
+        path when other files remain, deleted when none do. The ZIP is only
+        read at extraction, so neither breaks the job. Best-effort on
+        storage, like resume files - logged, never blocks the DB erasure.
+        """
+        if self.bulk_upload_job_repo is None or not names:
+            return "none"
+        job = self.bulk_upload_job_repo.get_by_id(job_id)
+        if job is None or not job.zip_storage_path:
+            return "none"
+        old_path = job.zip_storage_path
+        try:
+            archive = zipfile.ZipFile(io.BytesIO(self.storage_service.download_file(_RESUME_STORAGE_BUCKET, old_path)))
+            kept = [entry for entry in archive.infolist()
+                    if entry.filename.rsplit("/", 1)[-1] not in names]
+            if len(kept) == len(archive.infolist()):
+                return "none"
+            if not any(not entry.is_dir() for entry in kept):
+                self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, old_path)
+                job.zip_storage_path = None
+                return "deleted"
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as rebuilt:
+                for entry in kept:
+                    rebuilt.writestr(entry, archive.read(entry))
+            new_path = f"{old_path.rsplit('/', 1)[0]}/{uuid4()}.zip" if "/" in old_path else f"{uuid4()}.zip"
+            self.storage_service.upload_file(bucket_name=_RESUME_STORAGE_BUCKET, file_path=new_path,
+                                             file_content=buffer.getvalue(), content_type="application/zip")
+            job.zip_storage_path = new_path
+            self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, old_path)
+            return "rebuilt"
+        except Exception:
+            logger.exception("Erasure: could not remove the candidate's files from bulk ZIP of job %s", job_id)
+            return "failed"
 
     def _delete_resume_file(self, file_path: str) -> None:
         """

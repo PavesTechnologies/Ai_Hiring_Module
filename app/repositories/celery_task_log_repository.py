@@ -1,13 +1,18 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.models.pipeline import CampaignCandidate
 
+
+
+def _escape_like(value: str) -> str:
+    """A literal for ILIKE: escape the wildcards and the escape character itself."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 class CeleryTaskLogRepository:
 
@@ -302,6 +307,37 @@ class CeleryTaskLogRepository:
         """Candidate erasure — removes celery_task_log rows tied to one campaign_candidate."""
         self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.campaign_candidate_id == campaign_candidate_id))
         self.db.flush()
+
+    def find_task_ids_mentioning(self, terms: list[str], scoped_terms: list[str] | None = None,
+                                 bulk_upload_job_ids: list[UUID] | None = None) -> list[str]:
+        """
+        Candidate erasure - task_ids of rows whose title, output summary or
+        error mentions any of `terms` (the candidate's name, email, phone),
+        anywhere - EMAIL_SEND rows included - or any of `scoped_terms`
+        (their file names) within their own bulk-upload jobs only, so a
+        generic file name ("cv.pdf") never matches someone else's rows.
+        Case-insensitive substring match.
+        """
+        text_columns = (CeleryTaskLog.title, CeleryTaskLog.output_summary, CeleryTaskLog.error_message)
+
+        def mentions(values):
+            return or_(*[column.ilike(f"%{_escape_like(value)}%", escape="\\")
+                         for value in values for column in text_columns])
+
+        conditions = []
+        if terms:
+            conditions.append(mentions(terms))
+        if scoped_terms and bulk_upload_job_ids:
+            conditions.append(and_(CeleryTaskLog.bulk_upload_job_id.in_(bulk_upload_job_ids), mentions(scoped_terms)))
+        if not conditions:
+            return []
+        return list(self.db.execute(select(CeleryTaskLog.task_id).where(or_(*conditions))).scalars())
+
+    def delete_by_task_ids(self, task_ids: list[str]) -> None:
+        """Candidate erasure - dead_letter_queue rows for these tasks must be deleted first (FK)."""
+        if task_ids:
+            self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.task_id.in_(task_ids)))
+            self.db.flush()
 
     def delete_by_task_id(self, task_id: str) -> None:
         """

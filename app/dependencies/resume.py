@@ -31,6 +31,8 @@ from app.repositories.dead_letter_queue_repository import DeadLetterQueueReposit
 from app.repositories.document_processing_repository import DocumentProcessingRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
+from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
+from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
@@ -278,6 +280,9 @@ def get_candidate_erasure_service(
         candidate_note_repo=CandidateNoteRepository(db),
         interview_schedule_repo=InterviewScheduleRepository(db),
         upload_decision_service=upload_decision_service,
+        encryption_service=EncryptionService(EncryptionKeyRepository(db)),
+        bulk_upload_job_repo=BulkUploadJobRepository(db),
+        bulk_upload_job_file_repo=BulkUploadJobFileRepository(db),
     )
 
 

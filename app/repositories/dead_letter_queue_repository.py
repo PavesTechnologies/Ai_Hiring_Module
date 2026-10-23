@@ -134,6 +134,27 @@ class DeadLetterQueueRepository:
         self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.campaign_candidate_id == campaign_candidate_id))
         self.db.flush()
 
+    def delete_for_erasure(self, task_ids: list[str], terms: list[str]) -> None:
+        """
+        Candidate erasure - removes the dead-letter entries of these tasks
+        (they must go before the task-log rows, FK) and any entry whose error,
+        trace or input payload mentions one of `terms` (name, email, phone).
+        """
+        from sqlalchemy import String, cast
+
+        from app.repositories.celery_task_log_repository import _escape_like
+        conditions = []
+        if task_ids:
+            conditions.append(DeadLetterQueue.original_task_id.in_(task_ids))
+        for value in terms:
+            pattern = f"%{_escape_like(value)}%"
+            for column in (DeadLetterQueue.final_error_message, DeadLetterQueue.full_error_trace,
+                           cast(DeadLetterQueue.input_payload, String)):
+                conditions.append(column.ilike(pattern, escape="\\"))
+        if conditions:
+            self.db.execute(delete(DeadLetterQueue).where(or_(*conditions)))
+            self.db.flush()
+
     def delete_by_task_id(self, original_task_id: str) -> None:
         """Dead-letter cleanup — removes the dead-letter entry for one task_id."""
         self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id))

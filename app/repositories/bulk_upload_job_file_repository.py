@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.async_tasks import BulkUploadFileStatus, BulkUploadJob, BulkUploadJobFile
@@ -38,6 +38,12 @@ class BulkUploadJobFileRepository:
             .filter(BulkUploadJobFile.bulk_upload_job_id == bulk_upload_job_id)
             .all()
         )
+
+    def delete_by_ids(self, file_ids: list[UUID]) -> None:
+        """Candidate erasure - removes the job-file rows of one candidate's files (their file names)."""
+        if file_ids:
+            self.db.execute(delete(BulkUploadJobFile).where(BulkUploadJobFile.id.in_(file_ids)))
+            self.db.flush()
 
     def search(
         self,
