@@ -207,3 +207,32 @@ def test_nothing_is_emailed_by_any_of_this(no_email):
                    request=CancelInterviewRequest(reason="x"))
     ses_send = no_email[-1]
     ses_send.assert_not_called()
+
+
+# --- the role recorded is the one that authorised it, never the first on the sign-in ---------
+
+def test_a_sign_in_listing_general_first_records_the_scheduling_role():
+    service, audit, schedule, cc = _env()
+
+    service.reschedule(
+        schedule.id, actor_id="hm-1", actor_roles=["General", "HIRING_MANAGER"],
+        request=RescheduleInterviewRequest(
+            interview_type="Technical", interviewers=[InterviewerInput(name="Alice Interviewer",
+                                                                       email="alice@example.invalid")],
+            date=date(2026, 8, 20), start_time=time(10, 0), end_time=time(11, 0), timezone="UTC",
+            location="Room 4, Jane's office", notes="Jane's notes",
+        ),
+    )
+
+    _the_audit_entry(audit, cc, ActionType.INTERVIEW_RESCHEDULED, actor=("hm-1", "HIRING_MANAGER"))
+    assert service.interview_schedule_repo.add_history.call_args.kwargs["changed_by_role"] == "HIRING_MANAGER"
+
+
+def test_cancel_with_general_listed_first_records_the_scheduling_role():
+    service, audit, schedule, cc = _env()
+
+    service.cancel(schedule.id, actor_id="hm-1", actor_roles=["General", "HIRING_MANAGER"],
+                   request=CancelInterviewRequest(reason="candidate's personal reason"))
+
+    _the_audit_entry(audit, cc, ActionType.INTERVIEW_CANCELLED, actor=("hm-1", "HIRING_MANAGER"))
+    assert service.interview_schedule_repo.add_history.call_args.kwargs["changed_by_role"] == "HIRING_MANAGER"

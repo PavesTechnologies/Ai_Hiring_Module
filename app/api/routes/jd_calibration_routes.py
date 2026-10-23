@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Security, status
 
 from app.dependencies.jd import get_jd_calibration_service
 from app.dependencies.jd_unknown_skills import get_jd_calibration_skill_service, get_jd_unknown_skill_service
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.jd.calibration import (
     JDCalibrationSaveRequest,
@@ -60,7 +60,7 @@ def save_jd_calibration(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.save(jd_id, request, actor_id=user.user_id,
-                          actor_role=user.roles[0] if user.roles else None)
+                          actor_role=authorising_role(user))
     message = ("JD calibrated." if result.changed else "No changes - calibration unchanged.")
     return APIResponse.ok(data=result, message=message)
 
@@ -112,7 +112,7 @@ def resolve_jd_unknown_skill(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.resolve(jd_id, unknown_skill_id, request, actor_id=user.user_id,
-                             actor_role=user.roles[0] if user.roles else None)
+                             actor_role=authorising_role(user))
     return APIResponse.ok(data=result, message={"MAP": "Mapped.", "NEW": "Added to the catalogue.",
                                                 "DROP": "Dropped from this JD."}[request.action])
 
@@ -134,7 +134,7 @@ def add_jd_calibration_skill(
     service: JDCalibrationSkillService = Depends(get_jd_calibration_skill_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    result = service.add(jd_id, request, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None)
+    result = service.add(jd_id, request, actor_id=user.user_id, actor_role=authorising_role(user))
     return APIResponse.ok(data=result, message=f"'{result.skill}' added.")
 
 
@@ -151,5 +151,5 @@ def remove_jd_calibration_skill(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.remove(jd_id, jd_skill_id, actor_id=user.user_id,
-                            actor_role=user.roles[0] if user.roles else None)
+                            actor_role=authorising_role(user))
     return APIResponse.ok(data=result, message=f"'{result.skill}' removed from this JD.")

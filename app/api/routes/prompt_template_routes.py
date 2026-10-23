@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.prompt_template import get_prompt_template_service
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.prompt_template.prompt_template_request import CreatePromptRequest, UpdatePromptRequest
 from app.schemas.prompt_template.prompt_template_response import (
@@ -73,7 +73,7 @@ def create_prompt_template(
     created = service.create_prompt(
         request,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=created, message="Prompt created successfully.")
 
@@ -133,7 +133,7 @@ def update_prompt_template(
         prompt_id,
         request,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=updated, message="Prompt updated successfully.")
 
@@ -151,6 +151,6 @@ def delete_prompt_template(
     service.delete_prompt(
         prompt_id,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(message="Prompt deleted successfully.")

@@ -47,7 +47,7 @@ from app.schemas.response import APIResponse
 from app.schemas.upload_history.response import UnifiedUploadHistoryResponse
 from app.services.campaign.campaign_service import CampaignService
 from app.services.upload_history.upload_history_service import UploadHistoryService
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
 from app.models.campaigns import CampaignStatus
 
@@ -530,7 +530,7 @@ def replay_dead_letter_tasks(campaign_id: UUID,
     result = service.replay_dead_letter_tasks(campaign_id,
         request.dlq_ids,
         replayed_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Replay completed.")
 
@@ -564,7 +564,7 @@ def reprocess_stalled_candidate(campaign_id: UUID,
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     result = service.reprocess_stalled_candidate(campaign_id, campaign_candidate_id,
-        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Re-process completed.")
 
@@ -581,7 +581,7 @@ def escalate_stalled_candidate(campaign_id: UUID,
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.escalate_stalled_candidate(campaign_id, campaign_candidate_id, request,
-        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Escalation recorded.")
 
@@ -599,7 +599,7 @@ def override_candidate_stage(campaign_id: UUID,
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.override_candidate_stage(campaign_id, campaign_candidate_id, request,
-        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Stage overridden successfully.")
 
@@ -616,7 +616,7 @@ def flag_candidate_for_review(campaign_id: UUID,
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
     result = service.flag_candidate_for_review(campaign_id, campaign_candidate_id, request,
-        actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Candidate flagged for manual review.")
 

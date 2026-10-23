@@ -3,7 +3,8 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from app.core.encryption_service import EncryptionService
-from app.enums.constants import ActionType, EntityType
+from app.enums.constants import ActionType, EntityType, UserRole
+from app.middleware.rbac import authorising_role
 from app.models.interview import InterviewHistoryEventType, InterviewPlatform, InterviewStatus
 from app.exceptions.campaign_exceptions import CampaignException
 from app.repositories.CampaignRepository import CampaignRepository
@@ -39,6 +40,10 @@ from app.services.notifications.interview_interviewer_lifecycle_emails import (
     queue_interview_interviewer_rescheduled_email,
 )
 
+
+# The roles that may schedule, reschedule or cancel (the routes enforce it):
+# what scheduled_by_role / changed_by_role and the audit entries record.
+_SCHEDULING_ROLES = (UserRole.HR_ADMIN, UserRole.HIRING_MANAGER, UserRole.RECRUITER)
 
 def _combine_to_utc(day: date, moment: time, tz_name: str) -> datetime:
     """
@@ -403,7 +408,7 @@ class InterviewScheduleService:
         schedule.notes = request.notes
         schedule.status = InterviewStatus.SCHEDULED
         schedule.scheduled_by = actor_id
-        schedule.scheduled_by_role = actor_roles[0] if actor_roles else None
+        schedule.scheduled_by_role = authorising_role(actor_roles, _SCHEDULING_ROLES)
         schedule.updated_at = datetime.now(timezone.utc)
 
         attendees = [interviewer.model_dump() for interviewer in request.interviewers]
@@ -492,7 +497,7 @@ class InterviewScheduleService:
 
         self.audit_service.log(
             actor_id=actor_id,
-            actor_role=actor_roles[0] if actor_roles else None,
+            actor_role=authorising_role(actor_roles, _SCHEDULING_ROLES),
             action_type=ActionType.INTERVIEW_SCHEDULED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=campaign_candidate.id,
@@ -638,7 +643,7 @@ class InterviewScheduleService:
                 old_start_at=old_start_at,
                 new_start_at=start_at,
                 changed_by=actor_id,
-                changed_by_role=actor_roles[0] if actor_roles else None,
+                changed_by_role=authorising_role(actor_roles, _SCHEDULING_ROLES),
                 reason=request.reason,
             )
 
@@ -657,7 +662,7 @@ class InterviewScheduleService:
             fields_changed.append("interviewers")
         self.audit_service.log(
             actor_id=actor_id,
-            actor_role=actor_roles[0] if actor_roles else None,
+            actor_role=authorising_role(actor_roles, _SCHEDULING_ROLES),
             action_type=ActionType.INTERVIEW_RESCHEDULED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=campaign_candidate.id,
@@ -734,13 +739,13 @@ class InterviewScheduleService:
             old_start_at=cancelled_start_at,
             new_start_at=None,
             changed_by=actor_id,
-            changed_by_role=actor_roles[0] if actor_roles else None,
+            changed_by_role=authorising_role(actor_roles, _SCHEDULING_ROLES),
             reason=request.reason,
         )
 
         self.audit_service.log(
             actor_id=actor_id,
-            actor_role=actor_roles[0] if actor_roles else None,
+            actor_role=authorising_role(actor_roles, _SCHEDULING_ROLES),
             action_type=ActionType.INTERVIEW_CANCELLED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE,
             entity_id=campaign_candidate.id,

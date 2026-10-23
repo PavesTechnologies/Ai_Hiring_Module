@@ -8,7 +8,7 @@ from app.dependencies.campaign_candidate import (
 )
 
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from app.middleware.rbac import TokenUser, get_current_user, require_roles, resolve_actor_role
+from app.middleware.rbac import TokenUser, authorising_role, get_current_user, require_roles, resolve_actor_role
 from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
@@ -75,7 +75,7 @@ def create_campaign_candidate(
     candidate = service.add_campaign_candidate(
         request,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     return APIResponse.ok(
@@ -221,7 +221,7 @@ def export_ranked_campaign_candidates(
     return service.export_ranked_campaign_candidates(
         campaign_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user, (UserRole.HR_ADMIN,)),
         sort_by=sort_by,
         sort_order=sort_order,
         pipeline_stage=pipeline_stage,
@@ -279,7 +279,7 @@ def export_rejected_candidates(
     return service.export_rejected_candidates(
         campaign_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user, (UserRole.HR_ADMIN,)),
     )
 
 
@@ -379,7 +379,7 @@ def export_override_report(
         date_from=date_from,
         date_to=date_to,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user, (UserRole.HR_ADMIN,)),
     )
 
 
@@ -407,7 +407,7 @@ def apply_hr_override(
         campaign_candidate_id,
         override_reason=request.override_reason,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user, (UserRole.RECRUITER,)),
     )
 
     return APIResponse.ok(
@@ -626,7 +626,8 @@ def update_resume_for_resubmission(
         file_bytes=file_bytes,
         filename=filename,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        # The -> UPLOADED transition is RECRUITER-only: RECRUITER authorises it when held.
+        actor_role=authorising_role(user, (UserRole.RECRUITER, UserRole.HR_ADMIN)),
         reason=reason,
         content_type=file.content_type,
     )
@@ -659,7 +660,7 @@ def export_deterministic_rejection_summary(
         date_from=date_from,
         date_to=date_to,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user, (UserRole.HR_ADMIN,)),
     )
 
 

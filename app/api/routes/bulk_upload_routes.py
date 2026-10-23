@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.dependencies.bulk_upload import get_bulk_upload_monitoring_service, get_bulk_upload_service
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.async_tasks import BulkUploadFileStatus
 from app.schemas.bulk_upload.monitoring import (
     BulkFileDetailResponse,
@@ -156,7 +156,7 @@ def export_bulk_upload_history(
     excel_file = service.export_history(
         campaign_id=campaign_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     filename = f"Bulk_Upload_History_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -481,7 +481,7 @@ def replay_bulk_upload_file(
         job_id=bulk_upload_job_id,
         file_id=file_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     return APIResponse.ok(
@@ -516,7 +516,7 @@ def cancel_bulk_upload(
     job, files_cancelled = service.cancel_job(
         job_id=bulk_upload_job_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     return APIResponse.ok(

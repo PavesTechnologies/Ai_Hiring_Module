@@ -23,7 +23,7 @@ from app.dependencies.jd import (
     get_stage_tracker,
 )
 from app.exceptions.duplicate_jd_exception import DuplicateJDException
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.async_tasks import DocumentType, ProcessingStage
 from app.models.jd.job_descriptions import JDVerificationStatus
 from app.repositories.jd_repository import JDRepository
@@ -377,7 +377,7 @@ def export_job_descriptions(
     return service.export_jd_list(
         request=request,
         exported_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
 @router.get("/{jd_id}/export", status_code=status.HTTP_200_OK, dependencies=[Security(require_roles(UserRole.HR_ADMIN))])
@@ -393,7 +393,7 @@ def export_single_job_description(
     return service.export_single_jd(
         jd_id=jd_id,
         exported_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
 

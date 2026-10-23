@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies.export import get_export_service
 from app.enums.constants import ActionType
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.export.export_schema import ExportDispatchResponse
 from app.schemas.response import APIResponse
@@ -76,7 +76,7 @@ def export_candidate_list(
             options={
                 "include_rejected_sheet": include_rejected_sheet,
                 "campaign_candidate_ids": [str(i) for i in (campaign_candidate_ids or [])],
-                "actor_role": user.roles[0] if user.roles else None,
+                "actor_role": authorising_role(user),
             },
         )
         return APIResponse.ok(
@@ -100,7 +100,7 @@ def export_candidate_list(
     )
     export_service.log_export(
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
         campaign_id=campaign_id,
         action_type=ActionType.CANDIDATE_LIST_EXPORTED.value,
         details={"title": "Candidate list exported", "rows": count, "async": False},

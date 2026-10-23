@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Query, Security, UploadFile, status
 
 from app.dependencies.skill_ontology import get_skill_ontology_service
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.response import APIResponse
 from app.schemas.skill_ontology.skill_ontology_request import (
@@ -137,7 +137,7 @@ def bulk_import_skill_ontology(
     result = service.bulk_import(
         file,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=result, message="Skill ontology bulk import completed.")
 
@@ -230,7 +230,7 @@ def update_skill_ontology(
         skill_id,
         request,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=updated, message="Skill updated successfully.")
 
@@ -250,7 +250,7 @@ def update_skill_ontology_status(
         skill_id,
         request,
         updated_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
     return APIResponse.ok(data=updated, message="Skill status updated successfully.")
 

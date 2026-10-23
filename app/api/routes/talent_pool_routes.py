@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.talent_pool import get_talent_pool_service
 from app.exception_handler.exceptions import BadRequestError
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.models.pipeline import PipelineStage
 from app.schemas.response import APIResponse
@@ -154,7 +154,7 @@ def bulk_add_talent_pool_candidates_to_campaign(
         request.candidate_ids,
         request.campaign_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     return APIResponse.ok(
@@ -216,7 +216,7 @@ def add_talent_pool_candidate_to_campaign(
         _parse_candidate_id(candidate_id),
         _parse_campaign_id(campaign_id),
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
     )
 
     return APIResponse.ok(

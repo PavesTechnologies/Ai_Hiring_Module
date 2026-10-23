@@ -114,7 +114,7 @@ def upload_resume(
         jurisdiction=validated.jurisdiction,
         uploaded_by=user.user_id,
         # The role that allowed the upload (and any duplicate decision made in it).
-        actor_role=authorising_role(user, (UserRole.HR_ADMIN, UserRole.RECRUITER)),
+        actor_role=authorising_role(user),
         content_type=file.content_type,
         candidate_phone=validated.candidate_phone,
         ip_address=request.client.host if request.client else None,
@@ -411,7 +411,7 @@ def retry_resume_parse(
     strictness.
     """
     resume, new_task_id = service.retry_parse(
-        resume_id, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        resume_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(
         data=ResumeRetryResponse(
@@ -437,7 +437,7 @@ def replay_resume_dlq_entry(
     only, matching the equivalent bulk-file replay route's strictness.
     """
     resume, new_task_id = service.replay_from_dlq(
-        dlq_id, actor_id=user.user_id, actor_role=user.roles[0] if user.roles else None,
+        dlq_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
     return APIResponse.ok(
         data=ResumeRetryResponse(
@@ -472,7 +472,7 @@ def delete_resume(
     service.delete_resume(
         resume_id=resume_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
         reason=reason,
     )
 

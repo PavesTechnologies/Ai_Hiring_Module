@@ -41,3 +41,31 @@ def test_upload_records_the_authorising_role(roles, expected):
             app.dependency_overrides.clear()
     service.upload_resume.assert_called_once()
     assert service.upload_resume.call_args.kwargs["actor_role"] == expected
+
+
+@pytest.mark.parametrize("roles, expected", [
+    (["General", "RECRUITER"], "RECRUITER"),          # used to send "General" - refused by every transition
+    (["HR_ADMIN", "RECRUITER"], "RECRUITER"),         # -> UPLOADED is RECRUITER-only: the role that allows it
+    (["General", "HR_ADMIN"], "HR_ADMIN"),
+])
+def test_resubmission_sends_the_role_that_authorises_the_transition(roles, expected):
+    from app.dependencies.campaign_candidate import get_campaign_candidate_service
+    from app.main import app
+    payload = {"user_id": "rec-1", "email": "r@example.invalid", "roles": roles}
+    service = MagicMock()
+    service.update_resume_for_resubmission.side_effect = RuntimeError("stop after the call")
+    with patch("app.middleware.jwt_middleware.decode_token", lambda token: payload), \
+            patch("app.middleware.rbac._ensure_local_user"), \
+            patch("app.services.notifications.ses_email_client.SESEmailClient.send_email",
+                  side_effect=AssertionError("email sent")):
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        app.dependency_overrides[get_campaign_candidate_service] = lambda: service
+        try:
+            http = TestClient(app, base_url=f"http://test{API_PREFIX}", client=("127.0.0.1", 50000),
+                              raise_server_exceptions=False)
+            http.post(f"/campaign-candidates/{uuid4()}/update-resume", headers={"Authorization": "Bearer t"},
+                      files={"file": ("resume.pdf", b"%PDF-1.4 test", "application/pdf")})
+        finally:
+            app.dependency_overrides.clear()
+    service.update_resume_for_resubmission.assert_called_once()
+    assert service.update_resume_for_resubmission.call_args.kwargs["actor_role"] == expected

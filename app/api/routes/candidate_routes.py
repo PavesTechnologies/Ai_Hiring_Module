@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 from app.dependencies.campaign_candidate import get_campaign_candidate_service
 from app.dependencies.resume import get_candidate_directory_service, get_candidate_erasure_service
 from app.enums.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.identity import UserRole
 from app.schemas.campaign.campaign_candidate_schema import (
     CandidateCampaignHistoryResponse,
@@ -106,7 +106,7 @@ def erase_candidate(
     service.erase_candidate(
         candidate_id=candidate_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=authorising_role(user),
         reason=reason,
     )
 

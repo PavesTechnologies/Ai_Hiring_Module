@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from fastapi import Depends, Request
@@ -23,6 +23,14 @@ class TokenUser:
     email: str
     roles: list[str]
     claims: dict = field(default_factory=dict)
+    # The roles the route allowed that this user holds, broadest first - set
+    # by require_roles; what authorising_role() records in audit entries.
+    authorised_roles: tuple[str, ...] = ()
+
+
+# Broadest authority first: when a user holds several roles the route allows,
+# the audit records the broadest of them.
+ROLE_PRECEDENCE = ("SUPER_ADMIN", "HR_ADMIN", "HIRING_MANAGER", "RECRUITER")
 
 
 # ── Shared payload → TokenUser conversion ─────────────────────────────────────
@@ -82,14 +90,19 @@ def resolve_actor_role(user: TokenUser) -> str | None:
     return next((r for r in user.roles if r in LocalUserRole.__members__), None)
 
 
-def authorising_role(user_or_roles, allowed) -> str | None:
+def authorising_role(user_or_roles, allowed=None) -> str | None:
     """
-    The role that authorised an action, for its audit entry: the first of
-    `allowed` - in that order of precedence, e.g. (HR_ADMIN, RECRUITER) - that
-    the user holds. Never an org/department label such as "General" that
-    some tokens list first.
+    The role that authorised an action, for its audit entry - never the raw
+    first entry on the sign-in (some tokens list an org/department label
+    such as "General" first).
+
+    allowed: the roles that may authorise it, in order of preference, e.g.
+    (HR_ADMIN, RECRUITER). Omitted, it is the roles the route's
+    require_roles allowed (broadest first), or ROLE_PRECEDENCE.
     """
     roles = getattr(user_or_roles, "roles", user_or_roles) or []
+    if allowed is None:
+        allowed = getattr(user_or_roles, "authorised_roles", ()) or ROLE_PRECEDENCE
     values = [getattr(role, "value", role) for role in allowed]
     return next((role for role in values if role in roles), None)
 
@@ -167,7 +180,9 @@ def require_roles(*allowed_roles: UserRole) -> Callable:
 
         _ensure_local_user(user, db)
 
-        return user
+        authorised = tuple(role for role in ROLE_PRECEDENCE if role in allowed and role in user.roles)
+        authorised += tuple(sorted(role for role in allowed & set(user.roles) if role not in authorised))
+        return replace(user, authorised_roles=authorised)
 
     return _check
 
