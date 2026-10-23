@@ -112,6 +112,22 @@ class UploadDecisionService:
             return None
         return self.campaign_candidate_repo.get_by_campaign_and_candidate(campaign_id, candidate.id)
 
+    def find_candidate_in_campaign_by_file(self, campaign_id: UUID, file_hash: str):
+        """
+        A candidate already in this campaign who owns a resume with this exact
+        file (any of their versions) - whatever email was typed. Without this,
+        "upload anyway" made a new version under that candidate, then failed to
+        add them to the campaign they were already in (an orphaned version).
+        """
+        from sqlalchemy import select
+        from app.models.pipeline import CampaignCandidate
+        return self.db.execute(
+            select(CampaignCandidate)
+            .join(Resume, Resume.candidate_id == CampaignCandidate.candidate_id)
+            .where(CampaignCandidate.campaign_id == campaign_id, Resume.file_hash == file_hash)
+            .limit(1)
+        ).scalars().first()
+
     def duplicate_file_in_campaign_data(self, cc) -> DuplicateFileInCampaignResponse:
         resume = self.resume_repo.get_by_id(cc.resume_id)
         return DuplicateFileInCampaignResponse(

@@ -52,6 +52,7 @@ def _make_harness(requires_processing=True, race_existing_log=None):
     upload_decision_service = MagicMock()
     upload_decision_service.find_identical_file_in_campaign.return_value = None
     upload_decision_service.find_candidate_in_campaign.return_value = None
+    upload_decision_service.find_candidate_in_campaign_by_file.return_value = None
 
     service = ResumeIntakeService(
         resume_service=resume_service,

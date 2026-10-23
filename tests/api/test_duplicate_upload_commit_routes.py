@@ -69,6 +69,7 @@ def _intake(commit_side_effect=None):
     decisions = MagicMock()
     decisions.find_identical_file_in_campaign.return_value = None
     decisions.find_candidate_in_campaign.return_value = None
+    decisions.find_candidate_in_campaign_by_file.return_value = None
     service = ResumeIntakeService(resume_service=resume_service, campaign_candidate_service=cc_service,
                                   campaign_repo=campaign_repo, audit_service=audit, task_log_repo=MagicMock(),
                                   upload_decision_service=decisions)

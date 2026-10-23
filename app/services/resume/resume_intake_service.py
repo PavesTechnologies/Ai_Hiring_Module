@@ -141,6 +141,12 @@ class ResumeIntakeService:
             self._skip_identical_file(identical, filename, file_hash, uploaded_by, actor_role)
 
         existing = self.upload_decision_service.find_candidate_in_campaign(campaign_id, candidate_email)
+        if existing is None:
+            # 3. this file is (an earlier version of) the resume of a candidate
+            #    already in this campaign, under another typed email: the same
+            #    decision - never "use existing" / "upload anyway", which would
+            #    leave an orphaned version behind.
+            existing = self.upload_decision_service.find_candidate_in_campaign_by_file(campaign_id, file_hash)
         if existing is not None:
             return self._resolve_candidate_in_campaign(
                 existing, campaign, file_bytes=file_bytes, filename=filename, content_type=content_type,

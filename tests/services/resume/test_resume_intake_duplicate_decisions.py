@@ -54,6 +54,7 @@ def _harness(identical=None, existing=None, new_resume_version=1):
     decisions = MagicMock()
     decisions.find_identical_file_in_campaign.return_value = identical
     decisions.find_candidate_in_campaign.return_value = existing
+    decisions.find_candidate_in_campaign_by_file.return_value = None
     decisions.campaign_candidate_repo.get_by_candidate_id.return_value = []
     service = ResumeIntakeService(resume_service=resume_service, campaign_candidate_service=cc_service,
                                   campaign_repo=campaign_repo, audit_service=MagicMock(),
@@ -277,3 +278,50 @@ def test_route_409_duplicate_file_in_campaign_body(client):
     assert body["data"]["error_code"] == "DUPLICATE_FILE_IN_CAMPAIGN"
     assert body["data"]["existing_resume_id"] == str(identical.resume_id)
     _nothing_stored(service)
+
+
+# --- the file belongs to a candidate already in this campaign, under another email ---------------
+
+def _owner_harness():
+    service, campaign, resume, decisions = _harness()
+    owner = _cc(campaign.id)                                     # in the campaign; the typed email isn't theirs
+    decisions.find_candidate_in_campaign_by_file.return_value = owner
+    decisions.candidate_in_campaign_data.return_value = CandidateInCampaignNewFileResponse(
+        campaign_candidate_id=owner.id, candidate_id=owner.candidate_id, candidate_name="Jane Doe",
+        current_pipeline_stage="SHORTLISTED", existing_resume_id=owner.resume_id,
+        existing_original_filename="cv_v2.pdf", existing_uploaded_at=datetime.now(timezone.utc),
+        existing_version_number=2, available_resolutions=["keep_existing", "use_new_version"],
+    )
+    return service, campaign, owner, decisions
+
+
+@pytest.mark.parametrize("resolution", [None, "upload_anyway", "use_existing"])
+def test_a_file_owned_by_a_candidate_in_this_campaign_goes_to_the_decision_not_upload_anyway(resolution):
+    service, campaign, owner, decisions = _owner_harness()
+    with pytest.raises(CandidateInCampaignNewFileException) as exc:
+        _upload(service, campaign, resolution=resolution)
+    assert exc.value.status_code == 409
+    decisions.candidate_in_campaign_data.assert_called_once_with(owner)
+    _nothing_stored(service)                                    # no orphaned version
+
+
+def test_the_owner_case_resolves_like_any_candidate_in_the_campaign():
+    service, campaign, owner, decisions = _owner_harness()
+    with patch.object(service, "_resolve_candidate_in_campaign", return_value="resolved") as resolve:
+        assert _upload(service, campaign, resolution="keep_existing") == "resolved"
+    assert resolve.call_args.args[0] is owner and resolve.call_args.kwargs["resolution"] == "keep_existing"
+    decisions.find_candidate_in_campaign_by_file.assert_called_once()
+
+
+def test_an_email_match_wins_over_the_file_owner_lookup():
+    service, campaign, _, decisions = _harness(existing=_cc(uuid4()))
+    with pytest.raises(CandidateInCampaignNewFileException):
+        _upload(service, campaign)
+    decisions.find_candidate_in_campaign_by_file.assert_not_called()
+
+
+def test_a_file_owned_only_outside_this_campaign_keeps_todays_flow():
+    service, campaign, _, decisions = _harness()               # owner lookup: None
+    _upload(service, campaign, resolution="upload_anyway")
+    service.resume_service.upload.assert_called_once()
+
