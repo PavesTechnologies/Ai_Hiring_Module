@@ -217,7 +217,7 @@ class ScoringShadowReportService:
         self.audit_service.log(
             actor_id=actor_id, actor_role=actor_role, action_type=ActionType.CAMPAIGN_UPDATED,
             entity_type=EntityType.CAMPAIGN, entity_id=campaign_id, campaign_id=campaign_id,
-            details={"scoring_v2_shadow_recruiter_ranking": len(rankings), "ranked_by": ranked_by_name},
+            details={"scoring_v2_shadow_recruiter_ranking": len(rankings), "ranked_by_name_provided": bool(ranked_by_name)},
         )
         self.db.commit()
         return self.report(campaign_id)

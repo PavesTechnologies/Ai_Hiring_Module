@@ -177,7 +177,7 @@ class UploadDecisionService:
         self.audit_service.log(
             actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_DUPLICATE_SKIPPED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=cc.campaign_id,
-            details={"existing_resume_id": str(cc.resume_id), "original_filename": filename, "file_hash": file_hash,
+            details={"existing_resume_id": str(cc.resume_id), "file_hash": file_hash,
                      "bulk_upload_job_id": str(bulk_upload_job_id) if bulk_upload_job_id else None,
                      "source": source},
         )
@@ -197,7 +197,7 @@ class UploadDecisionService:
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_KEPT_EXISTING,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=cc.campaign_id,
-                details={"existing_resume_id": str(cc.resume_id), "new_original_filename": filename,
+                details={"existing_resume_id": str(cc.resume_id),
                          "source": "single_upload"},
             )
             self.db.commit()
@@ -258,7 +258,6 @@ class UploadDecisionService:
                 "old_version_number": previous.version_number if previous else None,
                 "new_resume_id": str(resume.id),
                 "new_version_number": resume.version_number,
-                "original_filename": original_filename,
                 "other_campaigns_marked_out_of_date": stamped,
                 "bulk_upload_job_id": str(bulk_upload_job_id) if bulk_upload_job_id else None,
             }
@@ -424,8 +423,7 @@ class UploadDecisionService:
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_KEPT_EXISTING,
                 entity_type=EntityType.UPLOAD_DECISION, entity_id=decision.id, campaign_id=decision.campaign_id,
                 details={"campaign_candidate_id": str(campaign_candidate_id),
-                         "new_original_filename": decision.original_filename,
-                         "reason": "candidate removed from campaign"},
+                         "reason_code": "CANDIDATE_REMOVED_FROM_CAMPAIGN"},
             )
             paths.append(decision.storage_path)
         return paths
@@ -481,7 +479,6 @@ class UploadDecisionService:
                          if decision.campaign_candidate_id else None,
                          "existing_resume_id": str(decision.existing_resume_id)
                          if decision.existing_resume_id else None,
-                         "new_original_filename": decision.original_filename,
                          "bulk_upload_job_id": str(decision.bulk_upload_job_id)
                          if decision.bulk_upload_job_id else None,
                          "status": status.value},

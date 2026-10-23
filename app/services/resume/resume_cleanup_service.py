@@ -107,7 +107,7 @@ class ResumeCleanupService:
                     "had_bulk_origin": bulk_upload_job_id is not None,
                     "campaign_candidates_removed": len(campaign_candidates),
                     "campaign_ids_affected": campaign_ids_affected,
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                 },
             )
 

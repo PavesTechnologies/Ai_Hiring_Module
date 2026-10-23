@@ -101,7 +101,8 @@ def test_request_erasure_writes_audit_log_with_requested_phase():
     assert audit_kwargs["entity_type"] == EntityType.CANDIDATE
     assert audit_kwargs["entity_id"] == candidate.id
     assert audit_kwargs["details"]["phase"] == "requested"
-    assert audit_kwargs["details"]["reason"] == "candidate request"
+    assert audit_kwargs["details"]["reason_provided"] is True            # never the free text itself
+    assert "candidate request" not in str(audit_kwargs["details"])
 
 
 def test_request_erasure_raises_not_found_for_missing_candidate():

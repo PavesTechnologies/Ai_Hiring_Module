@@ -63,7 +63,7 @@ class EducationFieldFamilyService:
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.EDUCATION_FIELD_RELATION_ADDED,
                 entity_type=EntityType.EDUCATION_FIELD_RELATION, entity_id=relation.id,
-                details={"field_a": field_a, "field_b": field_b, "role_domain": role_domain, "note": relation.note},
+                details={"field_a": field_a, "field_b": field_b, "role_domain": role_domain, "note_provided": bool(relation.note)},
             )
             self.repository.commit()
         except Exception:
@@ -77,7 +77,7 @@ class EducationFieldFamilyService:
             if relation is None:
                 raise NotFoundError("Related-field pair not found.")
             details = {"field_a": relation.field_a, "field_b": relation.field_b,
-                       "role_domain": relation.role_domain, "note": relation.note}
+                       "role_domain": relation.role_domain, "note_provided": bool(relation.note)}
             self.repository.delete(relation)
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.EDUCATION_FIELD_RELATION_REMOVED,

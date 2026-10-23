@@ -183,7 +183,7 @@ class CandidateErasureService:
                     "upload_decision_files_deleted": len(held_files),
                     **traces,
                     "had_bulk_origin": had_bulk_origin,
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                 },
             )
 
@@ -255,7 +255,7 @@ class CandidateErasureService:
                     "phase": "requested",
                     "resume_embeddings_zeroed": embeddings_zeroed,
                     "resume_versions_touched": len(resumes),
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                 },
             )
 

@@ -68,7 +68,7 @@ def test_removed_candidate_pending_decisions_become_kept_existing_and_are_audite
     audit = service.audit_service.log.call_args.kwargs
     assert audit["action_type"] == ActionType.RESUME_KEPT_EXISTING
     assert audit["entity_type"] == EntityType.UPLOAD_DECISION
-    assert audit["details"]["reason"] == "candidate removed from campaign"
+    assert audit["details"]["reason_code"] == "CANDIDATE_REMOVED_FROM_CAMPAIGN"
     service._storage_service.delete_file.assert_not_called()      # only after the caller commits
     service.db.commit.assert_not_called()
 

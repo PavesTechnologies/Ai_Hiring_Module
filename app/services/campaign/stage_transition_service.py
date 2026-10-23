@@ -564,7 +564,7 @@ class StageTransitionService:
             details={
                 "from_stage": from_stage.value,
                 "to_stage": to_stage.value,
-                "reason": reason,
+                "reason_provided": bool(reason),
                 "stage_history_id": str(history.id),
             },
         )

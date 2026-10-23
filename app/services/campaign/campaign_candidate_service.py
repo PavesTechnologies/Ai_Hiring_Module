@@ -2306,8 +2306,8 @@ class CampaignCandidateService:
                 entity_id=campaign_candidate.id,
                 campaign_id=campaign_candidate.campaign_id,
                 details={
-                    "override_reason": override_reason,
-                    "original_rejection_reason": overridden.get("overridden_decision_reason"),
+                    "override_reason_provided": bool(override_reason),
+                    "original_rejection_reason_provided": bool(overridden.get("overridden_decision_reason")),
                     "overridden_layer": overridden.get("overridden_decision_source"),
                 },
             )

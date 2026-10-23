@@ -162,8 +162,8 @@ class OverrideRevertService:
                 details={
                     "title": "HR override cleared — automated decision restored",
                     "override_cleared": True,
-                    "clear_reason": reason,
-                    "cleared_override_reason": override_reason,
+                    "clear_reason_provided": bool(reason),
+                    "cleared_override_reason_provided": bool(override_reason),
                     "restored_decision_type": restored_type.value,
                     "restored_decision_source": restored_source.value,
                 },

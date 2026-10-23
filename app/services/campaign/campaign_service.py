@@ -445,7 +445,7 @@ class CampaignService:
             campaign_id=campaign.id,
             details={
                 "title": f"Campaign '{campaign.name}' auto-closed",
-                "reason": "ALL_POSITIONS_FILLED",
+                "reason_code": "ALL_POSITIONS_FILLED",
                 "max_candidates": campaign.max_candidates,
                 "selected_count": campaign.max_candidates,
             },
@@ -1857,7 +1857,7 @@ class CampaignService:
                     "task_type": entry.task_type,
                     "original_task_id": entry.original_task_id,
                     "new_task_id": new_task_id,
-                    "final_error_message": entry.final_error_message[:500],
+                    "error_recorded": bool(entry.final_error_message),
                 },
             )
             to_enqueue.append((task_fn, kwargs, new_task_id))
@@ -1976,7 +1976,7 @@ class CampaignService:
             details={
                 "title": "Stalled HM review escalated to hiring manager",
                 "hiring_manager_id": campaign.hiring_manager_id,
-                "note": request.note,
+                "note_provided": bool(request.note),
             },
         )
         self.campaign_repo.commit()
@@ -2069,7 +2069,7 @@ class CampaignService:
                 "title": "Pipeline stage manually overridden",
                 "from_stage": from_stage.value,
                 "to_stage": target.value,
-                "reason": request.reason,
+                "reason_provided": bool(request.reason),
             },
         )
         # This is the second stage-writing path (PipelineTransitionService is
@@ -2120,7 +2120,7 @@ class CampaignService:
             details={
                 "title": "Candidate flagged for manual review",
                 "from_stage": from_stage.value,
-                "reason": request.reason,
+                "reason_provided": bool(request.reason),
             },
         )
         self.campaign_repo.commit()

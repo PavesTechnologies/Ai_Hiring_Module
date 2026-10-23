@@ -124,7 +124,7 @@ class BulkStageMoveService:
                     "moved_count": len(candidates),
                     "from_stage": from_stage.value,
                     "to_stage": to_stage.value,
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                     "skipped_count": len(skipped),
                 },
             )
@@ -218,7 +218,7 @@ class BulkStageMoveService:
                     "bulk": False,
                     "from_stage": from_stage.value,
                     "to_stage": to_stage.value,
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                 },
             )
             self.campaign_candidate_repo.commit()

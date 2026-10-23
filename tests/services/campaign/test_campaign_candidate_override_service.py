@@ -246,8 +246,9 @@ def test_apply_hr_override_sets_campaign_candidate_fields_and_commits():
     audit_service.log.assert_called_once()
     _, kwargs = audit_service.log.call_args
     assert kwargs["action_type"].value == "DETERMINISTIC_OVERRIDE_APPLIED"
-    assert kwargs["details"]["override_reason"] == _OVERRIDE_REASON
-    assert kwargs["details"]["original_rejection_reason"] == original_reason
+    assert kwargs["details"]["override_reason_provided"] is True           # free text stays on the row, not in the audit
+    assert _OVERRIDE_REASON not in str(kwargs["details"])
+    assert kwargs["details"]["original_rejection_reason_provided"] is bool(original_reason)
     assert kwargs["details"]["overridden_layer"] == "DETERMINISTIC"
 
 

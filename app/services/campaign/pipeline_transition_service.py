@@ -255,7 +255,7 @@ class PipelineTransitionService:
                 details={
                     "from_stage": from_stage.value,
                     "to_stage": to_stage.value,
-                    "reason": reason,
+                    "reason_provided": bool(reason),
                 },
             )
 
@@ -305,7 +305,7 @@ class PipelineTransitionService:
                 campaign_id=campaign.id,
                 details={
                     "title": f"Campaign '{campaign.name}' auto-closed",
-                    "reason": "ALL_POSITIONS_FILLED",
+                    "reason_code": "ALL_POSITIONS_FILLED",
                     "max_candidates": campaign.max_candidates,
                     "selected_count": campaign.max_candidates,
                 },

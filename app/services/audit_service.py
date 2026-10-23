@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -16,6 +17,45 @@ _CSV_HEADERS = [
     "entity_type", "entity_id", "campaign_id", "detail", "created_at",
 ]
 
+
+
+logger = logging.getLogger(__name__)
+
+# Audit entries hold ids, counts, codes and flags - never personal data. These
+# keys carry names, emails, phones, file names or free text people type (which
+# routinely quotes a candidate), so AuditService.log drops them at any depth.
+# The guard test (tests/services/test_audit_no_personal_data.py) keeps call
+# sites from writing them in the first place; this is the safety net.
+PERSONAL_DATA_KEYS = frozenset({
+    "full_name", "first_name", "last_name", "candidate_name", "recipient_name", "ranked_by",
+    "email", "email_address", "recipient_email", "phone", "phone_number",
+    "filename", "file_name", "original_filename", "new_original_filename",
+    "reason", "note", "notes", "comment", "comments", "feedback", "message_body",
+    "override_reason", "clear_reason", "cleared_override_reason", "original_rejection_reason", "decision_reason",
+    "final_error_message", "error_message", "full_error_trace", "ai_response", "raw_response",
+})
+# ("name" is deliberately not listed: campaigns, presets, prompts and skills have
+# product names. The guard test checks no person's name reaches any key.)
+
+
+def scrub_personal_data(details):
+    """Returns (cleaned details, the keys dropped). Never mutates the input."""
+    dropped = []
+
+    def clean(value):
+        if isinstance(value, dict):
+            out = {}
+            for key, item in value.items():
+                if key in PERSONAL_DATA_KEYS:
+                    dropped.append(key)
+                    continue
+                out[key] = clean(item)
+            return out
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return value
+
+    return clean(details), sorted(set(dropped))
 
 class AuditService:
     def __init__(self, repository: AuditRepository, campaign_repo: CampaignRepository | None = None):
@@ -42,6 +82,11 @@ class AuditService:
         ip_address: str | None = None,
         session_id: UUID | None = None,request_id: UUID | None = None,
         ) -> AuditLog:
+        if details:
+            details, dropped = scrub_personal_data(details)
+            if dropped:
+                logger.warning("Audit %s: dropped personal-data keys %s", getattr(action_type, "value", action_type),
+                               dropped)
         audit = AuditLog(
             actor_id=actor_id,
             actor_role=actor_role,

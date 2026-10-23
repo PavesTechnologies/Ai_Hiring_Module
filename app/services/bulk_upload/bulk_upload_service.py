@@ -295,7 +295,6 @@ class BulkUploadService:
                 campaign_id=job.campaign_id,
                 details={
                     "bulk_upload_job_id": str(job_id),
-                    "original_filename": job_file.original_filename,
                     "original_task_id": original_task_id,
                     "new_task_id": new_task_id,
                     "dead_letter_queue_id": str(dlq_entry.id),

@@ -63,7 +63,7 @@ class CampaignSchedulerService:
                         campaign_id=campaign.id,
                         details={
                             "title": f"Campaign '{campaign.name}' auto-closed",
-                            "reason": "DEADLINE_EXPIRED",
+                            "reason_code": "DEADLINE_EXPIRED",
                             "deadline": campaign.deadline.isoformat()
                             if campaign.deadline
                             else None,

@@ -332,7 +332,8 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             "recommendation": recommendation,
             "overall_score": ai_response["scores"]["overall_score"],
             "confidence_score": ai_response["confidence_score"],
-            "ai_response": ai_response,
+            # Never the AI's written assessment: it quotes the candidate (it is
+            # stored on the evaluation row). Audit and task logs get scores only.
             # Which model actually scored this candidate - a backup model
             # may rank slightly differently from the main one.
             "llm": {

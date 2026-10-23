@@ -238,7 +238,7 @@ class ResumeReparseService:
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_REPARSE_REQUESTED,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=campaign.id,
-                details={"resume_id": str(resume.id), "version_no": version_no, "reason": reason,
+                details={"resume_id": str(resume.id), "version_no": version_no, "reason_provided": bool(reason),
                          "move_to_screening": move_to_screening},
             )
             self.db.commit()
