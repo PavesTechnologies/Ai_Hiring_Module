@@ -71,6 +71,18 @@ RESUME_STORAGE_BUCKET = "airs_resumes"
 SYSTEM_ACTOR_ROLE = "SYSTEM"
 
 
+def decision_actor_role(actor_roles: list[str] | None, *, is_uploader: bool) -> str | None:
+    """
+    The role that authorised a decision, for its audit entry: HR_ADMIN when
+    the user holds it (any decision), else RECRUITER for the uploader - never
+    the first entry on the sign-in (some tokens list "General" first).
+    """
+    from app.middleware.rbac import authorising_role
+    if UserRole.HR_ADMIN.value in (actor_roles or []):
+        return UserRole.HR_ADMIN.value
+    return authorising_role(actor_roles, (UserRole.RECRUITER,)) if is_uploader else None
+
+
 def mask_email(email: str) -> str:
     """Same masking as the talent pool: first character of the local part and the full domain."""
     local, _, domain = email.partition("@")
@@ -159,14 +171,25 @@ class UploadDecisionService:
 
     # --- audit (upload time) --------------------------------------------------
     def log_duplicate_skipped(self, cc, *, filename: str | None, file_hash: str, actor_id: str | None,
-                              actor_role: str | None, bulk_upload_job_id: UUID | None = None) -> None:
-        """Audit only - the caller commits."""
+                              actor_role: str | None, bulk_upload_job_id: UUID | None = None,
+                              source: str = "single_upload") -> None:
+        """Audit only - the caller commits. source: single_upload, or bulk_upload_worker."""
         self.audit_service.log(
             actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_DUPLICATE_SKIPPED,
             entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=cc.campaign_id,
             details={"existing_resume_id": str(cc.resume_id), "original_filename": filename, "file_hash": file_hash,
-                     "bulk_upload_job_id": str(bulk_upload_job_id) if bulk_upload_job_id else None},
+                     "bulk_upload_job_id": str(bulk_upload_job_id) if bulk_upload_job_id else None,
+                     "source": source},
         )
+
+    def uploader_role(self, user_id: str | None) -> str | None:
+        """The uploader's role on their local user record - what a worker-written audit entry records."""
+        if not user_id:
+            return None
+        from app.models.identity import User
+        user = self.db.get(User, user_id)
+        role = getattr(user, "role", None)
+        return getattr(role, "value", role)
 
     def keep_existing_for_upload(self, cc, *, filename: str | None, actor_id: str, actor_role: str | None) -> None:
         """Single upload, resolution=keep_existing: nothing was stored - audited and committed."""
@@ -333,8 +356,7 @@ class UploadDecisionService:
             raise UploadDecisionNotPendingException(
                 f"This upload was already decided ({decision.status})."
             )
-        actor_role = (UserRole.HR_ADMIN.value if UserRole.HR_ADMIN.value in (actor_roles or [])
-                      else (actor_roles[0] if actor_roles else None))
+        actor_role = decision_actor_role(actor_roles, is_uploader=decision.uploaded_by == actor_id)
 
         if choice == UploadDecisionChoice.KEEP_EXISTING.value:
             self._keep_existing(decision, UploadDecisionStatus.KEPT_EXISTING, ActionType.RESUME_KEPT_EXISTING,

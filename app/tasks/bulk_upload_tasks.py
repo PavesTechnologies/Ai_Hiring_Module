@@ -836,9 +836,11 @@ def _skip_duplicate_in_campaign(campaign_candidate, summary: str, *, job, job_fi
     """An identical file already in this campaign: SKIPPED_DUPLICATE, counted as a duplicate, audited."""
     file_repo.update_status(job_file.id, BulkUploadFileStatus.SKIPPED_DUPLICATE)
     job_repo.increment_duplicate_count(job.id)
+    # Written by the worker on the uploader's behalf: their role, the worker as the source.
     upload_decision_service.log_duplicate_skipped(
         campaign_candidate, filename=job_file.original_filename, file_hash=file_hash, actor_id=job.uploaded_by,
-        actor_role=None, bulk_upload_job_id=job.id,
+        actor_role=upload_decision_service.uploader_role(job.uploaded_by), bulk_upload_job_id=job.id,
+        source="bulk_upload_worker",
     )
     job_repo.commit()
     _maybe_finalize_job(job_repo, job.id)

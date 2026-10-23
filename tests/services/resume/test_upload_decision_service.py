@@ -279,3 +279,53 @@ def test_decision_items_show_name_and_masked_email():
     assert item.candidate_name == "Jane Doe" and item.candidate_email_masked == mask_email("jane@example.com")
     assert item.existing_original_filename == "old.pdf" and item.new_original_filename == "new.pdf"
     assert item.status == "PENDING" and item.expires_at == decision.expires_at
+
+
+# --- the audit records the role that authorised the decision ---------------------------------
+
+def test_uploader_with_general_listed_first_is_audited_as_recruiter():
+    service = _service()
+    decision = _decision(uploaded_by="rec-1")
+    service.decision_repo.get_by_id_for_update.return_value = decision
+    service.job_file_repo.get_by_id.return_value = _job_file(decision)
+    service.decide(decision.id, "keep_existing", actor_id="rec-1", actor_roles=["General", "RECRUITER"])
+    assert service.audit_service.log.call_args.kwargs["actor_role"] == "RECRUITER"
+
+
+def test_hr_admin_uploader_is_audited_as_hr_admin():
+    service = _service()
+    decision = _decision(uploaded_by="rec-1")
+    service.decision_repo.get_by_id_for_update.return_value = decision
+    service.job_file_repo.get_by_id.return_value = _job_file(decision)
+    service.decide(decision.id, "keep_existing", actor_id="rec-1", actor_roles=["General", "RECRUITER", "HR_ADMIN"])
+    assert service.audit_service.log.call_args.kwargs["actor_role"] == "HR_ADMIN"
+
+
+def test_decision_actor_role():
+    from app.services.resume.upload_decision_service import decision_actor_role
+    assert decision_actor_role(["General", "HR_ADMIN"], is_uploader=False) == "HR_ADMIN"
+    assert decision_actor_role(["General", "RECRUITER"], is_uploader=True) == "RECRUITER"
+    assert decision_actor_role(["General", "RECRUITER"], is_uploader=False) is None
+    assert decision_actor_role(["General"], is_uploader=True) is None
+    assert decision_actor_role(None, is_uploader=True) is None
+
+
+def test_duplicate_skipped_records_its_source():
+    service = _service()
+    cc = _cc(_campaign())
+    service.log_duplicate_skipped(cc, filename="f.pdf", file_hash="h", actor_id="rec-1", actor_role="RECRUITER")
+    assert service.audit_service.log.call_args.kwargs["details"]["source"] == "single_upload"
+    service.log_duplicate_skipped(cc, filename="f.pdf", file_hash="h", actor_id="rec-1", actor_role="RECRUITER",
+                                  bulk_upload_job_id=uuid4(), source="bulk_upload_worker")
+    audit = service.audit_service.log.call_args.kwargs
+    assert audit["details"]["source"] == "bulk_upload_worker" and audit["actor_role"] == "RECRUITER"
+
+
+def test_uploader_role_reads_the_local_user_record():
+    from app.models.identity import UserRole
+    service = _service()
+    service.db.get.return_value = SimpleNamespace(role=UserRole.RECRUITER)
+    assert service.uploader_role("rec-1") == "RECRUITER"
+    service.db.get.return_value = None
+    assert service.uploader_role("gone") is None
+    assert service.uploader_role(None) is None

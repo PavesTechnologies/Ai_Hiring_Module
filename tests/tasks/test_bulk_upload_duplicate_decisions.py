@@ -139,6 +139,11 @@ def test_identical_file_in_campaign_is_skipped_duplicate():
     h.job_repo.increment_duplicate_count.assert_called_once_with(h.job.id)
     h.decisions.log_duplicate_skipped.assert_called_once()
     assert h.decisions.log_duplicate_skipped.call_args.args[0] is existing
+    # written by the worker on the uploader's behalf: their role, the worker as the source
+    h.decisions.uploader_role.assert_called_once_with("uploader-1")
+    kwargs = h.decisions.log_duplicate_skipped.call_args.kwargs
+    assert kwargs["actor_id"] == "uploader-1" and kwargs["actor_role"] is h.decisions.uploader_role.return_value
+    assert kwargs["source"] == "bulk_upload_worker"
     h.pipeline.run.assert_not_called()
     h.resume_repo.create.assert_not_called()
     h.cc_service.create_campaign_candidate.assert_not_called()

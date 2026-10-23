@@ -14,7 +14,7 @@ from app.dependencies.resume import (
 )
 from app.enums.constants import Jurisdiction, UserRole
 from app.exception_handler.exceptions import BadRequestError
-from app.middleware.rbac import TokenUser, require_roles
+from app.middleware.rbac import TokenUser, authorising_role, require_roles
 from app.models.candidates import ParseStatus
 from app.schemas.resume.monitoring import (
     ParseAttemptItem,
@@ -113,7 +113,8 @@ def upload_resume(
         candidate_email=validated.candidate_email,
         jurisdiction=validated.jurisdiction,
         uploaded_by=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        # The role that allowed the upload (and any duplicate decision made in it).
+        actor_role=authorising_role(user, (UserRole.HR_ADMIN, UserRole.RECRUITER)),
         content_type=file.content_type,
         candidate_phone=validated.candidate_phone,
         ip_address=request.client.host if request.client else None,

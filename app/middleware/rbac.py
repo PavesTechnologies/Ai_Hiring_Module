@@ -82,6 +82,18 @@ def resolve_actor_role(user: TokenUser) -> str | None:
     return next((r for r in user.roles if r in LocalUserRole.__members__), None)
 
 
+def authorising_role(user_or_roles, allowed) -> str | None:
+    """
+    The role that authorised an action, for its audit entry: the first of
+    `allowed` - in that order of precedence, e.g. (HR_ADMIN, RECRUITER) - that
+    the user holds. Never an org/department label such as "General" that
+    some tokens list first.
+    """
+    roles = getattr(user_or_roles, "roles", user_or_roles) or []
+    values = [getattr(role, "value", role) for role in allowed]
+    return next((role for role in values if role in roles), None)
+
+
 def _new_user_from_token(user: TokenUser) -> User:
     role_name = resolve_actor_role(user)
 
