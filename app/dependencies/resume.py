@@ -262,6 +262,7 @@ def get_candidate_erasure_service(
     # repository has one, and candidate_actions.py / export.py already build
     # CandidateNoteRepository(db) this same way.
     db: Session = Depends(get_db),
+    upload_decision_service: UploadDecisionService = Depends(get_upload_decision_service),
 ) -> CandidateErasureService:
     return CandidateErasureService(
         candidate_repo=candidate_repo,
@@ -276,6 +277,7 @@ def get_candidate_erasure_service(
         composite_score_history_repo=composite_score_history_repo,
         candidate_note_repo=CandidateNoteRepository(db),
         interview_schedule_repo=InterviewScheduleRepository(db),
+        upload_decision_service=upload_decision_service,
     )
 
 

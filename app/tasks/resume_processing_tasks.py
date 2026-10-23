@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 
 from app.models.async_tasks import DocumentType
 from app.models.candidates import FileFormat
+from app.models.pipeline import PipelineStage
 from app.models.resume.resume_source_format import ResumeSourceFormat
 from app.repositories.allowed_transition_repository import AllowedTransitionRepository
 from app.repositories.audit_repository import AuditRepository
@@ -145,25 +146,44 @@ def _recovery_kwargs(task_log, campaign) -> dict:
     return kwargs
 
 
-def _finish_new_version(db, resume_id, new_version: dict, task_log_service: CeleryTaskLogService) -> str:
+def new_version_mode_for_resume(db, resume_id) -> dict | None:
     """
-    After a "use new version" parse: embed the new version, then re-score only
-    the campaign candidate that chose it, under request_rescore (SCREENING ->
-    the normal screening re-score; any other stage -> score only). The
-    first-parse path (move UPLOADED -> SCREENING, first deterministic scoring)
-    never runs for it - a stage only moves by a recruiter's decision.
+    The new_version kwarg a (re)dispatch of this resume's parse must carry, or
+    None. A "use new version" parse task log's idempotency key ends in
+    ":new_version:{campaign_candidate_id}" (new_version_idempotency_key), so a
+    manual retry - which allocates a fresh task_id - still parses in
+    new-version mode.
     """
-    from app.services.resume.resume_reparse_service import request_rescore
+    prefix = f"{RESUME_DOCUMENT_PROCESSING_TASK_TYPE}:{resume_id}{_NEW_VERSION_KEY_MARKER}"
+    log = CeleryTaskLogRepository(db).get_by_idempotency_key_prefix(prefix)
+    if log is None or not isinstance(log.idempotency_key, str):
+        return None
+    return {"campaign_candidate_id": log.idempotency_key[len(prefix):]}
 
-    try:
-        _enqueue_resume_embedding(db, resume_id, task_log_service)
-    except Exception:
-        logger.exception("Failed to enqueue resume embedding after new version %s parsed.", resume_id)
 
+def _new_version_rescore_target(db, resume_id, new_version: dict | None):
+    """
+    The campaign candidate a "use new version" parse re-scores with
+    request_rescore instead of first scoring: the one that chose the new
+    version, still on it, and already past UPLOADED. A candidate still at
+    UPLOADED (never scored) gets the normal first-parse path (UPLOADED ->
+    SCREENING, first scoring) like any new upload. Read before the stage move.
+    """
+    if not new_version:
+        return None
     campaign_candidate = CampaignCandidateRepository(db).get_by_id(UUID(new_version["campaign_candidate_id"]))
     if campaign_candidate is None or str(campaign_candidate.resume_id) != str(resume_id):
         logger.info("New version parsed but its campaign candidate no longer uses it | resume_id=%s", resume_id)
-        return "skipped: candidate no longer on this resume"
+        return None
+    if campaign_candidate.pipeline_stage == PipelineStage.UPLOADED:
+        return None
+    return campaign_candidate
+
+
+def _rescore_new_version(db, campaign_candidate) -> str:
+    """request_rescore for the new-version candidate: SCREENING -> screening re-score, else score only."""
+    from app.services.resume.resume_reparse_service import request_rescore
+
     campaign = CampaignRepository(db).get_by_id(campaign_candidate.campaign_id)
     if campaign is None or campaign.status not in _SCOREABLE_CAMPAIGN_STATUSES:
         return "skipped: campaign not scoreable"
@@ -182,7 +202,7 @@ def _mark_reparse_failed(db, reparse: dict | None, error) -> None:
         db.rollback()
 
 
-def _move_parsed_candidates_to_screening(db, resume_id) -> None:
+def _move_parsed_candidates_to_screening(db, resume_id, exclude_ids: frozenset = frozenset()) -> None:
     """
     UPLOADED -> SCREENING for every campaign_candidate on this resume, as
     soon as the resume pipeline succeeds - not later, when deterministic
@@ -202,6 +222,8 @@ def _move_parsed_candidates_to_screening(db, resume_id) -> None:
     )
 
     for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
+        if campaign_candidate.id in exclude_ids:
+            continue
         try:
             campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
             if campaign is None or campaign.status not in _SCOREABLE_CAMPAIGN_STATUSES:
@@ -216,7 +238,9 @@ def _move_parsed_candidates_to_screening(db, resume_id) -> None:
             )
 
 
-def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLogService) -> None:
+def _enqueue_deterministic_scoring(
+    db, resume_id, task_log_service: CeleryTaskLogService, exclude_ids: frozenset = frozenset(),
+) -> None:
     """
     M07-E01 S02: after skill normalization's candidate_skills have
     committed (i.e. this resume's processing pipeline has fully
@@ -240,6 +264,8 @@ def _enqueue_deterministic_scoring(db, resume_id, task_log_service: CeleryTaskLo
     task_log_repo = task_log_service.repository
 
     for campaign_candidate in campaign_candidate_repo.get_by_resume_id(resume_id):
+        if campaign_candidate.id in exclude_ids:
+            continue
         idempotency_key = f"{DETERMINISTIC_SCORE_TASK_TYPE}:{campaign_candidate.id}:{resume_id}"
 
         if task_log_repo.get_by_idempotency_key(idempotency_key) is not None:
@@ -399,24 +425,25 @@ def process_resume_document(
         # Before the notification below, so caches are dropped and boards
         # told only once SCREENING is committed too. Never allowed to affect
         # the committed parse success.
-        if not new_version:
-            try:
-                _move_parsed_candidates_to_screening(db, processed_resume_id)
-            except Exception:
-                logger.exception(
-                    "Failed to move candidates to SCREENING after resume %s parsed.", processed_resume_id,
-                )
+        # "Use new version": the candidate that chose it, if already past
+        # UPLOADED, is left out of the first-parse path below (no stage move,
+        # no first scoring) and re-scored with request_rescore at the end.
+        rescore_target = None
+        try:
+            rescore_target = _new_version_rescore_target(db, processed_resume_id, new_version)
+        except Exception:
+            logger.exception("Could not resolve the new-version candidate | resume_id=%s", processed_resume_id)
+            db.rollback()
+        exclude_ids = frozenset({rescore_target.id}) if rescore_target is not None else frozenset()
+
+        try:
+            _move_parsed_candidates_to_screening(db, processed_resume_id, exclude_ids)
+        except Exception:
+            logger.exception(
+                "Failed to move candidates to SCREENING after resume %s parsed.", processed_resume_id,
+            )
 
         _notify_resume_changed(db, processed_resume_id)
-
-        if new_version:
-            try:
-                outcome = _finish_new_version(db, processed_resume_id, new_version, task_log_service)
-                logger.info("New version parsed | resume_id=%s rescore=%s", processed_resume_id, outcome)
-            except Exception:
-                logger.exception("New-version finish failed | resume_id=%s", processed_resume_id)
-                db.rollback()
-            return
 
         # M08-E01: enqueued BEFORE deterministic scoring, not after -
         # calculate_deterministic_score_task's own auto-trigger calls
@@ -457,11 +484,19 @@ def process_resume_document(
         # - a failure enqueueing deterministic scoring must never overwrite
         # that success (or crash this task); log and move on.
         try:
-            _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service)
+            _enqueue_deterministic_scoring(db, processed_resume_id, task_log_service, exclude_ids)
         except Exception:
             logger.exception(
                 "Failed to enqueue deterministic scoring after resume %s parsed.", processed_resume_id,
             )
+
+        if rescore_target is not None:
+            try:
+                outcome = _rescore_new_version(db, rescore_target)
+                logger.info("New version parsed | resume_id=%s rescore=%s", processed_resume_id, outcome)
+            except Exception:
+                logger.exception("New-version re-score failed | resume_id=%s", processed_resume_id)
+                db.rollback()
 
     except StageExecutionError as stage_exc:
         should_retry = False

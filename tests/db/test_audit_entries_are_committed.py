@@ -125,6 +125,9 @@ def _clone(db, source, **overrides):
 
 
 def test_removing_a_candidate_keeps_its_audit_entry_with_the_delete(db, http, campaign):
+    if not inspect(db.connection()).has_table("upload_decisions"):
+        # The removal now also closes the candidate's pending upload decisions.
+        pytest.skip("needs migration d6f8a0c2e4b7 (upload_decisions) applied")
     source_resume = db.execute(select(Resume).limit(1)).scalar_one_or_none()
     if source_resume is None:
         pytest.skip("needs at least one resume to clone")

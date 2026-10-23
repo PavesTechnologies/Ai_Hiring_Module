@@ -45,6 +45,22 @@ class UploadDecisionRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
+    def list_pending_by_campaign_candidate(self, campaign_candidate_id: UUID) -> list[UploadDecision]:
+        stmt = select(UploadDecision).where(
+            UploadDecision.campaign_candidate_id == campaign_candidate_id,
+            UploadDecision.status == UploadDecisionStatus.PENDING.value,
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def list_by_candidate(self, candidate_id: UUID) -> list[UploadDecision]:
+        """Every status - candidate erasure removes them all."""
+        stmt = select(UploadDecision).where(UploadDecision.candidate_id == candidate_id)
+        return list(self.db.execute(stmt).scalars().all())
+
+    def delete(self, decision: UploadDecision) -> None:
+        self.db.delete(decision)
+        self.db.flush()
+
     def commit(self) -> None:
         self.db.commit()
 

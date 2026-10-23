@@ -365,6 +365,60 @@ class UploadDecisionService:
                 self.db.rollback()
         return expired
 
+    # --- candidate removed / erased ---------------------------------------------------
+    def close_pending_for_removed_campaign_candidate(self, campaign_candidate_id: UUID, *, actor_id: str | None,
+                                                     actor_role: str | None) -> list[str]:
+        """
+        The candidate was removed from the campaign: each PENDING decision for
+        them there becomes KEPT_EXISTING (row kept as history, audited with
+        reason "candidate removed from campaign", bulk file resolved). Flush
+        only - the caller commits, then deletes the returned held files with
+        delete_held_files.
+        """
+        paths = []
+        for decision in self.decision_repo.list_pending_by_campaign_candidate(campaign_candidate_id):
+            self._close_decision(decision, UploadDecisionStatus.KEPT_EXISTING, actor_id)
+            self._resolve_job_file(
+                decision, BulkUploadFileStatus.SKIPPED_DUPLICATE,
+                "Candidate removed from this campaign - the new file was discarded.",
+            )
+            self.audit_service.log(
+                actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_KEPT_EXISTING,
+                entity_type=EntityType.UPLOAD_DECISION, entity_id=decision.id, campaign_id=decision.campaign_id,
+                details={"campaign_candidate_id": str(campaign_candidate_id),
+                         "new_original_filename": decision.original_filename,
+                         "reason": "candidate removed from campaign"},
+            )
+            paths.append(decision.storage_path)
+        return paths
+
+    def discard_for_erased_candidate(self, candidate_id: UUID) -> list[str]:
+        """
+        Candidate erasure: every decision row for the candidate (any status) is
+        deleted - no trace, like the rest of their data; a PENDING one's bulk
+        file is resolved first. Returns the PENDING decisions' held files (the
+        others were already deleted, or became a resume version that erasure
+        deletes itself). Flush only - the caller commits and deletes the files.
+        """
+        paths = []
+        for decision in self.decision_repo.list_by_candidate(candidate_id):
+            if decision.status == UploadDecisionStatus.PENDING.value:
+                self._resolve_job_file(
+                    decision, BulkUploadFileStatus.SKIPPED_DUPLICATE,
+                    "Candidate data erased - the new file was discarded.",
+                )
+                paths.append(decision.storage_path)
+            self.decision_repo.delete(decision)
+        return paths
+
+    def delete_held_files(self, paths: list[str]) -> None:
+        """Best-effort: a storage error is logged, never undoes the committed change."""
+        for path in paths:
+            try:
+                self.storage_service.delete_file(RESUME_STORAGE_BUCKET, path)
+            except Exception:
+                logger.exception("Could not delete a discarded upload file '%s'.", path)
+
     # --- internals ----------------------------------------------------------------
     def _keep_existing(self, decision: UploadDecision, status: UploadDecisionStatus, action_type: ActionType,
                        *, actor_id: str | None, actor_role: str | None) -> None:

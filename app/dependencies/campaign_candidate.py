@@ -36,6 +36,7 @@ from app.services.google_calendar_service import GoogleCalendarService
 from app.services.interview_schedule_service import InterviewScheduleService
 from app.services.microsoft_calendar_service import MicrosoftCalendarService
 from app.services.resume.file_validation_service import FileValidationService
+from app.services.resume.upload_decision_service import UploadDecisionService
 
 
 def get_campaign_repository(
@@ -261,4 +262,8 @@ def get_campaign_candidate_service(
         pipeline_transition_service=pipeline_transition_service,
         file_validation_service=file_validation_service,
         storage_service=storage_service,
+        # Same request session; built inline (dependencies.resume imports this module).
+        upload_decision_service=UploadDecisionService(
+            campaign_candidate_repo.db, storage_service=storage_service, encryption_service=encryption_service,
+        ),
     )

@@ -253,6 +253,7 @@ class CampaignCandidateService:
         interview_schedule_repo: InterviewScheduleRepository | None = None,
         dead_letter_queue_repo: DeadLetterQueueRepository | None = None,
         celery_task_log_repo: CeleryTaskLogRepository | None = None,
+        upload_decision_service=None,
     ):
         self.campaign_repo = campaign_repo
         self.campaign_candidate_repo = campaign_candidate_repo
@@ -314,6 +315,10 @@ class CampaignCandidateService:
             campaign_candidate_repo.db,
         )
         self.celery_task_log_repo = celery_task_log_repo or CeleryTaskLogRepository(campaign_candidate_repo.db)
+        # Duplicate resume decisions (UploadDecisionService): optional, no
+        # default - only the DI provider supplies it (delete_campaign_candidate
+        # closes the removed candidate's pending decisions).
+        self.upload_decision_service = upload_decision_service
 
     def check_no_existing_campaign_membership(
         self,
@@ -3331,6 +3336,14 @@ class CampaignCandidateService:
             # is a NOT NULL FK to celery_task_log.task_id.
             self.dead_letter_queue_repo.delete_by_campaign_candidate_id(deleted_id)
             self.celery_task_log_repo.delete_by_campaign_candidate_id(deleted_id)
+            # Pending "keep existing / use new version" decisions for this
+            # candidate here: kept existing (audited), held files deleted
+            # after the commit. The rows stay as history.
+            held_files = []
+            if self.upload_decision_service is not None:
+                held_files = self.upload_decision_service.close_pending_for_removed_campaign_candidate(
+                    deleted_id, actor_id=actor_id, actor_role=actor_role,
+                )
 
             self.campaign_candidate_repo.delete(candidate)
 
@@ -3351,6 +3364,9 @@ class CampaignCandidateService:
             )
 
             self.campaign_candidate_repo.commit()
+
+            if held_files:
+                self.upload_decision_service.delete_held_files(held_files)
 
             CandidateChangeNotifier().removed(deleted_campaign_id, deleted_id, [deleted_resume_id])
 

@@ -60,6 +60,7 @@ class CandidateErasureService:
         candidate_note_repo: CandidateNoteRepository | None = None,
         interview_schedule_repo: InterviewScheduleRepository | None = None,
         notifier: CandidateChangeNotifier | None = None,
+        upload_decision_service=None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -78,6 +79,9 @@ class CandidateErasureService:
         self.candidate_note_repo = candidate_note_repo
         self.interview_schedule_repo = interview_schedule_repo
         self.notifier = notifier or CandidateChangeNotifier()
+        # Duplicate resume decisions (UploadDecisionService) - optional like
+        # the two above; the DI provider always supplies it.
+        self.upload_decision_service = upload_decision_service
 
     def erase_candidate(
         self,
@@ -97,6 +101,14 @@ class CandidateErasureService:
             # Plain values captured before delete - the rows are gone after commit.
             erased_resume_ids = [resume.id for resume in resumes]
             removed = [(cc.campaign_id, cc.id) for cc in campaign_candidates]
+
+            # Upload decisions (any status) go too; a PENDING one's held bulk
+            # file is deleted from storage like the resume files below.
+            held_files = []
+            if self.upload_decision_service is not None:
+                held_files = self.upload_decision_service.discard_for_erased_candidate(candidate_id)
+            for path in held_files:
+                self._delete_resume_file(path)
 
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
@@ -154,6 +166,7 @@ class CandidateErasureService:
                 details={
                     "resume_versions_deleted": len(resumes),
                     "campaign_candidates_deleted": len(campaign_candidates),
+                    "upload_decision_files_deleted": len(held_files),
                     "had_bulk_origin": had_bulk_origin,
                     "reason": reason,
                 },

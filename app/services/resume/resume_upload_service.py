@@ -26,7 +26,7 @@ from app.services.audit_service import AuditService
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.upload_resume_result import UploadResumeResult
-from app.tasks.resume_processing_tasks import process_resume_document
+from app.tasks.resume_processing_tasks import new_version_mode_for_resume, process_resume_document
 from app.core.cache_invalidation import CacheInvalidator
 from app.services.cache_service import CacheService
 
@@ -444,13 +444,16 @@ class ResumeUploadService:
             raise
 
         self._invalidate_resume_caches(resume.id)
-        process_resume_document.apply_async(
-            kwargs={
-                "resume_id": str(resume.id),
-                "prompt_template_id": str(campaign.prompt_template_id),
-            },
-            task_id=str(new_task_id),
-        )
+        kwargs = {
+            "resume_id": str(resume.id),
+            "prompt_template_id": str(campaign.prompt_template_id),
+        }
+        # A failed "use new version" parse retries in new-version mode: a
+        # candidate past UPLOADED is re-scored, never first-scored or moved.
+        new_version = new_version_mode_for_resume(self.resume_repo.db, resume.id)
+        if new_version:
+            kwargs["new_version"] = new_version
+        process_resume_document.apply_async(kwargs=kwargs, task_id=str(new_task_id))
         self._publish_retry_reset(previous_task_id, new_task_id)
         return resume, new_task_id
 

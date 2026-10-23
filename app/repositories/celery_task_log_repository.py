@@ -169,6 +169,15 @@ class CeleryTaskLogRepository:
             .first()
         )
 
+    def get_by_idempotency_key_prefix(self, prefix: str) -> CeleryTaskLog | None:
+        """First row whose idempotency_key starts with prefix (LIKE metacharacters in prefix escaped)."""
+        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(CeleryTaskLog.idempotency_key.like(f"{escaped}%", escape="\\"))
+            .first()
+        )
+
     def get_by_campaign_candidate_and_task_type(
         self, campaign_candidate_id: UUID, task_type: str,
     ) -> list[CeleryTaskLog]:

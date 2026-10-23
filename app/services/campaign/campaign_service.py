@@ -8,7 +8,11 @@ from datetime import timedelta
 from app.middleware.rbac import TokenUser
 from app.models.async_tasks import TaskStatus
 from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, DETERMINISTIC_SCORE_TASK_TYPE
-from app.tasks.resume_processing_tasks import process_resume_document, replay_kwargs as resume_replay_kwargs
+from app.tasks.resume_processing_tasks import (
+    new_version_mode_for_resume,
+    process_resume_document,
+    replay_kwargs as resume_replay_kwargs,
+)
 from app.tasks.embedding_tasks import generate_resume_embedding_task, EMBED_RESUME_TASK_TYPE
 from app.tasks.ai_evaluation_tasks import calculate_ai_evaluation_task, AI_EVALUATE_TASK_TYPE
 from app.tasks.scoring_v2_tasks import calculate_scoring_v2_task, SCORING_V2_TASK_TYPE
@@ -2416,10 +2420,11 @@ class CampaignService:
         for resume in self.campaign_repo.get_pending_resumes(campaign_id):
             task_id = uuid4()
             self.campaign_repo.set_resume_task_id(resume, str(task_id))
-            process_resume_document.apply_async(
-                kwargs={"resume_id": str(resume.id)},
-                task_id=str(task_id),
-            )
+            kwargs = {"resume_id": str(resume.id)}
+            new_version = new_version_mode_for_resume(self.campaign_repo.db, resume.id)
+            if new_version:
+                kwargs["new_version"] = new_version
+            process_resume_document.apply_async(kwargs=kwargs, task_id=str(task_id))
             enqueued += 1
         return enqueued
 
