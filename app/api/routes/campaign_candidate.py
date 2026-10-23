@@ -968,19 +968,20 @@ def get_candidate_ranking_details(
     status_code=status.HTTP_200_OK,
     response_model=APIResponse[None],
     summary="Delete Campaign Candidate",
-    description="Delete a candidate from a campaign.",
+    description="Delete a candidate from a campaign. HR_ADMIN, or the campaign's recruiter (its recruiter_id).",
 )
 def delete_campaign_candidate(
     campaign_candidate_id: UUID,
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     service.delete_campaign_candidate(
         campaign_candidate_id,
         actor_id=user.user_id,
-        actor_role=user.roles[0] if user.roles else None,
+        actor_role=resolve_actor_role(user),
+        actor_roles=list(user.roles or []),
     )
 
     return APIResponse.ok(

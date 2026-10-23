@@ -3254,6 +3254,7 @@ class CampaignCandidateService:
         campaign_candidate_id: UUID,
         actor_id: str,
         actor_role: str | None = None,
+        actor_roles: list[str] | None = None,
     ) -> None:
         """
         Delete a campaign candidate - scoped to this one campaign
@@ -3292,6 +3293,17 @@ class CampaignCandidateService:
                     "Campaign candidate not found.",
                     404,
                 )
+
+            # Only HR_ADMIN, or the campaign's own recruiter (recruiter_id), may
+            # remove a candidate from it. actor_roles=None: an internal caller.
+            if actor_roles is not None and "HR_ADMIN" not in actor_roles:
+                campaign = self.campaign_repo.get_by_id(candidate.campaign_id)
+                if not ("RECRUITER" in actor_roles and campaign is not None
+                        and campaign.recruiter_id == actor_id):
+                    raise CampaignException(
+                        "Only an HR admin or this campaign's recruiter can remove a candidate from it.",
+                        403,
+                    )
 
             # Captured before delete/commit: the session's default
             # expire_on_commit=True means `candidate`'s attributes would

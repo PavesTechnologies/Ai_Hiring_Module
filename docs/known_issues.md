@@ -67,7 +67,10 @@ where the stage allows a reset to UPLOADED (there is no REJECTED -> UPLOADED tra
 
 ## `DELETE /campaign-candidates/{id}` has no role restriction (found 2026-10-14)
 
-**Status:** open - to fix after the Phase 3 comparison.
+**Status:** fixed 2026-10-23 (branch `fix/delete-candidate-role`). The route now requires HR_ADMIN or RECRUITER,
+and the service lets a RECRUITER remove a candidate only from a campaign whose `recruiter_id` is theirs (403
+otherwise, nothing deleted or audited). Tests: `tests/api/test_campaign_candidate_delete_rbac.py`,
+`tests/services/campaign/test_campaign_candidate_delete.py`. Original report kept for history.
 
 `app/api/routes/campaign_candidate.py` (`delete_campaign_candidate`) only depends on `get_current_user`,
 with no `require_roles(...)`: any authenticated user - not only HR_ADMIN / RECRUITER - can remove a

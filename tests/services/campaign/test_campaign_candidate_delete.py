@@ -264,3 +264,40 @@ def test_delete_campaign_candidate_rolls_back_when_a_dependent_cleanup_call_fail
     campaign_candidate_repo.rollback.assert_called_once()
     campaign_candidate_repo.delete.assert_not_called()
     campaign_candidate_repo.commit.assert_not_called()
+
+
+# --- who may remove a candidate: HR_ADMIN, or the campaign's own recruiter ------------------
+
+def _role_service(recruiter_id="rec-1"):
+    cc = _campaign_candidate()
+    campaign_candidate_repo, campaign_repo = MagicMock(), MagicMock()
+    campaign_candidate_repo.get_by_id.return_value = cc
+    campaign_repo.get_by_id.return_value = SimpleNamespace(id=cc.campaign_id, recruiter_id=recruiter_id)
+    return make_service_with_dependent_repo_mocks(campaign_candidate_repo=campaign_candidate_repo,
+                                                  campaign_repo=campaign_repo), cc, campaign_candidate_repo
+
+
+@pytest.mark.parametrize("actor_id, roles", [
+    ("hr-1", ["HR_ADMIN"]),
+    ("rec-1", ["RECRUITER"]),                       # the campaign's recruiter
+    ("rec-2", ["RECRUITER", "HR_ADMIN"]),           # any HR_ADMIN
+])
+def test_hr_admin_or_the_campaigns_recruiter_can_remove(actor_id, roles):
+    service, cc, repo = _role_service()
+    service.delete_campaign_candidate(cc.id, actor_id=actor_id, actor_role=roles[0], actor_roles=roles)
+    repo.delete.assert_called_once()
+
+
+@pytest.mark.parametrize("actor_id, roles", [
+    ("rec-2", ["RECRUITER"]),                       # another campaign's recruiter
+    ("hm-1", ["HIRING_MANAGER"]),
+    ("rec-1", ["INTERVIEWER"]),                     # the right user id, but not as a recruiter
+])
+def test_anyone_else_is_refused_and_nothing_is_deleted(actor_id, roles):
+    service, cc, repo = _role_service()
+    with pytest.raises(CampaignException) as exc_info:
+        service.delete_campaign_candidate(cc.id, actor_id=actor_id, actor_role=roles[0], actor_roles=roles)
+    assert exc_info.value.status_code == 403
+    repo.delete.assert_not_called()
+    service.audit_service.log.assert_not_called()
+
