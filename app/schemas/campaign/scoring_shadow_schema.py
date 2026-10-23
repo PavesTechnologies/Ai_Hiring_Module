@@ -39,6 +39,8 @@ class ShadowReportResponse(BaseModel):
     scoring_v2_enabled: bool
     daily_llm_calls_used: int
     daily_llm_call_cap: int
+    # Per model (the provider's free-tier daily limit is per model): requests used today and its cap.
+    daily_llm_usage_by_model: list[dict] = Field(default_factory=list)
     assumed_jd_senses: list[str] = Field(default_factory=list)
     v2_outcome_counts: dict[str, int] = Field(default_factory=dict)
     disagreement_count: int = 0

@@ -19,6 +19,7 @@ Outcomes beyond PASS / REJECT: PENDING when the confirmation couldn't run
 never turned into a REJECT. NOT_RUN when the daily cap stopped it.
 """
 import hashlib
+import json
 import logging
 
 from app.models.scoring_v2 import CandidateScoringResult
@@ -67,12 +68,49 @@ def v2_should_run(campaign, config_repository=None) -> bool:
             or getattr(campaign, "scoring_v2_shadow", False) is True)
 
 
-def daily_llm_call_cap(config_repository) -> int:
-    raw = config_repository.get_configs_by_keys([DAILY_LLM_CALL_CAP_KEY]).get(DAILY_LLM_CALL_CAP_KEY)
+def _cap_value(value) -> int | None:
     try:
-        return max(int(raw), 0) if raw is not None else DEFAULT_DAILY_LLM_CALL_CAP
+        return max(int(value), 0)
     except (TypeError, ValueError):
-        return DEFAULT_DAILY_LLM_CALL_CAP
+        return None
+
+
+def daily_llm_call_caps(config_repository) -> dict[str, int]:
+    """
+    Per-model daily caps (the provider's free-tier limit is per model):
+    SCORING_V2_DAILY_LLM_CALL_CAP is a JSON object {"default": 400,
+    "gemini-3.1-flash-lite": 400, ...}, or a plain number for every model.
+    Always has a "default" entry.
+    """
+    raw = config_repository.get_configs_by_keys([DAILY_LLM_CALL_CAP_KEY]).get(DAILY_LLM_CALL_CAP_KEY)
+    plain = _cap_value(raw)
+    if plain is not None:
+        return {"default": plain}
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        parsed = {}
+    caps = {str(model): cap for model, value in (parsed.items() if isinstance(parsed, dict) else [])
+            if (cap := _cap_value(value)) is not None}
+    caps.setdefault("default", DEFAULT_DAILY_LLM_CALL_CAP)
+    return caps
+
+
+def cap_for_model(caps: dict[str, int], model: str | None) -> int:
+    return caps.get(model, caps["default"]) if model else caps["default"]
+
+
+def daily_llm_call_cap(config_repository) -> int:
+    """The default cap (models without their own entry)."""
+    return daily_llm_call_caps(config_repository)["default"]
+
+
+def provider_models(provider) -> list[str]:
+    """The models a provider can call: its main model, then its backup (FallbackLLMProvider)."""
+    models = [getattr(provider, "model", None)]
+    fallback = getattr(provider, "fallback", None)
+    models.append(getattr(fallback, "model", None) if fallback is not None else None)
+    return [m for m in dict.fromkeys(models) if isinstance(m, str) and m]
 
 
 def _importance(row) -> str | None:
@@ -97,13 +135,20 @@ class ScoringV2Service:
 
     def _budget(self, calls_needed: int) -> bool:
         """
-        Daily LLM cap: True when calls_needed more confirmation calls still fit
-        in today's cap. Counts every LLM request logged in the provider's
-        quota day (llm_call_log - parsing, AI evaluation, dry runs too), not
-        only v2's own.
+        Daily LLM cap, per model: True when calls_needed more confirmation
+        calls still fit under the cap of the main model or of its backup.
+        Counts every LLM request logged for that model in the provider's
+        quota day (llm_call_log - parsing, AI evaluation, dry runs too).
         """
-        cap = daily_llm_call_cap(self.config_repository)
-        return calls_in_quota_day(self.db) + calls_needed <= cap
+        caps = daily_llm_call_caps(self.config_repository)
+        try:
+            models = provider_models(self.provider_resolver()) if self.provider_resolver else []
+        except Exception:
+            models = []
+        if not models:
+            return calls_in_quota_day(self.db) + calls_needed <= caps["default"]
+        return any(calls_in_quota_day(self.db, model=model) + calls_needed <= cap_for_model(caps, model)
+                   for model in models)
 
     def provisional_inputs(self, job_description, resume, *, persist: bool = True) -> list[ProvisionalSkillInput]:
         """

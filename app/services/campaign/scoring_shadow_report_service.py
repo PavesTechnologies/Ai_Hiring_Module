@@ -24,7 +24,7 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.config_repository import ConfigRepository
 from app.services.audit_service import AuditService
-from app.services.campaign.scoring_v2_service import daily_llm_call_cap
+from app.services.campaign.scoring_v2_service import cap_for_model, daily_llm_call_cap, daily_llm_call_caps
 
 logger = logging.getLogger(__name__)
 
@@ -176,11 +176,24 @@ class ScoringShadowReportService:
             # Every LLM request in the provider's quota day (llm_call_log), as the cap counts it.
             "daily_llm_calls_used": calls_in_quota_day(self.db),
             "daily_llm_call_cap": daily_llm_call_cap(ConfigRepository(self.db)),
+            "daily_llm_usage_by_model": self._usage_by_model(),
             "assumed_jd_senses": sorted(assumed_senses),
             "v2_outcome_counts": counts,
             "disagreement_count": sum(1 for r in rows if r["disagreements"]),
             "rows": rows,
         }
+
+    def _usage_by_model(self) -> list[dict]:
+        """Each model's LLM requests in the provider's quota day, with its own cap (per-model free-tier limits)."""
+        from sqlalchemy import func, select
+        from app.models.llm_call_log import LLMCallLog
+        from app.services.llm.call_log import quota_day_start
+        caps = daily_llm_call_caps(ConfigRepository(self.db))
+        used = dict(self.db.execute(
+            select(LLMCallLog.model, func.count()).where(LLMCallLog.created_at >= quota_day_start())
+            .group_by(LLMCallLog.model)).all())
+        models = sorted(set(used) | {m for m in caps if m != "default"})
+        return [{"model": m, "used": int(used.get(m, 0)), "cap": cap_for_model(caps, m)} for m in models]
 
     def save_recruiter_ranking(self, campaign_id: UUID, *, rankings: list[dict], ranked_by_name: str | None,
                                actor_id: str, actor_role: str | None) -> dict:

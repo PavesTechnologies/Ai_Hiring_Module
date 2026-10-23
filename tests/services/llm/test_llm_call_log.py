@@ -90,11 +90,42 @@ def test_the_usage_day_is_the_providers_quota_day_midnight_pacific(now, expected
     assert quota_day_start(now) == expected
 
 
-def test_the_v2_daily_cap_counts_every_logged_request():
+@pytest.mark.parametrize("raw, expected", [
+    ("400", {"default": 400}),                                                       # a plain number: every model
+    ('{"default": 400, "gemini-3.1-flash-lite": 400, "gemini-3.5-flash-lite": 300}',
+     {"default": 400, "gemini-3.1-flash-lite": 400, "gemini-3.5-flash-lite": 300}),
+    ('{"gemini-3.1-flash-lite": 400}', {"gemini-3.1-flash-lite": 400, "default": 300}),  # default when missing
+    ("not json", {"default": 300}),
+    (None, {"default": 300}),
+])
+def test_the_daily_cap_is_per_model(raw, expected):
+    from app.services.campaign.scoring_v2_service import daily_llm_call_caps
+    repo = MagicMock()
+    repo.get_configs_by_keys.return_value = {"SCORING_V2_DAILY_LLM_CALL_CAP": raw} if raw is not None else {}
+    assert daily_llm_call_caps(repo) == expected
+
+
+def _budget_service(used_by_model, caps, provider):
     from app.services.campaign import scoring_v2_service as svc
     service = svc.ScoringV2Service.__new__(svc.ScoringV2Service)
-    service.db, service.config_repository = MagicMock(), MagicMock()
-    with patch.object(svc, "daily_llm_call_cap", return_value=300), \
-            patch.object(svc, "calls_in_quota_day", return_value=298) as used:
+    service.db, service.config_repository, service.provider_resolver = MagicMock(), MagicMock(), lambda: provider
+    return svc, service, patch.object(svc, "daily_llm_call_caps", return_value=caps), patch.object(
+        svc, "calls_in_quota_day", side_effect=lambda db, model=None: used_by_model.get(model, 0))
+
+
+def test_the_v2_budget_passes_while_the_main_or_the_backup_model_has_room():
+    caps = {"default": 400, "gemini-3.1-flash-lite": 400, "gemini-3.5-flash-lite": 400}
+    provider = FallbackLLMProvider(_Fake("gemini-3.1-flash-lite", []), _Fake("gemini-3.5-flash-lite", []), None)
+    svc, service, p1, p2 = _budget_service({"gemini-3.1-flash-lite": 399, "gemini-3.5-flash-lite": 10}, caps, provider)
+    with p1, p2:
+        assert service._budget(3) is True                      # the main model is full, the backup has room
+    svc, service, p1, p2 = _budget_service({"gemini-3.1-flash-lite": 399, "gemini-3.5-flash-lite": 398}, caps, provider)
+    with p1, p2:
+        assert service._budget(3) is False and service._budget(1) is True
+
+
+def test_a_model_without_its_own_cap_uses_the_default():
+    single = CountedProvider(_Fake("gemini-9-pro", []))
+    svc, service, p1, p2 = _budget_service({"gemini-9-pro": 98}, {"default": 100}, single)
+    with p1, p2:
         assert service._budget(2) is True and service._budget(3) is False
-    used.assert_called_with(service.db)
