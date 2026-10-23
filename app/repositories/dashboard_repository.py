@@ -20,6 +20,7 @@ from app.models.pipeline import (
     PipelineStage,
 )
 from app.models.skills import UnknownSkill, UnknownSkillStatus
+from app.repositories.recruiter_campaigns import recruiter_campaign_ids
 
 # Names these three explicitly.
 MONITORED_SERVICES = ("GEMINI_FLASH", "EMBEDDING_SERVICE", "MINIO")
@@ -184,6 +185,15 @@ class DashboardRepository:
 
     def _recruiter_campaign_ids(self, user_id: str):
         """
+        A recruiter's campaigns - assigned recruiter or creator - as a
+        subquery: what the recruiter dashboard's campaign list and nav badges
+        are scoped to. See app/repositories/recruiter_campaigns.py.
+        """
+        return recruiter_campaign_ids(user_id).subquery()
+
+    def _campaigns_uploaded_to_ids(self, user_id: str):
+        """
+        Activity, not ownership - for the "campaigns uploaded to" metric only.
         "Campaigns I uploaded to" spans two independent upload paths -
         individual resumes and bulk ZIP jobs - plus campaigns the recruiter
         created. Unioned as a subquery so a recruiter who only ever
@@ -200,13 +210,9 @@ class DashboardRepository:
 
     def is_campaign_accessible_to_recruiter(self, user_id: str, campaign_id: UUID) -> bool:
         """
-        Campaign-wide interview calendar follow-up - the first caller of
-        _recruiter_campaign_ids outside this class. Reuses the exact same
-        "campaigns I uploaded to or created" definition rather than the
-        HiringCampaign.recruiter_id column, which exists on the model but
-        is never actually checked against the acting user anywhere in this
-        codebase - _recruiter_campaign_ids is the one real, established
-        definition of "a recruiter's own campaigns."
+        Whether this is one of the recruiter's campaigns (assigned recruiter
+        or creator) - the interview calendar and interview scope check. See
+        app/repositories/recruiter_campaigns.py.
         """
         stmt = select(HiringCampaign.id).where(
             HiringCampaign.id == campaign_id,
@@ -297,7 +303,7 @@ class DashboardRepository:
         seven_days_ago = now - timedelta(days=7)
 
         campaigns_uploaded_to = (
-            self.db.query(func.count()).select_from(self._recruiter_campaign_ids(user_id)).scalar()
+            self.db.query(func.count()).select_from(self._campaigns_uploaded_to_ids(user_id)).scalar()
         ) or 0
 
         campaigns_created = (

@@ -118,7 +118,7 @@ def _cc_service(commit_side_effect=None):
                                         pipeline_stage=PipelineStage.UPLOADED, created_at=datetime.now(timezone.utc))
     service.create_campaign_candidate = MagicMock(return_value=created)
     service.campaign_repo = MagicMock()                    # the caller is the campaign's assigned recruiter
-    service.campaign_repo.get_by_id.return_value = SimpleNamespace(recruiter_id="recruiter-1")
+    service.campaign_repo.get_by_id.return_value = SimpleNamespace(recruiter_id="recruiter-1", created_by="hr-creator")
     return service
 
 

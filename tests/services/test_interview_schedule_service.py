@@ -2251,3 +2251,24 @@ def test_get_campaign_interviews_empty_result_skips_the_candidate_and_interviewe
     assert result == []
     campaign_candidate_repo.get_all_by_campaign.assert_not_called()
     interview_schedule_repo.get_active_interviewers_by_interview_ids.assert_not_called()
+
+
+def test_campaign_calendar_recruiter_check_is_assigned_recruiter_or_creator():
+    # the real repository check over a mocked session: the query is the shared definition
+    from sqlalchemy.dialects import postgresql
+    from app.services.interview_schedule_service import InterviewScheduleService
+    service = InterviewScheduleService.__new__(InterviewScheduleService)
+    service.campaign_candidate_repo = MagicMock()
+    db = service.campaign_candidate_repo.db
+    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1")
+
+    db.execute.return_value.first.return_value = (campaign.id,)
+    service._authorize_campaign_access(campaign, "rec-1", ["RECRUITER"])            # allowed
+    sql = str(db.execute.call_args.args[0].compile(dialect=postgresql.dialect())).lower()
+    assert "hiring_campaigns.recruiter_id" in sql and "hiring_campaigns.created_by" in sql and "resumes" not in sql
+
+    db.execute.return_value.first.return_value = None
+    with pytest.raises(CampaignException) as exc:
+        service._authorize_campaign_access(campaign, "rec-9", ["RECRUITER"])
+    assert exc.value.status_code == 403
+

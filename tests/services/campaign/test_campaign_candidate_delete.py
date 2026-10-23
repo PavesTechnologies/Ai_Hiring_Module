@@ -268,18 +268,20 @@ def test_delete_campaign_candidate_rolls_back_when_a_dependent_cleanup_call_fail
 
 # --- who may remove a candidate: HR_ADMIN, or the campaign's own recruiter ------------------
 
-def _role_service(recruiter_id="rec-1"):
+def _role_service(recruiter_id="rec-1", created_by="hr-creator"):
     cc = _campaign_candidate()
     campaign_candidate_repo, campaign_repo = MagicMock(), MagicMock()
     campaign_candidate_repo.get_by_id.return_value = cc
-    campaign_repo.get_by_id.return_value = SimpleNamespace(id=cc.campaign_id, recruiter_id=recruiter_id)
+    campaign_repo.get_by_id.return_value = SimpleNamespace(id=cc.campaign_id, recruiter_id=recruiter_id,
+                                                           created_by=created_by)
     return make_service_with_dependent_repo_mocks(campaign_candidate_repo=campaign_candidate_repo,
                                                   campaign_repo=campaign_repo), cc, campaign_candidate_repo
 
 
 @pytest.mark.parametrize("actor_id, roles", [
     ("hr-1", ["HR_ADMIN"]),
-    ("rec-1", ["RECRUITER"]),                       # the campaign's recruiter
+    ("rec-1", ["RECRUITER"]),                       # the campaign's assigned recruiter
+    ("hr-creator", ["RECRUITER"]),                  # the recruiter who created it
     ("rec-2", ["RECRUITER", "HR_ADMIN"]),           # any HR_ADMIN
 ])
 def test_hr_admin_or_the_campaigns_recruiter_can_remove(actor_id, roles):
@@ -289,7 +291,7 @@ def test_hr_admin_or_the_campaigns_recruiter_can_remove(actor_id, roles):
 
 
 @pytest.mark.parametrize("actor_id, roles", [
-    ("rec-2", ["RECRUITER"]),                       # another campaign's recruiter
+    ("rec-2", ["RECRUITER"]),                       # another campaign's recruiter (e.g. only uploaded to it)
     ("hm-1", ["HIRING_MANAGER"]),
     ("rec-1", ["INTERVIEWER"]),                     # the right user id, but not as a recruiter
 ])

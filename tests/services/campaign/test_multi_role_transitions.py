@@ -247,14 +247,15 @@ def test_resubmission_is_a_403_when_no_held_role_permits_it():
     service.file_validation_service.validate.assert_not_called()
 
 
-# --- adding a candidate to a campaign: HR_ADMIN or the assigned recruiter --------------------
+# --- adding a candidate to a campaign: HR_ADMIN, or its recruiter (assigned or creator) --------------------
 
-def _add_service(recruiter_id="rec-1"):
+def _add_service(recruiter_id="rec-1", created_by="hr-creator"):
     from app.services.campaign.campaign_candidate_service import CampaignCandidateService
     service = CampaignCandidateService.__new__(CampaignCandidateService)
     service.campaign_candidate_repo = MagicMock()
     service.campaign_repo = MagicMock()
-    service.campaign_repo.get_by_id.return_value = SimpleNamespace(id=uuid4(), recruiter_id=recruiter_id)
+    service.campaign_repo.get_by_id.return_value = SimpleNamespace(id=uuid4(), recruiter_id=recruiter_id,
+                                                                   created_by=created_by)
     service.create_campaign_candidate = MagicMock(return_value="created")
     return service
 
@@ -267,6 +268,7 @@ def _add(service, actor_id, roles):
 
 @pytest.mark.parametrize("actor_id, roles", [
     ("rec-1", ["RECRUITER"]),                 # the assigned recruiter
+    ("hr-creator", ["RECRUITER"]),            # the recruiter who created it
     ("hr-1", ["HR_ADMIN"]),                   # any HR admin
     ("hr-1", BOTH),                           # RECRUITER + HR_ADMIN, not assigned: HR_ADMIN allows it
     ("rec-1", BOTH),

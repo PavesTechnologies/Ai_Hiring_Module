@@ -149,9 +149,9 @@ class InterviewScheduleService:
         if campaign_candidate is None:
             raise CampaignException("Campaign candidate not found.", 404)
         # HR_ADMIN is unscoped. RECRUITER is scoped to their own campaigns
+        # (assigned recruiter or creator - app/repositories/recruiter_campaigns.py)
         # with the same check the campaign-wide calendar uses
-        # (_authorize_campaign_access -> "campaigns I created, uploaded to
-        # or bulk-uploaded to"); before this a RECRUITER could read,
+        # (_authorize_campaign_access); before this a RECRUITER could read,
         # reschedule or cancel any campaign's interview by changing the ID.
         # HIRING_MANAGER keeps the own-campaign check.
         if "HR_ADMIN" in actor_roles:
@@ -255,11 +255,9 @@ class InterviewScheduleService:
         level (not candidate-level) ownership check in this codebase.
         HIRING_MANAGER mirrors the candidate-level
         campaign.hiring_manager_id == user_id check used everywhere else
-        in this file; RECRUITER reuses DashboardRepository's established
-        "campaigns I uploaded to, bulk-uploaded to, or created" definition
-        - HiringCampaign.recruiter_id exists on the model but is never
-        actually checked against the acting user anywhere in this
-        codebase, so it's deliberately NOT what's used here.
+        in this file; RECRUITER uses the one definition of a recruiter's
+        campaigns - assigned recruiter or creator (see
+        app/repositories/recruiter_campaigns.py).
         """
         if "HR_ADMIN" in actor_roles:
             return

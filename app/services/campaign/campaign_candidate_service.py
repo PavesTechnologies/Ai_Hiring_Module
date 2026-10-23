@@ -479,15 +479,17 @@ class CampaignCandidateService:
         transaction (the direct POST /campaign-candidates route). The response
         is returned only after the commit succeeded.
 
-        actor_roles (from the route): only an HR_ADMIN or the campaign's
-        assigned recruiter (hiring_campaigns.recruiter_id) may add a candidate.
+        actor_roles (from the route): only an HR_ADMIN, or a recruiter whose
+        campaign it is (assigned recruiter or creator), may add a candidate.
         """
+        from app.repositories.recruiter_campaigns import is_recruiters_campaign
         if actor_roles is not None and "HR_ADMIN" not in actor_roles:
             campaign = self.campaign_repo.get_by_id(request.campaign_id)
             # a missing campaign falls through to create_campaign_candidate's own 404
-            if campaign is not None and ("RECRUITER" not in actor_roles or campaign.recruiter_id != actor_id):
+            if campaign is not None and not ("RECRUITER" in actor_roles
+                                             and is_recruiters_campaign(campaign, actor_id)):
                 raise CampaignException(
-                    "Only an HR admin or the campaign's assigned recruiter can add candidates to it.", 403,
+                    "Only an HR admin or the campaign's recruiter can add candidates to it.", 403,
                 )
         response = self.create_campaign_candidate(request, actor_id=actor_id, actor_role=actor_role)
         try:
@@ -3317,12 +3319,13 @@ class CampaignCandidateService:
                     404,
                 )
 
-            # Only HR_ADMIN, or the campaign's own recruiter (recruiter_id), may
-            # remove a candidate from it. actor_roles=None: an internal caller.
+            # Only HR_ADMIN, or a recruiter whose campaign it is (assigned
+            # recruiter or creator), may remove a candidate from it.
+            # actor_roles=None: an internal caller.
             if actor_roles is not None and "HR_ADMIN" not in actor_roles:
+                from app.repositories.recruiter_campaigns import is_recruiters_campaign
                 campaign = self.campaign_repo.get_by_id(candidate.campaign_id)
-                if not ("RECRUITER" in actor_roles and campaign is not None
-                        and campaign.recruiter_id == actor_id):
+                if not ("RECRUITER" in actor_roles and is_recruiters_campaign(campaign, actor_id)):
                     raise CampaignException(
                         "Only an HR admin or this campaign's recruiter can remove a candidate from it.",
                         403,

@@ -972,7 +972,8 @@ def get_candidate_ranking_details(
     status_code=status.HTTP_200_OK,
     response_model=APIResponse[None],
     summary="Delete Campaign Candidate",
-    description="Delete a candidate from a campaign. HR_ADMIN, or the campaign's recruiter (its recruiter_id).",
+    description=("Delete a candidate from a campaign. HR_ADMIN, or a recruiter whose campaign it is "
+                 "(assigned recruiter or creator)."),
 )
 def delete_campaign_candidate(
     campaign_candidate_id: UUID,

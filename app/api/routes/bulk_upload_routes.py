@@ -181,15 +181,15 @@ def list_bulk_uploads_by_recruiter(
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
 ):
     """
-    Cross-campaign bulk-upload history, scoped to every campaign where
-    hiring_campaigns.recruiter_id matches — every job in those campaigns,
+    Cross-campaign bulk-upload history, scoped to the recruiter's campaigns
+    (assigned recruiter or creator) — every job in those campaigns,
     regardless of who actually uploaded it. Registered before
     /{bulk_upload_job_id} so "by-recruiter" isn't swallowed as a job id
     path parameter — mirrors /export's own ordering.
 
     A caller with only the RECRUITER role is always scoped to their own
     id (recruiter_id, if supplied, is ignored) — this endpoint spans
-    every campaign a recruiter is assigned to, so letting one recruiter
+    every one of a recruiter's campaigns, so letting one recruiter
     pass another's id would leak a different recruiter's bulk-upload
     activity. HR_ADMIN may pass any recruiter_id to look up any recruiter;
     omitting it defaults to the caller's own id.
