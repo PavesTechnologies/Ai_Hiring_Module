@@ -35,6 +35,10 @@ class CalibrationSkill(BaseModel):
     # Core skills only: never allowed missing (the missing-core allowance
     # covers only the other core skills).
     required: bool = False
+    # Core skills only: what this JD asks for under the skill, as calibrated (None = none),
+    # and the JD's own line about it - the form prefills a blank field with it.
+    requirement_text: str | None = None
+    suggested_requirement_text: str | None = None
 
 
 class SkillSuggestion(BaseModel):
@@ -170,6 +174,8 @@ class CalibrationSkillInput(BaseModel):
     sense_key: str | None = None
     # Only a CORE skill can be required.
     required: bool = False
+    # Only a CORE skill keeps a requirement text (blank = none).
+    requirement_text: str | None = Field(default=None, max_length=1000)
 
 
 class JDCalibrationSaveRequest(BaseModel):

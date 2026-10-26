@@ -35,7 +35,9 @@ def test_the_column_is_a_nullable_array_of_hashes():
 
 def test_the_migration_adds_and_backfills_the_column():
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["c9e1a3b5d7f2"]
+    # On the single line of history (later migrations build on it).
+    assert len(script.get_heads()) == 1
+    assert "c9e1a3b5d7f2" in {r.revision for r in script.walk_revisions()}
     revision = script.get_revision("c9e1a3b5d7f2")
     assert revision.down_revision == "b7d9f1a3c5e8"
     source = Path(revision.path).read_text(encoding="utf-8")

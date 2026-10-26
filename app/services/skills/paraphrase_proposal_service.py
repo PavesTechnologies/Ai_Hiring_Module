@@ -78,6 +78,8 @@ class ParaphraseTarget:
     sense: str | None = None
     sense_basis: str | None = None
     sense_description: str | None = None
+    # What this JD asks for under the skill (jd_skills.requirement_text), when set.
+    requirement_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,8 @@ def skill_text(target: ParaphraseTarget) -> str:
         parts.append(target.description)
     if target.sense_description:
         parts.append(target.sense_description)
+    if target.requirement_text:
+        parts.append(target.requirement_text)
     return ". ".join(p.strip().rstrip(".") for p in parts if p and p.strip()) + "."
 
 

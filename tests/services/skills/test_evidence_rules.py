@@ -8,6 +8,7 @@ from app.services.campaign.scoring_v2_service import _paraphrase_targets_for, jo
 from app.services.skills.certification_mapping_service import rule_from
 from app.services.skills.core_skill_confirmation_service import (
     CONFIRMATION_PROMPT, CoreSkillConfirmationService, CoreSkillSpec, JobContext, _Ask, evidence_hash,
+    jd_core_skill_specs,
 )
 from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules, role_for_line, roles_of
 from app.services.skills.paraphrase_proposal_service import candidate_lines
@@ -379,3 +380,53 @@ def test_the_paraphrase_search_text_never_includes_not_this_skill():
     [target] = _paraphrase_targets_for([spec], {}, {INC: skill}, [])
     assert "customer support" not in skill_text(target) and "Handling IT incidents" in skill_text(target)
 
+
+
+# --- The JD's requirement text: the voters and the paraphrase search see it when set -----
+
+def test_the_voters_see_the_jd_requirement_text_when_set():
+    provider = _YesProvider()
+    spec = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages",
+                         requirement_text="Run major incident bridges for a 24x7 retail estate")
+    row = _item_row(INC, ("SUMMARY", "Case management and incident escalation rules"))   # voted on
+    CoreSkillConfirmationService(provider).confirm(resume_id=uuid4(), jd_id=uuid4(), core_skills=[spec],
+                                                   evidence_rows=[row], text_hash="h")
+    assert "What this JD asks for: Run major incident bridges for a 24x7 retail estate" in provider.calls[0]
+
+
+def test_no_requirement_text_keeps_the_prompt_and_the_cached_answers_as_before():
+    provider = _YesProvider()
+    spec = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages")
+    row = _item_row(INC, ("SUMMARY", "Case management and incident escalation rules"))
+    CoreSkillConfirmationService(provider).confirm(resume_id=uuid4(), jd_id=uuid4(), core_skills=[spec],
+                                                   evidence_rows=[row], text_hash="h")
+    assert "What this JD asks for" not in provider.calls[0]
+    ask = lambda s: _Ask(1, s, [("Experience", "line")], ["SCAN"])  # noqa: E731
+    blank = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages",
+                          requirement_text=None)
+    with_text = CoreSkillSpec(INC, "Incident Management", description="Handling IT incidents and outages",
+                              requirement_text="Run major incident bridges")
+    assert evidence_hash(ask(spec)) == evidence_hash(ask(blank))          # unchanged: cached answers stay valid
+    assert evidence_hash(ask(with_text)) != evidence_hash(ask(spec))      # set: asked again
+
+
+def test_the_spec_takes_the_requirement_text_from_the_jd_skill_row():
+    from app.services.skills.skill_sense_resolver import SkillSenseResolver
+    row = SimpleNamespace(canonical_skill_id=INC, mandatory=True, importance="CORE", sense_key=None,
+                          alias_skill_ids=None, requirement_text="  Run major incident bridges  ")
+    blank = SimpleNamespace(**{**vars(row), "requirement_text": "   "})
+    jd = SimpleNamespace(title="Service desk lead", raw_text="", extracted_json={})
+    [spec] = jd_core_skill_specs(jd, [row], {INC: "Incident Management"}, SkillSenseResolver([]))
+    [no_text] = jd_core_skill_specs(jd, [blank], {INC: "Incident Management"}, SkillSenseResolver([]))
+    assert spec.requirement_text == "Run major incident bridges" and no_text.requirement_text is None
+
+
+def test_the_paraphrase_search_text_adds_the_requirement_text():
+    from app.services.campaign.scoring_v2_service import _paraphrase_targets_for
+    from app.services.skills.paraphrase_proposal_service import skill_text
+    skill = SimpleNamespace(aliases=[], description="Handling IT incidents and outages")
+    with_text = CoreSkillSpec(INC, "Incident Management", requirement_text="Run major incident bridges")
+    [target] = _paraphrase_targets_for([with_text], {}, {INC: skill}, [])
+    [plain] = _paraphrase_targets_for([CoreSkillSpec(INC, "Incident Management")], {}, {INC: skill}, [])
+    assert skill_text(target) == "Incident Management. Handling IT incidents and outages. Run major incident bridges."
+    assert skill_text(plain) == "Incident Management. Handling IT incidents and outages."

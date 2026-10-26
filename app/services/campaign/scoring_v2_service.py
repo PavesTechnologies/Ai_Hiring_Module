@@ -468,6 +468,7 @@ def _paraphrase_targets_for(specs, confirmations: dict, skills_by_id: dict,
             canonical_skill_id=spec.canonical_skill_id, name=spec.name,
             aliases=tuple(getattr(skill, "aliases", None) or ()), description=getattr(skill, "description", None),
             sense=spec.sense, sense_basis=spec.sense_basis, sense_description=spec.sense_description,
+            requirement_text=getattr(spec, "requirement_text", None),
         ))
     return targets
 

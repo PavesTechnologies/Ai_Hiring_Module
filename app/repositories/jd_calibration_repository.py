@@ -27,6 +27,15 @@ class JDCalibrationRepository:
         ).all()
         return [(skill, name) for skill, name in rows]
 
+    def skill_aliases(self, skill_ids: list[UUID]) -> dict[UUID, list[str]]:
+        """Each catalogue skill's aliases (the requirement-text suggestion matches them too)."""
+        if not skill_ids:
+            return {}
+        rows = self.db.execute(
+            select(SkillOntology.id, SkillOntology.aliases).where(SkillOntology.id.in_(skill_ids))
+        ).all()
+        return {sid: list(aliases or []) for sid, aliases in rows}
+
     def unknown_skill_links(self, jd_id: UUID) -> list[tuple[JDUnknownSkill, UnknownSkill]]:
         rows = self.db.execute(
             select(JDUnknownSkill, UnknownSkill)

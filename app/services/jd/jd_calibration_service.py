@@ -42,6 +42,7 @@ from app.services.jd.jd_calibration_rules import (
     calibrated_min_experience, default_internship_credit_pct, is_fresher_jd, jd_profile, jd_role_domain,
 )
 from app.services.jd.jd_profile_templates import suggest_profile_template
+from app.services.jd.jd_requirement_text import suggest_requirement_text
 from app.services.jd.jd_role_domain import suggest_role_domain
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.skill_sense_resolver import SkillSenseResolver
@@ -87,7 +88,9 @@ class JDCalibrationService:
         title_text = " ".join(str(v) for v in (jd.title, (jd.extracted_json or {}).get("domain")) if v)
 
         skills = []
-        for row, name in self.repo.jd_skills_with_names(jd.id):
+        jd_rows = self.repo.jd_skills_with_names(jd.id)
+        aliases = self.repo.skill_aliases([row.canonical_skill_id for row, _ in jd_rows])
+        for row, name in jd_rows:
             options = resolver.senses_for(row.canonical_skill_id)
             ambiguous = resolver.has_senses(row.canonical_skill_id)
             suggestion = resolver.resolve_jd_sense(row.canonical_skill_id, jd.raw_text or "", name, title_text)
@@ -100,6 +103,9 @@ class JDCalibrationService:
                 suggested_sense_key=suggestion.sense if ambiguous else None,
                 suggested_sense_basis=suggestion.basis if ambiguous else None,
                 required=_tier(row.mandatory, row.importance) == "CORE" and getattr(row, "required", False) is True,
+                requirement_text=getattr(row, "requirement_text", None),
+                suggested_requirement_text=suggest_requirement_text(
+                    jd.raw_text, name, aliases.get(row.canonical_skill_id, [])),
             ))
 
         unknown = self._unknown_skills(jd)
@@ -216,6 +222,7 @@ class JDCalibrationService:
                 row.importance = JDSkillImportance(value["tier"]) if value["tier"] in ("CORE", "SUPPORTING") else None
                 row.sense_key = value["sense_key"]
                 row.required = value["required"]
+                row.requirement_text = value["requirement_text"]
                 row.verification_status = JDSkillVerificationStatus.HR_VERIFIED   # confirmed by HR in calibration
                 row.verified_by = actor_id
                 row.verified_at = now
@@ -352,7 +359,10 @@ class JDCalibrationService:
                 if item.sense_key not in valid:
                     unset.append(name)
                 sense_key = item.sense_key
-            result[item.jd_skill_id] = {"tier": item.tier, "sense_key": sense_key, "required": item.required}
+            # Only a core skill keeps a requirement text; blank = none.
+            requirement_text = ((item.requirement_text or "").strip() or None) if item.tier == "CORE" else None
+            result[item.jd_skill_id] = {"tier": item.tier, "sense_key": sense_key, "required": item.required,
+                                        "requirement_text": requirement_text}
         if unset:
             raise UnprocessableError(
                 "Choose the meaning of each ambiguous skill before calibrating: " + ", ".join(sorted(unset)) + ".")
@@ -375,7 +385,8 @@ class JDCalibrationService:
         return {
             "skills": {str(sid): {"name": name, "canonical_skill_id": str(row.canonical_skill_id),
                                   "tier": _tier(row.mandatory, row.importance), "sense_key": row.sense_key,
-                                  "required": getattr(row, "required", False) is True}
+                                  "required": getattr(row, "required", False) is True,
+                                  "requirement_text": getattr(row, "requirement_text", None)}
                        for sid, (row, name) in rows.items()},
             "min_experience_years": effective_min_experience(jd),
             "experience_tolerance_years": _float(jd.experience_tolerance_years),
@@ -394,7 +405,8 @@ class JDCalibrationService:
                 skill_changes.append({"skill": new["name"], "field": "added", "before": None, "after": new.get("tier")})
                 continue
             old = before["skills"][sid]
-            for field in ("tier", "sense_key"):
+            # Versions saved before the requirement text existed have none (= None).
+            for field in ("tier", "sense_key", "requirement_text"):
                 if old.get(field) != new.get(field):
                     skill_changes.append({"skill": new["name"], "field": field,
                                           "before": old.get(field), "after": new.get(field)})

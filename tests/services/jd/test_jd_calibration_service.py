@@ -51,6 +51,9 @@ class FakeRepo:
     def jd_skills_with_names(self, jd_id):
         return list(self.skills)
 
+    def skill_aliases(self, skill_ids):
+        return {}
+
     def unknown_skill_links(self, jd_id):
         return list(self.unknown)
 

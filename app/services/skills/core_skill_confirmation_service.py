@@ -157,6 +157,9 @@ class CoreSkillSpec:
     description: str | None = None
     # What it is not (skill_ontology.not_description) - shown to the voters only.
     not_description: str | None = None
+    # What this JD asks for under the skill, in its own words (jd_skills.requirement_text,
+    # set in calibration) - shown to the voters and read by the paraphrase search.
+    requirement_text: str | None = None
 
     @property
     def skill_ids(self) -> tuple[UUID, ...]:
@@ -224,8 +227,14 @@ def jd_core_skill_specs(jd, jd_skills: list, skill_names: dict, resolver,
             alias_skill_ids=tuple(row.alias_skill_ids or ()),
             description=(skill_descriptions or {}).get(row.canonical_skill_id),
             not_description=(skill_not_descriptions or {}).get(row.canonical_skill_id),
+            requirement_text=_requirement_text(row),
         ))
     return specs
+
+
+def _requirement_text(row) -> str | None:
+    value = getattr(row, "requirement_text", None)
+    return (value.strip() or None) if isinstance(value, str) else None
 
 
 def _hr_sense(row) -> str | None:
@@ -310,12 +319,14 @@ def evidence_hash(ask) -> str:
     """
     What the model was shown for one skill: excerpts (with sections), sources,
     and the skill's description and JD-sense description - a cached answer is
-    asked again when any of them changes.
+    asked again when any of them changes. The JD's requirement text joins only when
+    set, so answers cached for JDs without one stay valid.
     """
     payload = json.dumps([[label, text] for label, text in ask.excerpts] + [sorted(ask.sources)]
                          + [[ask.spec.description or "", ask.spec.sense_label or "", ask.spec.sense_description or "",
                              ask.spec.not_description or ""]]
-                         + [[job.title or "", job.role_domain or ""] if (job := ask.job) else []])
+                         + [[job.title or "", job.role_domain or ""] if (job := ask.job) else []]
+                         + ([["requirement", ask.spec.requirement_text]] if ask.spec.requirement_text else []))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -340,6 +351,8 @@ def _render_items(asks: list[_Ask]) -> str:
         described = f"\n   What it means here: {ask.spec.description}" if ask.spec.description else ""
         if ask.spec.not_description:
             described += f"\n   Not this skill: {ask.spec.not_description}"
+        if ask.spec.requirement_text:
+            described += f"\n   What this JD asks for: {ask.spec.requirement_text}"
         blocks.append(f"[{ask.number}] Skill: {ask.spec.name}{sense}{described}\n   Excerpts:\n{excerpts}")
     return "\n\n".join(blocks)
 

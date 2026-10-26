@@ -167,6 +167,10 @@ class JDSkill(Base):
     # A core skill that may never be missing (JD calibration, core skills
     # only): the missing-core allowance covers only the other core skills.
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # What this JD asks for under a core skill, in the JD's own words (JD calibration, core
+    # skills only; prefilled from the JD, HR edits it). The paraphrase search and the
+    # core-skill voters read it next to the skill's description. NULL = none.
+    requirement_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Who confirmed this skill in JD calibration, and when (status HR_VERIFIED).
     verified_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
