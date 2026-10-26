@@ -92,9 +92,25 @@ def test_paraphrase_never_proposes_a_qualifier_line():
     ("Ran product demos of incident and change modules", False),
     ("Supported and configured ServiceNow incident forms", False),             # a not-work verb too
     ("ServiceNow ITSM, Incident Management, Change Management", False),        # a list, no verb
+    # advisory work (the senior test set, S6): advising on it is not doing it
+    ("Recommended cloud architecture options on AWS and Azure for client data platforms", False),
+    ("Assessed clients' MLOps maturity and recommended target operating models", False),
+    ("Advised retail and banking clients on data platform and ML platform strategy", False),
+    ("Evaluated and designed the data platform for three clients", False),     # a not-work verb wins
+    ("Consulted on the Kafka migration", False),
+    ("Designed the AWS cloud architecture for the analytics platform", True),  # the doing-it line stays
 ])
 def test_does_the_work(line, works):
     assert DEFAULT_RULES.does_the_work(line) is works
+
+
+@pytest.mark.parametrize("line", [
+    "Recommended cloud architecture options on AWS and Azure for client data platforms",
+    "Assessed clients' MLOps maturity and recommended target operating models",
+    "Advising the board on data governance",
+])
+def test_advisory_lines_are_not_doing_the_work(line):
+    assert DEFAULT_RULES.not_doing_the_work(line)
 
 
 # --- role labels -----------------------------------------------------------------

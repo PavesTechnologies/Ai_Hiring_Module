@@ -37,6 +37,10 @@ DEFAULT_EVIDENCE_RULES = {
     "non_work_verbs": [
         "sold", "sell", "sells", "selling", "demo", "demos", "demoed", "demonstrated", "demonstrating", "presales",
         "supports", "supported", "supporting", "attended", "attend", "attends", "attending",
+        # advisory work: advising on a skill is not doing it (the senior test set, S6)
+        "advised", "advise", "advises", "advising", "assessed", "assess", "assesses", "assessing",
+        "recommended", "recommend", "recommends", "recommending", "evaluated", "evaluate", "evaluates", "evaluating",
+        "consulted", "consult", "consults", "consulting",
     ],
 }
 
