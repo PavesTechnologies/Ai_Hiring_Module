@@ -8,8 +8,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.scoring_v2 import (
-    Certification, CoreSkillConfirmation, ResumeParseCache, ResumeSkillEvidence, SkillPatternRule, SkillScanTerm,
-    SkillSense,
+    Certification, CoreSkillConfirmation, ResumeParseCache, ResumeProvisionalSkillScan, ResumeSkillEvidence,
+    SkillPatternRule, SkillScanTerm, SkillSense,
 )
 from app.services.skills.resume_skill_scanner import PatternRule, ScanTermRule, term_key
 from app.services.skills.skill_sense_resolver import SenseDef
@@ -113,6 +113,31 @@ class SkillDetectionRepository:
         with self.db.begin_nested():
             entry.hit_count = (entry.hit_count or 0) + 1
             entry.last_hit_at = datetime.now(timezone.utc)
+
+    def resume_text_hashes(self, resume_ids: list[UUID]) -> set[str]:
+        """
+        Candidate erasure - the hashes of these resumes' redacted text, as the
+        rows derived from it recorded them (skill evidence, provisional scans,
+        core-skill confirmations). The parse cache is keyed by the same hash.
+        """
+        if not resume_ids:
+            return set()
+        hashes: set[str] = set()
+        for model in (ResumeSkillEvidence, ResumeProvisionalSkillScan, CoreSkillConfirmation):
+            hashes |= set(self.db.execute(
+                select(model.text_hash).where(model.resume_id.in_(resume_ids), model.text_hash.is_not(None)).distinct()
+            ).scalars())
+        hashes.discard("")
+        return hashes
+
+    def delete_parse_cache_by_text_hashes(self, text_hashes) -> int:
+        """Candidate erasure - the cached LLM extraction of their resume text (any prompt/model)."""
+        text_hashes = [h for h in text_hashes if h]
+        if not text_hashes:
+            return 0
+        deleted = self.db.execute(delete(ResumeParseCache).where(ResumeParseCache.text_hash.in_(text_hashes))).rowcount
+        self.db.flush()
+        return deleted or 0
 
     def put_parse_cache(self, **values) -> None:
         """Insert or replace (a re-parse overwrites the earlier answer for the same key)."""

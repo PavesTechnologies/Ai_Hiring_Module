@@ -9,6 +9,7 @@ from app.models.async_tasks import (
     DocumentType,
     ProcessingStage,
     StageExecutionStatus,
+    StageFailureLog,
 )
 
 
@@ -175,6 +176,36 @@ class DocumentProcessingRepository:
             .update({DocumentProcessingStageExecution.document_id: document_id})
         )
         self.db.flush()
+
+    def delete_for_documents(self, document_type: DocumentType, document_ids: list[UUID]) -> int:
+        """
+        Candidate erasure - removes the processing-stage rows of these
+        documents (no FK, so nothing else clears them) and the stage-failure
+        rows of the same tasks (exception messages). Returns the stage rows deleted.
+        """
+        if not document_ids:
+            return 0
+        task_ids = list(self.db.execute(
+            select(DocumentProcessingStageExecution.task_id).where(
+                DocumentProcessingStageExecution.document_type == document_type,
+                DocumentProcessingStageExecution.document_id.in_(document_ids),
+            ).distinct()
+        ).scalars())
+        deleted = self.db.execute(delete(DocumentProcessingStageExecution).where(
+            DocumentProcessingStageExecution.document_type == document_type,
+            DocumentProcessingStageExecution.document_id.in_(document_ids),
+        )).rowcount or 0
+        if task_ids:
+            # only tasks that processed nothing else (a task parses one document)
+            still_used = set(self.db.execute(
+                select(DocumentProcessingStageExecution.task_id)
+                .where(DocumentProcessingStageExecution.task_id.in_(task_ids)).distinct()
+            ).scalars())
+            orphaned = [t for t in task_ids if t not in still_used]
+            if orphaned:
+                self.db.execute(delete(StageFailureLog).where(StageFailureLog.task_id.in_(orphaned)))
+        self.db.flush()
+        return deleted
 
     def commit(self) -> None:
         self.db.commit()

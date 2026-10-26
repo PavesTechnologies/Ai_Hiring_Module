@@ -66,6 +66,8 @@ class CandidateErasureService:
         encryption_service=None,
         bulk_upload_job_repo=None,
         bulk_upload_job_file_repo=None,
+        document_processing_repo=None,
+        skill_detection_repo=None,
     ):
         self.candidate_repo = candidate_repo
         self.resume_repo = resume_repo
@@ -92,6 +94,10 @@ class CandidateErasureService:
         self.encryption_service = encryption_service
         self.bulk_upload_job_repo = bulk_upload_job_repo
         self.bulk_upload_job_file_repo = bulk_upload_job_file_repo
+        # Processing-stage rows and parse-cache entries (no FK to the resume) -
+        # optional like the above; the DI provider always supplies both.
+        self.document_processing_repo = document_processing_repo
+        self.skill_detection_repo = skill_detection_repo
 
     def erase_candidate(
         self,
@@ -123,6 +129,9 @@ class CandidateErasureService:
             # Their bulk-upload file rows, their entries in stored zips, and
             # task-log / dead-letter rows that name them (EMAIL_SEND included).
             traces = self._erase_upload_and_log_traces(candidate, resumes)
+            # Before the resumes' derived rows go: those rows are where the hash
+            # of each resume's text is recorded.
+            traces.update(self._erase_processing_and_cache_traces(erased_resume_ids))
 
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
@@ -329,6 +338,23 @@ class CandidateErasureService:
             "bulk_zip_failures": zip_failures,
             "task_logs_naming_candidate_deleted": len(task_ids),
         }
+
+    def _erase_processing_and_cache_traces(self, resume_ids: list[UUID]) -> dict:
+        """
+        Rows keyed to the resumes without a foreign key: their processing-stage
+        rows (and those tasks' stage-failure rows), and the parse cache's LLM
+        extraction of their text, found by the text hashes their own derived
+        rows recorded. A resume whose scoring-v2 stages never ran recorded no
+        hash, so a cache entry for it can't be found this way. Does not commit.
+        """
+        from app.models.async_tasks import DocumentType
+        stage_rows = cache_rows = 0
+        if self.skill_detection_repo is not None:
+            hashes = self.skill_detection_repo.resume_text_hashes(resume_ids)
+            cache_rows = self.skill_detection_repo.delete_parse_cache_by_text_hashes(hashes)
+        if self.document_processing_repo is not None:
+            stage_rows = self.document_processing_repo.delete_for_documents(DocumentType.RESUME, resume_ids)
+        return {"processing_stage_rows_deleted": stage_rows, "parse_cache_entries_deleted": cache_rows}
 
     def _strip_zip(self, job_id: UUID, names: set[str]) -> str:
         """

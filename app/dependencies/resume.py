@@ -34,6 +34,7 @@ from app.repositories.interview_schedule_repository import InterviewScheduleRepo
 from app.repositories.bulk_upload_job_file_repository import BulkUploadJobFileRepository
 from app.repositories.bulk_upload_job_repository import BulkUploadJobRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.stage_failure_log_repository import StageFailureLogRepository
 from app.repositories.user_repository import UserRepository
@@ -283,6 +284,8 @@ def get_candidate_erasure_service(
         encryption_service=EncryptionService(EncryptionKeyRepository(db)),
         bulk_upload_job_repo=BulkUploadJobRepository(db),
         bulk_upload_job_file_repo=BulkUploadJobFileRepository(db),
+        document_processing_repo=DocumentProcessingRepository(db),
+        skill_detection_repo=SkillDetectionRepository(db),
     )
 
 
