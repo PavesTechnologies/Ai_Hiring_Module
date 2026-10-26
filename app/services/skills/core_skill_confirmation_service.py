@@ -80,6 +80,7 @@ REASON_SENSE_MISMATCH = "sense_mismatch"
 # Capped at UNCERTAIN whatever the votes: the only evidence is a skills-list
 # line or lines where the candidate sells / demos / supports / attends.
 REASON_LISTED_ONLY = "listed_only"
+REASON_DAILY_CAP = "daily_llm_cap_reached"
 LISTED_ONLY_NOTE = "listed only, not shown in work"
 
 VOTE_YES, VOTE_NO, VOTE_INVALID, VOTE_FAILED = "yes", "no", "invalid", "failed"
@@ -506,7 +507,7 @@ class CoreSkillConfirmationService:
         if budget is not None and not budget(self.votes):
             for ask in asks:
                 results[ask.spec.canonical_skill_id].update(
-                    sources=ask.sources, status=STATUS_UNCONFIRMED, reason="daily_llm_cap_reached")
+                    sources=ask.sources, status=STATUS_UNCONFIRMED, reason=REASON_DAILY_CAP)
             return ConfirmationOutcome(results=capped(), skipped_budget=True, cache_key=cache_key,
                                        problem="daily LLM call cap reached")
 

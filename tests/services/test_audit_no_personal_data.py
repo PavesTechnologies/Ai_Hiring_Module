@@ -176,3 +176,36 @@ def no_email():
     with patch("app.services.notifications.ses_email_client.SESEmailClient.send_email",
                side_effect=AssertionError("email sent")):
         yield
+
+
+# --- system reason codes are kept; free text and resume excerpts are not ---------------------------
+
+def test_known_reason_codes_are_kept_at_any_depth_and_free_text_is_dropped():
+    details = {"results": [{"skill": "Python", "reason": "all_votes_yes"},
+                           {"skill": "Git", "reason": "spoke to Jane - she uses it daily"}],
+               "reason": "daily_llm_cap_reached"}
+    cleaned, dropped = scrub_personal_data(details)
+    assert cleaned == {"results": [{"skill": "Python", "reason": "all_votes_yes"}, {"skill": "Git"}],
+                       "reason": "daily_llm_cap_reached"}
+    assert dropped == ["reason"]
+
+
+def test_the_known_codes_cover_every_confirmation_reason():
+    from app.services.audit_service import KNOWN_REASON_CODES
+    from app.services.skills import core_skill_confirmation_service as confirmation
+    emitted = {value for name, value in vars(confirmation).items() if name.startswith("REASON_")}
+    assert emitted and emitted <= KNOWN_REASON_CODES, emitted - KNOWN_REASON_CODES
+
+
+def test_resume_excerpts_are_dropped():
+    details = {"deterministic_score": 72, "score_breakdown": {"v2": {"results": [{"quote": "Led the ..."}]}},
+               "items": [{"line": "Built REST APIs at ...", "evidence_text": "..."}]}
+    cleaned, dropped = scrub_personal_data(details)
+    assert cleaned == {"deterministic_score": 72, "items": [{}]}
+    assert dropped == ["evidence_text", "line", "score_breakdown"]
+
+
+def test_the_deterministic_audit_entry_carries_scores_not_the_breakdown():
+    src = (APP / "tasks" / "deterministic_scoring_tasks.py").read_text(encoding="utf-8")
+    payload = src[src.index("summary_payload = {"):src.index("}", src.index("summary_payload = {"))]
+    assert '"score_breakdown"' not in payload and '"deterministic_score"' in payload

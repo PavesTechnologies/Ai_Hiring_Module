@@ -33,6 +33,15 @@ PERSONAL_DATA_KEYS = frozenset({
     "reason", "note", "notes", "comment", "comments", "feedback", "message_body",
     "override_reason", "clear_reason", "cleared_override_reason", "original_rejection_reason", "decision_reason",
     "final_error_message", "error_message", "full_error_trace", "ai_response", "raw_response",
+    # excerpts of a resume
+    "score_breakdown", "quote", "quotes", "vote_quotes", "evidence_text", "candidate_field_text", "line", "lines",
+})
+# System reason codes (the core-skill confirmation outcomes) are not free text:
+# a "reason" holding one of these is kept. tests/services/test_audit_no_personal_data.py
+# checks this set covers every REASON_* code the confirmation service can emit.
+KNOWN_REASON_CODES = frozenset({
+    "auto_exact_scan", "all_votes_yes", "all_votes_no", "mixed_votes", "no_votes_include_backup_model",
+    "llm_failed", "not_found", "sense_mismatch", "listed_only", "daily_llm_cap_reached",
 })
 # ("name" is deliberately not listed: campaigns, presets, prompts and skills have
 # product names. The guard test checks no person's name reaches any key.)
@@ -46,7 +55,7 @@ def scrub_personal_data(details):
         if isinstance(value, dict):
             out = {}
             for key, item in value.items():
-                if key in PERSONAL_DATA_KEYS:
+                if key in PERSONAL_DATA_KEYS and not (key == "reason" and item in KNOWN_REASON_CODES):
                     dropped.append(key)
                     continue
                 out[key] = clean(item)

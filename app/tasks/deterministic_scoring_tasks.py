@@ -441,7 +441,8 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
             "rejection_reason": rejection_reason,
-            "score_breakdown": breakdown,
+            # Never the breakdown: it quotes the resume (evidence lines, vote quotes,
+            # the education field). It is stored on the candidate (decision_details).
         }
         if score_only:
             # What changed - the stage is left as it is.

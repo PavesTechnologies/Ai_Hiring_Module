@@ -499,7 +499,7 @@ def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["details"]["missing"] == 0
         assert audit_kwargs["details"]["deterministic_passed"] is False
-        assert audit_kwargs["details"]["score_breakdown"] == breakdown
+        assert "score_breakdown" not in audit_kwargs["details"]       # it quotes the resume; stored on the candidate
 
 
 def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
