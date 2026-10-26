@@ -2,7 +2,11 @@
 Turn a reviewed diff (diff_config.py: dev vs a fresh database) into the seed
 data files app/seeds/seed_product_config.py loads:
 
-    python scripts/config_seed/build_seed_data.py <diff.json> [out dir]
+    python scripts/config_seed/build_seed_data.py <diff.json> [out dir] [--reviewed YYYY-MM-DD]
+
+--reviewed: the dev-added skills (and the rules naming them) were reviewed on that
+date - their sections are written approved, with the date in the note. Without
+it they are written unapproved; a regeneration never approves anything by itself.
 
 Each file is one section with an "approved" flag; the seed loads approved
 sections only. catalogue_dev_added.json is written unapproved, by decision:
@@ -37,7 +41,7 @@ def _section(table, keys, fields, *, approved, note, add=None, change=None, rena
             "renames": renames or {}, "add": add or {}, "change": change or {}}
 
 
-def build(diff: dict) -> dict:
+def build(diff: dict, reviewed: str | None = None) -> dict:
     files = {}
     skills = diff["skill_ontology"]
     dev_added_all = {k: v for k, v in skills["add"].items() if v.get("source") in DEV_ADDED_SOURCES}
@@ -72,12 +76,19 @@ def build(diff: dict) -> dict:
     files["scoring_rules.json"] = {"sections": list(rules_approved.values())}
 
     files["catalogue_dev_added.json"] = {"sections": [
-        _section("skill_ontology", skills["keys"], skills["fields"], approved=False,
-                 note="PENDING REVIEW (production checklist): skills added in dev by hand or by JD "
-                      "calibration. Review each - drop client-specific or personal terms - then set approved. "
-                      f"Not seeded (merged or dropped in dev): {retired}.",
+        _section("skill_ontology", skills["keys"], skills["fields"], approved=bool(reviewed),
+                 note=(f"Reviewed {reviewed} (docs/seed_review_dev_added_skills.md): skills added in dev by hand "
+                       "or by JD calibration. " if reviewed else
+                       "PENDING REVIEW (production checklist): skills added in dev by hand or by JD "
+                       "calibration. Review each - drop client-specific or personal terms - then set approved. ")
+                      + f"Not seeded (merged or dropped in dev): {retired}.",
                  add=dev_added, change=dev_changed, renames=pending_renames),
         *rules_pending.values()]}
+    if reviewed:
+        for section in files["catalogue_dev_added.json"]["sections"]:
+            section["approved"] = True
+            if section["table"] != "skill_ontology":
+                section["note"] = f"Reviewed {reviewed}: needs the dev-added skill it names (same file)."
 
     settings = diff["platform_config"]
     approved_settings, dropped, excluded = {}, [], []
@@ -109,10 +120,15 @@ def build(diff: dict) -> dict:
 
 
 if __name__ == "__main__":
-    diff_data = json.load(open(sys.argv[1], encoding="utf-8"))
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.join("app", "seeds", "product_config")
+    args = sys.argv[1:]
+    reviewed_on = None
+    if "--reviewed" in args:
+        reviewed_on = args[args.index("--reviewed") + 1]
+        del args[args.index("--reviewed"):args.index("--reviewed") + 2]
+    diff_data = json.load(open(args[0], encoding="utf-8"))
+    out_dir = args[1] if len(args) > 1 else os.path.join("app", "seeds", "product_config")
     os.makedirs(out_dir, exist_ok=True)
-    for name, content in build(diff_data).items():
+    for name, content in build(diff_data, reviewed=reviewed_on).items():
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
             json.dump(content, f, ensure_ascii=False, indent=1)
             f.write("\n")

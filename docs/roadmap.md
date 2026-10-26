@@ -4,7 +4,7 @@
 
 Before production holds real candidate data:
 
-- [ ] **Review the dev-added skills before export.** 104 skills were added in dev, 102 by hand and 2 by JD calibration. They sit in `app/seeds/product_config/catalogue_dev_added.json`, which is not loaded until reviewed. Work through [the review list](seed_review_dev_added_skills.md): it gives each skill's origin, what uses it, and a suggested fix, merge, rename or keep. Then set `approved: true` on its sections. The 2 skill senses, 2 pattern rules and 11 certification mappings in the same file wait for it, because each names one of those skills.
+- [x] **Review the dev-added skills before export:** done 2026-10-26. Decisions are in [the review list](seed_review_dev_added_skills.md). They're applied in dev and audited. The re-score of the 26 synthetic candidates showed no change. The seed was regenerated with every section approved: 90 dev-added skills are seeded, and the 13 merged or dropped ones are not.
 - [ ] **Define data retention policies.** `retention_policies` is empty in dev, so nothing is retained or purged by policy. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them.
 - [x] **Default campaign weights:** decided 2026-10-26 to use the dev values (deterministic 40, semantic 30, AI 30). They're seeded.
 - [ ] **Move to the paid Gemini tier first.** See [known issues](known_issues.md).
@@ -31,7 +31,6 @@ On a fresh database, the migrations that add certification mappings, skill descr
 
 The seed is idempotent and never overwrites an edit made after seeding. It doesn't delete anything. `DETERMINISTIC_SCORE_REJECTS` exists in a fresh database but was removed in dev; that's left for review.
 
-Last verified 2026-10-26 on a throwaway local database:
-- With the approved sections, a fresh database matches dev except the pending skills and the rules that wait for them.
-- With every section approved, it matches dev except three format-only setting edits (`50.00` to `50`), `DETERMINISTIC_SCORE_REJECTS`, and the call cap, which is set in production by design.
+Last verified 2026-10-26 on a throwaway local database, with every section approved:
+- A fresh database matches dev except the 13 skills merged or dropped in dev (inactive, not seeded by design), three format-only setting edits (`50.00` to `50`), the call cap (set in production) and `DETERMINISTIC_SCORE_REJECTS`.
 - A second run changes nothing.

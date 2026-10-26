@@ -1884,7 +1884,10 @@
      "aliases": [
       "Multi-agent Framework",
       "Crew AI",
-      "CrewAI Framework"
+      "CrewAI Framework",
+      "CrewAI Enterprise",
+      "Enterprise CrewAI",
+      "Crew AI Enterprise"
      ],
      "category": "AI / ML",
      "parent": "Generative AI",
@@ -2105,7 +2108,8 @@
     "[\"Databricks\"]": {
      "canonical_name": "Databricks",
      "aliases": [
-      "Managed Spark Platform"
+      "Managed Spark Platform",
+      "databricks notebooks"
      ],
      "category": "Data Engineering",
      "parent": "Apache Spark",
@@ -5697,7 +5701,8 @@
     "[\"RDS\"]": {
      "canonical_name": "RDS",
      "aliases": [
-      "Relational Database Service"
+      "Relational Database Service",
+      "mysql rds"
      ],
      "category": "Cloud",
      "parent": "AWS",

@@ -15,8 +15,8 @@
     "source",
     "confidence"
    ],
-   "approved": false,
-   "note": "PENDING REVIEW (production checklist): skills added in dev by hand or by JD calibration. Review each - drop client-specific or personal terms - then set approved. Not seeded (merged or dropped in dev): ['Crew AI', 'CrewAI Framework', 'REST', 'delta lake with python', 'delta lake with sparks sql in databricks', 'tranformers'].",
+   "approved": true,
+   "note": "Reviewed 2026-10-26 (docs/seed_review_dev_added_skills.md): skills added in dev by hand or by JD calibration. Not seeded (merged or dropped in dev): ['APIs', 'Crew AI', 'CrewAI Enterprise', 'CrewAI Framework', 'REST', 'apache', 'catalog federation', 'databricks notebooks', 'delta lake with python', 'delta lake with sparks sql in databricks', 'mysql rds', 'pip', 'tranformers'].",
    "renames": {
     "REST API": "REST APIs"
    },
@@ -53,17 +53,6 @@
      "is_active": true,
      "source": "manual entry",
      "confidence": "verified"
-    },
-    "[\"APIs\"]": {
-     "canonical_name": "APIs",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "unverified"
     },
     "[\"AWS ALB\"]": {
      "canonical_name": "AWS ALB",
@@ -156,20 +145,6 @@
      "is_active": true,
      "source": "manual entry",
      "confidence": "unverified"
-    },
-    "[\"CrewAI Enterprise\"]": {
-     "canonical_name": "CrewAI Enterprise",
-     "aliases": [
-      "Enterprise CrewAI",
-      "Crew AI Enterprise"
-     ],
-     "category": "AI / ML",
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
     },
     "[\"Data Modelling\"]": {
      "canonical_name": "Data Modelling",
@@ -318,7 +293,7 @@
      "canonical_name": "HTTP methods",
      "aliases": [],
      "category": null,
-     "parent": null,
+     "parent": "REST APIs",
      "description": null,
      "not_description": null,
      "is_active": true,
@@ -762,17 +737,6 @@
      "source": "manual entry",
      "confidence": "verified"
     },
-    "[\"apache\"]": {
-     "canonical_name": "apache",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
     "[\"aws bedrock\"]": {
      "canonical_name": "aws bedrock",
      "aliases": [],
@@ -810,17 +774,6 @@
      "canonical_name": "azure databricks",
      "aliases": [],
      "category": "Data Engineering",
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
-    "[\"catalog federation\"]": {
-     "canonical_name": "catalog federation",
-     "aliases": [],
-     "category": null,
      "parent": null,
      "description": null,
      "not_description": null,
@@ -874,17 +827,6 @@
     },
     "[\"data warehousing\"]": {
      "canonical_name": "data warehousing",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
-    "[\"databricks notebooks\"]": {
-     "canonical_name": "databricks notebooks",
      "aliases": [],
      "category": null,
      "parent": null,
@@ -963,17 +905,6 @@
      "source": "manual entry",
      "confidence": "verified"
     },
-    "[\"mysql rds\"]": {
-     "canonical_name": "mysql rds",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
     "[\"nginx\"]": {
      "canonical_name": "nginx",
      "aliases": [],
@@ -989,20 +920,6 @@
      "canonical_name": "performance tuning",
      "aliases": [],
      "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
-    "[\"pip\"]": {
-     "canonical_name": "pip",
-     "aliases": [
-      "Package Management",
-      "pip package management"
-     ],
-     "category": "Backend",
      "parent": null,
      "description": null,
      "not_description": null,
@@ -1131,6 +1048,10 @@
        "github"
       ]
      },
+     "parent": {
+      "from": null,
+      "to": "Version Control"
+     },
      "description": {
       "from": null,
       "to": "Version control with Git: branches, commits, pull requests and code review workflows."
@@ -1160,8 +1081,8 @@
     "window_lines",
     "is_active"
    ],
-   "approved": false,
-   "note": "Waits for the dev-added skill it names.",
+   "approved": true,
+   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"Change Management\", \"ITSM\"]": {
@@ -1245,8 +1166,8 @@
     "note",
     "match_scope"
    ],
-   "approved": false,
-   "note": "Waits for the dev-added skill it names.",
+   "approved": true,
+   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"AI near governance (Experience)\"]": {
@@ -1300,8 +1221,8 @@
    "fields": [
     "sense_key"
    ],
-   "approved": false,
-   "note": "Waits for the dev-added skill it names.",
+   "approved": true,
+   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"ITIL 4 Foundation\", \"Change Management\"]": {

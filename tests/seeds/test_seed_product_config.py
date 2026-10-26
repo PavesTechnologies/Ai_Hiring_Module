@@ -134,10 +134,19 @@ def _sections():
     return seed.load_sections(str(DATA))
 
 
-def test_the_pending_files_stay_unapproved_until_reviewed():
+def test_every_section_is_approved_and_the_dev_added_ones_record_their_review():
     for name, section in _sections():
+        assert section["approved"] is True, f"{name}:{section['table']}"
         if name == "catalogue_dev_added.json":
-            assert section["approved"] is False, f"{name}:{section['table']} must stay unapproved until reviewed"
+            assert section["note"].startswith("Reviewed 2026-10-26"), f"{name}:{section['table']} has no review date"
+
+
+def test_a_regeneration_approves_dev_added_skills_only_with_a_review_date():
+    build = _script("build_seed_data").build
+    unreviewed = build(_diff())["catalogue_dev_added.json"]["sections"]
+    assert not any(sec["approved"] for sec in unreviewed)
+    reviewed = build(_diff(), reviewed="2026-10-26")["catalogue_dev_added.json"]["sections"]
+    assert all(sec["approved"] for sec in reviewed) and reviewed[0]["note"].startswith("Reviewed 2026-10-26")
 
 
 def test_approved_rules_only_name_skills_an_approved_section_or_the_base_seed_provides():
@@ -171,7 +180,8 @@ def test_the_data_is_configuration_only():
     secret = re.compile(r"(api[_-]?key|secret|password|token)\"\s*:", re.I)
     for path in DATA.glob("*.json"):
         text = path.read_text(encoding="utf-8")
-        assert not contact.search(text), f"{path.name}: contact-like string"
+        undated = re.sub(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", "", text)          # review dates are not phone numbers
+        assert not contact.search(undated), f"{path.name}: contact-like string"
         assert not uuid.search(text), f"{path.name}: a database id - natural keys only"
         assert not secret.search(text), f"{path.name}: a credential-like key"
 
