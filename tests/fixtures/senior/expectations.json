@@ -1,0 +1,66 @@
+[
+  {
+    "id": "S1",
+    "tests": "Strong fit",
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "Every core skill shown in delivered work; 15 years",
+    "trap": "None; baseline"
+  },
+  {
+    "id": "S2",
+    "tests": "Near-miss on experience",
+    "expected_outcome": "HOLD",
+    "expected_core": "4/4",
+    "reason": "All core shown; 11 years against 12, within the 1.2-year tolerance",
+    "trap": "MLOps only in the skills list, but shown in work (\"deployed… with monitoring and scheduled retraining\")"
+  },
+  {
+    "id": "S3",
+    "tests": "Required skill missing",
+    "expected_outcome": "HOLD",
+    "expected_core": "3/4",
+    "reason": "Strong ML, MLOps and cloud; no data engineering. Data Engineering is required, so one near-miss -> HOLD",
+    "trap": "Risk: ML pipelines read as Data Engineering -> PASS"
+  },
+  {
+    "id": "S4",
+    "tests": "Adjacent field (BI/ERP)",
+    "expected_outcome": "REJECT",
+    "expected_core": "2/4 (Data Engineering, Cloud Architecture)",
+    "reason": "Real warehousing and an Azure migration, but no ML or MLOps",
+    "trap": "\"Predictive dashboards for sales forecasting\" read as Machine Learning -> HOLD"
+  },
+  {
+    "id": "S5",
+    "tests": "Titles without substance; listed-only skills",
+    "expected_outcome": "REJECT",
+    "expected_core": "0/4",
+    "reason": "Senior titles and a skills list naming all four core skills, but no work line shows any of them",
+    "trap": "Listed-only skills must stay uncertain under Experienced; \"Chief Data & AI Officer\" title lines must not count as evidence"
+  },
+  {
+    "id": "S6",
+    "tests": "Advised, never delivered",
+    "expected_outcome": "HOLD",
+    "expected_core": "0–4 uncertain",
+    "reason": "Relevant expertise, but every line is advisory (\"advised\", \"assessed\", \"recommended\"); a person should judge",
+    "trap": "Votes may confirm advisory lines as the skills -> PASS"
+  },
+  {
+    "id": "S7",
+    "tests": "No degree, 20 years",
+    "expected_outcome": "PASS",
+    "expected_core": "4/4",
+    "reason": "Education is Preferred, so a diploma never rejects; every core skill shown",
+    "trap": "Education wrongly treated as a gate -> REJECT"
+  },
+  {
+    "id": "S8",
+    "tests": "Senior engineer, wrong specialty",
+    "expected_outcome": "REJECT",
+    "expected_core": "2/4 (Data Engineering, Cloud Architecture)",
+    "reason": "Strong backend leader; Kafka pipelines and AWS architecture, but no ML or MLOps",
+    "trap": "Kafka services read as ML-adjacent; low risk"
+  }
+]
