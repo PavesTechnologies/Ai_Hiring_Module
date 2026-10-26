@@ -35,6 +35,31 @@ def test_an_alias_finds_the_line_and_a_short_capitals_alias_matches_only_in_capi
     assert suggest_requirement_text("Requirements\n- an ml-ish thing\n", "Machine Learning", ["ML"]) is None
 
 
+PLAIN_LIST_JD = """Must-have skills
+Data Engineering (batch and streaming pipelines, lakehouse or warehouse design)
+Cloud Architecture (AWS or Azure)
+Good to have
+Databricks
+Python
+Preferred qualifications
+Kubernetes certification
+Responsibilities
+Run Kubernetes clusters for the platform team
+"""
+
+
+def test_short_unmarked_list_lines_are_items_not_headings():
+    # The senior JD's lists have no bullet markers: "Cloud Architecture (AWS or Azure)" is a must-have item.
+    assert suggest_requirement_text(PLAIN_LIST_JD, "Cloud Architecture") == "Cloud Architecture (AWS or Azure)"
+    assert suggest_requirement_text(PLAIN_LIST_JD, "Python") == "Python"
+    # "Preferred qualifications" is not a must-have heading: both Kubernetes lines rank alike, the first wins.
+    assert suggest_requirement_text(PLAIN_LIST_JD, "Kubernetes") == "Kubernetes certification"
+
+
+def test_a_line_naming_the_skill_is_never_a_heading():
+    assert suggest_requirement_text("Requirements\nExperience with MLOps\n", "MLOps") == "Experience with MLOps"
+
+
 def test_no_mention_no_suggestion_and_long_lines_are_capped():
     assert suggest_requirement_text(SENIOR_JD, "Cloud Architecture") is None
     assert suggest_requirement_text(None, "Python") is None
