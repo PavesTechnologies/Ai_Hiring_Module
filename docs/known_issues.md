@@ -7,6 +7,35 @@ workaround is until someone actually fixes it.
 
 ---
 
+## A maximum experience shouldn't reject: it acts as an age filter (found 2026-10-26)
+
+**Status:** open - no rule rejects on it today; one indirect path to close.
+
+Checked on the senior JD:
+
+- **Deterministic scoring (v1 and v2) never reads a JD's maximum experience.** Nothing there rejects or marks down a candidate for having more years.
+- **The JD form's maximum** (`job_descriptions.max_experience_years`) isn't used by any scoring layer. It's also required: the column is `NOT NULL` and the create and update requests demand a number. So a JD without a maximum can't be saved as such, and the form needs a value anyway.
+- **A maximum stated in the JD text itself** ("5-8 years") is extracted into `extracted_json.experience.max_experience_years`. From there it reaches the JD embedding text ("Experience: 5-8 years") and the JD data the AI evaluator is given. No AI-evaluation prompt mentions a maximum, but the model can still treat being over it as a gap and lower its score. That's the indirect path.
+
+**Rule:** a maximum must never reject or mark down a candidate, because more years correlates with age. **To do:** make the form's maximum optional (nullable), and leave the maximum out of the AI evaluator's JD data and the embedding text, or tell the evaluator explicitly to ignore it.
+
+---
+
+## Editing a calibrated JD's details drops its calibration (found 2026-10-26)
+
+**Status:** open.
+
+`JDService.update_jd` handles a metadata-only edit (title, jurisdiction, experience, education degree or field) by creating a **new JD version** and deactivating the old one. The new version carries the text, extraction and required-skills JSON. It does **not** carry:
+
+- the JD skills (`jd_skills`);
+- the calibration (status `NOT_CALIBRATED`, no version);
+- the profile template, role domain, experience tolerance or internship credit;
+- the education requirement, which falls back to Mandatory.
+
+So setting the degree on a calibrated JD leaves an uncalibrated JD with no skills. A campaign can't use it until it's calibrated from scratch. Seen when setting the senior JD's education: version 2 had to be re-calibrated skill by skill.
+
+**To do:** a metadata edit should carry the JD skills and the calibration forward, or put the new version through calibration with the old settings pre-filled. A degree/field edit could also live in calibration itself, so it doesn't create a version at all.
+
 ## Worker and task logs contain candidate names and emails; production logs must not (found 2026-10-23)
 
 **Status:** open - must be fixed before production holds real candidate data.
