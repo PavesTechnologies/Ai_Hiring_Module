@@ -131,6 +131,10 @@ class JobDescription(Base):
     profile_template: Mapped[Optional[str]] = mapped_column(
         String(20), ForeignKey("jd_profile_templates.key"), nullable=True)
     profile: Mapped[Optional["JDProfileTemplate"]] = relationship("JDProfileTemplate", lazy="select")  # noqa: F821
+    # The previous version whose calibration this version carries as a draft (a new JD
+    # version keeps its skills' tiers and settings for HR to re-confirm). NULL = none.
+    calibration_draft_from: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

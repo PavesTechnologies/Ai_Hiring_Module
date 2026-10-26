@@ -112,7 +112,10 @@ class JDCalibrationService:
         pending = sum(1 for u in unknown if u.status == "PENDING")
         blocking = [u.raw_text for u in unknown if u.blocks_calibration]
 
-        min_years = effective_min_experience(jd)
+        draft_from, dropped = self._draft_origin(jd, jd_rows)
+        # A draft shows the carried calibrated minimum (scoring reads it only once calibrated).
+        draft_min = _float(jd.calibrated_min_experience_years) if draft_from is not None else None
+        min_years = draft_min if draft_min is not None else effective_min_experience(jd)
         campaigns = self.repo.campaigns_for_jd(jd.id)
         live = [c for c in campaigns if c.status in LIVE_CAMPAIGN_STATUSES]
         names = self.repo.user_names([jd.calibrated_by]) if jd.calibrated_by else {}
@@ -165,8 +168,26 @@ class JDCalibrationService:
             live_campaigns=[CalibrationCampaign(campaign_id=c.id, name=c.name, status=c.status.value) for c in live],
             can_calibrate=can_calibrate,
             blocking_unknown_skills=blocking,
+            calibration_draft_from_version=draft_from.version_number if draft_from is not None else None,
+            calibration_draft_dropped_skills=dropped,
             warnings=list(dict.fromkeys(view_warnings)),
         )
+
+    def _draft_origin(self, jd, jd_rows: list) -> tuple:
+        """
+        An uncalibrated version carrying an earlier version's calibration: that version,
+        and the names of its skills this version no longer has (new text dropped them).
+        """
+        draft_from_id = getattr(jd, "calibration_draft_from", None)
+        if draft_from_id is None or jd.calibration_status == JDCalibrationStatus.CALIBRATED:
+            return None, []
+        previous = self.repo.get_jd(draft_from_id)
+        if previous is None:
+            return None, []
+        current = {row.canonical_skill_id for row, _ in jd_rows}
+        dropped = [name for row, name in self.repo.jd_skills_with_names(previous.id)
+                   if row.canonical_skill_id not in current]
+        return previous, dropped
 
     def list_versions(self, jd_id: UUID) -> list[JDCalibrationVersionItem]:
         self._jd(jd_id)

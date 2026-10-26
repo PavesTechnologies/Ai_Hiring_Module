@@ -23,7 +23,14 @@ Checked on the senior JD:
 
 ## Editing a calibrated JD's details drops its calibration (found 2026-10-26)
 
-**Status:** open.
+**Status:** fixed 2026-10-26. A new JD version now carries the previous calibration forward as a draft (`job_descriptions.calibration_draft_from`, `app/services/jd/jd_calibration_carry.py`):
+
+- **Details edit:** the JD skills and unknown-skill links are copied as they were, along with the template, role domain, tolerance, internship credit and education requirement. The calibrated minimum is carried only while the JD's own minimum is unchanged.
+- **New text or file:** skills still on the JD keep their tier, required flag and sense. Their requirement text is refilled from the new wording.
+
+The new version stays `NOT_CALIBRATED`. Calibration shows "carried from vN" and lists the skills the new text dropped, and HR re-confirms with one save. Still open: a degree or field edit still creates a version; it could live in calibration instead.
+
+The original report:
 
 `JDService.update_jd` handles a metadata-only edit (title, jurisdiction, experience, education degree or field) by creating a **new JD version** and deactivating the old one. The new version carries the text, extraction and required-skills JSON. It does **not** carry:
 

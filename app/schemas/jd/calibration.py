@@ -166,6 +166,10 @@ class JDCalibrationView(BaseModel):
     warnings: list[str] = []
     # Unresolved CORE unknown skills: calibration is refused until they're resolved.
     blocking_unknown_skills: list[str] = []
+    # Not calibrated yet, but carrying version N's calibration as a draft to re-confirm
+    # (a new JD version); with the skills version N had that this one no longer has.
+    calibration_draft_from_version: int | None = None
+    calibration_draft_dropped_skills: list[str] = []
 
 
 class CalibrationSkillInput(BaseModel):

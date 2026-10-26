@@ -38,6 +38,9 @@ from app.core.cache_invalidation import CacheInvalidator
 from app.core.cache_keys import jd_key, jd_list_key, jd_search_key
 from app.services.cache_service import CacheService
 from app.services.jd.jd_education_merge import merge_extracted_json_education
+from app.services.jd.jd_calibration_carry import (
+    carry_settings, carry_skill_calibration, copied_jd_skills, copied_unknown_links, has_calibration_to_carry,
+)
 from app.services.jd.jd_calibration_rules import jd_calibration_response_fields
 
 logger = logging.getLogger(__name__)
@@ -261,6 +264,10 @@ class JDService:
                 },
                 is_verified=is_verified,
             )
+            # New text: the previous version's calibration settings come along as a draft.
+            carrying = is_reprocess and has_calibration_to_carry(existing_jd)
+            if carrying:
+                carry_settings(existing_jd, job_description)
             job_description = self.repository.create_job_description(job_description)
 
             # Two raw strings (e.g. "Python" in required, "PYTHON" in
@@ -306,6 +313,9 @@ class JDService:
                 )
                 for match in matched_by_skill.values()
             ]
+            if carrying:
+                # Skills still on the JD keep their tier, required flag and sense (a draft to re-confirm).
+                carry_skill_calibration(self.repository.jd_skill_rows(existing_jd_id), jd_skills)
             skill_repository.bulk_create_jd_skills(jd_skills)
             skill_repository.bump_occurrence_counts(list(matched_by_skill.keys()))
 
@@ -350,6 +360,7 @@ class JDService:
                     "previous_prompt_template_id": str(previous_prompt_template_id) if previous_prompt_template_id else None,
                     "new_prompt_template_id": str(job_description.prompt_template_id),
                     **({"previous_jd_id": str(existing_jd_id)} if is_reprocess else {}),
+                    **({"calibration_draft_from": str(existing_jd_id)} if carrying else {}),
                 },
             )
 
@@ -720,8 +731,16 @@ class JDService:
             fallback_required_skills= existing_jd.required_skills,
             fallback_is_verified= existing_jd.is_verified,
         )
+        # Same text: the JD skills and unknown-skill links are copied as they were, and a
+        # calibrated version's settings come along as a draft for HR to re-confirm.
+        carrying = has_calibration_to_carry(existing_jd)
+        if carrying:
+            carry_settings(existing_jd, new_jd)
 
         new_jd = self.repository.create_job_description(new_jd)
+        self.repository.add_all(
+            copied_jd_skills(self.repository.jd_skill_rows(existing_jd.id), new_jd.id)
+            + copied_unknown_links(self.repository.unknown_skill_link_rows(existing_jd.id), new_jd.id))
         self.audit_service.log(
             actor_id=updated_by,
             actor_role="HR_ADMIN",
@@ -735,6 +754,7 @@ class JDService:
                 "source_format": new_jd.source_format.value,
                 "previous_prompt_template_id": str(previous_prompt_template_id),
                 "new_prompt_template_id": str(new_jd.prompt_template_id),
+                **({"calibration_draft_from": str(existing_jd.id)} if carrying else {}),
             }
         )
 

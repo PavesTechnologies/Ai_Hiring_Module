@@ -8,6 +8,7 @@ from app.models.campaigns import CampaignStatus, HiringCampaign
 from app.models.embeddings import EmbeddingModelVersion
 from app.repositories.embedding_model_version_repository import EmbeddingModelVersionRepository
 from app.models.jd.job_descriptions import JDEmbedding, JobDescription
+from app.models.skills import JDSkill, JDUnknownSkill
 from app.models.jd.job_descriptions import EmbeddingStatus
 from app.schemas.jd.request import JDSearchRequest
 from app.models.identity import User
@@ -53,6 +54,16 @@ class JDRepository:
         
     def deactivate_version(self, job_description: JobDescription) -> None:
         job_description.is_active_version = False
+
+    def jd_skill_rows(self, jd_id: UUID) -> list[JDSkill]:
+        return self.db.query(JDSkill).filter(JDSkill.jd_id == jd_id).all()
+
+    def unknown_skill_link_rows(self, jd_id: UUID) -> list[JDUnknownSkill]:
+        return self.db.query(JDUnknownSkill).filter(JDUnknownSkill.jd_id == jd_id).all()
+
+    def add_all(self, rows: list) -> None:
+        self.db.add_all(rows)
+        self.db.flush()
 
     def get_duplicate_excluding_lineage(
         self,
