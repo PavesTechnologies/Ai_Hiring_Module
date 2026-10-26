@@ -1,0 +1,61 @@
+{
+ "sections": [
+  {
+   "table": "skill_senses",
+   "keys": [
+    "skill",
+    "sense_key"
+   ],
+   "fields": [
+    "label",
+    "description",
+    "cue_words",
+    "is_default",
+    "window_lines",
+    "is_active"
+   ],
+   "approved": true,
+   "note": "Needs the catalogue loaded first.",
+   "renames": {},
+   "add": {},
+   "change": {}
+  },
+  {
+   "table": "skill_pattern_rules",
+   "keys": [
+    "name"
+   ],
+   "fields": [
+    "skill",
+    "anchor_terms",
+    "near_terms",
+    "max_gap_words",
+    "sections",
+    "anchor_case_sensitive",
+    "is_active",
+    "note",
+    "match_scope"
+   ],
+   "approved": true,
+   "note": "Needs the catalogue loaded first.",
+   "renames": {},
+   "add": {},
+   "change": {}
+  },
+  {
+   "table": "certification_skills",
+   "keys": [
+    "certification",
+    "skill"
+   ],
+   "fields": [
+    "sense_key"
+   ],
+   "approved": true,
+   "note": "Needs the catalogue loaded first.",
+   "renames": {},
+   "add": {},
+   "change": {}
+  }
+ ]
+}

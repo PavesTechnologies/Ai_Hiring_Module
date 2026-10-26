@@ -1,0 +1,1442 @@
+{
+ "sections": [
+  {
+   "table": "skill_ontology",
+   "keys": [
+    "canonical_name"
+   ],
+   "fields": [
+    "aliases",
+    "category",
+    "parent",
+    "description",
+    "not_description",
+    "is_active",
+    "source",
+    "confidence"
+   ],
+   "approved": false,
+   "note": "PENDING REVIEW (production checklist): skills added in dev by hand or by JD calibration. Review each - drop client-specific or personal terms - then set approved.",
+   "renames": {
+    "REST API": "REST APIs"
+   },
+   "add": {
+    "[\"AI Governance\"]": {
+     "canonical_name": "AI Governance",
+     "aliases": [],
+     "category": "AI / ML",
+     "parent": null,
+     "description": "Governing the use of AI: AI policies, risk, ethics, compliance and responsible-AI oversight.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"AI Operating Models\"]": {
+     "canonical_name": "AI Operating Models",
+     "aliases": [],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"AI Transformation\"]": {
+     "canonical_name": "AI Transformation",
+     "aliases": [],
+     "category": "AI / ML",
+     "parent": null,
+     "description": "Leading the adoption of AI across a business: AI strategy, use cases and organisation-wide AI programmes.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"APIs\"]": {
+     "canonical_name": "APIs",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Application Portfolio Management (APM)\"]": {
+     "canonical_name": "Application Portfolio Management (APM)",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"AutoGen Studio\"]": {
+     "canonical_name": "AutoGen Studio",
+     "aliases": [
+      "AutoGen Framework"
+     ],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Business Rules\"]": {
+     "canonical_name": "Business Rules",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"CMDB\"]": {
+     "canonical_name": "CMDB",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"CSDM\"]": {
+     "canonical_name": "CSDM",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Change Management\"]": {
+     "canonical_name": "Change Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": "Managing change.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Client Scripts\"]": {
+     "canonical_name": "Client Scripts",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Crew AI\"]": {
+     "canonical_name": "Crew AI",
+     "aliases": [],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"CrewAI Enterprise\"]": {
+     "canonical_name": "CrewAI Enterprise",
+     "aliases": [
+      "Enterprise CrewAI",
+      "Crew AI Enterprise"
+     ],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"CrewAI Framework\"]": {
+     "canonical_name": "CrewAI Framework",
+     "aliases": [],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Data Modelling\"]": {
+     "canonical_name": "Data Modelling",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Data Structures and Algorithms\"]": {
+     "canonical_name": "Data Structures and Algorithms",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Demand Management\"]": {
+     "canonical_name": "Demand Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Digital Transformation\"]": {
+     "canonical_name": "Digital Transformation",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Django ORM\"]": {
+     "canonical_name": "Django ORM",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Enterprise Architecture (EA)\"]": {
+     "canonical_name": "Enterprise Architecture (EA)",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Exception Handling\"]": {
+     "canonical_name": "Exception Handling",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Executive Reporting\"]": {
+     "canonical_name": "Executive Reporting",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"File Handling\"]": {
+     "canonical_name": "File Handling",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Financial Planning\"]": {
+     "canonical_name": "Financial Planning",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Flow Designer\"]": {
+     "canonical_name": "Flow Designer",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Glide APIs\"]": {
+     "canonical_name": "Glide APIs",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"HTTP methods\"]": {
+     "canonical_name": "HTTP methods",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"ITBM\"]": {
+     "canonical_name": "ITBM",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Import Sets\"]": {
+     "canonical_name": "Import Sets",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Incident Management\"]": {
+     "canonical_name": "Incident Management",
+     "aliases": null,
+     "category": null,
+     "parent": null,
+     "description": "Handling IT incidents and outages: logging, prioritising, resolving and restoring service, incident workflows and major incidents.",
+     "not_description": "Restoring IT services after outages or disruptions; not handling customer support cases.",
+     "is_active": true,
+     "source": "HR_CALIBRATION",
+     "confidence": "unverified"
+    },
+    "[\"IntegrationHub\"]": {
+     "canonical_name": "IntegrationHub",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Investment Funding\"]": {
+     "canonical_name": "Investment Funding",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Linux\"]": {
+     "canonical_name": "Linux",
+     "aliases": [
+      "Linux command line"
+     ],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Object-Oriented Programming\"]": {
+     "canonical_name": "Object-Oriented Programming",
+     "aliases": [
+      "Object-Oriented Programming",
+      "OOP",
+      "OOPS",
+      "oop concepts"
+     ],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Portfolio Hierarchy\"]": {
+     "canonical_name": "Portfolio Hierarchy",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Portfolio Planning\"]": {
+     "canonical_name": "Portfolio Planning",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Problem Management\"]": {
+     "canonical_name": "Problem Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Program Management\"]": {
+     "canonical_name": "Program Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": "Running programmes of related projects: planning, governance, budgets, dependencies and stakeholder reporting.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Project Portfolio Management (PPM)\"]": {
+     "canonical_name": "Project Portfolio Management (PPM)",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"RAG\"]": {
+     "canonical_name": "RAG",
+     "aliases": [
+      "retrieval augmented generation"
+     ],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"REST APIs\"]": {
+     "canonical_name": "REST APIs",
+     "aliases": [
+      "RESTful API",
+      "RESTful APIs"
+     ],
+     "category": null,
+     "parent": null,
+     "description": "Designing, building or integrating RESTful HTTP APIs and web service endpoints.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"REST\"]": {
+     "canonical_name": "REST",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Resource Management\"]": {
+     "canonical_name": "Resource Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Responsible AI\"]": {
+     "canonical_name": "Responsible AI",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Risk Management\"]": {
+     "canonical_name": "Risk Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"SLA management\"]": {
+     "canonical_name": "SLA management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"SOAP APIs\"]": {
+     "canonical_name": "SOAP APIs",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Script Includes\"]": {
+     "canonical_name": "Script Includes",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Service Catalog\"]": {
+     "canonical_name": "Service Catalog",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": "Building and maintaining ServiceNow Service Catalog items, request forms, catalogue variables and request fulfilment workflows: request portal, request items, catalogue items, request fulfilment.",
+     "not_description": "An IT service request catalogue in an ITSM tool such as ServiceNow; not a customer-facing product or support catalogue.",
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"ServiceNow ITSM\"]": {
+     "canonical_name": "ServiceNow ITSM",
+     "aliases": null,
+     "category": null,
+     "parent": null,
+     "description": "Configuring, administering or implementing ServiceNow's IT Service Management modules (incident, change, problem, request) - not only using ServiceNow to raise or log tickets.",
+     "not_description": null,
+     "is_active": true,
+     "source": "HR_CALIBRATION",
+     "confidence": "unverified"
+    },
+    "[\"ServiceNow SPM\"]": {
+     "canonical_name": "ServiceNow SPM",
+     "aliases": [
+      "SPM"
+     ],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"ServiceNow development\"]": {
+     "canonical_name": "ServiceNow development",
+     "aliases": [
+      "ServiceNow"
+     ],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"ServiceNow integrations\"]": {
+     "canonical_name": "ServiceNow integrations",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Strategic Planning Workspace\"]": {
+     "canonical_name": "Strategic Planning Workspace",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Technology Governance\"]": {
+     "canonical_name": "Technology Governance",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Transform Maps\"]": {
+     "canonical_name": "Transform Maps",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"UI Actions\"]": {
+     "canonical_name": "UI Actions",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"UI Builder\"]": {
+     "canonical_name": "UI Builder",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"UI Policies\"]": {
+     "canonical_name": "UI Policies",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Unit Testing\"]": {
+     "canonical_name": "Unit Testing",
+     "aliases": [
+      "unit testing (junit)"
+     ],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"VS Code\"]": {
+     "canonical_name": "VS Code",
+     "aliases": [],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Version Control\"]": {
+     "canonical_name": "Version Control",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"Virtual Environments\"]": {
+     "canonical_name": "Virtual Environments",
+     "aliases": [
+      "venv",
+      "virtual environments (venv)"
+     ],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"alb\"]": {
+     "canonical_name": "alb",
+     "aliases": [
+      "alb"
+     ],
+     "category": "Blockchain",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"algorithms\"]": {
+     "canonical_name": "algorithms",
+     "aliases": [],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"amazon s3\"]": {
+     "canonical_name": "amazon s3",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"apache\"]": {
+     "canonical_name": "apache",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"aws bedrock\"]": {
+     "canonical_name": "aws bedrock",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"aws ses\"]": {
+     "canonical_name": "aws ses",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"azure ai\"]": {
+     "canonical_name": "azure ai",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"azure databricks\"]": {
+     "canonical_name": "azure databricks",
+     "aliases": [],
+     "category": "Data Engineering",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"catalog federation\"]": {
+     "canonical_name": "catalog federation",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"cloud architecture\"]": {
+     "canonical_name": "cloud architecture",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"dab deployments\"]": {
+     "canonical_name": "dab deployments",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"data factory\"]": {
+     "canonical_name": "data factory",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"data pipeline design\"]": {
+     "canonical_name": "data pipeline design",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"data structures\"]": {
+     "canonical_name": "data structures",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"data warehousing\"]": {
+     "canonical_name": "data warehousing",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"databricks notebooks\"]": {
+     "canonical_name": "databricks notebooks",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"delta lake with python\"]": {
+     "canonical_name": "delta lake with python",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"delta lake with sparks sql in databricks\"]": {
+     "canonical_name": "delta lake with sparks sql in databricks",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"etl processes\"]": {
+     "canonical_name": "etl processes",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"faiss\"]": {
+     "canonical_name": "faiss",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"jpa\"]": {
+     "canonical_name": "jpa",
+     "aliases": [],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"jwt\"]": {
+     "canonical_name": "jwt",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"k3s\"]": {
+     "canonical_name": "k3s",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"lake flow\"]": {
+     "canonical_name": "lake flow",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"large language models\"]": {
+     "canonical_name": "large language models",
+     "aliases": [
+      "llms",
+      "llm"
+     ],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"mysql rds\"]": {
+     "canonical_name": "mysql rds",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"nginx\"]": {
+     "canonical_name": "nginx",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"performance tuning\"]": {
+     "canonical_name": "performance tuning",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"pip\"]": {
+     "canonical_name": "pip",
+     "aliases": [
+      "Package Management",
+      "pip package management"
+     ],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"prompt engineering\"]": {
+     "canonical_name": "prompt engineering",
+     "aliases": [
+      "prompt engineering"
+     ],
+     "category": "AI / ML",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"rancher\"]": {
+     "canonical_name": "rancher",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"relational databases\"]": {
+     "canonical_name": "relational databases",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"semantic analysis\"]": {
+     "canonical_name": "semantic analysis",
+     "aliases": [
+      "Lang Graph",
+      "LangGraph Framework"
+     ],
+     "category": "AI / ML",
+     "parent": "LangChain",
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"sendgrid\"]": {
+     "canonical_name": "sendgrid",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"shedlock\"]": {
+     "canonical_name": "shedlock",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"spring mvc\"]": {
+     "canonical_name": "spring mvc",
+     "aliases": [],
+     "category": "Backend",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"sql\"]": {
+     "canonical_name": "sql",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": "Writing SQL queries against relational databases: selects, joins, aggregations and schemas.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"tranformers\"]": {
+     "canonical_name": "tranformers",
+     "aliases": [
+      "Lang Graph",
+      "LangGraph Framework"
+     ],
+     "category": "AI / ML",
+     "parent": "LangChain",
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"unity catalog\"]": {
+     "canonical_name": "unity catalog",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
+    "[\"vector databases\"]": {
+     "canonical_name": "vector databases",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    }
+   },
+   "change": {
+    "[\"git\"]": {
+     "aliases": {
+      "from": null,
+      "to": [
+       "git version control",
+       "git & github",
+       "github"
+      ]
+     },
+     "description": {
+      "from": null,
+      "to": "Version control with Git: branches, commits, pull requests and code review workflows."
+     },
+     "source": {
+      "from": "SEED_STOPGAP",
+      "to": "manual entry"
+     },
+     "confidence": {
+      "from": "unverified",
+      "to": "verified"
+     }
+    }
+   }
+  },
+  {
+   "table": "skill_senses",
+   "keys": [
+    "skill",
+    "sense_key"
+   ],
+   "fields": [
+    "label",
+    "description",
+    "cue_words",
+    "is_default",
+    "window_lines",
+    "is_active"
+   ],
+   "approved": false,
+   "note": "Waits for the dev-added skill it names.",
+   "renames": {},
+   "add": {
+    "[\"Change Management\", \"ITSM\"]": {
+     "skill": "Change Management",
+     "sense_key": "ITSM",
+     "label": "IT service change management (ITSM)",
+     "description": "Controlling changes to IT services and systems: change requests, CAB approval, release and deployment control, usually alongside incident and problem management (ITIL). Change requests, RFC, CAB, release approvals, change calendar.",
+     "cue_words": [
+      "ITIL",
+      "ITSM",
+      "incident",
+      "incident management",
+      "problem management",
+      "release management",
+      "CAB",
+      "change advisory board",
+      "change request",
+      "change requests",
+      "change control",
+      "RFC",
+      "ServiceNow",
+      "service management",
+      "IT service management",
+      "CMDB",
+      "configuration management",
+      "service desk",
+      "major incident"
+     ],
+     "is_default": false,
+     "window_lines": 1,
+     "is_active": true
+    },
+    "[\"Change Management\", \"ORGANISATIONAL\"]": {
+     "skill": "Change Management",
+     "sense_key": "ORGANISATIONAL",
+     "label": "Organisational change management",
+     "description": "Leading the people side of business change: stakeholder engagement, communication, training, adoption and resistance management during a transformation.",
+     "cue_words": [
+      "organisational",
+      "organizational",
+      "adoption",
+      "stakeholder",
+      "stakeholders",
+      "culture",
+      "cultural",
+      "people",
+      "communications",
+      "Prosci",
+      "ADKAR",
+      "Kotter",
+      "resistance",
+      "readiness",
+      "transformation",
+      "engagement",
+      "behaviour",
+      "behavior",
+      "workforce",
+      "reskilling",
+      "upskilling"
+     ],
+     "is_default": true,
+     "window_lines": 1,
+     "is_active": true
+    }
+   },
+   "change": {}
+  },
+  {
+   "table": "skill_pattern_rules",
+   "keys": [
+    "name"
+   ],
+   "fields": [
+    "skill",
+    "anchor_terms",
+    "near_terms",
+    "max_gap_words",
+    "sections",
+    "anchor_case_sensitive",
+    "is_active",
+    "note",
+    "match_scope"
+   ],
+   "approved": false,
+   "note": "Waits for the dev-added skill it names.",
+   "renames": {},
+   "add": {
+    "[\"AI near governance (Experience)\"]": {
+     "name": "AI near governance (Experience)",
+     "skill": "AI Governance",
+     "anchor_terms": [
+      "AI",
+      "responsible AI"
+     ],
+     "near_terms": [
+      "governance"
+     ],
+     "max_gap_words": 3,
+     "sections": [
+      "EXPERIENCE"
+     ],
+     "anchor_case_sensitive": true,
+     "is_active": true,
+     "note": "e.g. 'led global AI program governance, including responsible AI frameworks'. DERIVED - always confirmed by the 3-vote LLM check. 'AI' is case-sensitive, so 'IT governance' never matches.",
+     "match_scope": "LINE"
+    },
+    "[\"Program Head/Manager/Director (job title)\"]": {
+     "name": "Program Head/Manager/Director (job title)",
+     "skill": "Program Management",
+     "anchor_terms": [
+      "Program"
+     ],
+     "near_terms": [
+      "Head",
+      "Manager",
+      "Director"
+     ],
+     "max_gap_words": 0,
+     "sections": [
+      "EXPERIENCE"
+     ],
+     "anchor_case_sensitive": false,
+     "is_active": true,
+     "note": "A held job title such as 'Senior Programme Manager' or 'Program Director'. Parsed work-experience titles only (not 'target roles'). DERIVED - always confirmed by the 3-vote LLM check.",
+     "match_scope": "JOB_TITLE"
+    }
+   },
+   "change": {}
+  },
+  {
+   "table": "certification_skills",
+   "keys": [
+    "certification",
+    "skill"
+   ],
+   "fields": [
+    "sense_key"
+   ],
+   "approved": false,
+   "note": "Waits for the dev-added skill it names.",
+   "renames": {},
+   "add": {
+    "[\"ITIL 4 Foundation\", \"Change Management\"]": {
+     "certification": "ITIL 4 Foundation",
+     "skill": "Change Management",
+     "sense_key": "ITSM"
+    },
+    "[\"ITIL 4 Foundation\", \"Incident Management\"]": {
+     "certification": "ITIL 4 Foundation",
+     "skill": "Incident Management",
+     "sense_key": null
+    },
+    "[\"ITIL 4 Foundation\", \"Problem Management\"]": {
+     "certification": "ITIL 4 Foundation",
+     "skill": "Problem Management",
+     "sense_key": null
+    },
+    "[\"ITIL Foundation (v3 / unversioned)\", \"Change Management\"]": {
+     "certification": "ITIL Foundation (v3 / unversioned)",
+     "skill": "Change Management",
+     "sense_key": "ITSM"
+    },
+    "[\"ITIL Foundation (v3 / unversioned)\", \"Incident Management\"]": {
+     "certification": "ITIL Foundation (v3 / unversioned)",
+     "skill": "Incident Management",
+     "sense_key": null
+    },
+    "[\"ITIL Foundation (v3 / unversioned)\", \"Problem Management\"]": {
+     "certification": "ITIL Foundation (v3 / unversioned)",
+     "skill": "Problem Management",
+     "sense_key": null
+    },
+    "[\"PMP\", \"Program Management\"]": {
+     "certification": "PMP",
+     "skill": "Program Management",
+     "sense_key": null
+    },
+    "[\"ServiceNow CIS-ITSM\", \"Change Management\"]": {
+     "certification": "ServiceNow CIS-ITSM",
+     "skill": "Change Management",
+     "sense_key": "ITSM"
+    },
+    "[\"ServiceNow CIS-ITSM\", \"Incident Management\"]": {
+     "certification": "ServiceNow CIS-ITSM",
+     "skill": "Incident Management",
+     "sense_key": null
+    },
+    "[\"ServiceNow CIS-ITSM\", \"ServiceNow ITSM\"]": {
+     "certification": "ServiceNow CIS-ITSM",
+     "skill": "ServiceNow ITSM",
+     "sense_key": null
+    },
+    "[\"ServiceNow CSA\", \"ServiceNow ITSM\"]": {
+     "certification": "ServiceNow CSA",
+     "skill": "ServiceNow ITSM",
+     "sense_key": null
+    }
+   },
+   "change": {}
+  }
+ ]
+}

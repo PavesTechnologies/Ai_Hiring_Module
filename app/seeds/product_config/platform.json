@@ -1,0 +1,84 @@
+{
+ "sections": [
+  {
+   "table": "platform_config",
+   "keys": [
+    "key"
+   ],
+   "fields": [
+    "value",
+    "description"
+   ],
+   "approved": true,
+   "note": "Scoring v2 and model-capability config built in dev. Format-only edits dropped: ['AI_PASS_THRESHOLD', 'CAMPAIGN_WEIGHT_AI', 'SEMANTIC_PASS_THRESHOLD'].",
+   "renames": {},
+   "add": {},
+   "change": {
+    "[\"LLM_MODEL_CAPABILITIES\"]": {
+     "value": {
+      "from": "[\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"gemini-3*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Google Gemini 3 developer guide: keep temperature at its default (lowering it can cause looping or degraded output). Structured output: current adapter (response_schema).\"\n },\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Gemini API GenerationConfig.temperature (Gemini 2.x and earlier). Structured output: current adapter (response_schema). No output limit sent today.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"o[0-9]*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI reasoning models (o-series) accept only the default temperature. Structured output: current adapter (strict json_schema via parse()).\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"gpt-5*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI GPT-5 models: temperature NOT sent - reasoning variants accept only the default, and non-reasoning chat variants are unverified. Structured output: current adapter.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI Chat Completions temperature (gpt-4o / gpt-4.1 family). Structured output: current adapter. No output limit sent today.\"\n },\n {\n  \"provider\": \"ANTHROPIC\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"output_format\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Temperature NOT sent until verified per model (newer Claude models may restrict sampling parameters). Structured output and 16000 max_tokens: current adapter values.\"\n },\n {\n  \"provider\": \"GROQ\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_object\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Groq OpenAI-compatible API temperature. json_object mode and 16000 max_completion_tokens: current adapter values (GROQ_MAX_COMPLETION_TOKENS).\"\n }\n]",
+      "to": "[\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"gemini-3*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Google Gemini 3 developer guide: keep temperature at its default (lowering it can cause looping or degraded output). Structured output: current adapter (response_schema).\"\n },\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Gemini API GenerationConfig.temperature (Gemini 2.x and earlier). Structured output: current adapter (response_schema). No output limit sent today.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"o[0-9]*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI reasoning models (o-series) accept only the default temperature. Structured output: current adapter (strict json_schema via parse()).\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"gpt-5*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI GPT-5 reasoning models accept only the default temperature - verify for non-reasoning chat variants. Structured output: current adapter.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI Chat Completions temperature (gpt-4o / gpt-4.1 family). Structured output: current adapter. No output limit sent today.\"\n },\n {\n  \"provider\": \"ANTHROPIC\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"output_format\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Temperature NOT sent until verified per model (newer Claude models may restrict sampling parameters). Structured output and 16000 max_tokens: current adapter values.\"\n },\n {\n  \"provider\": \"GROQ\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_object\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Groq OpenAI-compatible API temperature. json_object mode and 16000 max_completion_tokens: current adapter values (GROQ_MAX_COMPLETION_TOKENS).\"\n }\n]"
+     }
+    },
+    "[\"SCORING_V2_CONFIG\"]": {
+     "value": {
+      "from": "{\n \"importance_weights\": {\n  \"core\": 2.0,\n  \"supporting\": 1.0,\n  \"unclassified\": 1.0\n },\n \"hierarchy_multipliers\": {\n  \"EXACT\": 1.0,\n  \"CHILD\": 0.7,\n  \"GRANDCHILD\": 0.5,\n  \"SIBLING\": 0.4,\n  \"SEMANTIC\": 0.2\n },\n \"recognition\": {\n  \"SCAN\": 1.0,\n  \"LLM\": 1.0,\n  \"LLM_WEAK\": 0.8,\n  \"DERIVED\": 0.8,\n  \"INFERRED\": 0.8,\n  \"UNCERTAIN\": 0.8\n },\n \"preferred_share\": 0.1,\n \"component_weights\": {\n  \"skills\": 0.7,\n  \"functional\": 0.15,\n  \"education_preferred\": 0.05\n },\n \"near_miss\": {\n  \"extra_missing_core\": 1,\n  \"experience_years\": 1.0,\n  \"score_points\": 5.0\n },\n \"paraphrase\": {\n  \"enabled\": true,\n  \"threshold\": 0.45,\n  \"max_lines\": 3,\n  \"sections\": [\n   \"EXPERIENCE\"\n  ],\n  \"min_words\": 4,\n  \"max_words\": 40\n },\n \"evidence\": {\n  \"qualifiers\": [\n   \"currently learning\",\n   \"learning\",\n   \"familiar with\",\n   \"basic knowledge\",\n   \"exposure to\",\n   \"interested in\",\n   \"aspiring\"\n  ],\n  \"work_verbs\": [\n   \"built\",\n   \"build\",\n   \"builds\",\n   \"building\",\n   \"configured\",\n   \"configure\",\n   \"configures\",\n   \"configuring\",\n   \"implemented\",\n   \"implement\",\n   \"implements\",\n   \"implementing\",\n   \"developed\",\n   \"develop\",\n   \"develops\",\n   \"developing\",\n   \"administered\",\n   \"administer\",\n   \"administers\",\n   \"administering\",\n   \"wrote\",\n   \"write\",\n   \"writes\",\n   \"writing\",\n   \"written\",\n   \"designed\",\n   \"design\",\n   \"designs\",\n   \"designing\",\n   \"used\",\n   \"use\",\n   \"uses\",\n   \"using\",\n   \"maintained\",\n   \"maintain\",\n   \"maintains\",\n   \"maintaining\",\n   \"created\",\n   \"create\",\n   \"creates\",\n   \"creating\",\n   \"deployed\",\n   \"deploy\",\n   \"deploys\",\n   \"deploying\",\n   \"automated\",\n   \"automate\",\n   \"automating\",\n   \"integrated\",\n   \"integrate\",\n   \"integrating\",\n   \"migrated\",\n   \"migrate\",\n   \"migrating\",\n   \"customised\",\n   \"customise\",\n   \"customising\",\n   \"scripted\",\n   \"coded\",\n   \"programmed\",\n   \"engineered\"\n  ],\n  \"non_work_verbs\": [\n   \"sold\",\n   \"sell\",\n   \"sells\",\n   \"selling\",\n   \"demo\",\n   \"demos\",\n   \"demoed\",\n   \"demonstrated\",\n   \"demonstrating\",\n   \"presales\",\n   \"supports\",\n   \"supported\",\n   \"supporting\",\n   \"attended\",\n   \"attend\",\n   \"attends\",\n   \"attending\"\n  ]\n }\n}",
+      "to": "{\n \"importance_weights\": {\n  \"core\": 2.0,\n  \"supporting\": 1.0,\n  \"unclassified\": 1.0\n },\n \"hierarchy_multipliers\": {\n  \"EXACT\": 1.0,\n  \"CHILD\": 0.7,\n  \"GRANDCHILD\": 0.5,\n  \"SIBLING\": 0.4,\n  \"SEMANTIC\": 0.2\n },\n \"recognition\": {\n  \"SCAN\": 1.0,\n  \"LLM\": 1.0,\n  \"LLM_WEAK\": 0.8,\n  \"DERIVED\": 0.8,\n  \"INFERRED\": 0.8\n },\n \"preferred_share\": 0.1,\n \"component_weights\": {\n  \"skills\": 0.7,\n  \"functional\": 0.15\n },\n \"near_miss\": {\n  \"extra_missing_core\": 1,\n  \"experience_years\": 1.0,\n  \"score_points\": 5.0\n }\n}"
+     }
+    }
+   }
+  },
+  {
+   "table": "prompt_templates",
+   "keys": [
+    "task_type",
+    "name"
+   ],
+   "fields": [
+    "template_text",
+    "content_hash",
+    "status",
+    "notes"
+   ],
+   "approved": true,
+   "note": "Prompt template edits made in dev.",
+   "renames": {},
+   "add": {},
+   "change": {
+    "[\"RESUME_PARSE\", \"Resume Parsing - Standard\"]": {
+     "notes": {
+      "from": null,
+      "to": "Adds evidence-backed inferred_skills (certifications, job titles, concrete accomplishments) so senior candidates' competencies are matched."
+     }
+    }
+   }
+  },
+  {
+   "table": "embedding_model_versions",
+   "keys": [
+    "model_name",
+    "model_version"
+   ],
+   "fields": [
+    "vector_dimensions",
+    "distance_metric",
+    "is_active",
+    "notes"
+   ],
+   "approved": true,
+   "note": "The active embedding model - a fresh database has none.",
+   "renames": {},
+   "add": {
+    "[\"all-MiniLM-L6-v2\", \"v1\"]": {
+     "model_name": "all-MiniLM-L6-v2",
+     "model_version": "v1",
+     "vector_dimensions": 384,
+     "distance_metric": "cosine",
+     "is_active": true,
+     "notes": null
+    }
+   },
+   "change": {}
+  }
+ ]
+}
