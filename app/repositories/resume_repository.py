@@ -731,6 +731,18 @@ class ResumeRepository:
         self.db.refresh(resume)
         return resume
 
+    def record_parse_text_hash(self, resume_id: UUID, digest: str) -> None:
+        """Adds the hash of the text a parse is about to send to the model, once (does not commit)."""
+        self.db.execute(
+            update(Resume)
+            .where(Resume.id == resume_id,
+                   or_(Resume.parse_text_hashes.is_(None),
+                       ~Resume.parse_text_hashes.any(digest)))
+            .values(parse_text_hashes=func.array_append(func.coalesce(Resume.parse_text_hashes,
+                                                                       cast([], ARRAY(String(64)))), digest))
+        )
+        self.db.flush()
+
     def mark_parse_pending(self, resume: Resume) -> Resume:
         """Epic 4 (M05-E04) Phase D10 - flips a FAILED resume back to PENDING before re-dispatching it (retry/DLQ replay)."""
         resume.parse_status = ParseStatus.PENDING

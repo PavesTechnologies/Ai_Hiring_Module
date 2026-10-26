@@ -213,6 +213,25 @@ class ResumeProcessingPipeline:
 
     def _run_pii_redaction(self, context: ResumeProcessingContext) -> None:
         context.redacted_text = self.pii_redaction_service.redact(context.cleaned_text, context.pii_findings)
+        self._record_text_hash(context)
+
+    def _record_text_hash(self, context: ResumeProcessingContext) -> None:
+        """
+        The hash of the redacted text, on the resume, committed before the AI
+        extraction can store a parse-cache entry under it - so erasure can
+        always find that entry. Never blocks the parse.
+        """
+        if context.redacted_text is None or context.resume_id is None:
+            return
+        try:
+            self.resume_repository.record_parse_text_hash(context.resume_id, text_hash(context.redacted_text))
+            self.resume_repository.commit()
+        except Exception:
+            logger.exception("Recording the resume text hash failed | resume_id=%s", context.resume_id)
+            try:
+                self.resume_repository.rollback()
+            except Exception:
+                logger.exception("Rollback after text-hash failure failed | resume_id=%s", context.resume_id)
 
     def _run_ai_extraction(self, context: ResumeProcessingContext) -> None:
         prompt_template = self.prompt_template_repository.get_by_id(context.prompt_template_id)

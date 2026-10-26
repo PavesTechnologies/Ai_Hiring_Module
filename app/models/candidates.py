@@ -7,7 +7,7 @@ from sqlalchemy import (
     Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer,
     Numeric, SmallInteger, String, Text, func,
 )
-from sqlalchemy.dialects.postgresql import BYTEA, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, BYTEA, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -64,6 +64,10 @@ class Resume(Base):
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_format: Mapped[FileFormat] = mapped_column(SAEnum(FileFormat, name="file_format_enum"), nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Every hash of this resume's redacted text a parse has seen (one per distinct
+    # text; a re-parse can add one). The parse cache is keyed by it, so erasure
+    # can always find this resume's cache entries.
+    parse_text_hashes: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(64)), nullable=True)
     original_filename: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

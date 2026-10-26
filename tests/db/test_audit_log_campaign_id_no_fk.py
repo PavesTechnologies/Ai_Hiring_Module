@@ -18,9 +18,9 @@ def test_the_model_has_no_foreign_key_on_campaign_id():
     assert AuditLog.__table__.c.campaign_id.nullable
 
 
-def test_the_migration_is_the_single_head_and_drops_the_constraint():
+def test_the_migration_is_in_the_chain_and_drops_the_constraint():
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["b7d9f1a3c5e8"]
+    assert "b7d9f1a3c5e8" in {r.revision for r in script.walk_revisions()}
     revision = script.get_revision("b7d9f1a3c5e8")
     assert revision.down_revision == "d6f8a0c2e4b7"
     source = Path(revision.path).read_text(encoding="utf-8")

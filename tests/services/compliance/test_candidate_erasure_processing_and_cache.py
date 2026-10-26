@@ -88,14 +88,17 @@ def _sql(stmt) -> str:
     return str(stmt.compile(dialect=postgresql.dialect())).lower()
 
 
-def test_text_hashes_come_from_evidence_scans_and_confirmations():
+def test_text_hashes_come_from_the_resume_and_its_derived_rows():
     from app.repositories.skill_detection_repository import SkillDetectionRepository
     db = MagicMock()
-    db.execute.return_value.scalars.return_value = ["h1", ""]
+    stored, derived = MagicMock(), MagicMock()
+    stored.scalars.return_value = [["h-parse"], None]                       # resumes.parse_text_hashes
+    derived.scalars.return_value = ["h1", ""]
+    db.execute.side_effect = [stored, derived, derived, derived]
     hashes = SkillDetectionRepository(db).resume_text_hashes([uuid4()])
     tables = [re.split(r"\sfrom\s", _sql(c.args[0]), maxsplit=1)[1].split()[0] for c in db.execute.call_args_list]
-    assert tables == ["resume_skill_evidence", "resume_provisional_skill_scans", "core_skill_confirmations"]
-    assert hashes == {"h1"}                                                   # empty hash dropped
+    assert tables == ["resumes", "resume_skill_evidence", "resume_provisional_skill_scans", "core_skill_confirmations"]
+    assert hashes == {"h-parse", "h1"}                                        # empty hash dropped
 
 
 def test_parse_cache_delete_is_by_text_hash_and_skips_nothing_to_do():

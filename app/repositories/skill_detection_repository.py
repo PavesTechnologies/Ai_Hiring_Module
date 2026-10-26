@@ -116,13 +116,17 @@ class SkillDetectionRepository:
 
     def resume_text_hashes(self, resume_ids: list[UUID]) -> set[str]:
         """
-        Candidate erasure - the hashes of these resumes' redacted text, as the
-        rows derived from it recorded them (skill evidence, provisional scans,
-        core-skill confirmations). The parse cache is keyed by the same hash.
+        Candidate erasure - the hashes of these resumes' redacted text: the ones
+        each parse recorded on the resume (resumes.parse_text_hashes), and the
+        ones the rows derived from it recorded (skill evidence, provisional
+        scans, core-skill confirmations). The parse cache is keyed by the same hash.
         """
         if not resume_ids:
             return set()
+        from app.models.candidates import Resume
         hashes: set[str] = set()
+        for stored in self.db.execute(select(Resume.parse_text_hashes).where(Resume.id.in_(resume_ids))).scalars():
+            hashes |= set(stored or [])
         for model in (ResumeSkillEvidence, ResumeProvisionalSkillScan, CoreSkillConfirmation):
             hashes |= set(self.db.execute(
                 select(model.text_hash).where(model.resume_id.in_(resume_ids), model.text_hash.is_not(None)).distinct()

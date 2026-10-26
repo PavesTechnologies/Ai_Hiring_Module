@@ -343,9 +343,9 @@ class CandidateErasureService:
         """
         Rows keyed to the resumes without a foreign key: their processing-stage
         rows (and those tasks' stage-failure rows), and the parse cache's LLM
-        extraction of their text, found by the text hashes their own derived
-        rows recorded. A resume whose scoring-v2 stages never ran recorded no
-        hash, so a cache entry for it can't be found this way. Does not commit.
+        extraction of their text - found by the text hashes each parse recorded
+        on the resume (resumes.parse_text_hashes) and those its derived rows
+        recorded. Does not commit.
         """
         from app.models.async_tasks import DocumentType
         stage_rows = cache_rows = 0
