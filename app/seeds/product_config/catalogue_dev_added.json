@@ -146,6 +146,17 @@
      "source": "manual entry",
      "confidence": "unverified"
     },
+    "[\"Cloud Architecture\"]": {
+     "canonical_name": "Cloud Architecture",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "verified"
+    },
     "[\"Data Modelling\"]": {
      "canonical_name": "Data Modelling",
      "aliases": [],
@@ -781,17 +792,6 @@
      "source": "manual entry",
      "confidence": "verified"
     },
-    "[\"cloud architecture\"]": {
-     "canonical_name": "cloud architecture",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "verified"
-    },
     "[\"data factory\"]": {
      "canonical_name": "data factory",
      "aliases": [],
@@ -1279,6 +1279,72 @@
      "certification": "ServiceNow CSA",
      "skill": "ServiceNow ITSM",
      "sense_key": null
+    }
+   },
+   "change": {}
+  },
+  {
+   "table": "skill_ontology",
+   "keys": [
+    "canonical_name"
+   ],
+   "fields": [
+    "aliases",
+    "category",
+    "parent",
+    "description",
+    "not_description",
+    "is_active",
+    "source",
+    "confidence"
+   ],
+   "approved": false,
+   "note": "PENDING REVIEW: skills added in dev after the 2026-10-26 review (docs/seed_review_dev_added_skills.md, 'Added after the review'). Set approved once reviewed.",
+   "renames": {},
+   "add": {
+    "[\"AWS Certified Solutions Architect\"]": {
+     "canonical_name": "AWS Certified Solutions Architect",
+     "aliases": null,
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "HR_CALIBRATION",
+     "confidence": "unverified"
+    },
+    "[\"Data Engineering\"]": {
+     "canonical_name": "Data Engineering",
+     "aliases": [],
+     "category": "Data Engineering",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Data Governance\"]": {
+     "canonical_name": "Data Governance",
+     "aliases": [],
+     "category": "Data Engineering",
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Stakeholder Management\"]": {
+     "canonical_name": "Stakeholder Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
     }
    },
    "change": {}

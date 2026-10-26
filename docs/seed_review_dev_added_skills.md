@@ -49,7 +49,7 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 | Business Rules | Added by hand, 2026-09-23 | - | Keep |  |
 | Change Management | Promoted from an unknown skill, 2026-09-30 | senses: ORGANISATIONAL, ITSM; certifications: ITIL 4 Foundation; ITIL Foundation (v3 / unversioned); ServiceNow CIS-ITSM; 1 [P3] JD | Keep | Created the day the real campaign 'AI transformation lead Sep' was set up (now deleted) - a generic term, nothing personal. |
 | Client Scripts | Added by hand, 2026-09-23 | - | Keep |  |
-| cloud architecture | Added by hand, 2026-08-31 | - | Keep |  |
+| Cloud Architecture | Added by hand, 2026-08-31 | - | Keep | Renamed from 'cloud architecture' 2026-10-26. |
 | CMDB | Promoted from an unknown skill, 2026-10-14 | 1 [P3] JD | Keep |  |
 | CSDM | Added by hand, 2026-09-23 | - | Keep |  |
 | data factory | Added by hand, 2026-08-31 | - | Keep |  |
@@ -114,3 +114,17 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 | unity catalog | Added by hand, 2026-08-31 | - | Keep |  |
 | vector databases | Added by hand, 2026-08-31 | - | Keep |  |
 | Virtual Environments | Added by hand, 2026-08-31 | - | Keep |  |
+
+## Added after the review - pending
+
+Added in dev on 2026-10-26 while calibrating the senior test JD ("Head of Data & AI Platforms", tests/fixtures/senior/).
+They're in their own unapproved section of `app/seeds/product_config/catalogue_dev_added.json`, so they don't load until
+reviewed. Nothing personal.
+
+| Skill | Origin | Used by | Note |
+|---|---|---|---|
+| Data Engineering | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: core, required | No description yet. Without one the paraphrase search rarely matches work lines (see the senior test report). |
+| Data Governance | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | No description. |
+| Stakeholder Management | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | No description. |
+| AWS Certified Solutions Architect | Extracted as a certification; added as a skill in calibration | Senior JD: preferred | A certification held as a preferred skill, by decision (no certification mapping). |
+

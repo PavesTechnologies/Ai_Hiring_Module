@@ -5,6 +5,7 @@
 Before production holds real candidate data:
 
 - [x] **Review the dev-added skills before export:** done 2026-10-26. Decisions are in [the review list](seed_review_dev_added_skills.md). They're applied in dev and audited. The re-score of the 26 synthetic candidates showed no change. The seed was regenerated with every section approved: 90 dev-added skills are seeded, and the 13 merged or dropped ones are not.
+- [ ] **Review the 4 skills added after that review:** Data Engineering, Data Governance, Stakeholder Management and AWS Certified Solutions Architect, added while calibrating the senior test JD. They're in a separate unapproved section; see [the review list](seed_review_dev_added_skills.md), 'Added after the review'.
 - [ ] **Define data retention policies.** `retention_policies` is empty in dev, so nothing is retained or purged by policy. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them.
 - [x] **Default campaign weights:** decided 2026-10-26 to use the dev values (deterministic 40, semantic 30, AI 30). They're seeded.
 - [ ] **Move to the paid Gemini tier first.** See [known issues](known_issues.md).

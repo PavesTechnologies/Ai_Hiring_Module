@@ -134,11 +134,31 @@ def _sections():
     return seed.load_sections(str(DATA))
 
 
-def test_every_section_is_approved_and_the_dev_added_ones_record_their_review():
+NEW_SINCE_REVIEW = {"AWS Certified Solutions Architect", "Data Engineering", "Data Governance", "Stakeholder Management"}
+
+
+def test_reviewed_sections_are_approved_and_skills_added_since_wait_for_review():
     for name, section in _sections():
-        assert section["approved"] is True, f"{name}:{section['table']}"
+        names = {json.loads(k)[0] for k in section["add"]}
+        if not section["approved"]:
+            assert name == "catalogue_dev_added.json" and section["note"].startswith("PENDING REVIEW"), name
+            assert section["table"] != "skill_ontology" or names == NEW_SINCE_REVIEW, names
+            continue
+        assert not (names & NEW_SINCE_REVIEW), f"{name}: a skill added after the review is approved"
         if name == "catalogue_dev_added.json":
             assert section["note"].startswith("Reviewed 2026-10-26"), f"{name}:{section['table']} has no review date"
+
+
+def test_a_regeneration_keeps_reviewed_skills_approved_and_holds_new_ones():
+    build = _script("build_seed_data").build
+    diff = _diff()
+    diff["skill_ontology"]["add"]['["Data Governance"]'] = {"canonical_name": "Data Governance", "source": "manual entry"}
+    files = build(diff, reviewed="2026-10-26", reviewed_names={"rest apis", "program management", "git"})
+    sections = files["catalogue_dev_added.json"]["sections"]
+    approved = [sec for sec in sections if sec["approved"] and sec["table"] == "skill_ontology"][0]
+    held = [sec for sec in sections if not sec["approved"] and sec["table"] == "skill_ontology"][0]
+    assert '["Data Governance"]' in held["add"] and '["Data Governance"]' not in approved["add"]
+    assert '["REST APIs"]' in approved["add"]
 
 
 def test_a_regeneration_approves_dev_added_skills_only_with_a_review_date():

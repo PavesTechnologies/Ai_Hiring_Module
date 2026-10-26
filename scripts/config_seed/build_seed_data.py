@@ -41,7 +41,18 @@ def _section(table, keys, fields, *, approved, note, add=None, change=None, rena
             "renames": renames or {}, "add": add or {}, "change": change or {}}
 
 
-def build(diff: dict, reviewed: str | None = None) -> dict:
+def reviewed_skill_names(path) -> set[str] | None:
+    """Lower-cased names of the dev-added skills an earlier review approved (the committed file), or None."""
+    if not os.path.exists(path):
+        return None
+    names = set()
+    for section in json.load(open(path, encoding="utf-8"))["sections"]:
+        if section["table"] == "skill_ontology" and section["approved"]:
+            names |= {json.loads(k)[0].lower() for k in list(section["add"]) + list(section["change"])}
+    return names
+
+
+def build(diff: dict, reviewed: str | None = None, reviewed_names: set[str] | None = None) -> dict:
     files = {}
     skills = diff["skill_ontology"]
     dev_added_all = {k: v for k, v in skills["add"].items() if v.get("source") in DEV_ADDED_SOURCES}
@@ -51,7 +62,16 @@ def build(diff: dict, reviewed: str | None = None) -> dict:
     base_add = {k: v for k, v in skills["add"].items() if k not in dev_added_all}
     dev_changed = {k: v for k, v in skills["change"].items() if (v.get("source") or {}).get("to") in DEV_ADDED_SOURCES}
     base_change = {k: v for k, v in skills["change"].items() if k not in dev_changed}
-    pending_skill_names = {json.loads(k)[0] for k in list(dev_added) + list(dev_changed)}
+    # Skills added in dev after the last review stay unapproved on their own, whatever --reviewed says.
+    new_added, new_changed = {}, {}
+    if reviewed and reviewed_names is not None:
+        unreviewed = lambda key: json.loads(key)[0].lower() not in reviewed_names
+        new_added = {k: v for k, v in dev_added.items() if unreviewed(k)}
+        new_changed = {k: v for k, v in dev_changed.items() if unreviewed(k)}
+        dev_added = {k: v for k, v in dev_added.items() if k not in new_added}
+        dev_changed = {k: v for k, v in dev_changed.items() if k not in new_changed}
+    new_skill_names = {json.loads(k)[0] for k in list(new_added) + list(new_changed)}
+    pending_skill_names = {json.loads(k)[0] for k in list(dev_added) + list(dev_changed)} | new_skill_names
     # a rename travels with the row it renames to
     renames = RENAMES["skill_ontology"]
     pending_renames = {old: new for old, new in renames.items() if new in pending_skill_names}
@@ -63,16 +83,20 @@ def build(diff: dict, reviewed: str | None = None) -> dict:
              "rows. Embeddings are not seeded - run scripts/generate_missing_skill_embeddings.py after loading.",
         add=base_add, change=base_change, renames=base_renames)
 
-    rules_approved, rules_pending = {}, {}
+    rules_approved, rules_pending, rules_new = {}, {}, {}
     for table in ("skill_senses", "skill_pattern_rules", "certification_skills"):
         t = diff[table]
         ok = {k: v for k, v in t["add"].items() if v.get("skill") not in pending_skill_names}
-        held = {k: v for k, v in t["add"].items() if k not in ok}
+        new = {k: v for k, v in t["add"].items() if v.get("skill") in new_skill_names}
+        held = {k: v for k, v in t["add"].items() if k not in ok and k not in new}
         rules_approved[table] = _section(table, t["keys"], t["fields"], approved=True,
                                          note="Needs the catalogue loaded first.", add=ok)
         if held:
             rules_pending[table] = _section(table, t["keys"], t["fields"], approved=False,
                                             note="Waits for the dev-added skill it names.", add=held)
+        if new:
+            rules_new[table] = _section(table, t["keys"], t["fields"], approved=False,
+                                        note=f"PENDING REVIEW: names a skill added after the {reviewed} review.", add=new)
     files["scoring_rules.json"] = {"sections": list(rules_approved.values())}
 
     files["catalogue_dev_added.json"] = {"sections": [
@@ -89,6 +113,13 @@ def build(diff: dict, reviewed: str | None = None) -> dict:
             section["approved"] = True
             if section["table"] != "skill_ontology":
                 section["note"] = f"Reviewed {reviewed}: needs the dev-added skill it names (same file)."
+    if new_added or new_changed or rules_new:
+        files["catalogue_dev_added.json"]["sections"] += [
+            _section("skill_ontology", skills["keys"], skills["fields"], approved=False,
+                     note=f"PENDING REVIEW: skills added in dev after the {reviewed} review "
+                          "(docs/seed_review_dev_added_skills.md, 'Added after the review'). Set approved once reviewed.",
+                     add=new_added, change=new_changed),
+            *rules_new.values()]
 
     settings = diff["platform_config"]
     approved_settings, dropped, excluded = {}, [], []
@@ -128,7 +159,9 @@ if __name__ == "__main__":
     diff_data = json.load(open(args[0], encoding="utf-8"))
     out_dir = args[1] if len(args) > 1 else os.path.join("app", "seeds", "product_config")
     os.makedirs(out_dir, exist_ok=True)
-    for name, content in build(diff_data, reviewed=reviewed_on).items():
+    # what the last review approved - read before this run overwrites the file
+    already_reviewed = reviewed_skill_names(os.path.join(out_dir, "catalogue_dev_added.json")) if reviewed_on else None
+    for name, content in build(diff_data, reviewed=reviewed_on, reviewed_names=already_reviewed).items():
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
             json.dump(content, f, ensure_ascii=False, indent=1)
             f.write("\n")
