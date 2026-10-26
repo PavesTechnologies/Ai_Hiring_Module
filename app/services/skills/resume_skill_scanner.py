@@ -150,9 +150,36 @@ def _classify(skill_id: UUID, term: str, key: str, rule: ScanTermRule | None) ->
     return _Entry(skill_id, term, MODE_LIST_ITEM, False)                # rule 7
 
 
+def cue_forms(key: str) -> set[str]:
+    """
+    A cue word in its singular and plural forms, on its last word ("model" ~ "models",
+    "pipeline" ~ "pipelines", "go modules" ~ "go module", "library" ~ "libraries").
+    """
+    if not key:
+        return set()
+    *head, last = key.split()
+    forms = {last, last + "s", last + "es"}
+    if last.endswith("ies") and len(last) > 4:
+        forms.add(last[:-3] + "y")
+    elif last.endswith("es") and len(last) > 3:
+        forms |= {last[:-2], last[:-1]}
+    elif last.endswith("s") and len(last) > 2:
+        forms.add(last[:-1])
+    if last.endswith("y") and len(last) > 2:
+        forms.add(last[:-1] + "ies")
+    return {" ".join([*head, form]) for form in forms}
+
+
 def _cue_near(cue_words: tuple[str, ...], lines: list[str], line_no: int, own_key: str) -> bool:
+    """A cue word, singular or plural, on this line or the one before or after."""
     window = squash_words(" ".join(lines[max(0, line_no - 1): line_no + 2]))
-    return any(f" {term_key(cue)} " in window for cue in cue_words if term_key(cue) and term_key(cue) != own_key)
+    for cue in cue_words:
+        key = term_key(cue)
+        if not key or key == own_key:
+            continue
+        if any(f" {form} " in window for form in cue_forms(key) if form != own_key):
+            return True
+    return False
 
 
 def _case_ok(entry: _Entry, original: str) -> bool:

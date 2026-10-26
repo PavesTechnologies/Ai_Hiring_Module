@@ -306,3 +306,50 @@ def test_without_the_alias_restful_api_is_not_rest_apis():
     records = build_evidence(text=F5_LINES, index=ScanIndex.build(catalog, {}), resolver=SkillSenseResolver([]),
                              llm_matches=[])
     assert REST not in {r.canonical_skill_id for r in records}
+
+
+# --- "ML" (Machine Learning), only next to an ML work word; cue words singular or plural ----------
+
+def _ml_index():
+    ml = SimpleNamespace(id=uuid4(), canonical_name="Machine Learning", aliases=["ML"])
+    rules = {**RULES, "ml": ScanTermRule(POLICY_REQUIRE_CUE, ("model", "platform", "pipeline", "engineer", "ops"))}
+    return ScanIndex.build(CATALOG + [ml], rules), ml.id
+
+
+@pytest.mark.parametrize("line", [
+    "Designed and deployed an ML platform with MLflow, a feature store and automated retraining",   # S1
+    "Deployed fraud-detection models to production with Azure ML",                                  # plural cue
+    "Led a team of 25 ML engineers and researchers",                                                # plural cue
+    "Built ML pipelines for demand forecasting",
+    "Set up ML ops for the scoring service",
+])
+def test_ml_matches_next_to_an_ml_work_word(line):
+    index, ml_id = _ml_index()
+    assert ml_id in {hit.skill_id for hit in scan_text(line, index)}
+
+
+@pytest.mark.parametrize("line", [
+    "Wrote the ML section of the annual report",            # no cue word nearby
+    "Reduced costs by 12 ml per unit in the bottling plant",  # lower case is never the acronym
+])
+def test_ml_without_a_cue_or_in_lower_case_never_matches(line):
+    index, ml_id = _ml_index()
+    assert ml_id not in {hit.skill_id for hit in scan_text(line, index)}
+
+
+@pytest.mark.parametrize("key, forms", [
+    ("model", {"model", "models"}),
+    ("models", {"models", "model"}),
+    ("pipeline", {"pipeline", "pipelines"}),
+    ("library", {"library", "libraries"}),
+    ("go modules", {"go modules", "go module"}),
+])
+def test_cue_words_match_singular_and_plural(key, forms):
+    from app.services.skills.resume_skill_scanner import cue_forms
+    assert forms <= cue_forms(key)
+
+
+def test_the_ml_rule_is_seeded():
+    from app.seeds.seed_scoring_v2 import SCAN_TERMS
+    [ml] = [t for t in SCAN_TERMS if t[0] == "ML"]
+    assert ml[1] == POLICY_REQUIRE_CUE and {"model", "platform", "pipeline", "engineer", "ops"} <= set(ml[2])

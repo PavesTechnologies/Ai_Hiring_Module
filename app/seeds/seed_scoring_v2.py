@@ -31,6 +31,10 @@ SCAN_TERMS = [
     ("PM", POLICY_EXCLUDE, [], "Project / product / programme manager, or a time of day."),
     ("R", POLICY_REQUIRE_CUE, ["RStudio", "tidyverse", "ggplot2", "CRAN", "Shiny", "statistical computing", "dplyr"],
      "The R language, only next to R tooling."),
+    # Machine Learning's alias "ML" - two letters, so scanned only next to ML work words
+    # (cue words match singular and plural: "ML engineers", "ML models").
+    ("ML", POLICY_REQUIRE_CUE, ["model", "platform", "pipeline", "engineer", "ops"],
+     "Machine Learning abbreviation, only next to a model / platform / pipeline / engineer / ops word."),
     ("Go", POLICY_REQUIRE_CUE, ["Golang", "goroutine", "goroutines", "gRPC", "Gin", "go modules"],
      "Go the language, never the verb."),
     ("SPM", POLICY_REQUIRE_CUE, ["ServiceNow", "ITBM", "PPM", "Strategic Portfolio Management"],
