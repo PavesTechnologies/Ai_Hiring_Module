@@ -5,13 +5,13 @@ data files app/seeds/seed_product_config.py loads:
     python scripts/config_seed/build_seed_data.py <diff.json> [out dir]
 
 Each file is one section with an "approved" flag; the seed loads approved
-sections only. Two sections are written unapproved, by decision:
-  - catalogue_dev_added.json: skills added in dev by hand or by JD calibration
-    (production checklist: review them before export), and any rule that
-    needs one of them;
-  - platform_pending_decision.json: settings changed in dev that production
-    must decide (default weights, the free-tier daily LLM call cap).
-Format-only setting edits (30.00 -> 30) are dropped as no-ops.
+sections only. catalogue_dev_added.json is written unapproved, by decision:
+skills added in dev by hand or by JD calibration (production checklist: review
+them before export - docs/seed_review_dev_added_skills.md), and any rule that
+needs one of them. The dev default weights are seeded (decided 2026-10-26).
+Never seeded: SCORING_V2_DAILY_LLM_CALL_CAP - production sets the per-model
+daily cap after enabling billing (docs/roadmap.md). Format-only setting edits
+(30.00 -> 30) are dropped as no-ops.
 """
 import json
 import os
@@ -19,9 +19,8 @@ import sys
 from decimal import Decimal, InvalidOperation
 
 DEV_ADDED_SOURCES = {"manual entry", "HR_CALIBRATION"}
-# Settings production must decide; never seeded from dev values without a decision.
-PENDING_DECISION_SETTINGS = {"CAMPAIGN_WEIGHT_DETERMINISTIC", "CAMPAIGN_WEIGHT_SEMANTIC", "CAMPAIGN_WEIGHT_AI",
-                             "AI_PASS_THRESHOLD", "SEMANTIC_PASS_THRESHOLD", "SCORING_V2_DAILY_LLM_CALL_CAP"}
+# Never seeded: environment-specific (dev runs on the free tier). Production sets it after enabling billing.
+EXCLUDED_SETTINGS = {"SCORING_V2_DAILY_LLM_CALL_CAP"}
 # Renamed in dev; applied to a fresh database only while the old row is untouched.
 RENAMES = {"skill_ontology": {"REST API": "REST APIs"}}
 
@@ -77,19 +76,21 @@ def build(diff: dict) -> dict:
         *rules_pending.values()]}
 
     settings = diff["platform_config"]
-    approved_settings, pending_settings, dropped = {}, {}, []
+    approved_settings, dropped, excluded = {}, [], []
     for key, fields in settings["change"].items():
         name = json.loads(key)[0]
         value = fields.get("value")
-        if value and _same_number(value["from"], value["to"]) and set(fields) == {"value"}:
+        if name in EXCLUDED_SETTINGS:
+            excluded.append(name)
+        elif value and _same_number(value["from"], value["to"]) and set(fields) == {"value"}:
             dropped.append(name)
-        elif name in PENDING_DECISION_SETTINGS:
-            pending_settings[key] = fields
         else:
             approved_settings[key] = fields
     files["platform.json"] = {"sections": [
         _section("platform_config", settings["keys"], settings["fields"], approved=True,
-                 note=f"Scoring v2 and model-capability config built in dev. Format-only edits dropped: {sorted(dropped)}.",
+                 note=f"Scoring v2 and model-capability config and the default weights built in dev. Format-only "
+                      f"edits dropped: {sorted(dropped)}. Never seeded: {sorted(excluded)} - set in production after "
+                      f"enabling billing.",
                  add=settings["add"], change=approved_settings),
         _section("prompt_templates", diff["prompt_templates"]["keys"], diff["prompt_templates"]["fields"],
                  approved=True, note="Prompt template edits made in dev.",
@@ -99,11 +100,6 @@ def build(diff: dict) -> dict:
                  note="The active embedding model - a fresh database has none.",
                  add=diff["embedding_model_versions"]["add"]),
     ]}
-    files["platform_pending_decision.json"] = {"sections": [
-        _section("platform_config", settings["keys"], settings["fields"], approved=False,
-                 note="PENDING DECISION: values changed in dev (default weights; the free-tier daily LLM call "
-                      "cap). Set the production values, then set approved.",
-                 change=pending_settings)]}
     files["catalogue.json"] = {"sections": [files["catalogue.json"]]}
     return files
 

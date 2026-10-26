@@ -105,13 +105,17 @@ def test_build_splits_dev_added_skills_and_their_rules_into_the_pending_review_f
     assert list(rules["skill_senses"]["add"]) == ['["Python", "x"]']             # names an approved skill
 
 
-def test_build_drops_format_only_edits_and_holds_decisions():
-    files = _script("build_seed_data").build(_diff())
+def test_build_seeds_the_dev_weights_drops_format_only_edits_and_never_the_call_cap():
+    diff = _diff()
+    diff["platform_config"]["change"]['["SCORING_V2_DAILY_LLM_CALL_CAP"]'] = {"value": {"from": "300", "to": "{}"}}
+    files = _script("build_seed_data").build(diff)
     approved = files["platform.json"]["sections"][0]
-    assert list(approved["change"]) == ['["SCORING_V2_CONFIG"]']
-    held = files["platform_pending_decision.json"]["sections"][0]
-    assert not held["approved"] and list(held["change"]) == ['["CAMPAIGN_WEIGHT_SEMANTIC"]']
+    assert approved["approved"]
+    assert sorted(approved["change"]) == ['["CAMPAIGN_WEIGHT_SEMANTIC"]', '["SCORING_V2_CONFIG"]']   # dev weights seeded
     assert "AI_PASS_THRESHOLD" in approved["note"]                               # 50.00 -> 50 is the same number
+    assert "platform_pending_decision.json" not in files
+    assert not any('"SCORING_V2_DAILY_LLM_CALL_CAP"' in key for f in files.values()
+                   for sec in f["sections"] for key in list(sec["add"]) + list(sec["change"]))
 
 
 def test_diff_reports_adds_changes_and_rows_only_in_the_reference():
@@ -132,7 +136,7 @@ def _sections():
 
 def test_the_pending_files_stay_unapproved_until_reviewed():
     for name, section in _sections():
-        if name in ("catalogue_dev_added.json", "platform_pending_decision.json"):
+        if name == "catalogue_dev_added.json":
             assert section["approved"] is False, f"{name}:{section['table']} must stay unapproved until reviewed"
 
 
@@ -146,6 +150,19 @@ def test_approved_rules_only_name_skills_an_approved_section_or_the_base_seed_pr
         if section["approved"] and section["table"] in ("skill_senses", "skill_pattern_rules", "certification_skills"):
             for values in section["add"].values():
                 assert values["skill"] in known, f"{name}:{section['table']} names {values['skill']!r}"
+
+
+def test_the_daily_llm_call_cap_is_never_seeded():
+    for name, section in _sections():
+        keys = list(section["add"]) + list(section["change"])
+        assert '["SCORING_V2_DAILY_LLM_CALL_CAP"]' not in keys, f"{name}: set it in production after enabling billing"
+
+
+def test_the_dev_default_weights_are_seeded():
+    platform = next(s for n, s in _sections() if n == "platform.json" and s["table"] == "platform_config")
+    assert platform["approved"]
+    assert platform["change"]['["CAMPAIGN_WEIGHT_DETERMINISTIC"]']["value"]["to"] == "40"
+    assert platform["change"]['["CAMPAIGN_WEIGHT_SEMANTIC"]']["value"]["to"] == "30"
 
 
 def test_the_data_is_configuration_only():

@@ -10,10 +10,22 @@
     "description"
    ],
    "approved": true,
-   "note": "Scoring v2 and model-capability config built in dev. Format-only edits dropped: ['AI_PASS_THRESHOLD', 'CAMPAIGN_WEIGHT_AI', 'SEMANTIC_PASS_THRESHOLD'].",
+   "note": "Scoring v2 and model-capability config and the default weights built in dev. Format-only edits dropped: ['AI_PASS_THRESHOLD', 'CAMPAIGN_WEIGHT_AI', 'SEMANTIC_PASS_THRESHOLD']. Never seeded: ['SCORING_V2_DAILY_LLM_CALL_CAP'] - set in production after enabling billing.",
    "renames": {},
    "add": {},
    "change": {
+    "[\"CAMPAIGN_WEIGHT_DETERMINISTIC\"]": {
+     "value": {
+      "from": "30.00",
+      "to": "40"
+     }
+    },
+    "[\"CAMPAIGN_WEIGHT_SEMANTIC\"]": {
+     "value": {
+      "from": "40.00",
+      "to": "30"
+     }
+    },
     "[\"LLM_MODEL_CAPABILITIES\"]": {
      "value": {
       "from": "[\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"gemini-3*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Google Gemini 3 developer guide: keep temperature at its default (lowering it can cause looping or degraded output). Structured output: current adapter (response_schema).\"\n },\n {\n  \"provider\": \"GOOGLE\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"response_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"Gemini API GenerationConfig.temperature (Gemini 2.x and earlier). Structured output: current adapter (response_schema). No output limit sent today.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"o[0-9]*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI reasoning models (o-series) accept only the default temperature. Structured output: current adapter (strict json_schema via parse()).\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"gpt-5*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI GPT-5 models: temperature NOT sent - reasoning variants accept only the default, and non-reasoning chat variants are unverified. Structured output: current adapter.\"\n },\n {\n  \"provider\": \"OPENAI\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_schema\",\n  \"max_output_tokens\": null,\n  \"source\": \"OpenAI Chat Completions temperature (gpt-4o / gpt-4.1 family). Structured output: current adapter. No output limit sent today.\"\n },\n {\n  \"provider\": \"ANTHROPIC\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": false,\n  \"structured_output\": \"output_format\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Temperature NOT sent until verified per model (newer Claude models may restrict sampling parameters). Structured output and 16000 max_tokens: current adapter values.\"\n },\n {\n  \"provider\": \"GROQ\",\n  \"model_pattern\": \"*\",\n  \"supports_temperature\": true,\n  \"structured_output\": \"json_object\",\n  \"max_output_tokens\": 16000,\n  \"source\": \"Groq OpenAI-compatible API temperature. json_object mode and 16000 max_completion_tokens: current adapter values (GROQ_MAX_COMPLETION_TOKENS).\"\n }\n]",
