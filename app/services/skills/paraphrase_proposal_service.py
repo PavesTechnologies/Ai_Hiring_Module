@@ -39,6 +39,35 @@ DEFAULT_PARAPHRASE_CONFIG = {
 _DEFINITE_JD_SENSE = {"cue", "title", "hr"}
 _SPACES = re.compile(r"\s+")
 
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+_DATE_RANGE = re.compile(
+    rf"\b(?:{_MONTH}\s+)?\d{{4}}\s*[-–—]\s*(?:present|current|now|today|(?:{_MONTH}\s+)?\d{{4}})\b", re.I)
+_HEADER_MARKS = ("—", "·", "|")
+_AFTER_TITLE = ("—", "–", "-", "·", "|", ",", "@", "(", "at ")
+
+
+def is_title_line(line: str, job_titles=()) -> bool:
+    """
+    A job-title line or a role header - never paraphrase evidence (a title says what the
+    job was called, not what was done). Only the whole line: a bullet that mentions a
+    title word ("Led the Data Engineering team that built...") is not one.
+      - a parsed job title on its own, or followed by the employer / dates
+        ("Head of Data Engineering — Orbit Payments · Oct 2021 – present");
+      - a role header: a date range and a header mark (— · |), with no work verb.
+    The explicit JOB_TITLE pattern rules are separate and unaffected.
+    """
+    from app.services.skills.evidence_rules import DEFAULT_RULES
+    text = _SPACES.sub(" ", line or "").strip(" \t•·-–")
+    low = text.lower()
+    for title in job_titles or ():
+        t = _SPACES.sub(" ", str(title)).strip().lower()
+        if t and low.startswith(t):
+            rest = low[len(t):].strip()
+            if not rest or rest.startswith(_AFTER_TITLE):
+                return True
+    return (bool(_DATE_RANGE.search(text)) and any(mark in text for mark in _HEADER_MARKS)
+            and not DEFAULT_RULES.does_the_work(text))
+
 
 @dataclass(frozen=True)
 class ParaphraseTarget:
@@ -71,10 +100,11 @@ def skill_text(target: ParaphraseTarget) -> str:
     return ". ".join(p.strip().rstrip(".") for p in parts if p and p.strip()) + "."
 
 
-def candidate_lines(text: str, config: dict, exclude_line=None) -> list[tuple[int, str, str]]:
+def candidate_lines(text: str, config: dict, exclude_line=None, job_titles=()) -> list[tuple[int, str, str]]:
     """
     (line index, line, section) of the resume lines paraphrase may propose.
     exclude_line(line) -> True: never proposed (a qualifier line, "currently learning ...").
+    job_titles: the parse's work-experience titles - a title line or role header is never proposed.
     """
     lines = (text or "").splitlines()
     sections = set(config.get("sections") or ["EXPERIENCE"])
@@ -85,7 +115,7 @@ def candidate_lines(text: str, config: dict, exclude_line=None) -> list[tuple[in
         if words < int(config.get("min_words", 4)) or words > int(config.get("max_words", 40)):
             continue
         section = section_of_line(lines, i)
-        if section in sections and not (exclude_line and exclude_line(raw)):
+        if section in sections and not (exclude_line and exclude_line(raw)) and not is_title_line(line, job_titles):
             out.append((i, line, section))
     return out
 
@@ -103,15 +133,16 @@ class ParaphraseProposalService:
         self.blocked = blocked
 
     def propose(self, text: str, targets: list[ParaphraseTarget], evidence_rows: list, config: dict | None = None,
-                core_skill_ids=None, exclude_line=None) -> tuple[list[Proposal], dict]:
+                core_skill_ids=None, exclude_line=None, job_titles=()) -> tuple[list[Proposal], dict]:
         """
         (proposals, scores) - scores[skill_id] lists every candidate line's
         similarity (and why a line was excluded), for the dry run.
         core_skill_ids: every JD core skill; a line quoted as evidence for any
         of them (other than the target) is never proposed.
+        job_titles: the parse's work-experience titles (title lines are never proposed).
         """
         config = {**DEFAULT_PARAPHRASE_CONFIG, **(config or {})}
-        lines = candidate_lines(text, config, exclude_line)
+        lines = candidate_lines(text, config, exclude_line, job_titles)
         if not targets or not lines:
             return [], {}
         vectors = self.embed([skill_text(t) for t in targets] + [line for _, line, _ in lines])

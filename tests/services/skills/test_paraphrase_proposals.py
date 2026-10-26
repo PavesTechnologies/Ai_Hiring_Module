@@ -234,3 +234,43 @@ def test_no_proposal_means_no_llm_call():
             persist=True, use_cache=True)
     confirm_cls.return_value.confirm.assert_not_called()
     assert info["llm_calls"] == 0 and extra == []
+
+
+# --- job-title lines and role headers are never proposed; bullets mentioning a title word are ------
+
+from app.services.skills.paraphrase_proposal_service import is_title_line  # noqa: E402
+
+TITLES = ["Data Engineer", "Head of Data Engineering", "Software Engineer", "Director, Data & ML Platforms"]
+
+
+@pytest.mark.parametrize("line", [
+    "Data Engineer — Northstar Analytics · Oct 2011 – Sep 2015",                 # senior S1
+    "Software Engineer — Spice Coast Software · Oct 2006 – Sep 2012",            # senior S7
+    "Head of Data Engineering",                                                  # the title alone
+    "Director, Data & ML Platforms — Lumen Commerce · Oct 2019 – present",
+    "Head of Data Engineering, Orbit Payments",
+    "Senior Data Scientist · Brightwater Advisory · Jan 2020 – Mar 2022",        # a role header, title not parsed
+])
+def test_title_lines_and_role_headers_are_skipped(line):
+    assert is_title_line(line, TITLES)
+
+
+@pytest.mark.parametrize("line", [
+    "Led the Data Engineering team that built the lakehouse and streaming pipelines",   # mentions a title word
+    "Data Engineer onboarding: built the ingestion framework new hires start from",     # title then no separator
+    "Built batch and streaming pipelines in Spark (2019 – 2021)",                      # dates, no header mark
+    "Migrated the warehouse to Databricks — Oct 2020 – Mar 2021",                      # a work verb: a bullet
+])
+def test_bullets_that_mention_a_title_word_stay_evidence(line):
+    assert not is_title_line(line, TITLES)
+
+
+def test_candidate_lines_drop_title_lines_but_keep_the_bullets():
+    text = ("Experience\n"
+            "Data Engineer — Northstar Analytics · Oct 2011 – Sep 2015\n"
+            "- Led the Data Engineering team that built the lakehouse and streaming pipelines\n"
+            "- Wrote ETL pipelines in Python and SQL for retail reporting\n")
+    lines = [line for _, line, _ in candidate_lines(text, {"sections": ["EXPERIENCE"], "min_words": 4,
+                                                            "max_words": 40}, job_titles=TITLES)]
+    assert lines == ["Led the Data Engineering team that built the lakehouse and streaming pipelines",
+                     "Wrote ETL pipelines in Python and SQL for retail reporting"]
