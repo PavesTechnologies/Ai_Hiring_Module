@@ -6,10 +6,11 @@ SCORING_V2_CONFIG["evidence"], defaults below.
   with", ...) is not evidence for any skill on it, from any source.
   Catalogue skill names are taken out of the line first, so "Machine
   Learning, Python" is not a "learning" line.
-- work verbs: an exact match auto-confirms only on a line where the
-  candidate does the work ("built", "configured", ...) and none of the
-  not-work verbs appears ("sold", "demoed", "supported", "attended", ...).
-  Anything else goes to the 3-vote confirmation.
+- work verbs: an exact match auto-confirms only on a line that leads with
+  the work - its first verb is a work verb ("built", "configured", ...) -
+  and none of the not-work verbs appears ("sold", "demoed", "supported",
+  "attended", ...). A work verb later in the line ("Tested REST endpoints
+  using Postman") doesn't count. Anything else goes to the 3-vote confirmation.
 - role: the job title and company of the work-history role a resume line
   belongs to, shown to the voters with the excerpt.
 
@@ -43,6 +44,28 @@ DEFAULT_EVIDENCE_RULES = {
         "consulted", "consult", "consults", "consulting",
     ],
 }
+
+
+# Verbs a resume line often leads with that are neither work nor not-work verbs - the line's
+# first verb then isn't a work verb, so it goes to the vote. Regular past tenses ("tested",
+# "managed") are caught by their "-ed" ending; these are the ones that aren't.
+_OTHER_VERBS = frozenset({
+    "led", "lead", "leads", "leading", "ran", "run", "runs", "running", "drove", "drive", "drives", "driving",
+    "oversaw", "oversee", "oversees", "overseeing", "own", "owns", "owning", "made", "make", "makes", "making",
+    "set", "sets", "setting", "took", "take", "takes", "taking", "grew", "grow", "grows", "growing",
+    "taught", "teach", "teaches", "teaching", "manage", "manages", "managing", "test", "tests", "testing",
+    "work", "works", "working", "help", "helps", "helping", "assist", "assists", "assisting",
+    "handle", "handles", "handling", "deliver", "delivers", "delivering", "coordinate", "coordinates",
+    "coordinating", "review", "reviews", "reviewing", "train", "trains", "training", "mentor", "mentors",
+    "mentoring", "monitor", "monitors", "monitoring", "troubleshoot", "troubleshoots", "troubleshooting",
+    "troubleshot", "resolve", "resolves", "resolving", "participate", "participates", "participating",
+    "contribute", "contributes", "contributing", "collaborate", "collaborates", "collaborating",
+    "won", "win", "wins", "spoke", "speak", "speaks", "speaking",
+})
+# "-ed" words that are not past-tense verbs where a line starts with a noun phrase.
+_NOT_VERBS = frozenset({"speed", "embedded", "distributed", "advanced", "based", "related", "detailed",
+                        "dedicated", "limited", "certified", "skilled", "experienced", "interested",
+                        "seasoned", "talented", "focused", "oriented", "hundred"})
 
 
 def _keys(values) -> list[str]:
@@ -79,6 +102,25 @@ class EvidenceRules:
         """A work verb on the line and no not-work verb."""
         words = set(term_key(line or "").split())
         return bool(words & self.work_verbs) and not (words & self.non_work_verbs)
+
+    def leading_verb(self, line: str | None) -> str | None:
+        """
+        The line's first verb: the first word that is a work / not-work verb, another common
+        resume verb ("led", "ran"), or a past-tense "-ed" word ("tested"). None when there is none.
+        """
+        for word in term_key(line or "").split():
+            if (word in self.work_verbs or word in self.non_work_verbs or word in _OTHER_VERBS
+                    or (len(word) >= 5 and word.endswith("ed") and word not in _NOT_VERBS)):
+                return word
+        return None
+
+    def leads_with_the_work(self, line: str | None) -> bool:
+        """
+        What auto-confirms: the line's first verb is a work verb and no not-work verb appears.
+        "Built the ML platform" does; "Tested REST endpoints manually using Postman" does not -
+        a later verb ("using") never counts, so that line goes to the vote.
+        """
+        return self.leading_verb(line) in self.work_verbs and not self.not_doing_the_work(line)
 
     def not_doing_the_work(self, line: str | None) -> bool:
         """A not-work verb on the line ("sold", "demoed", "attended", "supported", ...)."""

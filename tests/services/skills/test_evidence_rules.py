@@ -430,3 +430,35 @@ def test_the_paraphrase_search_text_adds_the_requirement_text():
     [plain] = _paraphrase_targets_for([CoreSkillSpec(INC, "Incident Management")], {}, {INC: skill}, [])
     assert skill_text(target) == "Incident Management. Handling IT incidents and outages. Run major incident bridges."
     assert skill_text(plain) == "Incident Management. Handling IT incidents and outages."
+
+
+# --- auto-confirm reads the line's leading verb ------------------------------------------
+
+@pytest.mark.parametrize("line, verb, leads", [
+    ("Built the first ML feature pipelines with the data science team", "built", True),
+    ("Designed and deployed an ML platform with MLflow", "designed", True),
+    ("• Configured incident and change modules on ServiceNow", "configured", True),
+    ("Python, Flask, PostgreSQL, deployed with Docker", "deployed", True),        # no verb before it
+    ("Tested REST endpoints manually using Postman", "tested", False),            # H7: "using" comes later
+    ("Led the team that built the lakehouse", "led", False),
+    ("Managed vendors who implemented ServiceNow ITSM", "managed", False),
+    ("Ran product demos of incident and change modules", "ran", False),
+    ("Distributed systems built on Kafka", "built", True),                        # an adjective, not the verb
+    ("Kafka and Spark", None, False),
+])
+def test_the_leading_verb_decides(line, verb, leads):
+    assert DEFAULT_RULES.leading_verb(line) == verb
+    assert DEFAULT_RULES.leads_with_the_work(line) is leads
+
+
+def test_a_not_work_verb_anywhere_still_stops_it():
+    assert not DEFAULT_RULES.leads_with_the_work("Built dashboards supporting the sales team on Salesforce")
+
+
+def test_h7_rest_apis_go_to_the_vote_instead_of_auto_confirming():
+    from app.services.skills.core_skill_confirmation_service import auto_confirm_evidence
+    spec = CoreSkillSpec(INC, "REST APIs")
+    tested = _item_row(INC, ("EXPERIENCE", "Tested REST endpoints manually using Postman"))
+    built = _item_row(INC, ("EXPERIENCE", "Built REST APIs for the payments service in Flask"))
+    assert auto_confirm_evidence(spec, [tested]) is None
+    assert auto_confirm_evidence(spec, [built])["text"].startswith("Built REST APIs")

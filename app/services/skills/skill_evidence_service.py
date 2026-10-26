@@ -81,7 +81,7 @@ def _snippet_rank(item: "_Occurrence", lines: list[str], rules: EvidenceRules) -
     if item.source != SOURCE_SCAN or item.line_no is None:
         return 2
     section = section_of_line(lines, item.line_no)
-    if section in (SECTION_EXPERIENCE, SECTION_PROJECTS) and rules.does_the_work(item.snippet):
+    if section in (SECTION_EXPERIENCE, SECTION_PROJECTS) and rules.leads_with_the_work(item.snippet):
         return 0
     return 1 if section in STRONG_SECTIONS else 2
 

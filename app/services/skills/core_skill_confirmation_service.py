@@ -267,7 +267,7 @@ def auto_confirm_evidence(spec: CoreSkillSpec, rows: list, auto_sections=AUTO_CO
     The evidence item that auto-confirms this core skill without an LLM
     call: an exact catalogue scan (SCAN - never DERIVED/INFERRED/LLM-only),
     sense definitely matching, on an experience line (or projects, for the
-    Fresher template) where the candidate does the work - a work verb and
+    Fresher template) that leads with the work - its first verb a work verb and
     no "sold / demoed / supported / attended". A skills-list or summary
     match, or a line where they only sell or support it, goes to the vote.
     """
@@ -277,7 +277,7 @@ def auto_confirm_evidence(spec: CoreSkillSpec, rows: list, auto_sections=AUTO_CO
             continue
         for item in _attr(row, "evidence") or []:
             if (item.get("source") == "SCAN" and item.get("section") in auto_sections
-                    and rules.does_the_work(item.get("text"))):
+                    and rules.leads_with_the_work(item.get("text"))):
                 return item
     return None
 

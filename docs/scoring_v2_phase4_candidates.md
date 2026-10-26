@@ -42,3 +42,45 @@ voted on). It covers this one wording family, not paraphrase in general.
   whether a clause inside a quoted line may still be proposed.
 - Check the LLM-call cost: more candidate units means more proposals and
   more votes against the daily cap.
+
+## One line confirming two core skills; the best line for a third already used (noted 2026-10-26)
+
+**What happens:** senior test set, S2 ("Head of Data & AI Platforms").
+Machine Learning auto-confirms from a cloud-architecture line:
+
+> Designed the Azure cloud architecture for the data and ML platform
+
+That line is S2's first Machine Learning scan line. "ML" counts as Machine
+Learning next to a cue word ("platform"), and the line leads with a work
+verb. The same line also auto-confirms Cloud Architecture. It mentions ML
+only in passing; the line that really shows ML work comes second:
+
+> Built the first ML feature pipelines with the data science team
+
+MLOps is then left with no confirmable line. S2 lists it only in the skills
+list (listed-only, so UNCERTAIN). In the paraphrase search its strongest
+experience line is the ML feature-pipeline line (0.487), which is excluded
+because it is already Machine Learning evidence. The next one, "Deployed
+fraud-detection models to production with Azure ML, with monitoring and
+scheduled retraining", scores 0.410, below the 0.45 threshold.
+
+S2's outcome is right (HOLD, for experience 0.9 years short). But it depends
+on Machine Learning being confirmed from a neighbouring skill's line: without
+it S2 would most likely be REJECT. The ML rule was left as it is (decision
+2026-10-26).
+
+**Related, same candidate:** Data Engineering is confirmed by the vote on a
+title line ("Head of Data Engineering — Orbit Payments · Oct 2021 – present").
+The paraphrase step skips title lines; the scan evidence and the vote do not.
+
+**Ideas to evaluate:**
+
+- Choose, for each core skill, the line that is most about that skill (for
+  example by similarity to the skill description plus the JD's requirement
+  text), rather than the first scan line that qualifies.
+- Allow one line to confirm several core skills only when it is clearly about
+  each of them, or let a line excluded for "evidence for another core skill"
+  still be proposed when it is a much better match for the searched skill.
+- Treat a work-history title line as weak evidence: never auto-confirmed and
+  shown to the voters as a title.
+- Evaluate on real resumes, as for clause splitting.
