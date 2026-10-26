@@ -36,7 +36,8 @@ class AuditLog(Base):
     action_type: Mapped[ActionType] = mapped_column(SAEnum(ActionType, name="audit_action_type_enum"), nullable=False)
     entity_type: Mapped[EntityType] = mapped_column(SAEnum(EntityType, name="audit_entity_type_enum"), nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("hiring_campaigns.id"), nullable=True)
+    # A bare id like entity_id - no FK, so a deleted campaign's audit trail stays (append-only table).
+    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(INET, nullable=True)
