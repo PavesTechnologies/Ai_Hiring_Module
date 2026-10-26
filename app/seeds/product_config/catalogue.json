@@ -1882,7 +1882,9 @@
     "[\"CrewAI\"]": {
      "canonical_name": "CrewAI",
      "aliases": [
-      "Multi-agent Framework"
+      "Multi-agent Framework",
+      "Crew AI",
+      "CrewAI Framework"
      ],
      "category": "AI / ML",
      "parent": "Generative AI",

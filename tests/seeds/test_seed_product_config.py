@@ -174,3 +174,20 @@ def test_the_data_is_configuration_only():
         assert not contact.search(text), f"{path.name}: contact-like string"
         assert not uuid.search(text), f"{path.name}: a database id - natural keys only"
         assert not secret.search(text), f"{path.name}: a credential-like key"
+
+
+def test_dev_added_skills_merged_or_dropped_in_dev_are_not_seeded():
+    diff = _diff()
+    diff["skill_ontology"]["add"]['["Crew AI"]'] = {"canonical_name": "Crew AI", "source": "manual entry", "is_active": False}
+    files = _script("build_seed_data").build(diff)
+    pending = files["catalogue_dev_added.json"]["sections"][0]
+    assert '["Crew AI"]' not in pending["add"] and "Crew AI" in pending["note"]
+    assert '["Crew AI"]' not in files["catalogue.json"]["sections"][0]["add"]
+
+
+def test_the_committed_data_seeds_no_inactive_dev_added_skill():
+    for name, section in _sections():
+        if section["table"] == "skill_ontology":
+            for key, values in section["add"].items():
+                if values.get("source") in ("manual entry", "HR_CALIBRATION"):
+                    assert values.get("is_active") is not False, f"{name}: {key} is inactive in dev"

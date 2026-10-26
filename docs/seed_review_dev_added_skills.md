@@ -1,26 +1,15 @@
 # Review: dev-added skills before export
 
+Updated 2026-10-26: the approved fixes are done in dev (audited as the reviewing HR admin) and the seed data regenerated. What is left for review is marked **Review**.
+
 Production checklist item (see [roadmap](roadmap.md)). These 104 skills are in `app/seeds/product_config/catalogue_dev_added.json`, which does not load until reviewed. To approve: fix, merge or drop rows in that file (or in dev, then regenerate it with `scripts/config_seed/`), then set `approved: true` on its sections.
 
-**Nothing personal found:** no person's name, email or phone among the names, aliases or descriptions. Suggested actions: Fix 3, Keep 76, Merge 6, Rename 4, Review 13, Tidy 2.
+**Nothing personal found:** no person's name, email or phone among the names, aliases or descriptions. Status: Done 13, Keep 79, Review 12.
 
 The rules in the same file wait for these skills: the 2 Change Management senses, the 2 pattern rules (AI Governance, Program Management) and all 11 certification mappings.
 
-| Skill | Origin | Used by | Suggested | Note |
+| Skill | Origin | Used by | Status | Note |
 |---|---|---|---|---|
-| alb | Added by hand, 2026-08-31 | - | Fix | Categorised as Blockchain; it is AWS ALB (Application Load Balancer). Rename and recategorise. |
-| semantic analysis | Added by hand, 2026-08-31 | - | Fix | Its aliases are LangGraph and its parent is LangChain - they belong to another skill. Clear them. |
-| tranformers | Added by hand, 2026-08-31 | - | Fix | Typo (Transformers), and the same misplaced LangGraph aliases and LangChain parent. |
-| algorithms | Added by hand, 2026-09-17 | - | Merge | See 'Data Structures and Algorithms'. |
-| Crew AI | Added by hand, 2026-08-31 | - | Merge | Duplicate of the catalogue skill CrewAI. |
-| CrewAI Framework | Added by hand, 2026-08-31 | - | Merge | Overlaps CrewAI / Crew AI. |
-| data structures | Added by hand, 2026-09-17 | - | Merge | See 'Data Structures and Algorithms'. |
-| Data Structures and Algorithms | Added by hand, 2026-08-31 | - | Merge | Overlaps 'data structures' and 'algorithms' - keep one form. |
-| REST | Added by hand, 2026-09-23 | - | Merge | Overlaps REST APIs (and APIs). |
-| dab deployments | Added by hand, 2026-08-31 | - | Rename | A phrase from one document (Databricks Asset Bundles). |
-| delta lake with python | Added by hand, 2026-08-31 | - | Rename | A phrase from one document (Delta Lake). |
-| delta lake with sparks sql in databricks | Added by hand, 2026-08-31 | - | Rename | A phrase from one document, not a skill name (Delta Lake / Spark SQL). |
-| lake flow | Added by hand, 2026-08-31 | - | Rename | Product is spelled Lakeflow. |
 | apache | Added by hand, 2026-08-31 | - | Review | Ambiguous: Apache HTTP Server or an Apache project? |
 | APIs | Added by hand, 2026-09-23 | - | Review | Very broad; overlaps REST APIs and SOAP APIs. |
 | catalog federation | Added by hand, 2026-08-31 | - | Review | Databricks feature phrasing; keep if you screen for it. |
@@ -31,14 +20,25 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 | HTTP methods | Added by hand, 2026-09-17 | - | Review | Generic; part of REST APIs? |
 | mysql rds | Added by hand, 2026-08-31 | - | Review | Overlaps sql / Amazon RDS. |
 | pip | Added by hand, 2026-08-31 | - | Review | A tool rather than a skill. |
-| ServiceNow development | Added by hand, 2026-09-23 | 1 [P3] JD | Review | Alias 'ServiceNow' matches any ServiceNow mention (ITSM, SPM roles too). |
 | Version Control | Added by hand, 2026-08-31 | - | Review | Overlaps git; decide whether it is a separate skill. |
 | VS Code | Added by hand, 2026-09-23 | - | Review | An editor rather than a skill. |
-| Object-Oriented Programming | Added by hand, 2026-08-31 | - | Tidy | One alias repeats the name (harmless). |
-| prompt engineering | Added by hand, 2026-08-31 | - | Tidy | Its alias repeats the name (harmless). |
+| AWS ALB | Added by hand, 2026-08-31 | - | Done | Was 'alb' under Blockchain - renamed AWS ALB, category Cloud. |
+| Crew AI | Added by hand, 2026-08-31 | - | Done | Merged into CrewAI (now its alias); dropped. (Inactive - not seeded.) |
+| CrewAI Framework | Added by hand, 2026-08-31 | - | Done | Merged into CrewAI (now its alias); dropped. (Inactive - not seeded.) |
+| Databricks Asset Bundles | Added by hand, 2026-08-31 | - | Done | Was 'dab deployments' - renamed, category Data Engineering. |
+| delta lake with python | Added by hand, 2026-08-31 | - | Done | Dropped - Delta Lake exists. (Inactive - not seeded.) |
+| delta lake with sparks sql in databricks | Added by hand, 2026-08-31 | - | Done | Dropped - Delta Lake and Spark SQL exist. (Inactive - not seeded.) |
+| Lakeflow | Added by hand, 2026-08-31 | - | Done | Was 'lake flow' - renamed, category Data Engineering. |
+| Object-Oriented Programming | Added by hand, 2026-08-31 | - | Done | Self-alias removed. |
+| prompt engineering | Added by hand, 2026-08-31 | - | Done | Self-alias removed. |
+| REST | Added by hand, 2026-09-23 | - | Done | Merged into REST APIs (now its alias); dropped. (Inactive - not seeded.) |
+| semantic analysis | Added by hand, 2026-08-31 | - | Done | Wrong LangGraph aliases and LangChain parent removed. |
+| ServiceNow development | Added by hand, 2026-09-23 | 1 [P3] JD | Done | Alias 'ServiceNow' removed. |
+| tranformers | Added by hand, 2026-08-31 | - | Done | Typo; 'transformers' is already an alias of Hugging Face Transformers, so it was cleaned and dropped (merged there) rather than renamed - a rename would collide with that alias. (Inactive - not seeded.) |
 | AI Governance | Promoted from an unknown skill, 2026-09-30 | pattern rules: AI near governance (Experience) | Keep | Created the day the real campaign 'AI transformation lead Sep' was set up (now deleted) - a generic term, nothing personal. |
 | AI Operating Models | Promoted from an unknown skill, 2026-09-30 | - | Keep | Created the day the real campaign 'AI transformation lead Sep' was set up (now deleted) - a generic term, nothing personal. |
 | AI Transformation | Promoted from an unknown skill, 2026-09-30 | - | Keep | Created the day the real campaign 'AI transformation lead Sep' was set up (now deleted) - a generic term, nothing personal. |
+| algorithms | Added by hand, 2026-09-17 | - | Keep | Kept as is (decided 2026-10-26); 'data structures' and 'algorithms' were not merged into it. |
 | amazon s3 | Added by hand, 2026-08-31 | - | Keep |  |
 | Application Portfolio Management (APM) | Added by hand, 2026-09-23 | - | Keep |  |
 | AutoGen Studio | Added by hand, 2026-08-31 | - | Keep |  |
@@ -55,6 +55,8 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 | data factory | Added by hand, 2026-08-31 | - | Keep |  |
 | Data Modelling | Added by hand, 2026-09-23 | - | Keep |  |
 | data pipeline design | Added by hand, 2026-08-31 | - | Keep |  |
+| data structures | Added by hand, 2026-09-17 | - | Keep | Kept as is (decided 2026-10-26); 'data structures' and 'algorithms' were not merged into it. |
+| Data Structures and Algorithms | Added by hand, 2026-08-31 | - | Keep | Kept as is (decided 2026-10-26); 'data structures' and 'algorithms' were not merged into it. |
 | data warehousing | Added by hand, 2026-08-31 | - | Keep |  |
 | Demand Management | Added by hand, 2026-09-23 | - | Keep |  |
 | Digital Transformation | Promoted from an unknown skill, 2026-09-30 | - | Keep | Created the day the real campaign 'AI transformation lead Sep' was set up (now deleted) - a generic term, nothing personal. |

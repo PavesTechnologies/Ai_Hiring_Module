@@ -40,8 +40,11 @@ def _section(table, keys, fields, *, approved, note, add=None, change=None, rena
 def build(diff: dict) -> dict:
     files = {}
     skills = diff["skill_ontology"]
-    dev_added = {k: v for k, v in skills["add"].items() if v.get("source") in DEV_ADDED_SOURCES}
-    base_add = {k: v for k, v in skills["add"].items() if k not in dev_added}
+    dev_added_all = {k: v for k, v in skills["add"].items() if v.get("source") in DEV_ADDED_SOURCES}
+    # merged or dropped in dev (deactivated): nothing to seed into a fresh database
+    retired = sorted(json.loads(k)[0] for k, v in dev_added_all.items() if v.get("is_active") is False)
+    dev_added = {k: v for k, v in dev_added_all.items() if v.get("is_active") is not False}
+    base_add = {k: v for k, v in skills["add"].items() if k not in dev_added_all}
     dev_changed = {k: v for k, v in skills["change"].items() if (v.get("source") or {}).get("to") in DEV_ADDED_SOURCES}
     base_change = {k: v for k, v in skills["change"].items() if k not in dev_changed}
     pending_skill_names = {json.loads(k)[0] for k in list(dev_added) + list(dev_changed)}
@@ -71,7 +74,8 @@ def build(diff: dict) -> dict:
     files["catalogue_dev_added.json"] = {"sections": [
         _section("skill_ontology", skills["keys"], skills["fields"], approved=False,
                  note="PENDING REVIEW (production checklist): skills added in dev by hand or by JD "
-                      "calibration. Review each - drop client-specific or personal terms - then set approved.",
+                      "calibration. Review each - drop client-specific or personal terms - then set approved. "
+                      f"Not seeded (merged or dropped in dev): {retired}.",
                  add=dev_added, change=dev_changed, renames=pending_renames),
         *rules_pending.values()]}
 
