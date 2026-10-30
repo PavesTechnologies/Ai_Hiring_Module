@@ -21,6 +21,7 @@ class TaskStatus(enum.Enum):
     FAILURE = "FAILURE"
     RETRY = "RETRY"
     DEAD = "DEAD"
+    REVOKED = "REVOKED"      # revoked while still queued - never ran
 
 
 class BulkUploadStatus(enum.Enum):
