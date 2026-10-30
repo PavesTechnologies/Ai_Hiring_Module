@@ -1,7 +1,10 @@
 # Scoring v2 — Phase 4 candidates
 
 Ideas found during Phase 3 that were deliberately not built. Each needs an
-evaluation on real resumes before it is approved.
+evaluation before it is approved. Since 2026-10-30 every phase is built and
+evaluated in dev on synthetic data only (see the [roadmap](roadmap.md)). So the
+evaluation runs on the golden set with the golden runner, extended with
+synthetic cases that show the problem, not on real resumes.
 
 ## Clause splitting for paraphrase lines (noted 2026-10-22)
 
@@ -32,9 +35,9 @@ voted on). It covers this one wording family, not paraphrase in general.
 
 **To evaluate before building:**
 
-- Run on real resumes (not the synthetic Phase 3 fixtures). Compare the
-  proposals and votes with and without splitting, using the
-  `scripts/paraphrase_eval.py` dry run.
+- Run on the golden set, extended with synthetic resumes that have long
+  multi-clause lines. Compare the proposals and votes with and without
+  splitting (the golden runner, or the `scripts/paraphrase_eval.py` dry run).
 - Watch for new false proposals: short clauses ("led a team of 5") may match
   many skills.
 - Check the interaction with rule 2 (a line already evidence for another core
@@ -83,4 +86,4 @@ The paraphrase step skips title lines; the scan evidence and the vote do not.
   still be proposed when it is a much better match for the searched skill.
 - Treat a work-history title line as weak evidence: never auto-confirmed and
   shown to the voters as a title.
-- Evaluate on real resumes, as for clause splitting.
+- Evaluate on the golden set, as for clause splitting.

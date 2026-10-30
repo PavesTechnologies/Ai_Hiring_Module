@@ -474,7 +474,7 @@
     "[\"Program Management\"]": {
      "canonical_name": "Program Management",
      "aliases": [],
-     "category": null,
+     "category": "Business",
      "parent": null,
      "description": "Running programmes of related projects: planning, governance, budgets, dependencies and stakeholder reporting.",
      "not_description": null,
@@ -647,7 +647,7 @@
     "[\"Stakeholder Management\"]": {
      "canonical_name": "Stakeholder Management",
      "aliases": [],
-     "category": null,
+     "category": "Business",
      "parent": null,
      "description": "Managing the people a project or service affects: identifying stakeholders, setting expectations, reporting and keeping them aligned.",
      "not_description": null,
