@@ -5,7 +5,7 @@ The agreed order (2026-10-30):
 1. Dev data cleanup - **done**
 2. Production configuration seed - **done**
 3. Senior test set - **done**
-4. Phase 4: golden set and checks - **next**
+4. Phase 4: golden set and checks - **built** (2026-10-30); open items listed under it
 5. Retire v1
 6. Go to production
 
@@ -70,7 +70,7 @@ Adding descriptions for the senior skills afterwards changed no outcome in a dry
 
 Re-scoring: `python -m scripts.rescore_score_only --campaign "<name pattern>" [--expect N] --check | --go`.
 
-## 4. Phase 4: golden set and checks - next
+## 4. Phase 4: golden set and checks - built (2026-10-30)
 
 Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
 
@@ -81,19 +81,29 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
   - Votes come from a committed cache.
   - The required check is a blocking gate in `scripts/quality_check.sh`, on every merge: the accepted run must match the scoring fingerprint.
   - The first accepted run: all 57 cases as expected, and all 17 counterfactual pairs the same.
-- **Recruiter overrides:** record every time a recruiter moves a candidate against the system's outcome: stage, system outcome, reason code, who. Report the most common override patterns.
-- **Monitoring view (HR_ADMIN):**
-  - outcome rates per campaign over time;
-  - uncertain and split-vote rates;
-  - LLM calls, tokens and cost per resume;
-  - quota use per model;
-  - PENDING and failed tasks.
-- **Fairness report:** pass rates compared across groups the system can see without inferring protected attributes, such as experience bands, career gaps, education type and region. It states clearly what it can and can't show.
+- [x] **Recruiter overrides** (done 2026-10-30). A person's move against the system's screening outcome (OVERRIDE), or resolving a HOLD (REVIEW_DECISION), needs a reason code and is recorded with:
+  - the result it contradicted;
+  - the failed checks and missing core skills;
+  - who made the move.
 
-The scoring ideas noted in [scoring_v2_phase4_candidates.md](scoring_v2_phase4_candidates.md) are evaluated with the golden runner (the set extended with cases that show each problem) before any is built:
-- clause splitting for paraphrase lines;
-- one line confirming two core skills;
-- title lines as weak evidence.
+  Reason codes only, no free text. The report is in the monitoring panel.
+- [x] **Monitoring view (HR_ADMIN)** (done 2026-10-30): the Scoring monitoring panel on the AIRS dashboard. It shows:
+  - outcomes over time;
+  - uncertain and split-vote rates;
+  - LLM calls, tokens and estimated cost per model, campaign and resume, at editable list prices;
+  - quota per model;
+  - failed, stuck and PENDING work.
+- [x] **Fairness report** (done 2026-10-30), in the same panel. Pass rates by experience band, career gap, education level, region (state or country, never city) and internships, for all candidates and for those meeting the minimum experience. Groups under the minimum size (a setting, 10) are hidden, with notes on what it can't show.
+
+**Open items in Phase 4:**
+- Evaluate the scoring ideas in [scoring_v2_phase4_candidates.md](scoring_v2_phase4_candidates.md) with the golden runner, the set extended with cases that show each problem, before any is built:
+  - clause splitting for paraphrase lines;
+  - one line confirming two core skills;
+  - title lines as weak evidence.
+- A stated career break is parsed as a job ([known issues](known_issues.md)).
+- Parses vary between runs: measure the spread over repeated parses of the counterfactual resumes ([known issues](known_issues.md)).
+- The older HR override report (REJECTED → SCREENING only, with rate alerts) still runs next to the new overrides report: decide whether to retire it or point its alerts at the new table.
+- The pipeline board's drag-and-drop move calls `POST /campaign-candidates/{id}/stage`, which doesn't exist in the backend. It fails with a 404.
 
 ## 5. Retire v1
 
