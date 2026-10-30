@@ -125,7 +125,7 @@ def llm_usage(db, *, since: datetime, campaign_id: UUID | None, prices: dict) ->
 
     # Per resume and per campaign: calls logged against a resume or campaign (the campaign comes from the
     # resume's campaign when the call only names the resume, e.g. parsing).
-    per_subject = db.execute(text(f"""
+    per_subject = db.execute(text("""
         select l.resume_id, coalesce(l.campaign_id, cc.campaign_id) as campaign_id, l.model,
                count(*) as calls, coalesce(sum(l.input_tokens), 0) as tokens_in,
                coalesce(sum(l.output_tokens), 0) as tokens_out
