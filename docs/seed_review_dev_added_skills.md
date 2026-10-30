@@ -119,12 +119,17 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 
 Added in dev on 2026-10-26 while calibrating the senior test JD ("Head of Data & AI Platforms", tests/fixtures/senior/).
 They're in their own unapproved section of `app/seeds/product_config/catalogue_dev_added.json`, so they don't load until
-reviewed. Nothing personal.
+reviewed. Nothing personal. Descriptions added 2026-10-30 (audited, as the reviewing HR admin); regenerated
+the same day.
 
-| Skill | Origin | Used by | Note |
-|---|---|---|---|
-| Data Engineering | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: core, required | No description yet. Without one the paraphrase search rarely matches work lines (see the senior test report). |
-| Data Governance | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | No description. |
-| Stakeholder Management | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | No description. |
-| AWS Certified Solutions Architect | Extracted as a certification; added as a skill in calibration | Senior JD: preferred | A certification held as a preferred skill, by decision (no certification mapping). |
+| Skill | Origin | Used by | Category | Aliases | Description | Note |
+|---|---|---|---|---|---|---|
+| Data Engineering | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: core, required | Data Engineering | - | Building and running data pipelines and platforms: batch and streaming ingestion, ETL/ELT, data lakes, lakehouses and warehouses. | Read by the paraphrase search and the voters. Senior dry run with it (2026-10-30): no outcome change; S4 gains Data Engineering from "Built data warehouse reports and ETL jobs in SAP BW" (0.453, still REJECT). |
+| Data Governance | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | Data Engineering | - | Governing an organisation's data: data quality, ownership and stewardship, cataloguing, lineage, access policies and compliance. | Category is Data Engineering, as set when it was approved in calibration. |
+| Stakeholder Management | Unknown skill from the senior JD, added as a new catalogue skill in calibration | Senior JD: supporting | - | - | Managing the people a project or service affects: identifying stakeholders, setting expectations, reporting and keeping them aligned. | No category. |
+| AWS Certified Solutions Architect | Extracted as a certification; added as a skill in calibration | Senior JD: preferred | - | - | - | A certification held as a preferred skill, by decision (no certification mapping). No description. |
+
+**Changed after the review, in an approved section:** REST APIs (reviewed: Keep) gained a "Not this skill" text on
+2026-10-30, as the reviewing HR admin: "only testing or calling APIs, without designing or building them". It loads
+with the reviewed section.
 
