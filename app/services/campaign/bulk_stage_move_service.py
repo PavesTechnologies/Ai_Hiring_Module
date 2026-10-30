@@ -57,6 +57,7 @@ class BulkStageMoveService:
         reason: str,
         actor_id: str,
         actor_role: str | None,
+        override_reason_code: str | None = None,
     ) -> BulkStageMoveResultResponse:
         try:
             to_stage = PipelineStage(target_stage)
@@ -107,6 +108,8 @@ class BulkStageMoveService:
                     source=TransitionSource.MANUAL,
                     decision_type=decision_type,
                     decision_source=DecisionSource.HR_ADMIN,
+                    override_reason_code=override_reason_code,
+                    candidates_in_batch=len(candidates),
                 )
 
             # One audit row for the batch, not one per candidate — the spec
@@ -172,6 +175,7 @@ class BulkStageMoveService:
         actor_id: str,
         actor_role: str | None,
         actor_roles: list[str] | None = None,
+        override_reason_code: str | None = None,
     ) -> SingleStageMoveResultResponse:
         """
         actor_roles: every role the caller holds that the route allows; the
@@ -205,6 +209,7 @@ class BulkStageMoveService:
                 source=TransitionSource.MANUAL,
                 decision_type=_STAGE_TO_DECISION.get(to_stage),
                 decision_source=DecisionSource.HR_ADMIN,
+                override_reason_code=override_reason_code,
             )
             self.audit_service.log(
                 actor_id=actor_id,
@@ -252,6 +257,7 @@ class BulkStageMoveService:
         actor_id: str,
         actor_role: str | None,
         actor_roles: list[str] | None = None,
+        override_reason_code: str | None = None,
     ) -> SingleStageMoveResultResponse:
         """
         M11-E04-S03-T03 — manual rejection from the candidate list.
@@ -272,6 +278,7 @@ class BulkStageMoveService:
             actor_id=actor_id,
             actor_role=actor_role,
             actor_roles=actor_roles,
+            override_reason_code=override_reason_code,
         )
 
     def get_allowed_transitions(

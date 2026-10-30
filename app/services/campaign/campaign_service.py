@@ -47,6 +47,7 @@ from app.schemas.campaign.campaign_schema import CampaignCreateRequest, Campaign
 from app.schemas.campaign.campaign_weight_preset_schema import CampaignWeightPresetCreateRequest, CampaignWeightPresetResponse, CampaignWeightPresetUpdateRequest
 from app.services.audit_service import AuditService
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.campaign.outcome_overrides import check_move
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.tasks.composite_scoring_tasks import _enqueue_composite_scoring
 from app.schemas.campaign.campaign_pause_schema import PauseImpactSummaryResponse, ResumeSummaryResponse
@@ -2023,11 +2024,17 @@ class CampaignService:
                 raise CampaignException(f"No natural next stage from {from_stage.value} — pass target_stage explicitly.", 409,
                 )
 
+        # Against the system's screening outcome (or resolving a HOLD): a reason code is needed
+        # and the move is recorded (outcome_overrides) - checked before the stage changes.
+        override = check_move(self.campaign_repo.db, cc, from_stage, target, actor_id=actor_id,
+                              actor_role=actor_role, reason_code=request.override_reason_code)
         self.campaign_repo.transition_candidate_stage(cc, target,
             changed_by=actor_id,
             change_reason=request.reason,
             transition_source=TransitionSource.OVERRIDE,
         )
+        if override is not None:
+            self.campaign_repo.db.add(override)
         if target == PipelineStage.INTERVIEW:
             # Same-transaction, same reasoning as the other two engines
             # that can reach to_stage=INTERVIEW - a plain INSERT on this

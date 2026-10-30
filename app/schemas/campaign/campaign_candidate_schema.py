@@ -863,6 +863,9 @@ class HrOverrideRequest(BaseModel):
 
     override_reason: str = Field(..., min_length=20)
     confirmation: bool
+    # A move against the system's screening outcome (or resolving a HOLD) needs one of the
+    # outcome_overrides.REASON_CODES; without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
+    override_reason_code: str | None = Field(default=None, max_length=40)
 
     @field_validator("confirmation")
     @classmethod

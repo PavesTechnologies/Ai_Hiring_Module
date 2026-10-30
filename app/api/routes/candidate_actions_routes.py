@@ -67,6 +67,7 @@ def bulk_stage_move(
         reason=request.reason,
         actor_id=user.user_id,
         actor_role=UserRole.HR_ADMIN.value,
+        override_reason_code=request.override_reason_code,
     )
     return APIResponse.ok(data=result, message=result.detail)
 
@@ -97,6 +98,7 @@ def single_stage_move(
         actor_id=user.user_id,
         actor_role=authorising_role(user),
         actor_roles=authorising_roles(user),
+        override_reason_code=request.override_reason_code,
     )
     return APIResponse.ok(data=result, message=result.detail)
 
@@ -158,6 +160,7 @@ def manual_reject(
         actor_id=user.user_id,
         actor_role=authorising_role(user),
         actor_roles=authorising_roles(user),
+        override_reason_code=request.override_reason_code,
     )
     return APIResponse.ok(data=result, message=result.detail)
 

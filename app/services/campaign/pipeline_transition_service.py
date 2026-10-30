@@ -19,6 +19,7 @@ from app.repositories.campaign_candidate_repository import CampaignCandidateRepo
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.services.audit_service import AuditService
+from app.services.campaign.outcome_overrides import check_move
 
 # M12 cascading-cancellation follow-up: same constant, same reasoning as
 # StageTransitionService's own copy (see that file for the full
@@ -108,6 +109,8 @@ class PipelineTransitionService:
         decision_type: DecisionType | None = None,
         decision_source: DecisionSource | None = None,
         decision_details: dict | None = None,
+        override_reason_code: str | None = None,
+        candidates_in_batch: int = 1,
     ) -> CampaignCandidate:
         """
         Does NOT commit — the caller commits, same convention as every
@@ -160,6 +163,15 @@ class PipelineTransitionService:
 
         if transition.requires_reason and not reason:
             raise PipelineTransitionReasonRequiredException(from_stage.value, to_stage.value)
+
+        # A person moving a candidate against the system's screening outcome (or resolving a HOLD)
+        # needs a reason code and is recorded (outcome_overrides) - checked before anything is written.
+        human = source in (TransitionSource.MANUAL, TransitionSource.OVERRIDE)
+        override = check_move(self.campaign_candidate_repo.db, campaign_candidate, from_stage, to_stage,
+                              actor_id=changed_by if human else None, actor_role=effective_role,
+                              reason_code=override_reason_code, candidates_in_batch=candidates_in_batch)
+        if override is not None:
+            self.campaign_candidate_repo.db.add(override)
 
         # Bug fix (same governance model as above): previous_stage must
         # advance to from_stage on every successful move, or the *next*

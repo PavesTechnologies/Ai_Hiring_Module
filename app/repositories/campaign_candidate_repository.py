@@ -331,7 +331,14 @@ class CampaignCandidateRepository:
         rows (every v1 / v2 scoring of this one application). FK to
         campaign_candidates with no ON DELETE rule: without this, any
         candidate that had been scored couldn't be removed or erased.
+        Its recorded outcome overrides go first (they reference the
+        results they contradicted, and the campaign candidate).
         """
+        from app.models.outcome_overrides import CandidateOutcomeOverride
+        self.db.execute(
+            delete(CandidateOutcomeOverride)
+            .where(CandidateOutcomeOverride.campaign_candidate_id == campaign_candidate_id)
+        )
         self.db.execute(
             delete(CandidateScoringResult)
             .where(CandidateScoringResult.campaign_candidate_id == campaign_candidate_id)

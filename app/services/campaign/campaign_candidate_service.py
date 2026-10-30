@@ -107,6 +107,7 @@ from app.services.campaign.layer_failure import (
     get_layer_failures,
 )
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.campaign.outcome_overrides import check_move
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
@@ -2232,6 +2233,7 @@ class CampaignCandidateService:
         override_reason: str,
         actor_id: str,
         actor_role: str | None = None,
+        override_reason_code: str | None = None,
     ) -> CandidateScorecardResponse:
         """
         HR_ADMIN override of a deterministic OR semantic rejection (M08-E02
@@ -2263,6 +2265,12 @@ class CampaignCandidateService:
                     409,
                 )
 
+            # Bringing back a REJECT is an override of the system's outcome: it needs a reason
+            # code and is recorded (outcome_overrides) - checked before anything changes.
+            override = check_move(self.campaign_candidate_repo.db, campaign_candidate, PipelineStage.REJECTED,
+                                  PipelineStage.SCREENING, actor_id=actor_id, actor_role=actor_role,
+                                  reason_code=override_reason_code)
+
             campaign_candidate.deterministic_passed = True
             ai_evaluation = self.ai_evaluation_repo.get_or_create(campaign_candidate.id)
             ai_evaluation.ai_evaluation_status = AIEvaluationStatus.PENDING
@@ -2290,6 +2298,8 @@ class CampaignCandidateService:
                     "Stage transition REJECTED -> SCREENING is not allowed - override not applied.",
                     409,
                 )
+            if override is not None:
+                self.campaign_candidate_repo.db.add(override)
 
             overridden = campaign_candidate.decision_details or {}
 

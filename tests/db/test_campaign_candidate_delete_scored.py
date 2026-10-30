@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.db.session import engine
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
+from app.models.outcome_overrides import CandidateOutcomeOverride
 from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, PipelineStage, TransitionSource
 from app.models.scoring_v2 import (
     CandidateScoringResult,
@@ -99,6 +100,14 @@ def scored(db):
         ResumeProvisionalSkillScan(resume_id=resume.id, text_hash=tag, detection_version="t"),
     ])
     db.flush()
+    # A recorded override references the result it contradicted - removal and erasure must take it too.
+    acted_on = db.execute(select(CandidateScoringResult).where(CandidateScoringResult.campaign_candidate_id == cc.id,
+                                                              CandidateScoringResult.acted_on.is_(True))).scalar_one()
+    db.add(CandidateOutcomeOverride(campaign_candidate_id=cc.id, campaign_id=campaign.id, scoring_result_id=acted_on.id,
+                                    system_outcome="REJECT", kind="OVERRIDE", direction="UP",
+                                    from_stage=PipelineStage.REJECTED, to_stage=PipelineStage.SCREENING,
+                                    reason_code="SKILL_EVIDENCE_MISSED"))
+    db.flush()
     return dict(campaign=campaign, candidate=candidate, resume=resume, cc=cc)
 
 
@@ -119,6 +128,7 @@ def test_removing_a_scored_candidate_with_a_shadow_rank_from_a_campaign(db, scor
 
     assert _count(db, CampaignCandidate, id=cc.id) == 0
     assert _count(db, CandidateScoringResult, campaign_candidate_id=cc.id) == 0
+    assert _count(db, CandidateOutcomeOverride, campaign_candidate_id=cc.id) == 0
     assert _count(db, ScoringShadowRanking, campaign_candidate_id=cc.id) == 0
     assert _count(db, CampaignCandidateStageHistory, campaign_candidate_id=cc.id) == 0
     # Only the application goes: the candidate, the resume and what was derived from the resume stay.
@@ -146,6 +156,7 @@ def test_erasing_a_scored_candidate_removes_their_scoring_and_v2_resume_data(db,
     assert _count(db, Candidate, id=candidate.id) == 0
     assert _count(db, Resume, id=resume.id) == 0
     assert _count(db, CandidateScoringResult, campaign_candidate_id=cc.id) == 0
+    assert _count(db, CandidateOutcomeOverride, campaign_candidate_id=cc.id) == 0
     assert _count(db, ScoringShadowRanking, campaign_candidate_id=cc.id) == 0
     for model in (ResumeSkillEvidence, CoreSkillConfirmation, ResumeParseVersion, ResumeProvisionalSkillScan):
         assert _count(db, model, resume_id=resume.id) == 0, model.__tablename__

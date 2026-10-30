@@ -78,3 +78,4 @@ from .email import (
     EmailTriggerEvent,
     EmailNotificationStatus,
 )
+from .outcome_overrides import CandidateOutcomeOverride
