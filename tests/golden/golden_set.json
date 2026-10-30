@@ -178,8 +178,8 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
-    "note": "A recruiter would read these as incident, change and catalogue work on ServiceNow"
+    "core": null,
+    "note": "A recruiter would read these as incident, change and catalogue work on ServiceNow [Designed core 4/4; accepted by outcome, core 3/4 (2026-10-30).]"
    },
    "tests": [
     "domain_paraphrase",
@@ -315,8 +315,8 @@
     "outcomes": [
      "REJECT"
     ],
-    "core": "0/4",
-    "note": "Different platform; \"change sets\" is a Salesforce deployment term, not change management"
+    "core": null,
+    "note": "Different platform; \"change sets\" is a Salesforce deployment term, not change management [Designed core 0/4; accepted by outcome, core 1/4 (2026-10-30).]"
    },
    "trap": "Salesforce equivalents: \"incident escalation\", \"change sets\", \"request catalog\""
   },
@@ -450,8 +450,8 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
-    "note": "Every core skill shown in delivered work; 15 years"
+    "core": null,
+    "note": "Every core skill shown in delivered work; 15 years [Designed core 4/4; accepted by outcome, core 3/4 (2026-10-30).]"
    },
    "tests": "Strong fit",
    "trap": "None; baseline"
@@ -466,8 +466,8 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
-    "note": "All core shown; 11 years against 12, within the 1.2-year tolerance"
+    "core": null,
+    "note": "All core shown; 11 years against 12, within the 1.2-year tolerance [Designed core 4/4; accepted by outcome, core 3/4 (2026-10-30).]"
    },
    "tests": "Near-miss on experience",
    "trap": "MLOps only in the skills list, but shown in work (\"deployed… with monitoring and scheduled retraining\")"
@@ -482,8 +482,8 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "3/4",
-    "note": "Strong ML, MLOps and cloud; no data engineering. Data Engineering is required, so one near-miss -> HOLD"
+    "core": null,
+    "note": "Strong ML, MLOps and cloud; no data engineering. Data Engineering is required, so one near-miss -> HOLD [Designed core 3/4; accepted by outcome, core 2/4 (2026-10-30).]"
    },
    "tests": "Required skill missing",
    "trap": "Risk: ML pipelines read as Data Engineering -> PASS"
@@ -579,7 +579,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match F1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -599,7 +599,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -619,7 +619,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -639,7 +639,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -659,7 +659,7 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match S2: outcome and core-skill results."
    },
    "counterfactual": {
@@ -679,7 +679,7 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-S2-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -699,7 +699,7 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -719,7 +719,7 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -739,7 +739,7 @@
     "outcomes": [
      "HOLD"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -759,7 +759,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match S7: outcome and core-skill results."
    },
    "counterfactual": {
@@ -779,7 +779,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-GAP-S7-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -799,7 +799,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-GAP-S7-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -819,7 +819,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match D1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -839,7 +839,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-GAP-D1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -859,7 +859,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-GAP-D1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -879,7 +879,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match D1: outcome and core-skill results."
    },
    "counterfactual": {
@@ -899,7 +899,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -919,7 +919,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -939,7 +939,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -959,7 +959,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match F3: outcome and core-skill results."
    },
    "counterfactual": {
@@ -979,7 +979,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -999,7 +999,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
    },
    "counterfactual": {
@@ -1019,7 +1019,7 @@
     "outcomes": [
      "PASS"
     ],
-    "core": "4/4",
+    "core": null,
     "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
    },
    "counterfactual": {

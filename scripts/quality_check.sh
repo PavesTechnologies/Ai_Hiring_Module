@@ -3,7 +3,8 @@
 # AIRS quality gate - invoked by Jenkinsfile.ci (qualityScriptPath).
 #
 # Same seven checks, same order, as User_Management_System/scripts/quality_check.sh,
-# retargeted from Backend/ to app/. Two deliberate differences from that script:
+# retargeted from Backend/ to app/, plus an eighth: the golden-set check (AIRS
+# scoring). Two deliberate differences from that script:
 #
 #  1. Formatters run in CHECK mode, not --in-place. UMS rewrites its source
 #     during CI, but the pipeline calls cleanWs() afterwards, so those edits are
@@ -51,6 +52,11 @@ STRICT_TESTS="${STRICT_TESTS:-0}"
 # and neither depends on the codebase being formatted or annotated.
 STRICT_SECURITY="${STRICT_SECURITY:-1}"
 
+# The golden set blocks on every merge (decided 2026-10-30): the accepted golden
+# run must match the current scoring fingerprint. Pure file hashing - no
+# database or model - so it runs on the agent even though pytest can't.
+STRICT_GOLDEN="${STRICT_GOLDEN:-1}"
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 FAILED=0
 
@@ -69,36 +75,40 @@ report() {
 
 echo "Starting AIRS quality checks | target=${TARGET_DIR} tests=${TEST_DIR}"
 
-echo -e "\n[1/7] Autoflake (unused imports)..."
+echo -e "\n[1/8] Autoflake (unused imports)..."
 autoflake --check-diff --remove-all-unused-imports --recursive "${TARGET_DIR}"
 report "Autoflake" $? "${STRICT_FORMAT}"
 
-echo -e "\n[2/7] Black (formatting)..."
+echo -e "\n[2/8] Black (formatting)..."
 black --check --diff "${TARGET_DIR}"
 report "Black" $? "${STRICT_FORMAT}"
 
-echo -e "\n[3/7] Flake8 (lint)..."
+echo -e "\n[3/8] Flake8 (lint)..."
 flake8 "${TARGET_DIR}" --count --max-line-length=88 --extend-ignore=E203,E501 --statistics
 report "Flake8" $? "${STRICT_LINT}"
 
-echo -e "\n[4/7] Bandit (security)..."
+echo -e "\n[4/8] Bandit (security)..."
 bandit -r "${TARGET_DIR}" -ll -ii
 report "Bandit" $? "${STRICT_SECURITY}"
 
-echo -e "\n[5/7] pip-audit (dependency CVEs in ${REQUIREMENTS_FILE})..."
+echo -e "\n[5/8] pip-audit (dependency CVEs in ${REQUIREMENTS_FILE})..."
 pip-audit -r "${REQUIREMENTS_FILE}"
 report "pip-audit" $? "${STRICT_SECURITY}"
 
-echo -e "\n[6/7] Mypy (types)..."
+echo -e "\n[6/8] Mypy (types)..."
 mypy "${TARGET_DIR}" --ignore-missing-imports --explicit-package-bases
 report "Mypy" $? "${STRICT_TYPES}"
 
-echo -e "\n[7/7] Pytest (coverage gate ${MIN_COVERAGE}%)..."
+echo -e "\n[7/8] Pytest (coverage gate ${MIN_COVERAGE}%)..."
 pytest "${TEST_DIR}" \
     --cov="${TARGET_DIR}" \
     --cov-report=term-missing \
     --cov-fail-under="${MIN_COVERAGE}"
 report "Pytest" $? "${STRICT_TESTS}"
+
+echo -e "\n[8/8] Golden set (accepted run at the current scoring fingerprint)..."
+python -m scripts.golden.check_fingerprint
+report "Golden set" $? "${STRICT_GOLDEN}"
 
 echo
 if [ "${FAILED}" -eq 0 ]; then

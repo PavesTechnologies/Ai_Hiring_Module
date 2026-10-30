@@ -72,10 +72,15 @@ Re-scoring: `python -m scripts.rescore_score_only --campaign "<name pattern>" [-
 
 ## 4. Phase 4: golden set and checks - next
 
-Built in dev on synthetic data. The plan is pending review.
+Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
 
-- **Golden set:** the 34 synthetic candidates with their expectations, in one versioned format that is easy to extend.
-- **Golden runner:** scores the whole set without saving and compares with the expectations and the last accepted run. It writes a diff report of outcome and core-skill changes, with causes. Cache-backed, with LLM calls reported. Runnable on demand, and a required check before merging any change to scoring rules, prompts, models or detection data.
+- [x] **The candidate's name never reaches the votes** (done 2026-10-30). It's masked in every excerpt the confirmation and paraphrase voters see.
+- [x] **Golden set** (done 2026-10-30): `tests/golden/`, self-contained and versioned. It holds the 34 synthetic candidates plus counterfactual pairs that differ only in name, career gap or region (23 resumes in 6 groups, each group with a control). See `tests/golden/README.md`.
+- [x] **Golden runner** (done 2026-10-30): `python -m scripts.golden.run`.
+  - It scores the whole set without saving and compares with the expectations, the counterfactual partners and the accepted run. It writes a diff report with causes and reports LLM calls and tokens.
+  - Votes come from a committed cache.
+  - The required check is a blocking gate in `scripts/quality_check.sh`, on every merge: the accepted run must match the scoring fingerprint.
+  - The first accepted run: all 57 cases as expected, and all 17 counterfactual pairs the same.
 - **Recruiter overrides:** record every time a recruiter moves a candidate against the system's outcome: stage, system outcome, reason code, who. Report the most common override patterns.
 - **Monitoring view (HR_ADMIN):**
   - outcome rates per campaign over time;
