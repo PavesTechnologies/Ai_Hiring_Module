@@ -38,6 +38,7 @@ from app.services.skills.resume_skill_scanner import (
 )
 from app.services.skills.certification_mapping_service import in_progress_in_text, match_certifications
 from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules, role_for_line, roles_of
+from app.services.skills.detection_fingerprint import detection_fingerprint, detection_version
 from app.services.skills.resume_sections import (
     SECTION_CERTIFICATIONS, SECTION_EXPERIENCE, SECTION_PROJECTS, STRONG_SECTIONS, heading_section,
     heading_text_of_line, section_of_line,
@@ -353,7 +354,8 @@ def build_evidence(
     return records
 
 
-def to_rows(resume_id: UUID, records: list[EvidenceRecord], *, text: str, parse: ParseInfo) -> list[ResumeSkillEvidence]:
+def to_rows(resume_id: UUID, records: list[EvidenceRecord], *, text: str, parse: ParseInfo,
+            detection_version: str = DETECTION_VERSION) -> list[ResumeSkillEvidence]:
     digest = text_hash(text)
     return [
         ResumeSkillEvidence(
@@ -367,7 +369,7 @@ def to_rows(resume_id: UUID, records: list[EvidenceRecord], *, text: str, parse:
             recognition=r.recognition,
             evidence=r.evidence,
             text_hash=digest,
-            detection_version=DETECTION_VERSION,
+            detection_version=detection_version,
             parse_provider=parse.provider,
             parse_model=parse.model,
             parse_used_fallback=parse.used_fallback,
@@ -384,6 +386,9 @@ class DetectionTools:
     patterns: tuple = ()
     certifications: tuple = ()
     rules: EvidenceRules = DEFAULT_RULES
+    # DETECTION_VERSION + a fingerprint of the rule data above (detection_fingerprint):
+    # stored evidence with another version is detected again when scored.
+    version: str = DETECTION_VERSION
 
 
 def resolve_blocklist(entries: list[dict], catalog: list) -> frozenset:
@@ -407,16 +412,18 @@ class SkillEvidenceService:
     def load_tools(self) -> "DetectionTools":
         from app.services.skills.skill_normalization_service import load_cached_active_skills
         catalog = load_cached_active_skills(self.skill_repository, self.cache_service)
-        index = ScanIndex.build(catalog, self.detection_repository.load_scan_rules())
-        return DetectionTools(
-            index=index,
-            resolver=SkillSenseResolver(self.detection_repository.load_senses()),
-            blocked=resolve_blocklist(self.detection_repository.load_match_blocklist(), catalog),
-            patterns=tuple(self.detection_repository.load_pattern_rules()),
-            certifications=tuple(self.detection_repository.load_certification_rules()),
-            rules=EvidenceRules.from_config(self.detection_repository.load_evidence_rules_config(),
-                                            catalog_terms=index.entries.keys()),
-        )
+        scan_rules = self.detection_repository.load_scan_rules()
+        senses = self.detection_repository.load_senses()
+        index = ScanIndex.build(catalog, scan_rules)
+        blocked = resolve_blocklist(self.detection_repository.load_match_blocklist(), catalog)
+        patterns = tuple(self.detection_repository.load_pattern_rules())
+        certifications = tuple(self.detection_repository.load_certification_rules())
+        rules = EvidenceRules.from_config(self.detection_repository.load_evidence_rules_config(),
+                                          catalog_terms=index.entries.keys())
+        fingerprint = detection_fingerprint(catalog=catalog, scan_rules=scan_rules, senses=senses, blocked=blocked,
+                                            patterns=patterns, certifications=certifications, rules=rules)
+        return DetectionTools(index=index, resolver=SkillSenseResolver(senses), blocked=blocked, patterns=patterns,
+                              certifications=certifications, rules=rules, version=detection_version(fingerprint))
 
     def detect(
         self, resume_id: UUID, *, text: str, llm_matches: list[LLMSkillMatch], parse: ParseInfo,
@@ -429,7 +436,8 @@ class SkillEvidenceService:
                                  job_titles=job_titles, certifications=certifications,
                                  certification_rules=list(tools.certifications), rules=tools.rules, roles=roles)
         if persist:
-            self.detection_repository.replace_evidence(resume_id, to_rows(resume_id, records, text=text, parse=parse))
+            self.detection_repository.replace_evidence(
+                resume_id, to_rows(resume_id, records, text=text, parse=parse, detection_version=tools.version))
             # Never costs the evidence above: a failed provisional scan is
             # rolled back alone and re-run when v2 scores the resume.
             try:

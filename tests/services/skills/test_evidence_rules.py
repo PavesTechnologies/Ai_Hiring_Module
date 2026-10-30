@@ -223,18 +223,24 @@ def test_a_skill_rejected_on_certification_evidence_alone_stays_a_paraphrase_tar
 
 # --- stored evidence from older detection rules is detected again --------------------------
 
-@pytest.mark.parametrize("stored_version, redetected", [("2026.10.3", True), (None, False)])
+@pytest.mark.parametrize("stored_version, redetected", [
+    ("2026.10.3", True),                       # older code
+    ("2026.10.4+00000000", True),              # same code, other rule data (an alias, a cue word, ...)
+    (None, False),                             # detected with the current code and rule data
+])
 def test_stale_stored_evidence_is_detected_again(stored_version, redetected):
     from unittest.mock import MagicMock, patch
     from app.services.campaign import scoring_v2_service as svc
-    from app.services.skills.resume_skill_scanner import DETECTION_VERSION
+    from app.services.skills.detection_fingerprint import detection_version
+    current = detection_version("1a2b3c4d")
     service = svc.ScoringV2Service(MagicMock(), MagicMock(), MagicMock(), provider_resolver=None)
     service.detection_repository = MagicMock()
     service.evidence_service = MagicMock()
+    service.evidence_service.load_tools.return_value.version = current
     service.load_config = MagicMock(return_value={})
     row = SimpleNamespace(canonical_skill_id=PY, sense=None, sources=["SCAN"], best_source="SCAN", match_tier="SCAN",
                           recognition=1.0, evidence=[{"text": "line"}], text_hash="h",
-                          detection_version=stored_version or DETECTION_VERSION)
+                          detection_version=stored_version or current)
     service.detection_repository.list_evidence.return_value = [row]
     service.db.query.return_value.filter.return_value.all.return_value = []
 

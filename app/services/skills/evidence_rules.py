@@ -49,7 +49,7 @@ DEFAULT_EVIDENCE_RULES = {
 # Verbs a resume line often leads with that are neither work nor not-work verbs - the line's
 # first verb then isn't a work verb, so it goes to the vote. Regular past tenses ("tested",
 # "managed") are caught by their "-ed" ending; these are the ones that aren't.
-_OTHER_VERBS = frozenset({
+OTHER_VERBS = frozenset({
     "led", "lead", "leads", "leading", "ran", "run", "runs", "running", "drove", "drive", "drives", "driving",
     "oversaw", "oversee", "oversees", "overseeing", "own", "owns", "owning", "made", "make", "makes", "making",
     "set", "sets", "setting", "took", "take", "takes", "taking", "grew", "grow", "grows", "growing",
@@ -63,9 +63,9 @@ _OTHER_VERBS = frozenset({
     "won", "win", "wins", "spoke", "speak", "speaks", "speaking",
 })
 # "-ed" words that are not past-tense verbs where a line starts with a noun phrase.
-_NOT_VERBS = frozenset({"speed", "embedded", "distributed", "advanced", "based", "related", "detailed",
-                        "dedicated", "limited", "certified", "skilled", "experienced", "interested",
-                        "seasoned", "talented", "focused", "oriented", "hundred"})
+NOT_VERBS = frozenset({"speed", "embedded", "distributed", "advanced", "based", "related", "detailed",
+                       "dedicated", "limited", "certified", "skilled", "experienced", "interested",
+                       "seasoned", "talented", "focused", "oriented", "hundred"})
 
 
 def _keys(values) -> list[str]:
@@ -109,8 +109,8 @@ class EvidenceRules:
         resume verb ("led", "ran"), or a past-tense "-ed" word ("tested"). None when there is none.
         """
         for word in term_key(line or "").split():
-            if (word in self.work_verbs or word in self.non_work_verbs or word in _OTHER_VERBS
-                    or (len(word) >= 5 and word.endswith("ed") and word not in _NOT_VERBS)):
+            if (word in self.work_verbs or word in self.non_work_verbs or word in OTHER_VERBS
+                    or (len(word) >= 5 and word.endswith("ed") and word not in NOT_VERBS)):
                 return word
         return None
 

@@ -299,10 +299,13 @@ class ScoringV2Service:
 
         evidence_rows = evidence_records if evidence_records is not None else self.detection_repository.list_evidence(resume.id)
         evidence_source = "given" if evidence_records is not None else "stored"
+        # The code's version plus a fingerprint of the rule data (aliases, scan terms, cue words,
+        # pattern rules, certification mappings, verb lists): any rule change makes stored evidence stale.
+        current_version = getattr(tools, "version", DETECTION_VERSION)
         stale = evidence_records is None and any(
-            getattr(r, "detection_version", DETECTION_VERSION) != DETECTION_VERSION for r in evidence_rows)
+            getattr(r, "detection_version", current_version) != current_version for r in evidence_rows)
         if (not evidence_rows or stale) and evidence_records is None:
-            # None stored yet, or stored by older detection rules: detected again from the stored resume.
+            # None stored yet, or stored by other detection rules: detected again from the stored resume.
             records, _ = detect_stored_resume(self.evidence_service, resume, persist=persist)
             evidence_rows = self.detection_repository.list_evidence(resume.id) if persist else records
             evidence_source = ("re-detected (stored evidence predates the current detection rules)" if stale
@@ -394,7 +397,7 @@ class ScoringV2Service:
                 if getattr(campaign, "max_missing_core_pct", None) is not None else None,
             },
             "score_threshold_rejects_config": score_threshold_rejects(self.config_repository),
-            "detection_version": DETECTION_VERSION,
+            "detection_version": current_version,
             "confirmation_prompt_version": PROMPT_VERSION,
         }
         version = config_version(snapshot)
