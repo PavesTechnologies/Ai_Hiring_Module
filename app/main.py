@@ -35,6 +35,7 @@ from app.api.routes.dead_letter_routes import router as dead_letter_router
 from app.api.routes.talent_pool_routes import filters_router as talent_pool_filters_router
 from app.api.routes.talent_pool_routes import router as talent_pool_router
 from app.api.routes.audit_log_routes import router as audit_log_router
+from app.api.routes.scoring_monitoring_routes import router as scoring_monitoring_router
 from app.api.routes.outcome_override_routes import router as outcome_override_router
 from app.api.routes.google_oauth_routes import router as google_oauth_router
 from app.api.routes.interview_feedback_routes import router as interview_feedback_router
@@ -207,6 +208,7 @@ app.include_router(router=ai_provider_config_router, prefix=API_PREFIX, tags=["A
 app.include_router(router=dead_letter_router, prefix=API_PREFIX, tags=["Dead Letter Queue"])
 app.include_router(router=talent_pool_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=audit_log_router, prefix=API_PREFIX, tags=["Audit Log"])
+app.include_router(router=scoring_monitoring_router, prefix=API_PREFIX, tags=["Scoring Monitoring"])
 app.include_router(router=outcome_override_router, prefix=API_PREFIX, tags=["Outcome Overrides"])
 app.include_router(router=talent_pool_filters_router, prefix=API_PREFIX, tags=["Talent Pool"])
 app.include_router(router=dashboard_routes.router, prefix=API_PREFIX, tags=["Dashboard"])

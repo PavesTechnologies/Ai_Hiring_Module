@@ -382,7 +382,7 @@ def run(args) -> int:
     from app.services.cache_service import CacheService
     from app.services.campaign.scoring_v2_service import ScoringV2Service
     from app.services.llm.base import LLMError
-    from app.services.llm.call_log import llm_call_source
+    from app.services.llm.call_log import llm_call_context, llm_call_source
     from app.services.llm.factory import resolve_active_provider
     from app.services.llm.model_selection import LLMPurpose
     from app.services.skills import core_skill_confirmation_service as confirmation
@@ -424,6 +424,7 @@ def run(args) -> int:
             for p in patches:
                 stack.enter_context(p)
             stack.enter_context(llm_call_source(LLM_SOURCE))
+            stack.enter_context(llm_call_context(LLM_SOURCE))       # apart from app usage in monitoring
             for case in cases:
                 with db.begin_nested():
                     result = score_case(world, case, v2, config_repo, v2.evidence_service)
@@ -451,7 +452,7 @@ def run(args) -> int:
     with engine.connect() as c:
         calls, tokens_in, tokens_out = c.execute(text(
             "select count(*), coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0) from llm_call_log "
-            "where created_at >= :t and source in ('golden_run', 'paraphrase_confirmation')"), {"t": started}).one()
+            "where created_at >= :t and context = :ctx"), {"t": started, "ctx": LLM_SOURCE}).one()
     fingerprint = scoring_fingerprint()
     model = next((e.get("model") for e in votes.new.values() if e.get("model")), None)
     run_record = {

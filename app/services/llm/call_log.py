@@ -7,6 +7,9 @@ records one llm_call_log row per real request - success or failure.
   around it (parsing, ai_evaluation, skill_confirmation, ...).
 - context: "app" for the API and workers; a script sets LLM_CALL_CONTEXT
   (e.g. "dry_run") or `llm_call_context("...")`.
+- resume_id / campaign_id: what the call was for, set with
+  `llm_call_subject(resume_id=..., campaign_id=...)` around it (scoring,
+  parsing, AI evaluation) - per-resume usage and cost in monitoring.
 - Rows are written in their own short transaction, so a caller's rollback
   (dry runs) keeps them, and a failed write never fails the call.
 - The usage day is the provider's quota day: Google resets its per-day
@@ -28,6 +31,7 @@ QUOTA_DAY_ZONE = ZoneInfo("America/Los_Angeles")
 
 _source: ContextVar[str | None] = ContextVar("llm_call_source", default=None)
 _context: ContextVar[str | None] = ContextVar("llm_call_context", default=None)
+_subject: ContextVar[dict | None] = ContextVar("llm_call_subject", default=None)
 
 
 @contextmanager
@@ -48,6 +52,22 @@ def llm_call_context(label: str):
         yield
     finally:
         _context.reset(token)
+
+
+@contextmanager
+def llm_call_subject(*, resume_id=None, campaign_id=None):
+    """Ties the LLM calls made inside this block to a resume and / or campaign (inner values win)."""
+    outer = _subject.get() or {}
+    token = _subject.set({"resume_id": resume_id or outer.get("resume_id"),
+                          "campaign_id": campaign_id or outer.get("campaign_id")})
+    try:
+        yield
+    finally:
+        _subject.reset(token)
+
+
+def current_subject() -> dict:
+    return _subject.get() or {}
 
 
 def current_source() -> str | None:
@@ -91,6 +111,7 @@ def record_call(*, provider: str, model: str, purpose: str | None, outcome: str,
         "purpose": str(purpose)[:30] if purpose else None,
         "source": (current_source() or None), "context": current_context()[:60],
         "outcome": str(outcome)[:40], "latency_ms": latency_ms,
+        "resume_id": current_subject().get("resume_id"), "campaign_id": current_subject().get("campaign_id"),
         # Gemini's usage: input / output / thinking (thinking is billed as output).
         "input_tokens": (usage or {}).get("input"),
         "output_tokens": ((usage or {}).get("output") or 0) + ((usage or {}).get("thinking") or 0) if usage else None,

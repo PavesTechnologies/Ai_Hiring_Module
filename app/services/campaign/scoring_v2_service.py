@@ -48,7 +48,7 @@ from app.services.skills.core_skill_confirmation_service import (
 from app.services.skills.paraphrase_proposal_service import (
     ParaphraseProposalService, ParaphraseTarget, proposals_hash,
 )
-from app.services.llm.call_log import calls_in_quota_day, llm_call_source
+from app.services.llm.call_log import calls_in_quota_day, llm_call_source, llm_call_subject
 from app.services.skills.evidence_rules import role_for_line, roles_of
 from app.services.skills.resume_sections import SECTION_EXPERIENCE
 from app.services.skills.name_mask import NameMask
@@ -276,7 +276,18 @@ class ScoringV2Service:
         evidence_records / use_confirmation_cache: for comparisons - score this
         parse's own evidence (instead of the stored rows) and ask the model
         afresh instead of reusing a cached confirmation. Pass persist=False.
+        The LLM calls made while scoring are logged against this resume and
+        campaign (llm_call_subject).
         """
+        with llm_call_subject(resume_id=getattr(resume, "id", None), campaign_id=getattr(campaign, "id", None)):
+            return self._score(campaign=campaign, campaign_candidate=campaign_candidate,
+                               job_description=job_description, resume=resume, experience_result=experience_result,
+                               education_result=education_result, domain_result=domain_result, acted_on=acted_on,
+                               use_llm=use_llm, persist=persist, evidence_records=evidence_records,
+                               use_confirmation_cache=use_confirmation_cache)
+
+    def _score(self, *, campaign, campaign_candidate, job_description, resume, experience_result, education_result,
+               domain_result, acted_on, use_llm, persist, evidence_records, use_confirmation_cache) -> dict:
         config = self.load_config()
         tools = self.evidence_service.load_tools()
 

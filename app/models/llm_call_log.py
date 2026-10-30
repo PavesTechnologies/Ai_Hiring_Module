@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Index, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,8 @@ from app.db.database import Base
 
 class LLMCallLog(Base):
     __tablename__ = "llm_call_log"
-    __table_args__ = (Index("ix_llm_call_log_created_at", "created_at"),)
+    __table_args__ = (Index("ix_llm_call_log_created_at", "created_at"),
+                      Index("ix_llm_call_log_resume_id", "resume_id"))
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -34,3 +35,9 @@ class LLMCallLog(Base):
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # What the call was for (llm_call_subject): the resume / campaign, when known. Set to NULL when the
+    # resume or campaign is deleted (erasure), so usage counts stay and the link goes.
+    resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True)
+    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hiring_campaigns.id", ondelete="SET NULL"), nullable=True)

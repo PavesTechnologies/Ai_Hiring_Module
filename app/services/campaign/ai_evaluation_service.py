@@ -7,7 +7,7 @@ from app.repositories.campaign_candidate_ai_evaluation_repository import Campaig
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.ai.ai_evaluation_response import AIEvaluationGenerationSchema, AIEvaluationResponse
 from app.services.extractions.llm_extraction_service import LLMExtractionService
-from app.services.llm.call_log import llm_call_source
+from app.services.llm.call_log import llm_call_source, llm_call_subject
 
 
 class AIEvaluationService:
@@ -77,7 +77,8 @@ class AIEvaluationService:
         if campaign_candidate is None:
             raise ValueError(f"CampaignCandidate '{campaign_candidate_id}' not found.")
 
-        ai_response = self.evaluate_candidate(resume_json, jd_json, prompt_template_text)
+        with llm_call_subject(resume_id=campaign_candidate.resume_id, campaign_id=campaign_candidate.campaign_id):
+            ai_response = self.evaluate_candidate(resume_json, jd_json, prompt_template_text)
 
         scores = ai_response["scores"]
         now = datetime.now(timezone.utc)

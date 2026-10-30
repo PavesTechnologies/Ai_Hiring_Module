@@ -15,6 +15,8 @@ is missing, never overwrites an edited row.
   and implied-skill rules (GitHub / GitLab / Bitbucket -> Git)
 - platform_config SCORING_V2_MATCH_BLOCKLIST: known wrong matches v2 never
   accepts from any source (v1 is not affected)
+- platform_config LLM_MODEL_PRICES: list prices per model for the monitoring
+  view's cost estimates
 """
 import json
 import uuid
@@ -22,6 +24,7 @@ import uuid
 from app.repositories.skill_detection_repository import MATCH_BLOCKLIST_KEY
 from app.services.campaign.scoring_v2 import DEFAULT_CONFIG as SCORING_V2_DEFAULT_CONFIG, SCORING_V2_CONFIG_KEY
 from app.services.campaign.scoring_v2_service import DAILY_LLM_CALL_CAP_KEY, DEFAULT_DAILY_LLM_CALL_CAP
+from app.services.monitoring.llm_prices import DEFAULT_LLM_MODEL_PRICES, LLM_MODEL_PRICES_KEY
 from app.services.llm.capabilities import DEFAULT_CAPABILITY_RULES, LLM_MODEL_CAPABILITIES_KEY
 from app.services.skills.resume_skill_scanner import POLICY_ALLOW, POLICY_EXCLUDE, POLICY_REQUIRE_CUE, term_key
 
@@ -165,6 +168,9 @@ def seed(db) -> None:
          "Scoring v2: maximum core-confirmation LLM calls per day (UTC), across all shadow / v2 campaigns. "
          "When reached, v2 is skipped for further candidates that day and shown as 'not run'; v1 is never "
          "affected. Each confirmation needing the LLM costs 3 calls (3 votes), more on invalid-output retries."),
+        (LLM_MODEL_PRICES_KEY, json.dumps(DEFAULT_LLM_MODEL_PRICES, indent=1),
+         "LLM list prices per model (USD per 1M input / output tokens), for the monitoring view's cost "
+         "estimates. Each model's source records where the price came from; HR_ADMIN edits them."),
     ):
         if db.query(PlatformConfig).filter(PlatformConfig.key == key).first() is None:
             db.add(PlatformConfig(id=uuid.uuid4(), key=key, value=value, description=description))
