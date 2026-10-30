@@ -1,0 +1,113 @@
+{
+ "id": "H10",
+ "jd": "JD-F",
+ "original_filename": "H10.docx",
+ "redacted_text": "Varun Reddy\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nComputer Science graduate with a year of technical support experience.\nEducation\nB.Tech, Computer Science — Charminar Institute of Technology, 2026 (CGPA 7.4)\nExperience\nTechnical Support Intern — Helpdesk Pro Services · Jul 2025 – Jun 2026\nResolved customer tickets for a SaaS billing product\nReset passwords and escalated bugs to the engineering team\nSkills\nProficient: MS Office, customer communication, ticketing tools\nCurrently learning: Python, SQL, Git, REST APIs",
+ "text_sha256": "a31b0ffee5f2b4a929ccc6fef82a2938dd71fcf76ff68a8a258ca8f40e90f6f1",
+ "parsed_json": {
+  "skills": [
+   "MS Office",
+   "Python",
+   "SQL",
+   "Git",
+   "REST APIs"
+  ],
+  "summary": "Computer Science graduate with a year of technical support experience.",
+  "location": "Hyderabad",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Charminar Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Varun Reddy",
+  "department": null,
+  "soft_skills": [
+   "customer communication"
+  ],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Technical Support Intern",
+    "company": "Helpdesk Pro Services",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "start_date": "Jul 2025",
+    "description": "Resolved customer tickets for a SaaS billing product. Reset passwords and escalated bugs to the engineering team",
+    "is_volunteer": false,
+    "is_internship": true
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "MS Office",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "git",
+   "raw_extracted_text": "Git",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37095,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/hard_negatives/H10.docx"
+}

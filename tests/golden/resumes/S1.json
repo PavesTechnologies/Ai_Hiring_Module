@@ -1,0 +1,201 @@
+{
+ "id": "S1",
+ "jd": "JD-S",
+ "original_filename": "S1.docx",
+ "redacted_text": "Rohini Desai\n[EMAIL] · [PHONE] · Bengaluru\nSummary\nData and ML platform leader with 15 years of experience, the last 7 leading platform teams.\nEducation\nB.Tech, Computer Science — Konkan Institute of Technology, 2011\nExperience\nDirector, Data & ML Platforms — Lumen Commerce · Oct 2019 – present\nBuilt a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark\nDesigned and deployed an ML platform with MLflow, a feature store and automated retraining, taking 40+ models to production\nSet up model monitoring for drift and accuracy, with alerts and rollback\nLed a team of 45 data, ML and platform engineers and owned a ₹28 crore budget\nSenior Engineering Manager, Data — Lumen Commerce · Oct 2015 – Sep 2019\nDesigned the AWS cloud architecture for the analytics platform, moving it from on-premise Hadoop\nDeveloped demand-forecasting models in Python and put them into production\nData Engineer — Northstar Analytics · Oct 2011 – Sep 2015\nWrote ETL pipelines in Python and SQL for retail reporting\nCertifications\nAWS Certified Solutions Architect – Professional\nSkills\nData Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Python, Kubernetes, Data Governance",
+ "text_sha256": "6628b1625a67d83e3041fdb6e62928cef3833cbfb030b69341fb3db81dc37632",
+ "parsed_json": {
+  "skills": [
+   "Data Engineering",
+   "Machine Learning",
+   "MLOps",
+   "AWS",
+   "Databricks",
+   "Spark",
+   "Python",
+   "Kubernetes",
+   "Data Governance",
+   "MLflow",
+   "SQL",
+   "Hadoop"
+  ],
+  "summary": "Data and ML platform leader with 15 years of experience, the last 7 leading platform teams.",
+  "location": "Bengaluru",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Konkan Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2011,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Rohini Desai",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "AWS Certified Solutions Architect – Professional"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "Portfolio Management",
+    "evidence": "owned a ₹28 crore budget"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Director, Data & ML Platforms",
+    "company": "Lumen Commerce",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2019",
+    "description": "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark. Designed and deployed an ML platform with MLflow, a feature store and automated retraining, taking 40+ models to production. Set up model monitoring for drift and accuracy, with alerts and rollback. Led a team of 45 data, ML and platform engineers and owned a ₹28 crore budget",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Senior Engineering Manager, Data",
+    "company": "Lumen Commerce",
+    "end_date": "Sep 2019",
+    "is_current": false,
+    "start_date": "Oct 2015",
+    "description": "Designed the AWS cloud architecture for the analytics platform, moving it from on-premise Hadoop. Developed demand-forecasting models in Python and put them into production",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Data Engineer",
+    "company": "Northstar Analytics",
+    "end_date": "Sep 2015",
+    "is_current": false,
+    "start_date": "Oct 2011",
+    "description": "Wrote ETL pipelines in Python and SQL for retail reporting",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 15.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "Hadoop",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Apache Spark",
+   "raw_extracted_text": "Spark",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Data Engineering",
+   "raw_extracted_text": "Data Engineering",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Data Governance",
+   "raw_extracted_text": "Data Governance",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Databricks",
+   "raw_extracted_text": "Databricks",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Kubernetes",
+   "raw_extracted_text": "Kubernetes",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "MLOps",
+   "raw_extracted_text": "MLOps",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "MLflow",
+   "raw_extracted_text": "MLflow",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Machine Learning",
+   "raw_extracted_text": "Machine Learning",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37472,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S1.docx"
+}

@@ -1,0 +1,139 @@
+{
+ "id": "H5",
+ "jd": "JD-D",
+ "original_filename": "H5.docx",
+ "redacted_text": "Mohammed Rizwan\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nNetwork engineer with 7 years supporting enterprise networks.\nEducation\nB.Tech, Electronics and Communication Engineering — Golconda College of Engineering, 2019\nExperience\nSenior Network Engineer — Skybridge Networks · Jun 2022 – present\nResolved P1 and P2 network incidents logged in ServiceNow\nRaised change requests for firewall and routing changes and presented them at CAB\nConfigured Cisco and Palo Alto devices\nNetwork Engineer — Skybridge Networks · Jul 2019 – May 2022\nMonitored WAN links and handled planned maintenance\nCertifications\nITIL 4 Foundation; CCNP Enterprise; ServiceNow Certified System Administrator (appearing, Dec 2026)\nSkills\nCisco IOS, Palo Alto, BGP, OSPF, Network Monitoring",
+ "text_sha256": "968ce2dc36aca4916a2fd0320acc9fe4caa3eec039cf51ea3ffb851cd1949ba3",
+ "parsed_json": {
+  "skills": [
+   "Cisco IOS",
+   "Palo Alto",
+   "BGP",
+   "OSPF",
+   "Network Monitoring",
+   "ServiceNow"
+  ],
+  "summary": "Network engineer with 7 years supporting enterprise networks.",
+  "location": "Hyderabad",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Electronics and Communication Engineering",
+    "degree": "B.Tech",
+    "institution": "Golconda College of Engineering",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2019,
+    "field_normalized": "ELECTRONICS_ENGINEERING"
+   }
+  ],
+  "full_name": "Mohammed Rizwan",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "ITIL 4 Foundation",
+   "CCNP Enterprise",
+   "ServiceNow Certified System Administrator"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "IT Service Management",
+    "evidence": "ITIL 4 Foundation"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Senior Network Engineer",
+    "company": "Skybridge Networks",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Jun 2022",
+    "description": "Resolved P1 and P2 network incidents logged in ServiceNow. Raised change requests for firewall and routing changes and presented them at CAB. Configured Cisco and Palo Alto devices.",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Network Engineer",
+    "company": "Skybridge Networks",
+    "end_date": "May 2022",
+    "is_current": false,
+    "start_date": "Jul 2019",
+    "description": "Monitored WAN links and handled planned maintenance.",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 7.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "BGP",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Cisco IOS",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Network Monitoring",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "OSPF",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Palo Alto",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "ServiceNow development",
+   "raw_extracted_text": "ServiceNow",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37216,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/hard_negatives/H5.docx"
+}

@@ -1,0 +1,174 @@
+{
+ "id": "S5",
+ "jd": "JD-S",
+ "original_filename": "S5.docx",
+ "redacted_text": "Vikrant Saxena\n[EMAIL] · [PHONE] · Mumbai\nSummary\nVisionary data and AI executive with 14 years driving transformation.\nEducation\nB.E., Mechanical Engineering — Western Ghats College of Engineering, 2012\nExperience\nChief Data & AI Officer — Horizon Insurance · Oct 2022 – present\nChampioned a data-driven culture across the enterprise\nOversaw the AI vision and roadmap\nDrove digital transformation with senior leadership\nVP, Data & AI — Horizon Insurance · Oct 2017 – Sep 2022\nOwned relationships with data and AI vendors\nPresented the AI strategy to the board\nSenior Manager, Strategy — Crestline Consulting · Oct 2012 – Sep 2017\nPrepared business cases for technology programmes\nSkills\nData Engineering, Machine Learning, MLOps, Cloud Architecture, AI Strategy, Leadership",
+ "text_sha256": "c135f8946a2b4cde6d57258ebcc26c4c78f73a450b1ec2841be11ea3de785f41",
+ "parsed_json": {
+  "skills": [
+   "Data Engineering",
+   "Machine Learning",
+   "MLOps",
+   "Cloud Architecture",
+   "AI Strategy"
+  ],
+  "summary": "Visionary data and AI executive with 14 years driving transformation.",
+  "location": "Mumbai",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Mechanical Engineering",
+    "degree": "B.E.",
+    "institution": "Western Ghats College of Engineering",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2012,
+    "field_normalized": "MECHANICAL_ENGINEERING"
+   }
+  ],
+  "full_name": "Vikrant Saxena",
+  "department": null,
+  "soft_skills": [
+   "Leadership"
+  ],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "Digital Transformation",
+    "evidence": "Drove digital transformation with senior leadership"
+   },
+   {
+    "skill": "Vendor Management",
+    "evidence": "Owned relationships with data and AI vendors"
+   },
+   {
+    "skill": "Executive Reporting",
+    "evidence": "Presented the AI strategy to the board"
+   },
+   {
+    "skill": "Program Management",
+    "evidence": "Prepared business cases for technology programmes"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Chief Data & AI Officer",
+    "company": "Horizon Insurance",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2022",
+    "description": "Championed a data-driven culture across the enterprise; Oversaw the AI vision and roadmap; Drove digital transformation with senior leadership",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "VP, Data & AI",
+    "company": "Horizon Insurance",
+    "end_date": "Sep 2022",
+    "is_current": false,
+    "start_date": "Oct 2017",
+    "description": "Owned relationships with data and AI vendors; Presented the AI strategy to the board",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Senior Manager, Strategy",
+    "company": "Crestline Consulting",
+    "end_date": "Sep 2017",
+    "is_current": false,
+    "start_date": "Oct 2012",
+    "description": "Prepared business cases for technology programmes",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 14.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "AI Strategy",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Cloud Architecture",
+   "raw_extracted_text": "Cloud Architecture",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Data Engineering",
+   "raw_extracted_text": "Data Engineering",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Digital Transformation",
+   "raw_extracted_text": "Digital Transformation (inferred: Drove digital transformation with senior leadership)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Executive Reporting",
+   "raw_extracted_text": "Executive Reporting (inferred: Presented the AI strategy to the board)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "MLOps",
+   "raw_extracted_text": "MLOps",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Machine Learning",
+   "raw_extracted_text": "Machine Learning",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Program Management",
+   "raw_extracted_text": "Program Management (inferred: Prepared business cases for technology programmes)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37222,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S5.docx"
+}

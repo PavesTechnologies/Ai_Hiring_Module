@@ -1,0 +1,137 @@
+{
+ "id": "D7",
+ "jd": "JD-D",
+ "original_filename": "D7.docx",
+ "redacted_text": "Neha Gupta\n[EMAIL] · [PHONE] · Noida\nSummary\nITSM process consultant with 6 years on BMC Remedy and Jira Service Management.\nEducation\nB.Tech, Information Technology — Central Plains Institute of Technology, 2020\nExperience\nITSM Consultant — Quillstone Services · 2022 – present\nConfigured Incident Management, Problem Management and Change Management in Jira Service Management\nSet up CAB approvals and change calendars\nDesigned request types for the employee help portal\nRemedy Administrator — Fernway Technologies · 2020 – 2022\nAdministered BMC Remedy incident and change modules\nCertifications\nITIL 4 Foundation\nSkills\nIncident Management, Change Management, Problem Management, BMC Remedy, Jira Service Management, SLA Management",
+ "text_sha256": "27c315a74547d9283cee0e3e56d52e9a3bd2b1a1203e759d6cb61e88a48abf79",
+ "parsed_json": {
+  "skills": [
+   "Incident Management",
+   "Change Management",
+   "Problem Management",
+   "BMC Remedy",
+   "Jira Service Management",
+   "SLA Management"
+  ],
+  "summary": "ITSM process consultant with 6 years on BMC Remedy and Jira Service Management.",
+  "location": "Noida",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Information Technology",
+    "degree": "B.Tech",
+    "institution": "Central Plains Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2020,
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "full_name": "Neha Gupta",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "ITIL 4 Foundation"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "IT Service Management",
+    "evidence": "ITIL 4 Foundation"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "ITSM Consultant",
+    "company": "Quillstone Services",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "2022",
+    "description": "Configured Incident Management, Problem Management and Change Management in Jira Service Management. Set up CAB approvals and change calendars. Designed request types for the employee help portal",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Remedy Administrator",
+    "company": "Fernway Technologies",
+    "end_date": "2022",
+    "is_current": false,
+    "start_date": "2020",
+    "description": "Administered BMC Remedy incident and change modules",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "BMC Remedy",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Jira Service Management",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Change Management",
+   "raw_extracted_text": "Change Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Incident Management",
+   "raw_extracted_text": "Incident Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Problem Management",
+   "raw_extracted_text": "Problem Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "SLA management",
+   "raw_extracted_text": "SLA Management",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37143,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/D7.docx"
+}

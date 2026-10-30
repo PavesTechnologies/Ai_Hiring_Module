@@ -1,0 +1,125 @@
+{
+ "id": "D2",
+ "jd": "JD-D",
+ "original_filename": "D2.docx",
+ "redacted_text": "Vikram Joshi\n[EMAIL] · [PHONE] · Bengaluru\nSummary\nServiceNow platform specialist with 5 years supporting IT operations teams.\nEducation\nB.Sc., Physics — Garden City College, 2019\nExperience\nServiceNow Platform Specialist — Meridian Global Services · Apr 2021 – present\nOwned ticket handling and outage response workflows on ServiceNow for 4,000 users\nConfigured the RFC process, release approvals and the weekly approval board on ServiceNow\nBuilt request portal items and fulfilment flows for laptops, access and software\nConnected the platform to monitoring alerts through REST\nServiceNow Administrator — Pinecrest Solutions · Apr 2020 – Mar 2021\nMaintained forms, lists and user permissions on ServiceNow\nSkills\nServiceNow, Flow Designer, REST integrations, reporting",
+ "text_sha256": "e656d078ef50a95195182b1660b72868d439c5677cfd0bd898dc0ef15eb77174",
+ "parsed_json": {
+  "skills": [
+   "ServiceNow",
+   "Flow Designer",
+   "REST",
+   "reporting"
+  ],
+  "summary": "ServiceNow platform specialist with 5 years supporting IT operations teams.",
+  "location": "Bengaluru",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Physics",
+    "degree": "B.Sc.",
+    "institution": "Garden City College",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2019,
+    "field_normalized": "OTHER"
+   }
+  ],
+  "full_name": "Vikram Joshi",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "Executive Reporting",
+    "evidence": "Configured the RFC process, release approvals and the weekly approval board on ServiceNow"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "ServiceNow Platform Specialist",
+    "company": "Meridian Global Services",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Apr 2021",
+    "description": "Owned ticket handling and outage response workflows on ServiceNow for 4,000 users. Configured the RFC process, release approvals and the weekly approval board on ServiceNow. Built request portal items and fulfilment flows for laptops, access and software. Connected the platform to monitoring alerts through REST",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "ServiceNow Administrator",
+    "company": "Pinecrest Solutions",
+    "end_date": "Mar 2021",
+    "is_current": false,
+    "start_date": "Apr 2020",
+    "description": "Maintained forms, lists and user permissions on ServiceNow",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "reporting",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Executive Reporting",
+   "raw_extracted_text": "Executive Reporting (inferred: Configured the RFC process, release approvals and the weekly approval board on ServiceNow)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Flow Designer",
+   "raw_extracted_text": "Flow Designer",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST",
+   "raw_extracted_text": "REST",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "ServiceNow development",
+   "raw_extracted_text": "ServiceNow",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37204,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/D2.docx"
+}

@@ -1,0 +1,233 @@
+{
+ "id": "F1",
+ "jd": "JD-F",
+ "original_filename": "F1_v2.docx",
+ "redacted_text": "Aarav Menon\n[EMAIL] · [PHONE] · Bengaluru\nSummary\nComputer Science graduate with a year of internship experience building Python backend services.\nEducation\nB.Tech, Computer Science and Engineering — Lakeside Institute of Technology, 2026 (CGPA 8.4)\nExperience\nSoftware Engineering Intern — Cobalt Apps Pvt Ltd · Jan 2026 – Jun 2026\nBuilt REST APIs in FastAPI for an internal ticketing tool\nWrote SQL queries and Alembic migrations on PostgreSQL\nAdded pytest unit tests, raising coverage from 40% to 72%\nBackend Developer Intern — Greenleaf Software · Jul 2025 – Dec 2025\nMaintained Django REST endpoints and fixed bugs from code review\nUsed Git with feature branches and pull requests\nContainerised a service with Docker for local development\nProjects\nLibrary API: Python, FastAPI, PostgreSQL, deployed on AWS EC2\nExpense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow\nSkills\nPython, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+ "text_sha256": "a1190a3ed613686e8c5bbe8f12bfc881ccaad74d2309ef86eb9b47b6c87a4fb1",
+ "parsed_json": {
+  "skills": [
+   "Python",
+   "SQL",
+   "REST APIs",
+   "Git",
+   "FastAPI",
+   "Django",
+   "pytest",
+   "Docker",
+   "Linux",
+   "AWS",
+   "Alembic",
+   "PostgreSQL",
+   "Flask",
+   "SQLite",
+   "GitHub Actions"
+  ],
+  "summary": "Computer Science graduate with a year of internship experience building Python backend services.",
+  "location": "Bengaluru",
+  "metadata": {},
+  "projects": [
+   {
+    "name": "Library API",
+    "tech": [
+     "Python",
+     "FastAPI",
+     "PostgreSQL",
+     "AWS"
+    ],
+    "description": "Python, FastAPI, PostgreSQL, deployed on AWS EC2"
+   },
+   {
+    "name": "Expense Tracker",
+    "tech": [
+     "Python",
+     "Flask",
+     "SQLite",
+     "pytest",
+     "GitHub Actions"
+    ],
+    "description": "Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+   }
+  ],
+  "education": [
+   {
+    "field": "Computer Science and Engineering",
+    "degree": "B.Tech",
+    "institution": "Lakeside Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Aarav Menon",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Software Engineering Intern",
+    "company": "Cobalt Apps Pvt Ltd",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "start_date": "Jan 2026",
+    "description": "Built REST APIs in FastAPI for an internal ticketing tool; Wrote SQL queries and Alembic migrations on PostgreSQL; Added pytest unit tests, raising coverage from 40% to 72%",
+    "is_volunteer": false,
+    "is_internship": true
+   },
+   {
+    "title": "Backend Developer Intern",
+    "company": "Greenleaf Software",
+    "end_date": "Dec 2025",
+    "is_current": false,
+    "start_date": "Jul 2025",
+    "description": "Maintained Django REST endpoints and fixed bugs from code review; Used Git with feature branches and pull requests; Containerised a service with Docker for local development",
+    "is_volunteer": false,
+    "is_internship": true
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Alembic",
+   "raw_extracted_text": "Alembic",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Django",
+   "raw_extracted_text": "Django",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Docker",
+   "raw_extracted_text": "Docker",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "FastAPI",
+   "raw_extracted_text": "FastAPI",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Flask",
+   "raw_extracted_text": "Flask",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "GitHub Actions",
+   "raw_extracted_text": "GitHub Actions",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Linux",
+   "raw_extracted_text": "Linux",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "PostgreSQL",
+   "raw_extracted_text": "PostgreSQL",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "SQLite",
+   "raw_extracted_text": "SQLite",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "git",
+   "raw_extracted_text": "Git",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "pytest",
+   "raw_extracted_text": "pytest",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37367,
+  "version_number": 2,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/duplicates/F1_v2.docx"
+}

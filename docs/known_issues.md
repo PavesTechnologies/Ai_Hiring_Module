@@ -5,6 +5,28 @@ not fixed in the change that discovered or re-encountered them. Each entry
 should stay short: what's wrong, where it's been seen, and what the standing
 workaround is until someone actually fixes it.
 
+## A stated career break is parsed as a job (found 2026-10-30)
+
+**Status:** open.
+
+The golden set's counterfactual pairs (CF-GAP-S7-2, CF-GAP-D1-2) add the line "Career break (family care) · May 2021 – Jun 2022". The resume parse returns it as a `work_experience` entry: in D1 the company is "family care", in S7 there's no company. Those months can then count as work experience, so a candidate who states a break could get more experience than one who leaves the same gap unexplained.
+
+Seen in one parse each. The golden runner shows whether it changes an outcome.
+
+**To do:** decide how a stated break should be parsed (excluded from experience, kept as a gap) and handle it in the parse prompt or the experience calculation.
+
+## A resume parse can vary between runs (found 2026-10-30)
+
+**Status:** open, to be measured.
+
+Parsing the same resume again can give different results. For the counterfactual name variants of F1, all three lost three skills that their control kept: Alembic, PostgreSQL and GitHub Actions. The documents are identical apart from the name. Other examples:
+- an inferred skill worded differently ("Team Management" / "Team Leadership");
+- `total_experience_years` present or null.
+
+With one parse per resume, chance can't be told apart from an effect of the name.
+
+**To do:** parse each counterfactual resume several times and compare the spread within a resume with the difference between names.
+
 ---
 
 ## A maximum experience shouldn't reject: it acts as an age filter (found 2026-10-26)

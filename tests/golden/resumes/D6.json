@@ -1,0 +1,139 @@
+{
+ "id": "D6",
+ "jd": "JD-D",
+ "original_filename": "D6.docx",
+ "redacted_text": "Karan Malhotra\n[EMAIL] · [PHONE] · Gurugram\nSummary\nBackend engineer with 7 years building Java microservices.\nEducation\nB.Tech, Computer Science — Northern Institute of Technology, 2019\nExperience\nSenior Software Engineer — Crestline Fintech · 2022 – present\nDesigned Java Spring Boot microservices and REST APIs for payments\nLed migration to Kubernetes on AWS\nSoftware Engineer — Bayview Systems · 2019 – 2022\nBuilt REST APIs and batch jobs in Java\nSkills\nJava, Spring Boot, REST APIs, Microservices, Kubernetes, AWS, PostgreSQL",
+ "text_sha256": "37dc581bf3fc4b887607d0dd9f15b8a32563e40971e8000cac1bcea1d91fc2b9",
+ "parsed_json": {
+  "skills": [
+   "Java",
+   "Spring Boot",
+   "REST APIs",
+   "Microservices",
+   "Kubernetes",
+   "AWS",
+   "PostgreSQL"
+  ],
+  "summary": "Backend engineer with 7 years building Java microservices.",
+  "location": "Gurugram",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Northern Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2019,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Karan Malhotra",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Senior Software Engineer",
+    "company": "Crestline Fintech",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "2022",
+    "description": "Designed Java Spring Boot microservices and REST APIs for payments Led migration to Kubernetes on AWS",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Software Engineer",
+    "company": "Bayview Systems",
+    "end_date": "2022",
+    "is_current": false,
+    "start_date": "2019",
+    "description": "Built REST APIs and batch jobs in Java",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Java",
+   "raw_extracted_text": "Java",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Kubernetes",
+   "raw_extracted_text": "Kubernetes",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Microservices",
+   "raw_extracted_text": "Microservices",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "PostgreSQL",
+   "raw_extracted_text": "PostgreSQL",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Spring Boot",
+   "raw_extracted_text": "Spring Boot",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37083,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/D6.docx"
+}

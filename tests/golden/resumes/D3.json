@@ -1,0 +1,111 @@
+{
+ "id": "D3",
+ "jd": "JD-D",
+ "original_filename": "D3.docx",
+ "redacted_text": "Ananya Reddy\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nServiceNow administrator with 4.5 years of experience.\nEducation\nB.Com — Charminar College of Commerce, 2021\nExperience\nServiceNow Administrator — Lotus Infotech · Oct 2022 – present\nAdminister the ServiceNow instance for the IT service desk\nMaintain catalogue items, assignment rules and notifications\nSupport the change process and prepare changes for approval meetings\nIT Support Analyst — Lotus Infotech · Apr 2022 – Oct 2022\nLogged and resolved service desk tickets\nCertifications\nITIL 4 Foundation; ServiceNow Certified System Administrator (CSA)\nSkills\nServiceNow administration, reporting, user administration",
+ "text_sha256": "37f13117604386a4e8897af19139b9832705d524b6d767aa5fc21d4856e8e3c9",
+ "parsed_json": {
+  "skills": [
+   "ServiceNow administration",
+   "reporting",
+   "user administration"
+  ],
+  "summary": "ServiceNow administrator with 4.5 years of experience.",
+  "location": "Hyderabad",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Commerce",
+    "degree": "B.Com",
+    "institution": "Charminar College of Commerce",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2021,
+    "field_normalized": "COMMERCE"
+   }
+  ],
+  "full_name": "Ananya Reddy",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "ITIL 4 Foundation",
+   "ServiceNow Certified System Administrator (CSA)"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "IT Service Management",
+    "evidence": "ITIL 4 Foundation"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "ServiceNow Administrator",
+    "company": "Lotus Infotech",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2022",
+    "description": "Administer the ServiceNow instance for the IT service desk Maintain catalogue items, assignment rules and notifications Support the change process and prepare changes for approval meetings",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "IT Support Analyst",
+    "company": "Lotus Infotech",
+    "end_date": "Oct 2022",
+    "is_current": false,
+    "start_date": "Apr 2022",
+    "description": "Logged and resolved service desk tickets",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 4.5
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "ServiceNow administration",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "reporting",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "user administration",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37124,
+  "version_number": 2,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/D3.docx"
+}

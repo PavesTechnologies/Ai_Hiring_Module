@@ -1,0 +1,219 @@
+{
+ "id": "F8",
+ "jd": "JD-F",
+ "original_filename": "F8.docx",
+ "redacted_text": "Ishaan Verma\n[EMAIL] · [PHONE] · Delhi\nSummary\nMotivated Computer Science graduate and fast learner.\nEducation\nB.Tech, Computer Science — Capital Institute of Engineering, 2026 (CGPA 7.5)\nSkills\nPython, SQL, REST APIs, Git, Django, FastAPI, pytest, Docker, Kubernetes, AWS, Azure, React, Node.js, Java, Go, Machine Learning, Generative AI, Linux\nActivities\nMember, college coding club\nCompleted an online course on web development",
+ "text_sha256": "fbafd94d1759232ebeeecf33d909b9f1dea8c4a411dd8515892d76bdd807dcf0",
+ "parsed_json": {
+  "skills": [
+   "Python",
+   "SQL",
+   "REST APIs",
+   "Git",
+   "Django",
+   "FastAPI",
+   "pytest",
+   "Docker",
+   "Kubernetes",
+   "AWS",
+   "Azure",
+   "React",
+   "Node.js",
+   "Java",
+   "Go",
+   "Machine Learning",
+   "Generative AI",
+   "Linux"
+  ],
+  "summary": "Motivated Computer Science graduate and fast learner.",
+  "location": "Delhi",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Capital Institute of Engineering",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Ishaan Verma",
+  "department": null,
+  "soft_skills": [
+   "fast learner"
+  ],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Azure",
+   "raw_extracted_text": "Azure",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Django",
+   "raw_extracted_text": "Django",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Docker",
+   "raw_extracted_text": "Docker",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "FastAPI",
+   "raw_extracted_text": "FastAPI",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Generative AI",
+   "raw_extracted_text": "Generative AI",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Go",
+   "raw_extracted_text": "Go",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Java",
+   "raw_extracted_text": "Java",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Kubernetes",
+   "raw_extracted_text": "Kubernetes",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Linux",
+   "raw_extracted_text": "Linux",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Machine Learning",
+   "raw_extracted_text": "Machine Learning",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Node.js",
+   "raw_extracted_text": "Node.js",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "React",
+   "raw_extracted_text": "React",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "git",
+   "raw_extracted_text": "Git",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "pytest",
+   "raw_extracted_text": "pytest",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37024,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/F8.docx"
+}

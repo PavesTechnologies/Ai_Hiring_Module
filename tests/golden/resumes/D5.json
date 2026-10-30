@@ -1,0 +1,137 @@
+{
+ "id": "D5",
+ "jd": "JD-D",
+ "original_filename": "D5.docx",
+ "redacted_text": "Sanjana Pillai\n[EMAIL] · [PHONE] · Chennai\nSummary\nServiceNow developer with 3.5 years of ITSM implementation experience.\nEducation\nB.E., Information Technology — Marina Institute of Engineering, 2022\nExperience\nServiceNow Developer — Tidewater Tech · Oct 2023 – present\nConfigured Incident Management and Change Management modules, including CAB workflows\nBuilt Service Catalog items with Flow Designer\nImplemented ServiceNow ITSM for a mid-size client\nAssociate ServiceNow Developer — Tidewater Tech · Apr 2023 – Oct 2023\nWrote Glide scripts and fixed UI policies\nCertifications\nServiceNow Certified System Administrator (CSA)\nSkills\nServiceNow ITSM, Incident Management, Change Management, Service Catalog, Flow Designer, JavaScript",
+ "text_sha256": "8d2f4bf9dcfeb3486b44b9c1e68e89398e16d145e6d10d2af6b8af2d0d8f8d32",
+ "parsed_json": {
+  "skills": [
+   "ServiceNow ITSM",
+   "Incident Management",
+   "Change Management",
+   "Service Catalog",
+   "Flow Designer",
+   "JavaScript"
+  ],
+  "summary": "ServiceNow developer with 3.5 years of ITSM implementation experience.",
+  "location": "Chennai",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Information Technology",
+    "degree": "B.E.",
+    "institution": "Marina Institute of Engineering",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2022,
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "full_name": "Sanjana Pillai",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "ServiceNow Certified System Administrator (CSA)"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "IT Service Management",
+    "evidence": "ServiceNow developer with 3.5 years of ITSM implementation experience."
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "ServiceNow Developer",
+    "company": "Tidewater Tech",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2023",
+    "description": "Configured Incident Management and Change Management modules, including CAB workflows. Built Service Catalog items with Flow Designer. Implemented ServiceNow ITSM for a mid-size client",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Associate ServiceNow Developer",
+    "company": "Tidewater Tech",
+    "end_date": "Oct 2023",
+    "is_current": false,
+    "start_date": "Apr 2023",
+    "description": "Wrote Glide scripts and fixed UI policies",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "Change Management",
+   "raw_extracted_text": "Change Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Flow Designer",
+   "raw_extracted_text": "Flow Designer",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Incident Management",
+   "raw_extracted_text": "Incident Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "JavaScript",
+   "raw_extracted_text": "JavaScript",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Service Catalog",
+   "raw_extracted_text": "Service Catalog",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "ServiceNow ITSM",
+   "raw_extracted_text": "ServiceNow ITSM",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37162,
+  "version_number": 3,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/D5.docx"
+}

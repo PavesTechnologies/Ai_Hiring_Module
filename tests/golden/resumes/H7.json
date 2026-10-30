@@ -1,0 +1,111 @@
+{
+ "id": "H7",
+ "jd": "JD-F",
+ "original_filename": "H7.docx",
+ "redacted_text": "Nikhil Patil\n[EMAIL] · [PHONE] · Nagpur\nSummary\nComputer Science graduate with a year of software testing internships.\nEducation\nB.Tech, Computer Science — GIT (Greenfield Institute of Technology), 2026 (CGPA 7.8)\nExperience\nQA Intern — Testwell Labs · Jul 2025 – Jun 2026\nTested REST endpoints manually using Postman\nLogged defects in Jira and retested fixes\nWrote test cases and test reports in Excel\nSkills\nManual Testing, Postman, Jira, Excel, Test Case Design",
+ "text_sha256": "eb102a78812966859babc9897634c49dfc0408cad44d05b659937f439b679027",
+ "parsed_json": {
+  "skills": [
+   "Manual Testing",
+   "Postman",
+   "Jira",
+   "Excel",
+   "Test Case Design"
+  ],
+  "summary": "Computer Science graduate with a year of software testing internships.",
+  "location": "Nagpur",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "GIT (Greenfield Institute of Technology)",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Nikhil Patil",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "QA Intern",
+    "company": "Testwell Labs",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "start_date": "Jul 2025",
+    "description": "Tested REST endpoints manually using Postman, Logged defects in Jira and retested fixes, Wrote test cases and test reports in Excel",
+    "is_volunteer": false,
+    "is_internship": true
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "Excel",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Jira",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Manual Testing",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Test Case Design",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Postman",
+   "raw_extracted_text": "Postman",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37066,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/hard_negatives/H7.docx"
+}

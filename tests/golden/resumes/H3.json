@@ -1,0 +1,128 @@
+{
+ "id": "H3",
+ "jd": "JD-D",
+ "original_filename": "H3.docx",
+ "redacted_text": "Gaurav Thakur\n[EMAIL] · [PHONE] · Ahmedabad\nSummary\nConstruction project manager with 9 years delivering commercial building projects.\nEducation\nB.E., Civil Engineering — Sabarmati Institute of Technology, 2017\nExperience\nSenior Project Manager — Riverstone Builders · Jan 2021 – present\nChaired the change control board for scope change requests and variation orders\nInvestigated site safety incidents and filed incident reports with the safety officer\nMaintained the approved materials catalogue and vendor rate cards\nProject Engineer — Riverstone Builders · Sep 2017 – Dec 2020\nPlanned site schedules and coordinated subcontractors\nCertifications\nPMP — Project Management Professional\nSkills\nProject Management, Contract Management, Primavera P6, AutoCAD, Site Safety",
+ "text_sha256": "666929fdc42831557d424638477cbeca9e942ea06f7c37670e3d0e95b5cb9120",
+ "parsed_json": {
+  "skills": [
+   "Project Management",
+   "Contract Management",
+   "Primavera P6",
+   "AutoCAD",
+   "Site Safety"
+  ],
+  "summary": "Construction project manager with 9 years delivering commercial building projects.",
+  "location": "Ahmedabad",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Civil Engineering",
+    "degree": "B.E.",
+    "institution": "Sabarmati Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2017,
+    "field_normalized": "CIVIL_ENGINEERING"
+   }
+  ],
+  "full_name": "Gaurav Thakur",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [
+   "PMP"
+  ],
+  "inferred_skills": [
+   {
+    "skill": "Project Management",
+    "evidence": "PMP"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Senior Project Manager",
+    "company": "Riverstone Builders",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Jan 2021",
+    "description": "Chaired the change control board for scope change requests and variation orders Investigated site safety incidents and filed incident reports with the safety officer Maintained the approved materials catalogue and vendor rate cards",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Project Engineer",
+    "company": "Riverstone Builders",
+    "end_date": "Dec 2020",
+    "is_current": false,
+    "start_date": "Sep 2017",
+    "description": "Planned site schedules and coordinated subcontractors",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 9.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "AutoCAD",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Contract Management",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Primavera P6",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Project Management",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Site Safety",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37217,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/hard_negatives/H3.docx"
+}

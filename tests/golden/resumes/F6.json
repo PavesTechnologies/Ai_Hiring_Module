@@ -1,0 +1,102 @@
+{
+ "id": "F6",
+ "jd": "JD-F",
+ "original_filename": "F6.docx",
+ "redacted_text": "Sneha Kulkarni\n[EMAIL] · [PHONE] · Nashik\nSummary\nMechanical engineering graduate seeking an entry-level role.\nEducation\nB.E., Mechanical Engineering — Western Plains College of Engineering, 2026 (CGPA 7.2)\nExperience\nDesign Intern — Ironwheel Fabrication · Jan 2026 – Jun 2026\nPrepared part drawings in AutoCAD and SolidWorks\nAssisted with quality inspection reports in Excel\nSkills\nAutoCAD, SolidWorks, MS Excel, basic C programming",
+ "text_sha256": "606130f9ecbb9e918ffc0ea7bf7ab4cdc3757464a9ec8973b6a063a1b35f07d4",
+ "parsed_json": {
+  "skills": [
+   "AutoCAD",
+   "SolidWorks",
+   "MS Excel",
+   "C"
+  ],
+  "summary": "Mechanical engineering graduate seeking an entry-level role.",
+  "location": "Nashik",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Mechanical Engineering",
+    "degree": "B.E.",
+    "institution": "Western Plains College of Engineering",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "MECHANICAL_ENGINEERING"
+   }
+  ],
+  "full_name": "Sneha Kulkarni",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Design Intern",
+    "company": "Ironwheel Fabrication",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "start_date": "Jan 2026",
+    "description": "Prepared part drawings in AutoCAD and SolidWorks. Assisted with quality inspection reports in Excel",
+    "is_volunteer": false,
+    "is_internship": true
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "AutoCAD",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "C",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "MS Excel",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "SolidWorks",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37037,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/phase3/F6.docx"
+}

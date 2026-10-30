@@ -1,0 +1,135 @@
+{
+ "id": "S3",
+ "jd": "JD-S",
+ "original_filename": "S3.docx",
+ "redacted_text": "Meghna Rao\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nMachine learning leader with 14 years of experience in applied ML and research.\nEducation\nM.Tech, Computer Science — Golconda Institute of Science, 2012\nExperience\nHead of Applied Machine Learning — Vistara Health AI · Oct 2019 – present\nLed a team of 25 ML engineers and researchers building diagnostic models\nDeployed models to production on AWS SageMaker with automated retraining and drift monitoring\nDesigned the AWS cloud architecture for model training and serving\nSenior ML Scientist — Vistara Health AI · Oct 2012 – Sep 2019\nDeveloped computer-vision and NLP models in Python and PyTorch\nPublished 8 papers on medical image analysis\nSkills\nMachine Learning, Deep Learning, PyTorch, AWS SageMaker, MLOps, Python",
+ "text_sha256": "d0c823d215ad0daf1a8d85f312a4c43ddd14e286c0608dafe32571a56ceda722",
+ "parsed_json": {
+  "skills": [
+   "Machine Learning",
+   "Deep Learning",
+   "PyTorch",
+   "AWS SageMaker",
+   "MLOps",
+   "Python"
+  ],
+  "summary": "Machine learning leader with 14 years of experience in applied ML and research.",
+  "location": "Hyderabad",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "M.Tech",
+    "institution": "Golconda Institute of Science",
+    "degree_level": "MASTER",
+    "graduation_year": 2012,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Meghna Rao",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "People Management",
+    "evidence": "Led a team of 25 ML engineers and researchers building diagnostic models"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Head of Applied Machine Learning",
+    "company": "Vistara Health AI",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2019",
+    "description": "Led a team of 25 ML engineers and researchers building diagnostic models. Deployed models to production on AWS SageMaker with automated retraining and drift monitoring. Designed the AWS cloud architecture for model training and serving.",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Senior ML Scientist",
+    "company": "Vistara Health AI",
+    "end_date": "Sep 2019",
+    "is_current": false,
+    "start_date": "Oct 2012",
+    "description": "Developed computer-vision and NLP models in Python and PyTorch. Published 8 papers on medical image analysis.",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 14.0
+ },
+ "candidate_skills": [
+  {
+   "skill": "Deep Learning",
+   "raw_extracted_text": "Deep Learning",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "MLOps",
+   "raw_extracted_text": "MLOps",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Machine Learning",
+   "raw_extracted_text": "Machine Learning",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "PyTorch",
+   "raw_extracted_text": "PyTorch",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "SageMaker",
+   "raw_extracted_text": "AWS SageMaker",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37198,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S3.docx"
+}

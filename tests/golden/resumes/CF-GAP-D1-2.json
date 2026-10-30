@@ -1,0 +1,172 @@
+{
+ "id": "CF-GAP-D1-2",
+ "jd": "JD-D",
+ "source_docx": "tests/fixtures/counterfactual/CF-GAP-D1-2.docx",
+ "original_filename": "CF-GAP-D1-2.docx",
+ "redacted_text": "Priya Sharma\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nServiceNow ITSM consultant with 6 years of implementation experience.\nEducation\nB.Tech, Computer Science — Deccan Institute of Technology, 2020\nExperience\nSenior ServiceNow Consultant — Arcturus Consulting · Jul 2022 – present\nImplemented ServiceNow ITSM for three enterprise clients\nConfigured Incident, Problem and Change Management workflows\nDesigned Service Catalog items and request fulfilment flows in Flow Designer\nRan CAB approval configuration and change risk assessment\nCareer break (family care) · May 2021 – Jun 2022\nServiceNow Developer — Orbitwise IT · Jul 2020 – Apr 2021\nBuilt CMDB discovery integrations and REST integrations with monitoring tools\nWrote Glide scripts (JavaScript) for business rules and client scripts\nConfigured SLA definitions for incident priorities\nCertifications\nServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation\nSkills\nServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+ "text_sha256": "e0204fdcf6b24ab9a46df8a71427652585bb53937fbc635618501fb6614176b5",
+ "parsed_json": {
+  "full_name": "Priya Sharma",
+  "skills": [
+   "ServiceNow ITSM",
+   "Incident Management",
+   "Change Management",
+   "Problem Management",
+   "Service Catalog",
+   "CMDB",
+   "Flow Designer",
+   "JavaScript",
+   "SLA Management"
+  ],
+  "soft_skills": [],
+  "inferred_skills": [
+   {
+    "skill": "IT Service Management",
+    "evidence": "ITIL 4 Foundation"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Senior ServiceNow Consultant",
+    "company": "Arcturus Consulting",
+    "start_date": "Jul 2022",
+    "end_date": "present",
+    "is_current": true,
+    "is_internship": false,
+    "is_volunteer": false,
+    "description": "Implemented ServiceNow ITSM for three enterprise clients; Configured Incident, Problem and Change Management workflows; Designed Service Catalog items and request fulfilment flows in Flow Designer; Ran CAB approval configuration and change risk assessment"
+   },
+   {
+    "title": "Career break",
+    "company": "family care",
+    "start_date": "May 2021",
+    "end_date": "Jun 2022",
+    "is_current": false,
+    "is_internship": false,
+    "is_volunteer": false,
+    "description": null
+   },
+   {
+    "title": "ServiceNow Developer",
+    "company": "Orbitwise IT",
+    "start_date": "Jul 2020",
+    "end_date": "Apr 2021",
+    "is_current": false,
+    "is_internship": false,
+    "is_volunteer": false,
+    "description": "Built CMDB discovery integrations and REST integrations with monitoring tools; Wrote Glide scripts (JavaScript) for business rules and client scripts; Configured SLA definitions for incident priorities"
+   }
+  ],
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Deccan Institute of Technology",
+    "field": "Computer Science",
+    "graduation_year": 2020,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [
+   "ServiceNow Certified System Administrator (CSA)",
+   "ServiceNow CIS-ITSM",
+   "ITIL 4 Foundation"
+  ],
+  "total_experience_years": 6.0,
+  "department": null,
+  "location": "Hyderabad",
+  "summary": "ServiceNow ITSM consultant with 6 years of implementation experience.",
+  "metadata": {}
+ },
+ "candidate_skills": [
+  {
+   "skill": "CMDB",
+   "raw_extracted_text": "CMDB",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Change Management",
+   "raw_extracted_text": "Change Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Flow Designer",
+   "raw_extracted_text": "Flow Designer",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Incident Management",
+   "raw_extracted_text": "Incident Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "JavaScript",
+   "raw_extracted_text": "JavaScript",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Problem Management",
+   "raw_extracted_text": "Problem Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "SLA management",
+   "raw_extracted_text": "SLA Management",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Service Catalog",
+   "raw_extracted_text": "Service Catalog",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "ServiceNow ITSM",
+   "raw_extracted_text": "ServiceNow ITSM",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  }
+ ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-10-30"
+ },
+ "resume": {
+  "file_format": "DOCX",
+  "parse_status": "PARSED",
+  "is_active_version": true,
+  "version_number": 1
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ }
+}

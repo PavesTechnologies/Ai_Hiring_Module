@@ -1,0 +1,1033 @@
+{
+ "schema_version": 1,
+ "description": "Synthetic golden set: Phase 3 (F1-F8, D1-D8), hard negatives (H1-H10), senior (S1-S8), and counterfactual pairs. See scripts/golden/golden_format.py.",
+ "jds": {
+  "JD-F": "jds/JD-F.json",
+  "JD-D": "jds/JD-D.json",
+  "JD-S": "jds/JD-S.json"
+ },
+ "cases": [
+  {
+   "id": "F1",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F1.json",
+   "source_docx": "tests/fixtures/duplicates/F1_v2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "All core skills with evidence; 12 months of internships meets the 1-year minimum, which the JD says includes internships"
+   },
+   "tests": [
+    "internship_counts_as_experience"
+   ]
+  },
+  {
+   "id": "F2",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F2.json",
+   "source_docx": "tests/fixtures/phase3/F2.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Core skills clearly shown in projects (Flask REST API, PostgreSQL SQL, GitHub), but 0 years against a 1-year minimum, within tolerance -> near-miss"
+   },
+   "tests": [
+    "project_only_skills",
+    "experience_near_miss"
+   ]
+  },
+  {
+   "id": "F3",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F3.json",
+   "source_docx": "tests/fixtures/phase3/F3.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "IT is a related field; 12 months of internship meets the minimum"
+   },
+   "tests": [
+    "education_field_family",
+    "internship_counts_as_experience"
+   ]
+  },
+  {
+   "id": "F4",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F4.json",
+   "source_docx": "tests/fixtures/phase3/F4.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "ECE treated as related for software roles; 0.5 years short (within tolerance) -> one near-miss"
+   },
+   "tests": [
+    "education_field_family",
+    "experience_near_miss"
+   ]
+  },
+  {
+   "id": "F5",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F5.json",
+   "source_docx": "tests/fixtures/phase3/F5.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Splitting and spelling normalisation should find all four core skills; 12 months of internship"
+   },
+   "tests": [
+    "spelling_normalisation",
+    "compound_skill_split",
+    "skill_alias"
+   ]
+  },
+  {
+   "id": "F6",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F6.json",
+   "source_docx": "tests/fixtures/phase3/F6.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "No core skills; unrelated degree"
+   },
+   "tests": [
+    "weak_fit"
+   ]
+  },
+  {
+   "id": "F7",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F7.json",
+   "source_docx": "tests/fixtures/phase3/F7.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "2/4",
+    "note": "2 missing with 1 allowed -> one near-miss; experience met"
+   },
+   "tests": [
+    "core_near_miss"
+   ]
+  },
+  {
+   "id": "F8",
+   "set": "phase3",
+   "jd": "JD-F",
+   "resume": "resumes/F8.json",
+   "source_docx": "tests/fixtures/phase3/F8.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": null,
+    "note": "Skills only listed, never shown in use; 0 years (within tolerance) -> near-miss; a person should check"
+   },
+   "tests": [
+    "keyword_stuffing",
+    "listed_only_skills",
+    "experience_near_miss"
+   ]
+  },
+  {
+   "id": "D1",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D1.json",
+   "source_docx": "tests/fixtures/phase3/D1.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Everything matches with evidence"
+   },
+   "tests": [
+    "strong_domain_match",
+    "certifications"
+   ]
+  },
+  {
+   "id": "D2",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D2.json",
+   "source_docx": "tests/fixtures/phase3/D2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "A recruiter would read these as incident, change and catalogue work on ServiceNow"
+   },
+   "tests": [
+    "domain_paraphrase",
+    "functional_score"
+   ]
+  },
+  {
+   "id": "D3",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D3.json",
+   "source_docx": "tests/fixtures/phase3/D3.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": null,
+    "note": "ServiceNow ITSM from the CSA and admin of the ServiceNow instance; change and catalogue work shown (\"support the change process\", \"maintain catalogue items\"); incident management only implied by ITIL 4 and service-desk work, so uncertain - one uncertain core skill is within the allowance of one missing; 4.5 years (as of 2026-10-14) meets the minimum"
+   },
+   "tests": [
+    "certification_mapping",
+    "implied_skill"
+   ]
+  },
+  {
+   "id": "D4",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D4.json",
+   "source_docx": "tests/fixtures/phase3/D4.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Change Management here is the organisational sense; JD needs the ITSM sense"
+   },
+   "tests": [
+    "skill_sense"
+   ]
+  },
+  {
+   "id": "D5",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D5.json",
+   "source_docx": "tests/fixtures/phase3/D5.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "0.5 years short (3.5 years as of 2026-10-14), within tolerance -> near-miss"
+   },
+   "tests": [
+    "experience_near_miss"
+   ]
+  },
+  {
+   "id": "D6",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D6.json",
+   "source_docx": "tests/fixtures/phase3/D6.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "No ITSM skills"
+   },
+   "tests": [
+    "no_domain_experience"
+   ]
+  },
+  {
+   "id": "D7",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D7.json",
+   "source_docx": "tests/fixtures/phase3/D7.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "2/4",
+    "note": "Incident and change (ITSM) present; ServiceNow ITSM and Service Catalog missing (\"request types\" isn't the catalogue) -> one near-miss"
+   },
+   "tests": [
+    "other_platform",
+    "core_near_miss"
+   ]
+  },
+  {
+   "id": "D8",
+   "set": "phase3",
+   "jd": "JD-D",
+   "resume": "resumes/D8.json",
+   "source_docx": "tests/fixtures/phase3/D8.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Logs tickets in ServiceNow but doesn't configure it; change and catalogue missing; ServiceNow ITSM as an implementation skill not shown"
+   },
+   "tests": [
+    "end_user_not_implementer"
+   ]
+  },
+  {
+   "id": "H1",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H1.json",
+   "source_docx": "tests/fixtures/hard_negatives/H1.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Real ServiceNow catalog work, but no ITSM, incident or change"
+   },
+   "trap": "ServiceNow, but HR Service Delivery, not ITSM"
+  },
+  {
+   "id": "H2",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H2.json",
+   "source_docx": "tests/fixtures/hard_negatives/H2.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Different platform; \"change sets\" is a Salesforce deployment term, not change management"
+   },
+   "trap": "Salesforce equivalents: \"incident escalation\", \"change sets\", \"request catalog\""
+  },
+  {
+   "id": "H3",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H3.json",
+   "source_docx": "tests/fixtures/hard_negatives/H3.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Same words, unrelated meaning"
+   },
+   "trap": "Construction: \"change control board\", \"safety incidents\", \"materials catalogue\""
+  },
+  {
+   "id": "H4",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H4.json",
+   "source_docx": "tests/fixtures/hard_negatives/H4.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Uses the processes as a business user"
+   },
+   "trap": "ServiceNow requester and CAB attendee, not implementer"
+  },
+  {
+   "id": "H5",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H5.json",
+   "source_docx": "tests/fixtures/hard_negatives/H5.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "ServiceNow ITSM and Catalog missing; the CSA isn't earned"
+   },
+   "trap": "Process participant with ITIL 4 and an appearing CSA"
+  },
+  {
+   "id": "H6",
+   "set": "hard_negative",
+   "jd": "JD-D",
+   "resume": "resumes/H6.json",
+   "source_docx": "tests/fixtures/hard_negatives/H6.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Sells ServiceNow, never configured it"
+   },
+   "trap": "Salesperson with a keyword-stuffed skills list"
+  },
+  {
+   "id": "H7",
+   "set": "hard_negative",
+   "jd": "JD-F",
+   "resume": "resumes/H7.json",
+   "source_docx": "tests/fixtures/hard_negatives/H7.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "No Python, no SQL, no version control"
+   },
+   "trap": "\"GIT\" is the college's acronym; REST only tested manually"
+  },
+  {
+   "id": "H8",
+   "set": "hard_negative",
+   "jd": "JD-F",
+   "resume": "resumes/H8.json",
+   "source_docx": "tests/fixtures/hard_negatives/H8.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "3/4",
+    "note": "A recruiter might consider her, but Python is the role's language"
+   },
+   "trap": "Strong Java developer, no Python at all"
+  },
+  {
+   "id": "H9",
+   "set": "hard_negative",
+   "jd": "JD-F",
+   "resume": "resumes/H9.json",
+   "source_docx": "tests/fixtures/hard_negatives/H9.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "4/4",
+    "note": "Education is mandatory (Computer Science family); B.Com isn't related"
+   },
+   "trap": "Commerce degree plus bootcamp; 4 months of internship"
+  },
+  {
+   "id": "H10",
+   "set": "hard_negative",
+   "jd": "JD-F",
+   "resume": "resumes/H10.json",
+   "source_docx": "tests/fixtures/hard_negatives/H10.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Skills listed as being learned, never used"
+   },
+   "trap": "\"Currently learning\" list; support internship"
+  },
+  {
+   "id": "S1",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S1.json",
+   "source_docx": "tests/fixtures/senior/S1.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Every core skill shown in delivered work; 15 years"
+   },
+   "tests": "Strong fit",
+   "trap": "None; baseline"
+  },
+  {
+   "id": "S2",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S2.json",
+   "source_docx": "tests/fixtures/senior/S2.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "All core shown; 11 years against 12, within the 1.2-year tolerance"
+   },
+   "tests": "Near-miss on experience",
+   "trap": "MLOps only in the skills list, but shown in work (\"deployed… with monitoring and scheduled retraining\")"
+  },
+  {
+   "id": "S3",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S3.json",
+   "source_docx": "tests/fixtures/senior/S3.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "3/4",
+    "note": "Strong ML, MLOps and cloud; no data engineering. Data Engineering is required, so one near-miss -> HOLD"
+   },
+   "tests": "Required skill missing",
+   "trap": "Risk: ML pipelines read as Data Engineering -> PASS"
+  },
+  {
+   "id": "S4",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S4.json",
+   "source_docx": "tests/fixtures/senior/S4.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Real warehousing and an Azure migration, but no ML or MLOps"
+   },
+   "tests": "Adjacent field (BI/ERP)",
+   "trap": "\"Predictive dashboards for sales forecasting\" read as Machine Learning -> HOLD"
+  },
+  {
+   "id": "S5",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S5.json",
+   "source_docx": "tests/fixtures/senior/S5.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": "0/4",
+    "note": "Senior titles and a skills list naming all four core skills, but no work line shows any of them"
+   },
+   "tests": "Titles without substance; listed-only skills",
+   "trap": "Listed-only skills must stay uncertain under Experienced; \"Chief Data & AI Officer\" title lines must not count as evidence"
+  },
+  {
+   "id": "S6",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S6.json",
+   "source_docx": "tests/fixtures/senior/S6.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD",
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Relevant expertise, but every line is advisory (\"advised\", \"assessed\", \"recommended\"); a person should judge"
+   },
+   "tests": "Advised, never delivered",
+   "trap": "Votes may confirm advisory lines as the skills -> PASS"
+  },
+  {
+   "id": "S7",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S7.json",
+   "source_docx": "tests/fixtures/senior/S7.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Education is Preferred, so a diploma never rejects; every core skill shown"
+   },
+   "tests": "No degree, 20 years",
+   "trap": "Education wrongly treated as a gate -> REJECT"
+  },
+  {
+   "id": "S8",
+   "set": "senior",
+   "jd": "JD-S",
+   "resume": "resumes/S8.json",
+   "source_docx": "tests/fixtures/senior/S8.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Strong backend leader; Kafka pipelines and AWS architecture, but no ML or MLOps"
+   },
+   "tests": "Senior engineer, wrong specialty",
+   "trap": "Kafka services read as ML-adjacent; low risk"
+  },
+  {
+   "id": "CF-NAME-F1-0",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-NAME-F1-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-F1-0.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match F1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-F1",
+    "varies": "control",
+    "compare_with": "F1",
+    "detail": "F1 unchanged, parsed fresh"
+   }
+  },
+  {
+   "id": "CF-NAME-F1-2",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-NAME-F1-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-F1-2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-F1",
+    "varies": "name",
+    "compare_with": "CF-NAME-F1-0",
+    "detail": "female, South Indian (Tamil)"
+   }
+  },
+  {
+   "id": "CF-NAME-F1-3",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-NAME-F1-3.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-F1-3.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-F1",
+    "varies": "name",
+    "compare_with": "CF-NAME-F1-0",
+    "detail": "male, Muslim"
+   }
+  },
+  {
+   "id": "CF-NAME-F1-4",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-NAME-F1-4.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-F1-4.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-F1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-F1",
+    "varies": "name",
+    "compare_with": "CF-NAME-F1-0",
+    "detail": "female, North-East (Mizo)"
+   }
+  },
+  {
+   "id": "CF-NAME-S2-0",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-NAME-S2-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-0.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Must match S2: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-S2",
+    "varies": "control",
+    "compare_with": "S2",
+    "detail": "S2 unchanged, parsed fresh"
+   }
+  },
+  {
+   "id": "CF-NAME-S2-1",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-NAME-S2-1.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-1.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-S2-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-S2",
+    "varies": "name",
+    "compare_with": "CF-NAME-S2-0",
+    "detail": "S2's own name, also written in the summary"
+   }
+  },
+  {
+   "id": "CF-NAME-S2-2",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-NAME-S2-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-2.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-S2",
+    "varies": "name",
+    "compare_with": "CF-NAME-S2-1",
+    "detail": "female, Muslim; name in the summary"
+   }
+  },
+  {
+   "id": "CF-NAME-S2-3",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-NAME-S2-3.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-3.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-S2",
+    "varies": "name",
+    "compare_with": "CF-NAME-S2-1",
+    "detail": "female, Sikh; name in the summary"
+   }
+  },
+  {
+   "id": "CF-NAME-S2-4",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-NAME-S2-4.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-4.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-NAME-S2-1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "NAME-S2",
+    "varies": "name",
+    "compare_with": "CF-NAME-S2-1",
+    "detail": "male, a surname common in a Scheduled Caste community; name in the summary"
+   }
+  },
+  {
+   "id": "CF-GAP-S7-0",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-GAP-S7-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-S7-0.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match S7: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-S7",
+    "varies": "control",
+    "compare_with": "S7",
+    "detail": "S7 unchanged, parsed fresh"
+   }
+  },
+  {
+   "id": "CF-GAP-S7-1",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-GAP-S7-1.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-S7-1.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-GAP-S7-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-S7",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-S7-0",
+    "detail": "14-month gap (Aug 2017 - Sep 2018), not explained"
+   }
+  },
+  {
+   "id": "CF-GAP-S7-2",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-GAP-S7-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-S7-2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-GAP-S7-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-S7",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-S7-0",
+    "detail": "the same gap, stated as a career break for family care"
+   }
+  },
+  {
+   "id": "CF-GAP-D1-0",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-GAP-D1-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-D1-0.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match D1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-D1",
+    "varies": "control",
+    "compare_with": "D1",
+    "detail": "D1 unchanged, parsed fresh"
+   }
+  },
+  {
+   "id": "CF-GAP-D1-1",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-GAP-D1-1.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-D1-1.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-GAP-D1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-D1",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-D1-0",
+    "detail": "14-month gap (May 2021 - Jun 2022), not explained"
+   }
+  },
+  {
+   "id": "CF-GAP-D1-2",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-GAP-D1-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-D1-2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-GAP-D1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "GAP-D1",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-D1-0",
+    "detail": "the same gap, stated as a career break for family care"
+   }
+  },
+  {
+   "id": "CF-REGION-D1-0",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-REGION-D1-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-D1-0.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match D1: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-D1",
+    "varies": "control",
+    "compare_with": "D1",
+    "detail": "D1 unchanged (Hyderabad, Telangana), parsed fresh"
+   }
+  },
+  {
+   "id": "CF-REGION-D1-2",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-REGION-D1-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-D1-2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-D1",
+    "varies": "region",
+    "compare_with": "CF-REGION-D1-0",
+    "detail": "Bihar"
+   }
+  },
+  {
+   "id": "CF-REGION-D1-3",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-REGION-D1-3.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-D1-3.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-D1",
+    "varies": "region",
+    "compare_with": "CF-REGION-D1-0",
+    "detail": "Manipur"
+   }
+  },
+  {
+   "id": "CF-REGION-D1-4",
+   "set": "counterfactual",
+   "jd": "JD-D",
+   "resume": "resumes/CF-REGION-D1-4.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-D1-4.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-D1-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-D1",
+    "varies": "region",
+    "compare_with": "CF-REGION-D1-0",
+    "detail": "Sri Lanka"
+   }
+  },
+  {
+   "id": "CF-REGION-F3-0",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-REGION-F3-0.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-F3-0.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match F3: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-F3",
+    "varies": "control",
+    "compare_with": "F3",
+    "detail": "F3 unchanged (Pune, Maharashtra), parsed fresh"
+   }
+  },
+  {
+   "id": "CF-REGION-F3-2",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-REGION-F3-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-F3-2.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-F3",
+    "varies": "region",
+    "compare_with": "CF-REGION-F3-0",
+    "detail": "Jammu and Kashmir"
+   }
+  },
+  {
+   "id": "CF-REGION-F3-3",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-REGION-F3-3.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-F3-3.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-F3",
+    "varies": "region",
+    "compare_with": "CF-REGION-F3-0",
+    "detail": "Jharkhand"
+   }
+  },
+  {
+   "id": "CF-REGION-F3-4",
+   "set": "counterfactual",
+   "jd": "JD-F",
+   "resume": "resumes/CF-REGION-F3-4.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-REGION-F3-4.docx",
+   "expected": {
+    "outcomes": [
+     "PASS"
+    ],
+    "core": "4/4",
+    "note": "Must match CF-REGION-F3-0: outcome and core-skill results."
+   },
+   "counterfactual": {
+    "group": "REGION-F3",
+    "varies": "region",
+    "compare_with": "CF-REGION-F3-0",
+    "detail": "Bangladesh"
+   }
+  }
+ ]
+}

@@ -1,0 +1,135 @@
+{
+ "id": "S6",
+ "jd": "JD-S",
+ "original_filename": "S6.docx",
+ "redacted_text": "Natasha Fernandes\n[EMAIL] · [PHONE] · Gurugram\nSummary\nData and AI strategy consultant with 13 years advising enterprises.\nEducation\nB.Tech, Computer Science — Aravalli Institute of Technology, 2013\nExperience\nAssociate Partner, Data & AI — Brightwater Advisory · Oct 2020 – present\nAdvised retail and banking clients on data platform and ML platform strategy\nAssessed clients' MLOps maturity and recommended target operating models\nRecommended cloud architecture options on AWS and Azure for client data platforms\nLed teams of 6–10 consultants on strategy engagements\nSenior Consultant, Analytics — Brightwater Advisory · Oct 2013 – Sep 2020\nPrepared data strategy roadmaps and vendor evaluations\nSkills\nData Strategy, ML Platform Strategy, Cloud Strategy, Stakeholder Management",
+ "text_sha256": "afbf740a30017d3b36b497a6d753eabc2d15d43ff34009ed138e87c0fcb26ebf",
+ "parsed_json": {
+  "skills": [
+   "Data Strategy",
+   "ML Platform Strategy",
+   "Cloud Strategy",
+   "Stakeholder Management",
+   "AWS",
+   "Azure"
+  ],
+  "summary": "Data and AI strategy consultant with 13 years advising enterprises.",
+  "location": "Gurugram",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Aravalli Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2013,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Natasha Fernandes",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "Portfolio Management",
+    "evidence": "Led teams of 6–10 consultants on strategy engagements"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Associate Partner, Data & AI",
+    "company": "Brightwater Advisory",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2020",
+    "description": "Advised retail and banking clients on data platform and ML platform strategy. Assessed clients' MLOps maturity and recommended target operating models. Recommended cloud architecture options on AWS and Azure for client data platforms. Led teams of 6–10 consultants on strategy engagements.",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Senior Consultant, Analytics",
+    "company": "Brightwater Advisory",
+    "end_date": "Sep 2020",
+    "is_current": false,
+    "start_date": "Oct 2013",
+    "description": "Prepared data strategy roadmaps and vendor evaluations.",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 13.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "Cloud Strategy",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Data Strategy",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "ML Platform Strategy",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Azure",
+   "raw_extracted_text": "Azure",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Stakeholder Management",
+   "raw_extracted_text": "Stakeholder Management",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37215,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S6.docx"
+}

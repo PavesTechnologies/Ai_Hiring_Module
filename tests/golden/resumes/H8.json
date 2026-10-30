@@ -1,0 +1,129 @@
+{
+ "id": "H8",
+ "jd": "JD-F",
+ "original_filename": "H8.docx",
+ "redacted_text": "Shreya Banerjee\n[EMAIL] · [PHONE] · Kolkata\nSummary\nComputer Science graduate with a year of Java backend internships.\nEducation\nB.Tech, Computer Science and Engineering — Hooghly Institute of Technology, 2026 (CGPA 8.7)\nExperience\nJava Developer Intern — Corelink Systems · Jul 2025 – Jun 2026\nBuilt REST APIs in Java with Spring Boot\nWrote SQL queries and stored procedures on MySQL\nUsed Git with pull requests and code reviews\nWrote JUnit tests for service classes\nSkills\nJava, Spring Boot, REST APIs, SQL, MySQL, Git, JUnit",
+ "text_sha256": "2a5ccee2cead4a0a75de56e039af1e2eb1fa1ad9c77d85d7395adbbaeebe963e",
+ "parsed_json": {
+  "skills": [
+   "Java",
+   "Spring Boot",
+   "REST APIs",
+   "SQL",
+   "MySQL",
+   "Git",
+   "JUnit"
+  ],
+  "summary": "Computer Science graduate with a year of Java backend internships.",
+  "location": "Kolkata",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science and Engineering",
+    "degree": "B.Tech",
+    "institution": "Hooghly Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2026,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Shreya Banerjee",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Java Developer Intern",
+    "company": "Corelink Systems",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "start_date": "Jul 2025",
+    "description": "Built REST APIs in Java with Spring Boot. Wrote SQL queries and stored procedures on MySQL. Used Git with pull requests and code reviews. Wrote JUnit tests for service classes",
+    "is_volunteer": false,
+    "is_internship": true
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "JUnit",
+   "raw_extracted_text": "JUnit",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Java",
+   "raw_extracted_text": "Java",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "MySQL",
+   "raw_extracted_text": "MySQL",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Spring Boot",
+   "raw_extracted_text": "Spring Boot",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "git",
+   "raw_extracted_text": "Git",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37099,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/hard_negatives/H8.docx"
+}

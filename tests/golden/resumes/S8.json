@@ -1,0 +1,135 @@
+{
+ "id": "S8",
+ "jd": "JD-S",
+ "original_filename": "S8.docx",
+ "redacted_text": "Deepak Chauhan\n[EMAIL] · [PHONE] · Noida\nSummary\nBackend engineering leader with 13 years building high-scale services.\nEducation\nB.Tech, Computer Science — Yamuna Institute of Technology, 2013\nExperience\nEngineering Manager, Platform — Quickcart · Oct 2020 – present\nLed a team of 18 backend engineers building order and payment services in Java\nDesigned event-driven services with Kafka and microservices on AWS\nDesigned the AWS cloud architecture for the checkout platform\nSenior Software Engineer — Quickcart · Oct 2013 – Sep 2020\nBuilt REST APIs and backend services in Java and Spring Boot\nSkills\nJava, Spring Boot, Kafka, Microservices, AWS, Kubernetes",
+ "text_sha256": "b8025bd96292ccd687830433ae00b7ec14efe6845456cb962c55316438effc00",
+ "parsed_json": {
+  "skills": [
+   "Java",
+   "Spring Boot",
+   "Kafka",
+   "Microservices",
+   "AWS",
+   "Kubernetes"
+  ],
+  "summary": "Backend engineering leader with 13 years building high-scale services.",
+  "location": "Noida",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Computer Science",
+    "degree": "B.Tech",
+    "institution": "Yamuna Institute of Technology",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2013,
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "full_name": "Deepak Chauhan",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "Engineering Management",
+    "evidence": "Engineering Manager"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Engineering Manager, Platform",
+    "company": "Quickcart",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2020",
+    "description": "Led a team of 18 backend engineers building order and payment services in Java. Designed event-driven services with Kafka and microservices on AWS. Designed the AWS cloud architecture for the checkout platform.",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "Senior Software Engineer",
+    "company": "Quickcart",
+    "end_date": "Sep 2020",
+    "is_current": false,
+    "start_date": "Oct 2013",
+    "description": "Built REST APIs and backend services in Java and Spring Boot.",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": null
+ },
+ "candidate_skills": [
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Apache Kafka",
+   "raw_extracted_text": "Kafka",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Java",
+   "raw_extracted_text": "Java",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Kubernetes",
+   "raw_extracted_text": "Kubernetes",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Microservices",
+   "raw_extracted_text": "Microservices",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Spring Boot",
+   "raw_extracted_text": "Spring Boot",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37142,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S8.docx"
+}

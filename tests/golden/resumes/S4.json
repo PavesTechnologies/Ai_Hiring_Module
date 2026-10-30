@@ -1,0 +1,151 @@
+{
+ "id": "S4",
+ "jd": "JD-S",
+ "original_filename": "S4.docx",
+ "redacted_text": "Sanjay Iyengar\n[EMAIL] · [PHONE] · Chennai\nSummary\nBusiness intelligence and ERP leader with 18 years in enterprise reporting.\nEducation\nB.Com — Marina College of Commerce, 2008; MBA, Information Systems — Coromandel School of Management, 2010\nExperience\nDirector, BI & ERP — Southern Textiles Group · Oct 2016 – present\nRan SAP BW and SAP Analytics Cloud for 40 business units\nMigrated SAP reporting to Azure and Power BI\nIntroduced predictive dashboards for sales forecasting in SAP Analytics Cloud\nLed a team of 35 BI analysts and SAP consultants\nBI Manager — Southern Textiles Group · Oct 2008 – Sep 2016\nBuilt data warehouse reports and ETL jobs in SAP BW\nSkills\nSAP BW, SAP Analytics Cloud, Power BI, Data Warehousing, ETL, Azure",
+ "text_sha256": "454c3e22ea7c690194d2e89d6d4da2958c8e6d93d8048e7c32ecf36ec31d6e8e",
+ "parsed_json": {
+  "skills": [
+   "SAP BW",
+   "SAP Analytics Cloud",
+   "Power BI",
+   "Data Warehousing",
+   "ETL",
+   "Azure"
+  ],
+  "summary": "Business intelligence and ERP leader with 18 years in enterprise reporting.",
+  "location": "Chennai",
+  "metadata": {},
+  "projects": [],
+  "education": [
+   {
+    "field": "Commerce",
+    "degree": "B.Com",
+    "institution": "Marina College of Commerce",
+    "degree_level": "BACHELOR",
+    "graduation_year": 2008,
+    "field_normalized": "COMMERCE"
+   },
+   {
+    "field": "Information Systems",
+    "degree": "MBA",
+    "institution": "Coromandel School of Management",
+    "degree_level": "MASTER",
+    "graduation_year": 2010,
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "full_name": "Sanjay Iyengar",
+  "department": null,
+  "soft_skills": [],
+  "certifications": [],
+  "inferred_skills": [
+   {
+    "skill": "Program Management",
+    "evidence": "Director, BI & ERP"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Director, BI & ERP",
+    "company": "Southern Textiles Group",
+    "end_date": "present",
+    "is_current": true,
+    "start_date": "Oct 2016",
+    "description": "Ran SAP BW and SAP Analytics Cloud for 40 business units. Migrated SAP reporting to Azure and Power BI. Introduced predictive dashboards for sales forecasting in SAP Analytics Cloud. Led a team of 35 BI analysts and SAP consultants.",
+    "is_volunteer": false,
+    "is_internship": false
+   },
+   {
+    "title": "BI Manager",
+    "company": "Southern Textiles Group",
+    "end_date": "Sep 2016",
+    "is_current": false,
+    "start_date": "Oct 2008",
+    "description": "Built data warehouse reports and ETL jobs in SAP BW.",
+    "is_volunteer": false,
+    "is_internship": false
+   }
+  ],
+  "total_experience_years": 18.0
+ },
+ "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "ETL",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "SAP Analytics Cloud",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "SAP BW",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "scoring_weight": "0.000",
+   "status": "PENDING_REVIEW"
+  },
+  {
+   "skill": "Azure",
+   "raw_extracted_text": "Azure",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Power BI",
+   "raw_extracted_text": "Power BI",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "Program Management",
+   "raw_extracted_text": "Program Management (inferred: Director, BI & ERP)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  },
+  {
+   "skill": "data warehousing",
+   "raw_extracted_text": "Data Warehousing",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "scoring_weight": "1.000",
+   "status": "AUTO_VERIFIED"
+  }
+ ],
+ "resume": {
+  "file_format": "DOCX",
+  "file_size_bytes": 37198,
+  "version_number": 1,
+  "is_active_version": true,
+  "parse_status": "PARSED",
+  "parse_confidence_score": null,
+  "parser_version": "gemini-resume-extraction-v1",
+  "page_count": null,
+  "parse_duration_ms": null,
+  "ocr_used": false
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ },
+ "parse": {
+  "source": "dev",
+  "prompt_template": "Resume Parsing - Standard",
+  "frozen_on": "2026-10-30"
+ },
+ "source_docx": "tests/fixtures/senior/S4.docx"
+}

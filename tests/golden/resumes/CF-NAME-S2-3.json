@@ -1,0 +1,143 @@
+{
+ "id": "CF-NAME-S2-3",
+ "jd": "JD-S",
+ "source_docx": "tests/fixtures/counterfactual/CF-NAME-S2-3.docx",
+ "original_filename": "CF-NAME-S2-3.docx",
+ "redacted_text": "Gurpreet Kaur\n[EMAIL] · [PHONE] · Pune\nSummary\nGurpreet Kaur is a data platform leader with 11 years of experience, the last 5 leading teams.\nEducation\nB.E., Information Technology — Sahyadri College of Engineering, 2015\nExperience\nHead of Data Engineering — Orbit Payments · Oct 2021 – present\nBuilt streaming and batch data pipelines on Azure Databricks for payments analytics\nDeployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining\nDesigned the Azure cloud architecture for the data and ML platform\nLead a team of 22 engineers\nSenior Data Engineer — Orbit Payments · Oct 2015 – Sep 2021\nDeveloped Spark jobs and a Delta Lake warehouse\nBuilt the first ML feature pipelines with the data science team\nSkills\nAzure, Databricks, Spark, Python, MLOps, Data Governance",
+ "text_sha256": "ae387663d7bd4de848534b18d34d95f615fd764922e41f98ed3298f5b1715673",
+ "parsed_json": {
+  "full_name": "Gurpreet Kaur",
+  "skills": [
+   "Azure",
+   "Databricks",
+   "Spark",
+   "Python",
+   "MLOps",
+   "Data Governance"
+  ],
+  "soft_skills": [],
+  "inferred_skills": [
+   {
+    "skill": "Data Engineering",
+    "evidence": "Head of Data Engineering"
+   },
+   {
+    "skill": "Team Management",
+    "evidence": "Lead a team of 22 engineers"
+   }
+  ],
+  "work_experience": [
+   {
+    "title": "Head of Data Engineering",
+    "company": "Orbit Payments",
+    "start_date": "Oct 2021",
+    "end_date": "present",
+    "is_current": true,
+    "is_internship": false,
+    "is_volunteer": false,
+    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics; Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining; Designed the Azure cloud architecture for the data and ML platform; Lead a team of 22 engineers"
+   },
+   {
+    "title": "Senior Data Engineer",
+    "company": "Orbit Payments",
+    "start_date": "Oct 2015",
+    "end_date": "Sep 2021",
+    "is_current": false,
+    "is_internship": false,
+    "is_volunteer": false,
+    "description": "Developed Spark jobs and a Delta Lake warehouse; Built the first ML feature pipelines with the data science team"
+   }
+  ],
+  "education": [
+   {
+    "degree": "B.E.",
+    "institution": "Sahyadri College of Engineering",
+    "field": "Information Technology",
+    "graduation_year": 2015,
+    "degree_level": "BACHELOR",
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": 11.0,
+  "department": null,
+  "location": "Pune",
+  "summary": "Gurpreet Kaur is a data platform leader with 11 years of experience, the last 5 leading teams.",
+  "metadata": {}
+ },
+ "candidate_skills": [
+  {
+   "skill": "Apache Spark",
+   "raw_extracted_text": "Spark",
+   "confidence": 1.0,
+   "match_tier": "ALIAS",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Azure",
+   "raw_extracted_text": "Azure",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Data Engineering",
+   "raw_extracted_text": "Data Engineering (inferred: Head of Data Engineering)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Data Governance",
+   "raw_extracted_text": "Data Governance",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Databricks",
+   "raw_extracted_text": "Databricks",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "MLOps",
+   "raw_extracted_text": "MLOps",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  }
+ ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-10-30"
+ },
+ "resume": {
+  "file_format": "DOCX",
+  "parse_status": "PARSED",
+  "is_active_version": true,
+  "version_number": 1
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ }
+}

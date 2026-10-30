@@ -1,0 +1,275 @@
+{
+ "key": "JD-D",
+ "campaign_name": "[P3] ServiceNow ITSM",
+ "job_description": {
+  "title": "ServiceNow ITSM Consultant",
+  "raw_text": "ServiceNow ITSM Consultant\nBrightpath IT Services · Hyderabad · Full-time\nAbout the role\nWe are looking for a ServiceNow consultant to implement and improve IT Service Management processes for our enterprise clients.\nExperience\nMinimum 4 years of experience, with at least 3 years on the ServiceNow platform.\nEducation\nBachelor's degree in any discipline.\nMust-have skills\nServiceNow ITSM\nIncident Management\nChange Management (IT change control, CAB)\nService Catalog\nGood to have\nProblem Management\nCMDB\nFlow Designer\nJavaScript (Glide scripting)\nSLA management\nNice to have\nITIL 4 Foundation certification\nServiceNow Certified System Administrator (CSA)\nServiceNow Certified Implementation Specialist – ITSM (CIS-ITSM)\nDomain capabilities\nConfigure incident, problem and change workflows to match client processes\nDesign service catalogue items and request fulfilment flows\nIntegrate ServiceNow with monitoring tools through REST\nSupport Change Advisory Board (CAB) processes and approvals",
+  "extracted_json": {
+   "aliases": {
+    "JavaScript": [
+     "Glide scripting"
+    ],
+    "Change Management": [
+     "IT change control",
+     "CAB"
+    ]
+   },
+   "location": "Hyderabad",
+   "metadata": {},
+   "education": {
+    "field": "any discipline",
+    "degree": "Bachelor's degree",
+    "degree_level": "BACHELOR",
+    "field_normalized": "OTHER",
+    "related_field_allowed": false
+   },
+   "work_mode": null,
+   "experience": {
+    "max_experience_years": null,
+    "min_experience_years": 4
+   },
+   "soft_skills": [],
+   "certifications": [
+    "ITIL 4 Foundation",
+    "ServiceNow Certified System Administrator",
+    "ServiceNow Certified Implementation Specialist – ITSM"
+   ],
+   "employment_type": "Full-time",
+   "required_skills": {
+    "core": [
+     "ServiceNow"
+    ],
+    "supporting": [
+     "ServiceNow ITSM",
+     "Incident Management",
+     "Change Management",
+     "Service Catalog"
+    ]
+   },
+   "preferred_skills": [
+    "Problem Management",
+    "CMDB",
+    "Flow Designer",
+    "JavaScript",
+    "SLA management"
+   ],
+   "responsibilities": [
+    "implement and improve IT Service Management processes for our enterprise clients",
+    "Configure incident, problem and change workflows to match client processes",
+    "Design service catalogue items and request fulfilment flows",
+    "Integrate ServiceNow with monitoring tools through REST",
+    "Support Change Advisory Board (CAB) processes and approvals"
+   ],
+   "domain_capabilities": {
+    "required": [
+     "Change Advisory Board processes"
+    ],
+    "preferred": []
+   }
+  },
+  "required_skills": {
+   "aliases": {
+    "JavaScript": [
+     "Glide scripting"
+    ],
+    "Change Management": [
+     "IT change control",
+     "CAB"
+    ]
+   },
+   "required": {
+    "core": [
+     "ServiceNow"
+    ],
+    "supporting": [
+     "ServiceNow ITSM",
+     "Incident Management",
+     "Change Management",
+     "Service Catalog"
+    ]
+   },
+   "preferred": [
+    "Problem Management",
+    "CMDB",
+    "Flow Designer",
+    "JavaScript",
+    "SLA management"
+   ]
+  },
+  "min_experience_years": "4.0",
+  "max_experience_years": "10.0",
+  "notice_period": 30,
+  "education_criteria": {
+   "field": null,
+   "degree": null
+  },
+  "source_format": "DOCX",
+  "original_filename": "jd_domain.docx",
+  "version_number": 1,
+  "is_active_version": true,
+  "jurisdiction": "INDIA",
+  "is_verified": "VERIFIED",
+  "calibration_status": "CALIBRATED",
+  "calibration_version": 10,
+  "calibrated_min_experience_years": "4.0",
+  "experience_tolerance_years": null,
+  "education_requirement": "PREFERRED",
+  "internship_credit_pct": null,
+  "role_domain": "IT_OPERATIONS",
+  "profile_template": "DOMAIN"
+ },
+ "jd_skills": [
+  {
+   "skill": "CMDB",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Change Management",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": "ITSM",
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Flow Designer",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Incident Management",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "JavaScript",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Problem Management",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "SLA management",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Service Catalog",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "ServiceNow ITSM",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "ServiceNow development",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "ALIAS",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  }
+ ],
+ "unknown_skills": [],
+ "campaign": {
+  "name": "[P3] ServiceNow ITSM",
+  "status": "ACTIVE",
+  "weight_deterministic": "30.00",
+  "weight_semantic": "40.00",
+  "weight_ai": "30.00",
+  "semantic_threshold": "0.6500",
+  "ai_threshold": "50.00",
+  "deterministic_threshold": "70.00",
+  "required_skill_coverage_threshold": "0.00",
+  "max_missing_core_skills": 3,
+  "max_missing_core_pct": "25.00",
+  "scoring_v2_enabled": true,
+  "scoring_v2_shadow": true,
+  "jd_calibration_exempt": false,
+  "max_candidates": 1,
+  "deadline": null,
+  "report_scheduled": false,
+  "prompt_template": "Resume Parsing - Standard",
+  "ai_evaluate_prompt": "AI Evaluation - Domain-Specific"
+ }
+}

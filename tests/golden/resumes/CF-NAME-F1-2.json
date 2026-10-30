@@ -1,0 +1,201 @@
+{
+ "id": "CF-NAME-F1-2",
+ "jd": "JD-F",
+ "source_docx": "tests/fixtures/counterfactual/CF-NAME-F1-2.docx",
+ "original_filename": "CF-NAME-F1-2.docx",
+ "redacted_text": "Ananya Krishnan\n[EMAIL] · [PHONE] · Bengaluru\nSummary\nComputer Science graduate with a year of internship experience building Python backend services.\nEducation\nB.Tech, Computer Science and Engineering — Lakeside Institute of Technology, 2026 (CGPA 8.4)\nExperience\nSoftware Engineering Intern — Cobalt Apps Pvt Ltd · Jan 2026 – Jun 2026\nBuilt REST APIs in FastAPI for an internal ticketing tool\nWrote SQL queries and Alembic migrations on PostgreSQL\nAdded pytest unit tests, raising coverage from 40% to 72%\nBackend Developer Intern — Greenleaf Software · Jul 2025 – Dec 2025\nMaintained Django REST endpoints and fixed bugs from code review\nUsed Git with feature branches and pull requests\nContainerised a service with Docker for local development\nProjects\nLibrary API: Python, FastAPI, PostgreSQL, deployed on AWS EC2\nExpense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow\nSkills\nPython, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+ "text_sha256": "dd7dced5df2cb9eaf1b1bea83ea18acbaea5c91ce8696a2b2160d92af71cb47c",
+ "parsed_json": {
+  "full_name": "Ananya Krishnan",
+  "skills": [
+   "Python",
+   "SQL",
+   "REST APIs",
+   "Git",
+   "FastAPI",
+   "Django",
+   "pytest",
+   "Docker",
+   "Linux",
+   "AWS",
+   "Flask",
+   "SQLite"
+  ],
+  "soft_skills": [],
+  "inferred_skills": [],
+  "work_experience": [
+   {
+    "title": "Software Engineering Intern",
+    "company": "Cobalt Apps Pvt Ltd",
+    "start_date": "Jan 2026",
+    "end_date": "Jun 2026",
+    "is_current": false,
+    "is_internship": true,
+    "is_volunteer": false,
+    "description": "Built REST APIs in FastAPI for an internal ticketing tool, Wrote SQL queries and Alembic migrations on PostgreSQL, Added pytest unit tests, raising coverage from 40% to 72%"
+   },
+   {
+    "title": "Backend Developer Intern",
+    "company": "Greenleaf Software",
+    "start_date": "Jul 2025",
+    "end_date": "Dec 2025",
+    "is_current": false,
+    "is_internship": true,
+    "is_volunteer": false,
+    "description": "Maintained Django REST endpoints and fixed bugs from code review, Used Git with feature branches and pull requests, Containerised a service with Docker for local development"
+   }
+  ],
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Lakeside Institute of Technology",
+    "field": "Computer Science and Engineering",
+    "graduation_year": 2026,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [
+   {
+    "name": "Library API",
+    "description": "Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+    "tech": [
+     "Python",
+     "FastAPI",
+     "PostgreSQL",
+     "AWS"
+    ]
+   },
+   {
+    "name": "Expense Tracker",
+    "description": "Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow",
+    "tech": [
+     "Python",
+     "Flask",
+     "SQLite",
+     "pytest"
+    ]
+   }
+  ],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Bengaluru",
+  "summary": "Computer Science graduate with a year of internship experience building Python backend services.",
+  "metadata": {}
+ },
+ "candidate_skills": [
+  {
+   "skill": "AWS",
+   "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Django",
+   "raw_extracted_text": "Django",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Docker",
+   "raw_extracted_text": "Docker",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "FastAPI",
+   "raw_extracted_text": "FastAPI",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Flask",
+   "raw_extracted_text": "Flask",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Linux",
+   "raw_extracted_text": "Linux",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Python",
+   "raw_extracted_text": "Python",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "REST APIs",
+   "raw_extracted_text": "REST APIs",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "SQLite",
+   "raw_extracted_text": "SQLite",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "git",
+   "raw_extracted_text": "Git",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "pytest",
+   "raw_extracted_text": "pytest",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "sql",
+   "raw_extracted_text": "SQL",
+   "confidence": 1.0,
+   "match_tier": "CASE_INSENSITIVE",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  }
+ ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-10-30"
+ },
+ "resume": {
+  "file_format": "DOCX",
+  "parse_status": "PARSED",
+  "is_active_version": true,
+  "version_number": 1
+ },
+ "candidate": {
+  "jurisdiction": "GLOBAL"
+ }
+}

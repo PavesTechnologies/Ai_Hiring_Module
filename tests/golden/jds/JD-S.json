@@ -1,0 +1,267 @@
+{
+ "key": "JD-S",
+ "campaign_name": "[SENIOR] Head of Data & AI Platforms",
+ "job_description": {
+  "title": "Head of Data & AI Platforms",
+  "raw_text": "Head of Data & AI Platforms\nMeridian Retail Group · Bengaluru · Full-time\nAbout the role\nWe are looking for a senior leader to own our data and AI platforms end to end: the data platform that feeds analytics and machine learning, the tooling that takes models to production, and the team that builds and runs them.\nExperience\nMinimum 12 years in data or software engineering, including at least 5 years leading engineering teams.\nEducation\nBachelor's degree in Computer Science, Engineering or a related field preferred. Equivalent experience is considered.\nMust-have skills\nData Engineering (batch and streaming pipelines, lakehouse or warehouse design)\nMachine Learning (taking models from prototype to production)\nMLOps (model deployment, monitoring, retraining, feature stores)\nCloud Architecture (AWS or Azure)\nGood to have\nDatabricks\nApache Spark\nPython\nData Governance\nKubernetes\nStakeholder Management\nNice to have\nAWS Certified Solutions Architect\nBudget ownership above ₹10 crore\nResponsibilities\nLead a team of 30+ data, ML and platform engineers\nOwn the architecture of the lakehouse and ML platform\nPut ML models into production and keep them healthy\nWork with business leaders to prioritise data and AI investments",
+  "extracted_json": {
+   "aliases": {},
+   "location": "Bengaluru",
+   "metadata": {},
+   "education": {
+    "field": "Computer Science, Engineering or a related field",
+    "degree": "Bachelor's degree",
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE",
+    "related_field_allowed": true
+   },
+   "work_mode": null,
+   "experience": {
+    "max_experience_years": null,
+    "min_experience_years": 12
+   },
+   "soft_skills": [],
+   "certifications": [
+    "AWS Certified Solutions Architect"
+   ],
+   "employment_type": "Full-time",
+   "required_skills": {
+    "core": [
+     "Data Engineering",
+     "Machine Learning",
+     "MLOps",
+     "Cloud Architecture"
+    ],
+    "supporting": [
+     "Stakeholder Management"
+    ]
+   },
+   "preferred_skills": [
+    "Databricks",
+    "Apache Spark",
+    "Python",
+    "Data Governance",
+    "Kubernetes"
+   ],
+   "responsibilities": [
+    "Lead a team of 30+ data, ML and platform engineers",
+    "Own the architecture of the lakehouse and ML platform",
+    "Put ML models into production and keep them healthy",
+    "Work with business leaders to prioritise data and AI investments"
+   ],
+   "domain_capabilities": {
+    "required": [],
+    "preferred": []
+   }
+  },
+  "required_skills": {
+   "aliases": {},
+   "required": {
+    "core": [
+     "Data Engineering",
+     "Machine Learning",
+     "MLOps",
+     "Cloud Architecture"
+    ],
+    "supporting": [
+     "Stakeholder Management"
+    ]
+   },
+   "preferred": [
+    "Databricks",
+    "Apache Spark",
+    "Python",
+    "Data Governance",
+    "Kubernetes"
+   ]
+  },
+  "min_experience_years": "12.0",
+  "max_experience_years": "25.0",
+  "notice_period": 30,
+  "education_criteria": {
+   "field": "Computer Science, Engineering or a related field",
+   "degree": "Bachelor's degree"
+  },
+  "source_format": "DOCX",
+  "original_filename": "jd_senior.docx",
+  "version_number": 2,
+  "is_active_version": true,
+  "jurisdiction": "INDIA",
+  "is_verified": "VERIFIED",
+  "calibration_status": "CALIBRATED",
+  "calibration_version": 2,
+  "calibrated_min_experience_years": "12.0",
+  "experience_tolerance_years": null,
+  "education_requirement": "PREFERRED",
+  "internship_credit_pct": null,
+  "role_domain": "DATA",
+  "profile_template": "EXPERIENCED"
+ },
+ "jd_skills": [
+  {
+   "skill": "AWS Certified Solutions Architect",
+   "mandatory": false,
+   "weight": "1.00",
+   "importance": null,
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Apache Spark",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Cloud Architecture",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": "Cloud Architecture (AWS or Azure)",
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Data Engineering",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": true,
+   "requirement_text": "Data Engineering (batch and streaming pipelines, lakehouse or warehouse design)",
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Data Governance",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Databricks",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Kubernetes",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "MLOps",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": "MLOps (model deployment, monitoring, retraining, feature stores)",
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Machine Learning",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": "Machine Learning (taking models from prototype to production)",
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Python",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Stakeholder Management",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  }
+ ],
+ "unknown_skills": [],
+ "campaign": {
+  "name": "[SENIOR] Head of Data & AI Platforms",
+  "status": "ACTIVE",
+  "weight_deterministic": "40.00",
+  "weight_semantic": "30.00",
+  "weight_ai": "30.00",
+  "semantic_threshold": "0.6500",
+  "ai_threshold": "50.00",
+  "deterministic_threshold": "70.00",
+  "required_skill_coverage_threshold": "0.00",
+  "max_missing_core_skills": 3,
+  "max_missing_core_pct": "25.00",
+  "scoring_v2_enabled": true,
+  "scoring_v2_shadow": true,
+  "jd_calibration_exempt": false,
+  "max_candidates": 1,
+  "deadline": null,
+  "report_scheduled": false,
+  "prompt_template": "Resume Parsing - Standard",
+  "ai_evaluate_prompt": "AI Evaluation - Experienced"
+ }
+}
