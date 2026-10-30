@@ -751,9 +751,20 @@ def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_
     return recovered
 
 
+RECOVERY_SCAN_INTERRUPTED_AFTER = timedelta(minutes=30)
+RECOVERY_SCAN_INTERRUPTED_MESSAGE = ("Interrupted: the worker stopped before this scan finished "
+                                     "(e.g. the stack was shut down mid-run). The next scan ran normally.")
+
+
 @celery_app.task(name="resume.recover_stalled_uploads")
 def recover_stalled_resume_uploads_task() -> None:
-    """Celery Beat entry point - periodic safety net alongside the FastAPI startup scan."""
+    """
+    Celery Beat entry point - periodic safety net alongside the FastAPI startup scan.
+
+    A scan takes ~15 s (the worker inspection waits on its timeouts), so stopping the stack
+    mid-scan left its log row QUEUED for good. The row is now RUNNING from the start, and each
+    scan first closes earlier scans that never finished (FAILURE, "interrupted").
+    """
     db = SessionLocal()
     task_log = None
     try:
@@ -763,6 +774,15 @@ def recover_stalled_resume_uploads_task() -> None:
             task_id=str(uuid4()),
             task_type=RESUME_UPLOAD_RECOVERY_TASK_TYPE,
         )
+        task_log = task_log_service.mark_running(task_log)
+        interrupted = task_log_repo.close_interrupted_runs(
+            RESUME_UPLOAD_RECOVERY_TASK_TYPE, exclude_task_id=task_log.task_id,
+            started_before=datetime.now(timezone.utc) - RECOVERY_SCAN_INTERRUPTED_AFTER,
+            message=RECOVERY_SCAN_INTERRUPTED_MESSAGE,
+        )
+        if interrupted:
+            db.commit()
+            logger.warning("Resume upload recovery: closed %s earlier scan(s) that never finished", interrupted)
 
         recovered = recover_stalled_resume_uploads(db)
 

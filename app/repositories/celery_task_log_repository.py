@@ -57,6 +57,23 @@ class CeleryTaskLogRepository:
 
         return log
 
+    def close_interrupted_runs(self, task_type: str, *, started_before: datetime, exclude_task_id: str,
+                               message: str) -> int:
+        """
+        Earlier runs of a periodic task that never finished - still QUEUED or RUNNING since before
+        `started_before` (the worker stopped mid-run) - marked FAILURE with `message`. Not committed.
+        """
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(CeleryTaskLog.task_type == task_type,
+                   CeleryTaskLog.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING]),
+                   CeleryTaskLog.queued_at < started_before,
+                   CeleryTaskLog.task_id != exclude_task_id)
+            .values(status=TaskStatus.FAILURE, error_message=message, completed_at=func.now())
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount or 0
+
     def get_queued_dispatch_failed(self, task_type: str) -> list[CeleryTaskLog]:
         """
         Resume-upload resilience: rows whose apply_async() call itself

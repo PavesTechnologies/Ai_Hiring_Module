@@ -321,6 +321,33 @@ def test_recovery_task_wrapper_creates_its_own_task_log_and_marks_success():
     assert "3" in task_log.output_summary
 
 
+def test_recovery_scan_is_running_from_the_start_and_closes_earlier_scans_that_never_finished():
+    from app.tasks.resume_processing_tasks import (
+        RECOVERY_SCAN_INTERRUPTED_MESSAGE, RESUME_UPLOAD_RECOVERY_TASK_TYPE, recover_stalled_resume_uploads_task,
+    )
+    task_log_repo = MagicMock()
+    statuses_seen = []
+
+    def _create(log):
+        log.retry_count = getattr(log, "retry_count", 0) or 0
+        return log
+
+    def _update(log):
+        statuses_seen.append(log.status)
+        return log
+
+    task_log_repo.create.side_effect = _create
+    task_log_repo.update.side_effect = _update
+    task_log_repo.close_interrupted_runs.return_value = 11
+    with patch(f"{MODULE}.SessionLocal", return_value=MagicMock()),          patch(f"{MODULE}.CeleryTaskLogRepository", return_value=task_log_repo),          patch(f"{MODULE}.recover_stalled_resume_uploads", return_value=0):
+        recover_stalled_resume_uploads_task()
+
+    assert statuses_seen[0] == TaskStatus.RUNNING and statuses_seen[-1] == TaskStatus.SUCCESS
+    args, kwargs = task_log_repo.close_interrupted_runs.call_args
+    assert args == (RESUME_UPLOAD_RECOVERY_TASK_TYPE,) and kwargs["message"] == RECOVERY_SCAN_INTERRUPTED_MESSAGE
+    assert kwargs["exclude_task_id"] == task_log_repo.update.call_args.args[0].task_id
+
+
 def test_use_existing_candidate_is_queued_and_other_campaigns_are_not_rescored():
     """A resume re-used in a new campaign: only the new campaign candidate is queued (others already have keys)."""
     resume_id = uuid4()
