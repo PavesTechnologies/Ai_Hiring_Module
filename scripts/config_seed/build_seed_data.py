@@ -2,11 +2,15 @@
 Turn a reviewed diff (diff_config.py: dev vs a fresh database) into the seed
 data files app/seeds/seed_product_config.py loads:
 
-    python scripts/config_seed/build_seed_data.py <diff.json> [out dir] [--reviewed YYYY-MM-DD]
+    python scripts/config_seed/build_seed_data.py <diff.json> [out dir] [--reviewed YYYY-MM-DD [--approve-pending]]
 
 --reviewed: the dev-added skills (and the rules naming them) were reviewed on that
 date - their sections are written approved, with the date in the note. Without
 it they are written unapproved; a regeneration never approves anything by itself.
+Skills added in dev after the committed file was written stay pending either way.
+--approve-pending: the skills in the committed file's pending section were reviewed
+too - they're approved with the rest. Skills not in the committed file at all still
+wait for review.
 
 Each file is one section with an "approved" flag; the seed loads approved
 sections only. catalogue_dev_added.json is written unapproved, by decision:
@@ -41,13 +45,16 @@ def _section(table, keys, fields, *, approved, note, add=None, change=None, rena
             "renames": renames or {}, "add": add or {}, "change": change or {}}
 
 
-def reviewed_skill_names(path) -> set[str] | None:
-    """Lower-cased names of the dev-added skills an earlier review approved (the committed file), or None."""
+def reviewed_skill_names(path, include_pending: bool = False) -> set[str] | None:
+    """
+    Lower-cased names of the dev-added skills an earlier review approved (the committed file), or None.
+    include_pending: the skills in its pending section count as reviewed too (--approve-pending).
+    """
     if not os.path.exists(path):
         return None
     names = set()
     for section in json.load(open(path, encoding="utf-8"))["sections"]:
-        if section["table"] == "skill_ontology" and section["approved"]:
+        if section["table"] == "skill_ontology" and (section["approved"] or include_pending):
             names |= {json.loads(k)[0].lower() for k in list(section["add"]) + list(section["change"])}
     return names
 
@@ -156,11 +163,17 @@ if __name__ == "__main__":
     if "--reviewed" in args:
         reviewed_on = args[args.index("--reviewed") + 1]
         del args[args.index("--reviewed"):args.index("--reviewed") + 2]
+    approve_pending = "--approve-pending" in args
+    if approve_pending:
+        args.remove("--approve-pending")
+        if not reviewed_on:
+            sys.exit("--approve-pending needs --reviewed YYYY-MM-DD")
     diff_data = json.load(open(args[0], encoding="utf-8"))
     out_dir = args[1] if len(args) > 1 else os.path.join("app", "seeds", "product_config")
     os.makedirs(out_dir, exist_ok=True)
     # what the last review approved - read before this run overwrites the file
-    already_reviewed = reviewed_skill_names(os.path.join(out_dir, "catalogue_dev_added.json")) if reviewed_on else None
+    already_reviewed = (reviewed_skill_names(os.path.join(out_dir, "catalogue_dev_added.json"),
+                                             include_pending=approve_pending) if reviewed_on else None)
     for name, content in build(diff_data, reviewed=reviewed_on, reviewed_names=already_reviewed).items():
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
             json.dump(content, f, ensure_ascii=False, indent=1)

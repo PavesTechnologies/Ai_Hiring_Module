@@ -5,13 +5,13 @@
 Before production holds real candidate data:
 
 - [x] **Review the dev-added skills before export:** done 2026-10-26. Decisions are in [the review list](seed_review_dev_added_skills.md). They're applied in dev and audited. The re-score of the 26 synthetic candidates showed no change. The seed was regenerated with every section approved: 90 dev-added skills are seeded, and the 13 merged or dropped ones are not.
-- [ ] **Review the 4 skills added after that review:** Data Engineering, Data Governance, Stakeholder Management and AWS Certified Solutions Architect, added while calibrating the senior test JD. They're in a separate unapproved section; see [the review list](seed_review_dev_added_skills.md), 'Added after the review'.
+- [x] **Review the 4 skills added after that review:** done 2026-10-30. Data Engineering, Data Governance, Stakeholder Management and AWS Certified Solutions Architect (added while calibrating the senior test JD) are kept as they are, with descriptions for the first three. The seed was regenerated with `--reviewed 2026-10-30 --approve-pending`; every section is approved. See [the review list](seed_review_dev_added_skills.md), 'Added after the review'.
 - [ ] **Define data retention policies.** `retention_policies` is empty in dev, so nothing is retained or purged by policy. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them.
 - [x] **Default campaign weights:** decided 2026-10-26 to use the dev values (deterministic 40, semantic 30, AI 30). They're seeded.
 - [ ] **Move to the paid Gemini tier first.** See [known issues](known_issues.md).
 - [ ] **Required: set the per-model daily LLM call cap after enabling billing.** `SCORING_V2_DAILY_LLM_CALL_CAP` is never seeded from dev, whose 400-per-model caps fit the free tier. A fresh database has the base seed's single default of 300. Set it per model, for example `{"default": N, "<model>": N}`, once billing is on. See step 6 below.
 - [ ] **Keep personal data out of logs.** Worker logs, task logs and dead-letter rows must not contain personal data. See [known issues](known_issues.md).
-- [ ] **Score the [P3] fixtures on staging** against the fresh database. Expect Phase 3 16/16 and H1–H10 unchanged.
+- [ ] **Score the synthetic fixtures on staging** against the fresh database: [P3] (Phase 3 and H1–H10) and [SENIOR] (S1–S8). Expect the results in dev as of 2026-10-30, below.
 
 ## Fresh database (production)
 
@@ -32,6 +32,25 @@ On a fresh database, the migrations that add certification mappings, skill descr
 
 The seed is idempotent and never overwrites an edit made after seeding. It doesn't delete anything. `DETERMINISTIC_SCORE_REJECTS` exists in a fresh database but was removed in dev; that's left for review.
 
-Last verified 2026-10-26 on a throwaway local database, with every section approved:
+Last verified 2026-10-30 on a throwaway local database at migration head `a7c9e1b3d5f6`, with every section approved:
 - A fresh database matches dev except the 13 skills merged or dropped in dev (inactive, not seeded by design), three format-only setting edits (`50.00` to `50`), the call cap (set in production) and `DETERMINISTIC_SCORE_REJECTS`.
 - A second run changes nothing.
+
+## Scoring v2
+
+Re-scoring: `python -m scripts.rescore_score_only --campaign "<name pattern>" [--expect N] --check | --go`. It skips candidates whose scoring task is already queued or running, and queues nothing if the worker doesn't answer. Since 2026-10-30 a score-only re-score also rebuilds stored evidence after any detection-rule change (the detection version includes a fingerprint of the rule data).
+
+**Done (2026-10-30), on the senior test set and the five fixes that followed it:**
+
+1. **Re-detect and re-score the 34 synthetic candidates** ([P3] and [SENIOR]). All 34 are on target:
+   - Phase 3: 16/16.
+   - H1–H10: unchanged.
+   - Senior: S1 and S7 PASS, S2 and S3 HOLD, S4, S5, S6 and S8 REJECT.
+   - REST APIs has a "Not this skill" text; H7's REST APIs is voted no.
+2. **Descriptions** for the senior JD's new skills (Data Engineering, Data Governance, Stakeholder Management).
+3. **Senior dry run with those descriptions:** no outcome change. S4 gains Data Engineering from an ETL line, still REJECT. The senior set wasn't re-scored after it.
+
+**Next: Phase 4.** Evaluate the candidates in [scoring_v2_phase4_candidates.md](scoring_v2_phase4_candidates.md) on real resumes before building any of them:
+- clause splitting for paraphrase lines;
+- one line confirming two core skills while the best line for a third is already used (senior S2);
+- title lines as weak evidence.

@@ -134,19 +134,37 @@ def _sections():
     return seed.load_sections(str(DATA))
 
 
-NEW_SINCE_REVIEW = {"AWS Certified Solutions Architect", "Data Engineering", "Data Governance", "Stakeholder Management"}
+SENIOR_SKILLS = {"AWS Certified Solutions Architect", "Data Engineering", "Data Governance", "Stakeholder Management"}
 
 
-def test_reviewed_sections_are_approved_and_skills_added_since_wait_for_review():
+def test_every_section_is_reviewed_and_approved_with_the_senior_skills():
+    dev_added = set()
     for name, section in _sections():
-        names = {json.loads(k)[0] for k in section["add"]}
-        if not section["approved"]:
-            assert name == "catalogue_dev_added.json" and section["note"].startswith("PENDING REVIEW"), name
-            assert section["table"] != "skill_ontology" or names == NEW_SINCE_REVIEW, names
-            continue
-        assert not (names & NEW_SINCE_REVIEW), f"{name}: a skill added after the review is approved"
+        assert section["approved"], f"{name}:{section['table']} is not approved"
         if name == "catalogue_dev_added.json":
-            assert section["note"].startswith("Reviewed 2026-10-26"), f"{name}:{section['table']} has no review date"
+            assert section["note"].startswith("Reviewed 2026-10-30"), f"{name}:{section['table']} has no review date"
+            if section["table"] == "skill_ontology":
+                dev_added |= {json.loads(k)[0] for k in section["add"]}
+    assert SENIOR_SKILLS <= dev_added                     # added after the 2026-10-26 review, approved 2026-10-30
+
+
+def test_approve_pending_counts_the_committed_pending_skills_as_reviewed(tmp_path):
+    script = _script("build_seed_data")
+    committed = tmp_path / "catalogue_dev_added.json"
+    committed.write_text(json.dumps({"sections": [
+        {"table": "skill_ontology", "approved": True, "add": {'["REST APIs"]': {}}, "change": {'["git"]': {}}},
+        {"table": "skill_ontology", "approved": False, "add": {'["Program Management"]': {}}, "change": {}},
+    ]}), encoding="utf-8")
+    assert script.reviewed_skill_names(str(committed)) == {"rest apis", "git"}
+    names = script.reviewed_skill_names(str(committed), include_pending=True)
+    assert names == {"rest apis", "git", "program management"}
+    diff = _diff()
+    diff["skill_ontology"]["add"]['["Data Governance"]'] = {"canonical_name": "Data Governance", "source": "manual entry"}
+    sections = script.build(diff, reviewed="2026-10-30", reviewed_names=names)["catalogue_dev_added.json"]["sections"]
+    approved = [s for s in sections if s["approved"] and s["table"] == "skill_ontology"][0]
+    held = [s for s in sections if not s["approved"] and s["table"] == "skill_ontology"][0]
+    assert '["Program Management"]' in approved["add"]                  # was pending, now reviewed
+    assert '["Data Governance"]' in held["add"]                         # never in the committed file: still waits
 
 
 def test_a_regeneration_keeps_reviewed_skills_approved_and_holds_new_ones():

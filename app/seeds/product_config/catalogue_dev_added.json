@@ -16,7 +16,7 @@
     "confidence"
    ],
    "approved": true,
-   "note": "Reviewed 2026-10-26 (docs/seed_review_dev_added_skills.md): skills added in dev by hand or by JD calibration. Not seeded (merged or dropped in dev): ['APIs', 'Crew AI', 'CrewAI Enterprise', 'CrewAI Framework', 'REST', 'apache', 'catalog federation', 'databricks notebooks', 'delta lake with python', 'delta lake with sparks sql in databricks', 'mysql rds', 'pip', 'tranformers'].",
+   "note": "Reviewed 2026-10-30 (docs/seed_review_dev_added_skills.md): skills added in dev by hand or by JD calibration. Not seeded (merged or dropped in dev): ['APIs', 'Crew AI', 'CrewAI Enterprise', 'CrewAI Framework', 'REST', 'apache', 'catalog federation', 'databricks notebooks', 'delta lake with python', 'delta lake with sparks sql in databricks', 'mysql rds', 'pip', 'tranformers'].",
    "renames": {
     "REST API": "REST APIs"
    },
@@ -66,6 +66,17 @@
      "is_active": true,
      "source": "manual entry",
      "confidence": "verified"
+    },
+    "[\"AWS Certified Solutions Architect\"]": {
+     "canonical_name": "AWS Certified Solutions Architect",
+     "aliases": null,
+     "category": null,
+     "parent": null,
+     "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "HR_CALIBRATION",
+     "confidence": "unverified"
     },
     "[\"Application Portfolio Management (APM)\"]": {
      "canonical_name": "Application Portfolio Management (APM)",
@@ -156,6 +167,28 @@
      "is_active": true,
      "source": "manual entry",
      "confidence": "verified"
+    },
+    "[\"Data Engineering\"]": {
+     "canonical_name": "Data Engineering",
+     "aliases": [],
+     "category": "Data Engineering",
+     "parent": null,
+     "description": "Building and running data pipelines and platforms: batch and streaming ingestion, ETL/ELT, data lakes, lakehouses and warehouses.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Data Governance\"]": {
+     "canonical_name": "Data Governance",
+     "aliases": [],
+     "category": "Data Engineering",
+     "parent": null,
+     "description": "Governing an organisation's data: data quality, ownership and stewardship, cataloguing, lineage, access policies and compliance.",
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
     },
     "[\"Data Modelling\"]": {
      "canonical_name": "Data Modelling",
@@ -606,6 +639,17 @@
      "category": null,
      "parent": null,
      "description": null,
+     "not_description": null,
+     "is_active": true,
+     "source": "manual entry",
+     "confidence": "unverified"
+    },
+    "[\"Stakeholder Management\"]": {
+     "canonical_name": "Stakeholder Management",
+     "aliases": [],
+     "category": null,
+     "parent": null,
+     "description": "Managing the people a project or service affects: identifying stakeholders, setting expectations, reporting and keeping them aligned.",
      "not_description": null,
      "is_active": true,
      "source": "manual entry",
@@ -1082,7 +1126,7 @@
     "is_active"
    ],
    "approved": true,
-   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
+   "note": "Reviewed 2026-10-30: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"Change Management\", \"ITSM\"]": {
@@ -1167,7 +1211,7 @@
     "match_scope"
    ],
    "approved": true,
-   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
+   "note": "Reviewed 2026-10-30: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"AI near governance (Experience)\"]": {
@@ -1222,7 +1266,7 @@
     "sense_key"
    ],
    "approved": true,
-   "note": "Reviewed 2026-10-26: needs the dev-added skill it names (same file).",
+   "note": "Reviewed 2026-10-30: needs the dev-added skill it names (same file).",
    "renames": {},
    "add": {
     "[\"ITIL 4 Foundation\", \"Change Management\"]": {
@@ -1279,72 +1323,6 @@
      "certification": "ServiceNow CSA",
      "skill": "ServiceNow ITSM",
      "sense_key": null
-    }
-   },
-   "change": {}
-  },
-  {
-   "table": "skill_ontology",
-   "keys": [
-    "canonical_name"
-   ],
-   "fields": [
-    "aliases",
-    "category",
-    "parent",
-    "description",
-    "not_description",
-    "is_active",
-    "source",
-    "confidence"
-   ],
-   "approved": false,
-   "note": "PENDING REVIEW: skills added in dev after the 2026-10-26 review (docs/seed_review_dev_added_skills.md, 'Added after the review'). Set approved once reviewed.",
-   "renames": {},
-   "add": {
-    "[\"AWS Certified Solutions Architect\"]": {
-     "canonical_name": "AWS Certified Solutions Architect",
-     "aliases": null,
-     "category": null,
-     "parent": null,
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "HR_CALIBRATION",
-     "confidence": "unverified"
-    },
-    "[\"Data Engineering\"]": {
-     "canonical_name": "Data Engineering",
-     "aliases": [],
-     "category": "Data Engineering",
-     "parent": null,
-     "description": "Building and running data pipelines and platforms: batch and streaming ingestion, ETL/ELT, data lakes, lakehouses and warehouses.",
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "unverified"
-    },
-    "[\"Data Governance\"]": {
-     "canonical_name": "Data Governance",
-     "aliases": [],
-     "category": "Data Engineering",
-     "parent": null,
-     "description": "Governing an organisation's data: data quality, ownership and stewardship, cataloguing, lineage, access policies and compliance.",
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "unverified"
-    },
-    "[\"Stakeholder Management\"]": {
-     "canonical_name": "Stakeholder Management",
-     "aliases": [],
-     "category": null,
-     "parent": null,
-     "description": "Managing the people a project or service affects: identifying stakeholders, setting expectations, reporting and keeping them aligned.",
-     "not_description": null,
-     "is_active": true,
-     "source": "manual entry",
-     "confidence": "unverified"
     }
    },
    "change": {}

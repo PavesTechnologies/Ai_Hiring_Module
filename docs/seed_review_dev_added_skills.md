@@ -1,6 +1,6 @@
 # Review: dev-added skills before export
 
-**Reviewed 2026-10-26.** Every decision is applied in dev (audited as the reviewing HR admin), the 26 synthetic candidates re-scored with no change (Phase 3 16/16, H1-H10 unchanged), and the seed regenerated with these sections approved. Nothing is left for review.
+**Reviewed 2026-10-26.** Every decision is applied in dev (audited as the reviewing HR admin), the 26 synthetic candidates re-scored with no change (Phase 3 16/16, H1-H10 unchanged), and the seed regenerated with these sections approved. The 4 skills added after that review were reviewed on 2026-10-30 (see the last section). Nothing is left for review.
 
 Production checklist item (see [roadmap](roadmap.md)). These 104 skills are in `app/seeds/product_config/catalogue_dev_added.json`, which does not load until reviewed. To approve: fix, merge or drop rows in that file (or in dev, then regenerate it with `scripts/config_seed/`), then set `approved: true` on its sections. (Done - regenerated with `--reviewed 2026-10-26`.)
 
@@ -115,12 +115,19 @@ The rules in the same file wait for these skills: the 2 Change Management senses
 | vector databases | Added by hand, 2026-08-31 | - | Keep |  |
 | Virtual Environments | Added by hand, 2026-08-31 | - | Keep |  |
 
-## Added after the review - pending
+## Added after the review - reviewed 2026-10-30
 
 Added in dev on 2026-10-26 while calibrating the senior test JD ("Head of Data & AI Platforms", tests/fixtures/senior/).
-They're in their own unapproved section of `app/seeds/product_config/catalogue_dev_added.json`, so they don't load until
-reviewed. Nothing personal. Descriptions added 2026-10-30 (audited, as the reviewing HR admin); regenerated
-the same day.
+Nothing personal. Descriptions added 2026-10-30 (audited, as the reviewing HR admin).
+
+**Reviewed 2026-10-30, all kept as they are:**
+- Data Governance stays under Data Engineering (there is no "Data Management" category).
+- Stakeholder Management takes the category Program Management uses. Program Management has none (no active skill
+  has a business or management category), so it stays without one.
+- AWS Certified Solutions Architect stays a preferred skill.
+
+They're approved with the rest of `app/seeds/product_config/catalogue_dev_added.json`, regenerated with
+`--reviewed 2026-10-30 --approve-pending`.
 
 | Skill | Origin | Used by | Category | Aliases | Description | Note |
 |---|---|---|---|---|---|---|
@@ -131,5 +138,5 @@ the same day.
 
 **Changed after the review, in an approved section:** REST APIs (reviewed: Keep) gained a "Not this skill" text on
 2026-10-30, as the reviewing HR admin: "only testing or calling APIs, without designing or building them". It loads
-with the reviewed section.
+with the reviewed section (accepted 2026-10-30).
 
