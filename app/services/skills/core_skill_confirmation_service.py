@@ -52,6 +52,7 @@ from app.services.llm.base import LLMError, LLMProvider
 from app.services.llm.structured_call import InvalidLLMOutput, LLMCallInfo, call_info, structured_call
 from app.services.llm.call_log import current_source, llm_call_source
 from app.services.skills.evidence_rules import DEFAULT_RULES, EvidenceRules
+from app.services.skills.name_mask import NO_MASK, NameMask
 from app.services.skills.resume_sections import SECTION_EXPERIENCE, SECTION_SKILLS
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.text_evidence import evidence_found_in
@@ -428,6 +429,7 @@ class CoreSkillConfirmationService:
         rules: EvidenceRules | None = None,
         job: JobContext | None = None,
         cap_listed_only_skills: bool = True,
+        name_mask: NameMask | None = None,
     ) -> ConfirmationOutcome:
         """
         budget: optional callable(n_calls) -> bool, asked before any LLM call
@@ -438,7 +440,10 @@ class CoreSkillConfirmationService:
         candidate does the work). job: the JD's title and role domain,
         shown to the voters. cap_listed_only_skills: a listed-only skill is at
         most UNCERTAIN (off when the JD's template lets the vote confirm it).
+        name_mask: the candidate's name, taken out of every excerpt and label
+        the voters see (and so out of the evidence hash and the quote check).
         """
+        mask = name_mask or NO_MASK
         by_skill: dict[UUID, list] = {}
         for row in evidence_rows:
             by_skill.setdefault(_attr(row, "canonical_skill_id"), []).append(row)
@@ -474,9 +479,9 @@ class CoreSkillConfirmationService:
             excerpts: list[tuple[str | None, str]] = []
             for row in compatible:
                 for item in _attr(row, "evidence") or []:
-                    text = (item.get("text") or "").strip()
+                    text = mask.apply((item.get("text") or "").strip())
                     if text and text not in [t for _, t in excerpts]:
-                        excerpts.append((_section_label(item), text))
+                        excerpts.append((mask.apply(_section_label(item)), text))
             results[spec.canonical_skill_id] = {**base, "method": "llm"}
             listed[spec.canonical_skill_id] = cap_listed_only_skills and listed_only(compatible, rules)
             asks.append(_Ask(len(asks) + 1, spec, excerpts[:3],

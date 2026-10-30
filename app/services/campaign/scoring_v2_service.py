@@ -51,6 +51,7 @@ from app.services.skills.paraphrase_proposal_service import (
 from app.services.llm.call_log import calls_in_quota_day, llm_call_source
 from app.services.skills.evidence_rules import role_for_line, roles_of
 from app.services.skills.resume_sections import SECTION_EXPERIENCE
+from app.services.skills.name_mask import NameMask
 from app.services.skills.resume_skill_scanner import DETECTION_VERSION
 from app.services.skills.skill_evidence_service import (
     CERTIFICATION_ORIGIN, SkillEvidenceService, detect_stored_resume, redacted_resume_text,
@@ -183,7 +184,8 @@ class ScoringV2Service:
         ]
 
     def _paraphrase_round(self, *, resume, job_description, specs, confirmations: dict, evidence_rows, tools,
-                          config: dict, text_hash: str, persist: bool, use_cache: bool) -> tuple[dict, list]:
+                          config: dict, text_hash: str, persist: bool, use_cache: bool,
+                          name_mask: NameMask | None = None) -> tuple[dict, list]:
         """
         Phase 3 Step 6: for core skills still NOT_FOUND / UNCERTAIN, propose
         similar experience lines and ask the 3-vote confirmation again with
@@ -233,7 +235,7 @@ class ScoringV2Service:
             text_hash=paraphrase_text_hash(text_hash, proposals), persist=persist,
             budget=self._budget if persist else None, use_cache=use_cache,
             rules=tools.rules, job=job_context(job_description, [getattr(s, "name", None) for s in specs]),
-            cap_listed_only_skills=not jd_listed_only_can_confirm(job_description),
+            cap_listed_only_skills=not jd_listed_only_can_confirm(job_description), name_mask=name_mask,
         )
         info.update(ran=not outcome.skipped_budget, cached=outcome.cached, llm_calls=outcome.llm_calls,
                     problem=outcome.problem, skipped_budget=outcome.skipped_budget,
@@ -329,6 +331,8 @@ class ScoringV2Service:
         evidence_sections = jd_evidence_sections(job_description)
         auto_sections = jd_auto_confirm_sections(job_description)
         job = job_context(job_description, [getattr(s, "name", None) for s in specs])
+        # The candidate's name never reaches the voters (confirmation and paraphrase rounds).
+        name_mask = NameMask.for_resume(resume, catalog_terms=tools.index.entries.keys())
         confirmation = {"ran": False, "llm_calls": 0}
         confirmations: dict[str, dict] = {}
         special_outcome = None
@@ -339,7 +343,7 @@ class ScoringV2Service:
                     evidence_rows=evidence_rows, text_hash=resume_text_hash or "", persist=persist,
                     budget=self._budget if persist else None, use_cache=use_confirmation_cache,
                     auto_sections=auto_sections, rules=tools.rules, job=job,
-                    cap_listed_only_skills=not jd_listed_only_can_confirm(job_description),
+                    cap_listed_only_skills=not jd_listed_only_can_confirm(job_description), name_mask=name_mask,
                 )
                 confirmations = {r["canonical_skill_id"]: r for r in outcome.results}
                 confirmation = {"ran": not outcome.skipped_budget, "cached": outcome.cached,
@@ -370,6 +374,7 @@ class ScoringV2Service:
                         resume=resume, job_description=job_description, specs=specs, confirmations=confirmations,
                         evidence_rows=evidence_rows, tools=tools, config=paraphrase_config,
                         text_hash=resume_text_hash or "", persist=persist, use_cache=use_confirmation_cache,
+                        name_mask=name_mask,
                     )
                 evidence += extra_evidence
                 # Counted with the confirmation calls, so the daily cap sees them.
