@@ -42,7 +42,9 @@ import json
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
+from app.services.campaign.near_miss import (
+    OUTCOME_HOLD as NEAR_MISS_HOLD, OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss,
+)
 from app.services.skills.evidence_rules import DEFAULT_EVIDENCE_RULES
 from app.services.skills.provisional_skill_match import PROVISIONAL_CREDIT
 
@@ -110,6 +112,58 @@ def apply_unavailable_outcome(breakdown: dict, outcome: str, reason: str) -> dic
                      provisional_score=breakdown.get("deterministic_score"))
     if outcome == OUTCOME_NOT_RUN:
         breakdown["deterministic_score"] = None
+    return breakdown
+
+
+# The no-LLM fallback (retire v1, phase B): when the daily cap or a provider failure stops the
+# core-skill votes, the candidate is scored with the scan, auto-confirm and rules only.
+SCORING_MODE_LLM = "llm"
+SCORING_MODE_NO_LLM = "no_llm"
+REASON_AWAITING_FULL_SCORING = "awaiting_full_scoring"
+AWAITING_FULL_SCORING_REASON = "Awaiting full scoring"
+# The only checks the fallback may reject on: they need no vote.
+RULE_ONLY_CHECKS = ("Experience", "Education")
+
+
+def apply_no_llm_outcome(breakdown: dict, experience_result: dict | None, education_result: dict | None,
+                         reason: str) -> dict:
+    """
+    The fallback's decision (user rule, 2026-11-02):
+    - REJECT only on a rule-only failure: experience short of the minimum by more than the
+      tolerance, or mandatory education missing (the same near-miss rule as always, with the core
+      skills left out of it);
+    - otherwise a core skill missing or not confirmed without a vote is UNCERTAIN, so REVIEW -
+      HOLD in the pipeline, marked "Awaiting full scoring", re-scored when quota returns;
+    - every core skill auto-confirmed (no vote needed): the outcome is what full scoring gives.
+    """
+    experience = experience_result or {}
+    education = education_result or {}
+    rules = evaluate_near_miss(
+        core_skill_count=0, confirmed_core_count=0, allowed_missing_core=0, definite_missing_core=0,
+        experience=experience,
+        other_failed_checks=["Education"] if education.get("passed", True) is False else [],
+    )
+    unconfirmed = [e["canonical_name"] for e in breakdown.get("mandatory_skills") or []
+                   if e.get("importance") == "core" and not e.get("counts_for_core_gate")]
+    awaiting = False
+    if rules.outcome == OUTCOME_REJECT:
+        outcome, passed = OUTCOME_REJECT, False
+        decision = rules
+    elif not unconfirmed:
+        outcome, passed, decision = breakdown["outcome"], breakdown["deterministic_passed"], None
+    else:
+        outcome, passed, awaiting = OUTCOME_REVIEW, True, True
+        near_misses = [f"{len(unconfirmed)} core skill{'s' if len(unconfirmed) != 1 else ''} not confirmed "
+                       f"without the LLM ({', '.join(unconfirmed)})", *rules.near_misses]
+        decision = NearMissDecision(NEAR_MISS_HOLD, near_misses)
+    breakdown.update(outcome=outcome, deterministic_passed=passed, would_be_review=outcome == OUTCOME_REVIEW,
+                     scoring_mode=SCORING_MODE_NO_LLM, fallback_reason=reason, awaiting_full_scoring=awaiting,
+                     core_uncertain=unconfirmed if awaiting else breakdown.get("core_uncertain"))
+    if decision is not None:
+        breakdown.update(decision.as_breakdown())
+    if awaiting:
+        breakdown["needs_review_reason"] = (f"{AWAITING_FULL_SCORING_REASON} ({reason}): "
+                                            + "; ".join(decision.near_misses))
     return breakdown
 
 

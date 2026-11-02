@@ -61,7 +61,7 @@ def scoring_fingerprint(root: Path = ROOT) -> str:
 
 
 # Expectations and notes don't change a score: editing them needs no new golden run.
-_EXPECTATION_FIELDS = ("expected", "tests", "trap")
+_EXPECTATION_FIELDS = ("expected", "expected_no_llm", "tests", "trap")
 
 
 def _without_expectations(content: bytes) -> bytes:

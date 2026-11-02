@@ -34,7 +34,8 @@ from app.repositories.dead_letter_queue_repository import DeadLetterQueueReposit
 from app.services.campaign.scoring_v2 import OUTCOME_NOT_RUN, OUTCOME_PENDING
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.campaign.scoring_v2_service import (
-    ScoringV2Service, v1_result_row, v2_rejection_reason, v2_should_run,
+    FALLBACK_NEVER, FALLBACK_ON_CAP, FALLBACK_ON_UNAVAILABLE, ScoringV2Service, v1_result_row, v2_rejection_reason,
+    v2_should_run,
 )
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
@@ -148,7 +149,8 @@ class ScoringV2DecisionPending(Exception):
 
 
 def _run_scoring_v2(db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
-                    experience_result, education_result, domain_result, *, acted_on: bool):
+                    experience_result, education_result, domain_result, *, acted_on: bool,
+                    llm_fallback: str = FALLBACK_NEVER):
     """Inline v2 (only when it decides) - breakdown, or None when it fails (logged, never raised)."""
     try:
         from app.services.llm.factory import resolve_active_provider
@@ -159,7 +161,7 @@ def _run_scoring_v2(db, skill_repo, config_repo, campaign, campaign_candidate, j
         ).score(
             campaign=campaign, campaign_candidate=campaign_candidate, job_description=job_description,
             resume=resume, experience_result=experience_result, education_result=education_result,
-            domain_result=domain_result, acted_on=acted_on,
+            domain_result=domain_result, acted_on=acted_on, llm_fallback=llm_fallback,
         )
     except Exception:
         logger.exception("Scoring v2 failed | campaign_candidate_id=%s", campaign_candidate.id)
@@ -183,6 +185,8 @@ def _v2_decides(campaign) -> bool:
 
 NEAR_MISS_BREAKDOWN_KEYS = (
     "near_miss_outcome", "needs_review", "needs_review_reason", "near_misses", "near_miss_reject_reasons",
+    # The no-LLM fallback (phase B): how it was scored, and a HOLD awaiting full scoring.
+    "scoring_mode", "fallback_reason", "awaiting_full_scoring",
 )
 
 
@@ -389,9 +393,13 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
         v2_decides = _v2_decides(campaign)
         v2_breakdown = None
         if v2_decides:
+            # The daily cap falls back to no-LLM scoring at once (it won't lift for hours); a
+            # provider failure is retried, and falls back only on the last attempt.
+            last_attempt = self.request.retries + 1 >= _DECISION_PENDING_RETRY_POLICY.max_attempts
             v2_breakdown = _run_scoring_v2(
                 db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
                 experience_result, education_result, domain_result, acted_on=True,
+                llm_fallback=FALLBACK_ON_UNAVAILABLE if last_attempt else FALLBACK_ON_CAP,
             )
             if v2_breakdown is not None and v2_breakdown.get("outcome") in _UNDECIDED_OUTCOMES:
                 # A provider failure (PENDING) or the daily cap (NOT_RUN) must never decide (and

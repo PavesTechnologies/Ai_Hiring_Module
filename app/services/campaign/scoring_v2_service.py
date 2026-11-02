@@ -32,9 +32,17 @@ from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService, allowed_missing_core, score_threshold_rejects,
 )
 from app.services.campaign.scoring_v2 import (
-    OUTCOME_NOT_RUN, OUTCOME_PENDING, SCORING_V2_CONFIG_KEY, SCORING_VERSION, EvidenceInput, JDSkillInput,
-    ProvisionalSkillInput, ScoringInputs, apply_unavailable_outcome, config_version, parse_config, score_v2,
+    OUTCOME_NOT_RUN, OUTCOME_PENDING, REASON_AWAITING_FULL_SCORING, SCORING_MODE_LLM, SCORING_V2_CONFIG_KEY,
+    SCORING_VERSION, EvidenceInput, JDSkillInput, ProvisionalSkillInput,
+    ScoringInputs, apply_no_llm_outcome, apply_unavailable_outcome, config_version, parse_config, score_v2,
 )
+
+# ScoringV2Service.score(llm_fallback=...): when the core-skill votes can't be had.
+FALLBACK_NEVER = "never"
+FALLBACK_ON_CAP = "on_cap"
+FALLBACK_ON_UNAVAILABLE = "on_unavailable"
+FALLBACK_ALWAYS = "always"
+NO_LLM_ON_REQUEST = "scored without the LLM on request"
 from app.services.jd.jd_calibration_rules import jd_profile, jd_role_domain
 from app.services.jd.jd_profile_templates import (
     jd_auto_confirm_sections, jd_evidence_sections, jd_listed_only_can_confirm, jd_paraphrase_sections,
@@ -271,8 +279,15 @@ class ScoringV2Service:
         persist: bool = True,
         evidence_records: list | None = None,
         use_confirmation_cache: bool = True,
+        llm_fallback: str = FALLBACK_NEVER,
     ) -> dict:
         """
+        llm_fallback: when the core-skill votes can't be had, score without the LLM (the scan,
+        auto-confirm and rules only - apply_no_llm_outcome) instead of returning NOT_RUN /
+        PENDING: "never" (shadow, comparisons), "on_cap" (the daily cap only), "on_unavailable"
+        (the cap or a provider failure - the deciding path's last attempt), "always" (score
+        without the LLM outright: the golden set's --no-llm run).
+
         evidence_records / use_confirmation_cache: for comparisons - score this
         parse's own evidence (instead of the stored rows) and ask the model
         afresh instead of reusing a cached confirmation. Pass persist=False.
@@ -284,10 +299,11 @@ class ScoringV2Service:
                                job_description=job_description, resume=resume, experience_result=experience_result,
                                education_result=education_result, domain_result=domain_result, acted_on=acted_on,
                                use_llm=use_llm, persist=persist, evidence_records=evidence_records,
-                               use_confirmation_cache=use_confirmation_cache)
+                               use_confirmation_cache=use_confirmation_cache, llm_fallback=llm_fallback)
 
     def _score(self, *, campaign, campaign_candidate, job_description, resume, experience_result, education_result,
-               domain_result, acted_on, use_llm, persist, evidence_records, use_confirmation_cache) -> dict:
+               domain_result, acted_on, use_llm, persist, evidence_records, use_confirmation_cache,
+               llm_fallback=FALLBACK_NEVER) -> dict:
         config = self.load_config()
         tools = self.evidence_service.load_tools()
 
@@ -347,7 +363,8 @@ class ScoringV2Service:
         confirmation = {"ran": False, "llm_calls": 0}
         confirmations: dict[str, dict] = {}
         special_outcome = None
-        if specs and use_llm and self.provider_resolver is not None:
+        no_llm_now = llm_fallback == FALLBACK_ALWAYS
+        if specs and use_llm and self.provider_resolver is not None and not no_llm_now:
             try:
                 outcome = CoreSkillConfirmationService(self.provider_resolver(), self.detection_repository).confirm(
                     resume_id=resume.id, jd_id=job_description.id, core_skills=specs,
@@ -377,8 +394,9 @@ class ScoringV2Service:
         paraphrase_config = config.get("paraphrase") or {}
         paraphrase_config = {**paraphrase_config,
                              "sections": jd_paraphrase_sections(job_description, paraphrase_config.get("sections"))}
+        base_evidence = list(evidence)
         if (specs and use_llm and self.provider_resolver is not None and special_outcome is None
-                and paraphrase_config.get("enabled")):
+                and not no_llm_now and paraphrase_config.get("enabled")):
             try:
                 with llm_call_source("paraphrase_confirmation"):
                     paraphrase, extra_evidence = self._paraphrase_round(
@@ -396,6 +414,23 @@ class ScoringV2Service:
                 # The first-round result stands; paraphrase never fails scoring.
                 logger.exception("v2 paraphrase round failed | campaign_candidate_id=%s", campaign_candidate.id)
                 paraphrase = {"ran": False, "llm_calls": 0, "problem": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+        fallback_reason = NO_LLM_ON_REQUEST if no_llm_now else None
+        if special_outcome is not None and (
+                (special_outcome[0] == OUTCOME_NOT_RUN and llm_fallback in (FALLBACK_ON_CAP, FALLBACK_ON_UNAVAILABLE))
+                or (special_outcome[0] == OUTCOME_PENDING and llm_fallback == FALLBACK_ON_UNAVAILABLE)):
+            fallback_reason, special_outcome = special_outcome[1], None
+        if fallback_reason is not None:
+            # The scan, auto-confirm and rules only: no vote, no paraphrase round. The calls the
+            # failed attempt made still count (they reached the provider).
+            confirmation = {"ran": False, "fallback": True, "llm_calls": int(confirmation.get("llm_calls") or 0),
+                            "attempt": {k: v for k, v in confirmation.items() if k != "results"},
+                            "results": None}
+            confirmations = self._no_llm_confirmations(specs, evidence_rows, resume_text_hash, auto_sections, tools,
+                                                       job, job_description, name_mask)
+            confirmation["results"] = list(confirmations.values())
+            paraphrase = {"ran": False, "llm_calls": 0, "skipped": "no-LLM fallback"}
+            evidence = base_evidence
 
         core_count = sum(1 for s in jd_skills if s.mandatory and s.importance == "core")
         allowed = allowed_missing_core(
@@ -441,15 +476,43 @@ class ScoringV2Service:
         ), config)
         if special_outcome is not None:
             apply_unavailable_outcome(breakdown, *special_outcome)
+        if fallback_reason is not None:
+            apply_no_llm_outcome(breakdown, experience_result, education_result, fallback_reason)
+        else:
+            breakdown.update(scoring_mode=SCORING_MODE_LLM, awaiting_full_scoring=False)
 
         if persist:
             ScoringResultRepository(self.db).add(CandidateScoringResult(
                 campaign_candidate_id=campaign_candidate.id, scoring_version=SCORING_VERSION,
                 score=breakdown["deterministic_score"], passed=breakdown["deterministic_passed"],
                 outcome=breakdown["outcome"], breakdown=breakdown, scoring_config_version=version,
-                config_snapshot=snapshot, acted_on=acted_on,
+                config_snapshot=snapshot, acted_on=acted_on, scoring_mode=breakdown["scoring_mode"],
+                awaiting_full_scoring=bool(breakdown.get("awaiting_full_scoring")),
             ))
         return breakdown
+
+    def _no_llm_confirmations(self, specs, evidence_rows, text_hash, auto_sections, tools, job, job_description,
+                              name_mask) -> dict[str, dict]:
+        """
+        Core-skill results without a single LLM call: what auto-confirm settles is CONFIRMED;
+        every other core skill - found but needing a vote, or not found at all (the paraphrase
+        round might have found it) - is UNCERTAIN, awaiting full scoring.
+        """
+        if not specs:
+            return {}
+        outcome = CoreSkillConfirmationService(None, None).confirm(
+            resume_id=None, jd_id=job_description.id, core_skills=specs, evidence_rows=evidence_rows,
+            text_hash=text_hash or "", persist=False, budget=lambda _calls: False, use_cache=False,
+            auto_sections=auto_sections, rules=tools.rules, job=job,
+            cap_listed_only_skills=not jd_listed_only_can_confirm(job_description), name_mask=name_mask,
+        )
+        results = {}
+        for result in outcome.results:
+            if result.get("status") != STATUS_CONFIRMED:
+                result = {**result, "status": STATUS_UNCERTAIN, "reason": REASON_AWAITING_FULL_SCORING,
+                          "confirmed": False}
+            results[result["canonical_skill_id"]] = result
+        return results
 
 
 ROLE_DOMAIN_LABELS = {"SOFTWARE": "Software", "IT_OPERATIONS": "IT operations", "DATA": "Data",

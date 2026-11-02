@@ -14,6 +14,11 @@ A case:
    "counterfactual": {"group": "NAME-F1", "varies": "name", "compare_with": "F1", "detail": "..."}}
                                                               (counterfactual cases only)
 
+expected_no_llm: {"outcomes": [...], "why": "..."} - the outcome the no-LLM fallback must give
+(run.py --no-llm): REJECT only on a rule-only failure (experience beyond the tolerance, missing
+mandatory education); any core skill that needs a vote (or isn't found) makes it HOLD; PASS only
+when every core skill is auto-confirmed and full scoring passes.
+
 expected.outcomes: the outcomes accepted (PASS / HOLD / REJECT). expected.core: "n/m" when the
 expectation is exact, else null (the designed text is kept in expected.note). A counterfactual case differs from the case
 named in compare_with only in what it varies (name, career gap or region); the two must have the
@@ -87,6 +92,10 @@ def validate(data: dict, base: Path = GOLDEN_DIR) -> list[str]:
         core = expected.get("core")
         if core is not None and not _CORE.match(str(core)):
             problems.append(f"{where}: expected.core must be 'n/m' or null")
+        # The no-LLM fallback's expectation (run.py --no-llm): its outcomes, and why.
+        no_llm = case.get("expected_no_llm")
+        if no_llm is None or not no_llm.get("outcomes") or set(no_llm["outcomes"]) - OUTCOMES:
+            problems.append(f"{where}: expected_no_llm.outcomes must be a non-empty subset of {sorted(OUTCOMES)}")
         counterfactual = case.get("counterfactual")
         if (case.get("set") == "counterfactual") != bool(counterfactual):
             problems.append(f"{where}: counterfactual cases (and only they) need a counterfactual block")

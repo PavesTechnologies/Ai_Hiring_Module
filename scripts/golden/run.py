@@ -5,6 +5,8 @@ cases' expectations, the counterfactual partners and the last accepted run, and 
     python -m scripts.golden.run                       score all cases (LLM only on vote-cache misses)
     python -m scripts.golden.run --only S1 CF-GAP-S7-1
     python -m scripts.golden.run --cache-only          no LLM call at all: a cache miss is a failure (CI)
+    python -m scripts.golden.run --no-llm              score with the no-LLM fallback (checked against
+                                                       expected_no_llm; its own accepted run)
     python -m scripts.golden.run --dev-cache           on a golden-cache miss, reuse dev's cached votes first
     python -m scripts.golden.run --accept              ... and accept this run (writes accepted_run.json
                                                        and the new vote-cache entries)
@@ -41,6 +43,12 @@ from scripts.golden.fingerprint import scoring_fingerprint
 from scripts.golden.golden_format import GOLDEN_DIR, counterfactual_pairs, load, load_json
 
 ACCEPTED = GOLDEN_DIR / "accepted_run.json"
+# The no-LLM fallback's own accepted run (--no-llm): scan, auto-confirm and rules only.
+ACCEPTED_NO_LLM = GOLDEN_DIR / "accepted_run_no_llm.json"
+
+
+def accepted_path(no_llm: bool) -> Path:
+    return ACCEPTED_NO_LLM if no_llm else ACCEPTED
 VOTE_CACHE = GOLDEN_DIR / "vote_cache.json"
 RUNS_DIR = GOLDEN_DIR / "runs"
 LLM_SOURCE = "golden_run"
@@ -242,7 +250,7 @@ class GoldenVotes:
 
 # --- one case -----------------------------------------------------------------------------------
 
-def score_case(world: World, case: dict, v2, config_repo, evidence_service) -> dict:
+def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, no_llm: bool = False) -> dict:
     from app.services.campaign import scoring_v2_service
     from app.services.skills.evidence_rules import roles_of
     from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
@@ -271,7 +279,7 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service) -> d
         breakdown = v2.score(campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,
                              experience_result=experience, education_result=education, domain_result=domain,
                              acted_on=False, use_llm=True, persist=False, evidence_records=records,
-                             use_confirmation_cache=True)
+                             use_confirmation_cache=True, llm_fallback="always" if no_llm else "never")
     return summarise(breakdown, records, experience, education, domain, ongoing=has_ongoing_role(parsed))
 
 
@@ -330,6 +338,8 @@ def summarise(b: dict, records, experience, education=None, domain=None, *, ongo
         "needs_review_reason": b.get("needs_review_reason"),
         "experience_years": (experience or {}).get("candidate_years"),
         "experience_ongoing": ongoing,
+        "scoring_mode": b.get("scoring_mode"),
+        "awaiting_full_scoring": bool(b.get("awaiting_full_scoring")),
         "numeric_inputs": numeric_inputs(experience, education, domain),
         "skills": skills, "llm_calls": int(conf.get("llm_calls") or 0),
         "problem": conf.get("problem") or para.get("problem"),
@@ -339,7 +349,9 @@ def summarise(b: dict, records, experience, education=None, domain=None, *, ongo
 
 # --- comparing ----------------------------------------------------------------------------------
 
-def check_expectations(case: dict, result: dict) -> list[str]:
+def check_expectations(case: dict, result: dict, *, no_llm: bool = False) -> list[str]:
+    if no_llm:
+        return check_no_llm_expectations(case, result)
     expected = case["expected"]
     problems = []
     if result["outcome"] not in expected["outcomes"]:
@@ -348,6 +360,26 @@ def check_expectations(case: dict, result: dict) -> list[str]:
         problems.append(f"core {result['core']}, expected {expected['core']}")
     if result["outcome"] == "PENDING":
         problems.append(f"PENDING: {result.get('problem')}")
+    return problems
+
+
+def check_no_llm_expectations(case: dict, result: dict) -> list[str]:
+    """The fallback's outcome (expected_no_llm); a HOLD is always one awaiting full scoring - and never a vote."""
+    expected = case["expected_no_llm"]
+    problems = []
+    if result["outcome"] not in expected["outcomes"]:
+        problems.append(f"no-LLM outcome {result['outcome']}, expected {'/'.join(expected['outcomes'])} "
+                        f"({expected.get('why')})")
+    # Awaiting full scoring exactly when a core skill was left unconfirmed (an experience near-miss
+    # with every core skill auto-confirmed is the full outcome already).
+    unsettled = [n for n, s in result["skills"].items() if s["status"] != "CONFIRMED"]
+    if bool(result.get("awaiting_full_scoring")) != (bool(unsettled) and result["outcome"] == "HOLD"):
+        problems.append(f"awaiting full scoring is {bool(result.get('awaiting_full_scoring'))} with "
+                        f"{len(unsettled)} core skill(s) unconfirmed and outcome {result['outcome']}")
+    if result.get("scoring_mode") != "no_llm":
+        problems.append(f"scored in mode {result.get('scoring_mode')}, not no_llm")
+    if result.get("llm_calls"):
+        problems.append(f"{result['llm_calls']} LLM call(s) in a no-LLM run")
     return problems
 
 
@@ -481,7 +513,8 @@ def run(args) -> int:
     if args.only and len(cases) != len(set(args.only)):
         print("unknown cases:", sorted(set(args.only) - {c["id"] for c in cases}))
         return 2
-    accepted = json.loads(ACCEPTED.read_text(encoding="utf-8")) if ACCEPTED.exists() else {}
+    accepted_file = accepted_path(args.no_llm)
+    accepted = json.loads(accepted_file.read_text(encoding="utf-8")) if accepted_file.exists() else {}
     cache = json.loads(VOTE_CACHE.read_text(encoding="utf-8")) if VOTE_CACHE.exists() else {}
     started = datetime.datetime.now(datetime.timezone.utc)
     engine.echo = False
@@ -533,11 +566,11 @@ def run(args) -> int:
             for case in cases:
                 votes.case_id = case["id"]
                 with db.begin_nested():
-                    result = score_case(world, case, v2, config_repo, v2.evidence_service)
+                    result = score_case(world, case, v2, config_repo, v2.evidence_service, no_llm=args.no_llm)
                 results[case["id"]] = result
                 if args.cache_only and result["outcome"] == "PENDING":
                     misses.append(case["id"])
-                problems[case["id"]] = check_expectations(case, result)
+                problems[case["id"]] = check_expectations(case, result, no_llm=args.no_llm)
                 print(f"{case['id']:15} {result['outcome'] or '-':7} {result['core']:5} | calls {result['llm_calls']}"
                       + (f" | {'; '.join(problems[case['id']])}" if problems[case['id']] else ""), flush=True)
         if world.missing_skills:
@@ -566,6 +599,7 @@ def run(args) -> int:
                        if votes.main_model and e.get("model") != votes.main_model}
     run_record = {
         "run_at": started.isoformat(), "fingerprint": fingerprint, "cases": results,
+        "mode": "no_llm" if args.no_llm else "llm",
         "llm": {"calls": calls, "input_tokens": tokens_in, "output_tokens": tokens_out,
                 # what the cases themselves counted - equal to `calls` unless logging failed
                 "case_calls": case_calls, "log_write_failures": len(log_write_failures),
@@ -592,21 +626,25 @@ def run(args) -> int:
             print("--accept needs the whole set and no cache misses - nothing accepted")
             return 2
         accept({**run_record, "new_vote_cache_entries": votes.new})
+    if args.no_llm and calls:
+        print(f"a --no-llm run made {calls} LLM call(s)")
+        return 1
     return 1 if failed or failed_pairs or misses else 0
 
 
 def accept(run_record: dict) -> None:
-    """Accepted: the run's results and fingerprint, and its new vote-cache entries."""
+    """Accepted: the run's results and fingerprint (a --no-llm run in its own file), and its new vote-cache entries."""
     cache = json.loads(VOTE_CACHE.read_text(encoding="utf-8")) if VOTE_CACHE.exists() else {}
     new = run_record.get("new_vote_cache_entries") or {}
     cache.update(new)
     VOTE_CACHE.write_text(json.dumps(dict(sorted(cache.items())), indent=1, ensure_ascii=False) + "\n",
                           encoding="utf-8")
-    ACCEPTED.write_text(json.dumps({"accepted_on": datetime.date.today().isoformat(), "run_at": run_record["run_at"],
-                                    "fingerprint": run_record["fingerprint"], "llm": run_record["llm"],
-                                    "cases": run_record["cases"]}, indent=1, ensure_ascii=False) + "\n",
-                        encoding="utf-8")
-    print(f"accepted the run of {run_record['run_at'][:16]}: tests/golden/accepted_run.json and "
+    target = accepted_path(run_record.get("mode") == "no_llm")
+    target.write_text(json.dumps({"accepted_on": datetime.date.today().isoformat(), "run_at": run_record["run_at"],
+                                  "mode": run_record.get("mode", "llm"), "fingerprint": run_record["fingerprint"],
+                                  "llm": run_record["llm"], "cases": run_record["cases"]},
+                                 indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"accepted the run of {run_record['run_at'][:16]}: tests/golden/{target.name} and "
           f"{len(new)} new vote-cache entries")
 
 
@@ -683,6 +721,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", nargs="+", metavar="CASE")
     parser.add_argument("--cache-only", action="store_true", help="never call the model; a cache miss fails")
+    parser.add_argument("--no-llm", action="store_true",
+                        help="score with the no-LLM fallback, checked against expected_no_llm")
     parser.add_argument("--dev-cache", action="store_true", help="on a golden-cache miss, reuse dev's cached votes")
     parser.add_argument("--accept", action="store_true", help="accept this run (whole set only)")
     parser.add_argument("--accept-run", metavar="RUN_JSON", help="accept a run already reviewed, as it was")

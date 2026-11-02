@@ -201,6 +201,9 @@ def add_to_golden(cases: list[dict]) -> None:
             "id": case["id"], "set": "counterfactual", "jd": base["jd"], "resume": f"resumes/{case['id']}.json",
             "source_docx": f"tests/fixtures/counterfactual/{case['id']}.docx",
             "expected": expected,
+            # A new case starts from its base's no-LLM expectation (same rule, same checks).
+            "expected_no_llm": (by_id[case["id"]].get("expected_no_llm") if case["id"] in by_id else None)
+            or base.get("expected_no_llm"),
             "counterfactual": {"group": case["group"], "varies": case["varies"],
                                "compare_with": case["compare_with"], "detail": case["detail"]},
         })

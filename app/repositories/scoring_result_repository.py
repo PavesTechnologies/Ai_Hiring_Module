@@ -35,3 +35,15 @@ class ScoringResultRepository:
             .order_by(CandidateScoringResult.created_at.desc())
             .limit(1)
         ).scalar_one_or_none()
+
+    def awaiting_full_scoring(self, limit: int = 50) -> list[CandidateScoringResult]:
+        """Acted-on no-LLM results that held their candidate for review, oldest first (phase B)."""
+        return list(self.db.execute(
+            select(CandidateScoringResult)
+            .where(CandidateScoringResult.awaiting_full_scoring.is_(True), CandidateScoringResult.acted_on.is_(True))
+            .order_by(CandidateScoringResult.created_at)
+            .limit(limit)
+        ).scalars().all())
+
+    def get(self, result_id: UUID) -> CandidateScoringResult | None:
+        return self.db.get(CandidateScoringResult, result_id)

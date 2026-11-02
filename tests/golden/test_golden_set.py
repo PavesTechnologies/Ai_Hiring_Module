@@ -96,7 +96,8 @@ def test_a_counterfactual_differs_from_its_partner_only_in_what_it_varies(case, 
 
 def _minimal(**case_overrides) -> dict:
     case = {"id": "X1", "set": "phase3", "jd": "JD-F", "resume": "resumes/F2.json",
-            "source_docx": "tests/fixtures/phase3/F2.docx", "expected": {"outcomes": ["PASS"], "core": "4/4"}}
+            "source_docx": "tests/fixtures/phase3/F2.docx", "expected": {"outcomes": ["PASS"], "core": "4/4"},
+            "expected_no_llm": {"outcomes": ["HOLD"], "why": "core skills need a vote"}}
     case.update(case_overrides)
     return {"schema_version": 1, "jds": {"JD-F": "jds/JD-F.json"}, "cases": [case]}
 
@@ -171,3 +172,19 @@ def test_every_counterfactual_docx_is_built_from_the_builder():
     assert built == in_golden
     for cid in built:
         assert (ROOT / "tests" / "fixtures" / "counterfactual" / f"{cid}.docx").exists()
+
+
+def test_every_case_says_what_the_no_llm_fallback_must_give():
+    assert validate(_minimal(expected_no_llm=None), GOLDEN_DIR)
+    assert validate(_minimal(expected_no_llm={"outcomes": ["MAYBE"]}), GOLDEN_DIR)
+    for case in GOLDEN["cases"]:
+        rule = case["expected_no_llm"]
+        assert rule["outcomes"] and rule.get("why"), case["id"]
+
+
+def test_no_llm_rejects_only_on_rule_only_failures():
+    """The user's rule: the fallback may REJECT only on experience / education; core skills make it HOLD."""
+    for case in GOLDEN["cases"]:
+        rule = case["expected_no_llm"]
+        if "REJECT" in rule["outcomes"]:
+            assert rule["why"].startswith("rule-only failure"), case["id"]

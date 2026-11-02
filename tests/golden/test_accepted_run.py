@@ -53,3 +53,12 @@ def test_the_ci_gate_passes_now_and_names_a_stale_fingerprint(monkeypatch):
     assert check_fingerprint.check() == []
     monkeypatch.setattr(check_fingerprint, "scoring_fingerprint", lambda: "f" * 64)
     assert any("scoring changed" in p for p in check_fingerprint.check())
+
+
+def test_the_no_llm_accepted_run_is_held_to_the_same_fingerprint(monkeypatch, tmp_path):
+    from scripts.golden import check_fingerprint
+    no_llm = json.loads(check_fingerprint.ACCEPTED_NO_LLM.read_text(encoding="utf-8"))
+    assert no_llm["mode"] == "no_llm" and no_llm["fingerprint"] == scoring_fingerprint()
+    assert set(no_llm["cases"]) == {c["id"] for c in load()["cases"]}
+    monkeypatch.setattr(check_fingerprint, "ACCEPTED_NO_LLM", tmp_path / "missing.json")
+    assert any("no accepted no-LLM golden run" in p for p in check_fingerprint.check())

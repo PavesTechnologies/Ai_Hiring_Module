@@ -164,3 +164,25 @@ def test_cached_votes_from_a_model_other_than_the_main_one_are_reported():
     assert votes.hits == 2
     assert votes.other_model_hits == [{"case": "S7", "key": "B", "model": "gemini-3.5-flash-lite",
                                        "used_fallback": True}]
+
+
+
+def _no_llm_result(outcome, awaiting, *statuses, mode="no_llm", calls=0):
+    skills = {f"S{i}": _skill(status) for i, status in enumerate(statuses)}
+    return {**_result(outcome, **skills), "awaiting_full_scoring": awaiting, "scoring_mode": mode,
+            "llm_calls": calls}
+
+
+def test_no_llm_expectations_check_the_outcome_the_marker_the_mode_and_no_calls():
+    case = {"expected_no_llm": {"outcomes": ["HOLD"], "why": "core skills need a vote"}}
+    assert check_expectations(case, _no_llm_result("HOLD", True, "CONFIRMED", "UNCERTAIN"), no_llm=True) == []
+    # an experience near-miss with every core skill auto-confirmed: the full outcome, not awaiting
+    assert check_expectations(case, _no_llm_result("HOLD", False, "CONFIRMED"), no_llm=True) == []
+    assert any("expected HOLD" in p for p in check_expectations(
+        case, _no_llm_result("REJECT", False, "UNCERTAIN"), no_llm=True))
+    assert any("awaiting full scoring is False" in p for p in check_expectations(
+        case, _no_llm_result("HOLD", False, "UNCERTAIN"), no_llm=True))
+    assert any("mode llm" in p for p in check_expectations(
+        case, _no_llm_result("HOLD", True, "UNCERTAIN", mode="llm"), no_llm=True))
+    assert any("LLM call" in p for p in check_expectations(
+        case, _no_llm_result("HOLD", True, "UNCERTAIN", calls=3), no_llm=True))

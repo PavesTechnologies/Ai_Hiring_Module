@@ -1,17 +1,18 @@
 {
  "accepted_on": "2026-11-02",
- "run_at": "2026-11-02T11:44:14.294998+00:00",
- "fingerprint": "fd2ab746f4b347d214059d4eed98e92906a231cf9d2a5af43be4b0afcf47a7e9",
+ "run_at": "2026-11-02T12:18:27.418938+00:00",
+ "mode": "llm",
+ "fingerprint": "5ade3e4f032161c832ea9311a93c514c23c5c16f525f6eaa6a45721a1b09f87b",
  "llm": {
-  "calls": 12,
-  "input_tokens": 6132,
-  "output_tokens": 960,
-  "case_calls": 12,
+  "calls": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "case_calls": 0,
   "log_write_failures": 0,
-  "vote_cache_hits": 54,
+  "vote_cache_hits": 58,
   "dev_cache_hits": 0,
-  "new_cache_entries": 4,
-  "model": "gemini-3.1-flash-lite",
+  "new_cache_entries": 0,
+  "model": null,
   "main_model": "gemini-3.1-flash-lite",
   "cached_votes_from_other_models": [],
   "new_votes_from_other_models": {}
@@ -25,6 +26,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -108,6 +111,8 @@
    "needs_review_reason": "Needs recruiter review: experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -187,6 +192,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -271,6 +278,8 @@
    "needs_review_reason": "Needs recruiter review: experience 0.5 years, 0.5 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.5,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -353,6 +362,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -436,6 +447,8 @@
    "needs_review_reason": null,
    "experience_years": 0.5,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 50.0,
@@ -496,6 +509,8 @@
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: REST APIs, git)",
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -570,6 +585,8 @@
    "needs_review_reason": "Needs recruiter review: experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -652,6 +669,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -728,6 +747,8 @@
    "needs_review_reason": null,
    "experience_years": 6.7,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 50.0,
     "education.score": 100.0,
@@ -817,6 +838,8 @@
    "needs_review_reason": null,
    "experience_years": 4.7,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 50.0,
     "education.score": 100.0,
@@ -915,6 +938,8 @@
    "needs_review_reason": null,
    "experience_years": 9.9,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -979,6 +1004,8 @@
    "needs_review_reason": "Needs recruiter review: experience 3.7 years, 0.3 short of the 4-year minimum (within the 1-year tolerance)",
    "experience_years": 3.7,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1052,6 +1079,8 @@
    "needs_review_reason": null,
    "experience_years": 7.9,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 0.0,
     "education.score": 100.0,
@@ -1112,6 +1141,8 @@
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: Service Catalog, ServiceNow ITSM)",
    "experience_years": 6.9,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1180,6 +1211,8 @@
    "needs_review_reason": null,
    "experience_years": 5.9,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 0.0,
     "education.score": 100.0,
@@ -1267,6 +1300,8 @@
    "needs_review_reason": null,
    "experience_years": 5.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 0.0,
     "education.score": 100.0,
@@ -1327,6 +1362,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1407,6 +1444,8 @@
    "needs_review_reason": null,
    "experience_years": 9.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 50.0,
     "education.score": 100.0,
@@ -1487,6 +1526,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1557,6 +1598,8 @@
    "needs_review_reason": null,
    "experience_years": 7.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1629,6 +1672,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -1714,6 +1759,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -1780,6 +1827,8 @@
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 0 (missing: Python)",
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -1858,6 +1907,8 @@
    "needs_review_reason": null,
    "experience_years": 0.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 50.0,
@@ -1939,6 +1990,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -1997,6 +2050,8 @@
    "needs_review_reason": null,
    "experience_years": 15.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2085,6 +2140,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -2162,6 +2219,8 @@
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1, 1 uncertain (missing: Data Engineering, MLOps)",
    "experience_years": 14.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2238,6 +2297,8 @@
    "needs_review_reason": null,
    "experience_years": 18.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -2308,6 +2369,8 @@
    "needs_review_reason": null,
    "experience_years": 14.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2392,6 +2455,8 @@
    "needs_review_reason": null,
    "experience_years": 13.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2469,6 +2534,8 @@
    "needs_review_reason": null,
    "experience_years": 20.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2567,6 +2634,8 @@
    "needs_review_reason": null,
    "experience_years": 13.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2627,6 +2696,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2708,6 +2779,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2777,7 +2850,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2789,6 +2862,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2858,7 +2933,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2870,6 +2945,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -2939,7 +3016,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2953,6 +3030,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3030,6 +3109,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3093,7 +3174,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3107,6 +3188,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3184,6 +3267,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3261,6 +3346,8 @@
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3336,6 +3423,8 @@
    "needs_review_reason": null,
    "experience_years": 20.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -3432,6 +3521,8 @@
    "needs_review_reason": null,
    "experience_years": 19.0,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -3528,6 +3619,8 @@
    "needs_review_reason": null,
    "experience_years": 19.0,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 100.0,
@@ -3624,6 +3717,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -3700,6 +3795,8 @@
    "needs_review_reason": null,
    "experience_years": 5.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -3776,6 +3873,8 @@
    "needs_review_reason": null,
    "experience_years": 5.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -3854,6 +3953,8 @@
    "needs_review_reason": null,
    "experience_years": 10.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -3931,6 +4032,8 @@
    "needs_review_reason": null,
    "experience_years": 10.2,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -4006,6 +4109,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -4082,6 +4187,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -4158,6 +4265,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -4234,6 +4343,8 @@
    "needs_review_reason": null,
    "experience_years": 6.4,
    "experience_ongoing": true,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": 25.0,
     "education.score": 100.0,
@@ -4310,6 +4421,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -4392,6 +4505,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -4474,6 +4589,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,
@@ -4556,6 +4673,8 @@
    "needs_review_reason": null,
    "experience_years": 1.0,
    "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
    "numeric_inputs": {
     "domain.score": null,
     "education.score": 90.0,

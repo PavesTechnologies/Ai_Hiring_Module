@@ -22,7 +22,13 @@
    },
    "tests": [
     "internship_counts_as_experience"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F2",
@@ -40,7 +46,13 @@
    "tests": [
     "project_only_skills",
     "experience_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F3",
@@ -58,7 +70,13 @@
    "tests": [
     "education_field_family",
     "internship_counts_as_experience"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F4",
@@ -76,7 +94,13 @@
    "tests": [
     "education_field_family",
     "experience_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F5",
@@ -95,7 +119,13 @@
     "spelling_normalisation",
     "compound_skill_split",
     "skill_alias"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F6",
@@ -112,7 +142,13 @@
    },
    "tests": [
     "weak_fit"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "why": "rule-only failure: mandatory education missing"
+   }
   },
   {
    "id": "F7",
@@ -129,7 +165,13 @@
    },
    "tests": [
     "core_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, REST APIs, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "F8",
@@ -148,7 +190,13 @@
     "keyword_stuffing",
     "listed_only_skills",
     "experience_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, REST APIs, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D1",
@@ -166,7 +214,13 @@
    "tests": [
     "strong_domain_match",
     "certifications"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D2",
@@ -184,7 +238,13 @@
    "tests": [
     "domain_paraphrase",
     "functional_score"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D3",
@@ -202,7 +262,13 @@
    "tests": [
     "certification_mapping",
     "implied_skill"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D4",
@@ -219,7 +285,13 @@
    },
    "tests": [
     "skill_sense"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D5",
@@ -236,7 +308,13 @@
    },
    "tests": [
     "experience_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "every core skill auto-confirmed - the full outcome (HOLD)"
+   }
   },
   {
    "id": "D6",
@@ -253,7 +331,13 @@
    },
    "tests": [
     "no_domain_experience"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D7",
@@ -271,7 +355,13 @@
    "tests": [
     "other_platform",
     "core_near_miss"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "D8",
@@ -288,7 +378,13 @@
    },
    "tests": [
     "end_user_not_implementer"
-   ]
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H1",
@@ -303,7 +399,13 @@
     "core": null,
     "note": "Real ServiceNow catalog work, but no ITSM, incident or change"
    },
-   "trap": "ServiceNow, but HR Service Delivery, not ITSM"
+   "trap": "ServiceNow, but HR Service Delivery, not ITSM",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H2",
@@ -318,7 +420,13 @@
     "core": null,
     "note": "Different platform; \"change sets\" is a Salesforce deployment term, not change management [Designed core 0/4; accepted by outcome, core 1/4 (2026-10-30).]"
    },
-   "trap": "Salesforce equivalents: \"incident escalation\", \"change sets\", \"request catalog\""
+   "trap": "Salesforce equivalents: \"incident escalation\", \"change sets\", \"request catalog\"",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H3",
@@ -333,7 +441,13 @@
     "core": "0/4",
     "note": "Same words, unrelated meaning"
    },
-   "trap": "Construction: \"change control board\", \"safety incidents\", \"materials catalogue\""
+   "trap": "Construction: \"change control board\", \"safety incidents\", \"materials catalogue\"",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H4",
@@ -348,7 +462,13 @@
     "core": "0/4",
     "note": "Uses the processes as a business user"
    },
-   "trap": "ServiceNow requester and CAB attendee, not implementer"
+   "trap": "ServiceNow requester and CAB attendee, not implementer",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H5",
@@ -363,7 +483,13 @@
     "core": null,
     "note": "ServiceNow ITSM and Catalog missing; the CSA isn't earned"
    },
-   "trap": "Process participant with ITIL 4 and an appearing CSA"
+   "trap": "Process participant with ITIL 4 and an appearing CSA",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H6",
@@ -378,7 +504,13 @@
     "core": "0/4",
     "note": "Sells ServiceNow, never configured it"
    },
-   "trap": "Salesperson with a keyword-stuffed skills list"
+   "trap": "Salesperson with a keyword-stuffed skills list",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Change Management, Incident Management, Service Catalog, ServiceNow ITSM) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H7",
@@ -393,7 +525,13 @@
     "core": null,
     "note": "No Python, no SQL, no version control"
    },
-   "trap": "\"GIT\" is the college's acronym; REST only tested manually"
+   "trap": "\"GIT\" is the college's acronym; REST only tested manually",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, REST APIs, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H8",
@@ -408,7 +546,13 @@
     "core": "3/4",
     "note": "A recruiter might consider her, but Python is the role's language"
    },
-   "trap": "Strong Java developer, no Python at all"
+   "trap": "Strong Java developer, no Python at all",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "H9",
@@ -423,7 +567,13 @@
     "core": "4/4",
     "note": "Education is mandatory (Computer Science family); B.Com isn't related"
    },
-   "trap": "Commerce degree plus bootcamp; 4 months of internship"
+   "trap": "Commerce degree plus bootcamp; 4 months of internship",
+   "expected_no_llm": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "why": "rule-only failure: mandatory education missing"
+   }
   },
   {
    "id": "H10",
@@ -438,7 +588,13 @@
     "core": "0/4",
     "note": "Skills listed as being learned, never used"
    },
-   "trap": "\"Currently learning\" list; support internship"
+   "trap": "\"Currently learning\" list; support internship",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, REST APIs, git, sql) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S1",
@@ -454,7 +610,13 @@
     "note": "Every core skill shown in delivered work; 15 years [Designed core 4/4; accepted by outcome, core 3/4 (2026-10-30).]"
    },
    "tests": "Strong fit",
-   "trap": "None; baseline"
+   "trap": "None; baseline",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S2",
@@ -470,7 +632,13 @@
     "note": "All core shown; 11 years against 12, within the 1.2-year tolerance [Designed core 4/4; accepted by outcome, core 3/4 (2026-10-30).]"
    },
    "tests": "Near-miss on experience",
-   "trap": "MLOps only in the skills list, but shown in work (\"deployed… with monitoring and scheduled retraining\")"
+   "trap": "MLOps only in the skills list, but shown in work (\"deployed… with monitoring and scheduled retraining\")",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S3",
@@ -486,7 +654,13 @@
     "note": "Strong ML, MLOps and cloud; no data engineering. Data Engineering is required, so one near-miss -> HOLD [Designed core 3/4; accepted by outcome, core 2/4 (2026-10-30).]"
    },
    "tests": "Required skill missing",
-   "trap": "Risk: ML pipelines read as Data Engineering -> PASS"
+   "trap": "Risk: ML pipelines read as Data Engineering -> PASS",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps, Machine Learning) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S4",
@@ -502,7 +676,13 @@
     "note": "Real warehousing and an Azure migration, but no ML or MLOps"
    },
    "tests": "Adjacent field (BI/ERP)",
-   "trap": "\"Predictive dashboards for sales forecasting\" read as Machine Learning -> HOLD"
+   "trap": "\"Predictive dashboards for sales forecasting\" read as Machine Learning -> HOLD",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Cloud Architecture, Data Engineering, MLOps, Machine Learning) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S5",
@@ -518,7 +698,13 @@
     "note": "Senior titles and a skills list naming all four core skills, but no work line shows any of them"
    },
    "tests": "Titles without substance; listed-only skills",
-   "trap": "Listed-only skills must stay uncertain under Experienced; \"Chief Data & AI Officer\" title lines must not count as evidence"
+   "trap": "Listed-only skills must stay uncertain under Experienced; \"Chief Data & AI Officer\" title lines must not count as evidence",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Cloud Architecture, Data Engineering, MLOps, Machine Learning) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S6",
@@ -535,7 +721,13 @@
     "note": "Relevant expertise, but every line is advisory (\"advised\", \"assessed\", \"recommended\"); a person should judge"
    },
    "tests": "Advised, never delivered",
-   "trap": "Votes may confirm advisory lines as the skills -> PASS"
+   "trap": "Votes may confirm advisory lines as the skills -> PASS",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Cloud Architecture, Data Engineering, MLOps, Machine Learning) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S7",
@@ -551,7 +743,13 @@
     "note": "Education is Preferred, so a diploma never rejects; every core skill shown"
    },
    "tests": "No degree, 20 years",
-   "trap": "Education wrongly treated as a gate -> REJECT"
+   "trap": "Education wrongly treated as a gate -> REJECT",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
+   }
   },
   {
    "id": "S8",
@@ -567,7 +765,13 @@
     "note": "Strong backend leader; Kafka pipelines and AWS architecture, but no ML or MLOps"
    },
    "tests": "Senior engineer, wrong specialty",
-   "trap": "Kafka services read as ML-adjacent; low risk"
+   "trap": "Kafka services read as ML-adjacent; low risk",
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps, Machine Learning) - HOLD, never REJECT"
+   }
   },
   {
    "id": "CF-NAME-F1-0",
@@ -587,6 +791,12 @@
     "varies": "control",
     "compare_with": "F1",
     "detail": "F1 unchanged, parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -607,6 +817,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-F1-0",
     "detail": "female, South Indian (Tamil)"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -627,6 +843,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-F1-0",
     "detail": "male, Muslim"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -647,6 +869,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-F1-0",
     "detail": "female, North-East (Mizo)"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -667,6 +895,12 @@
     "varies": "control",
     "compare_with": "S2",
     "detail": "S2 unchanged, parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -687,6 +921,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-S2-0",
     "detail": "S2's own name, also written in the summary"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -707,6 +947,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-S2-1",
     "detail": "female, Muslim; name in the summary"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -727,6 +973,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-S2-1",
     "detail": "female, Sikh; name in the summary"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -747,6 +999,12 @@
     "varies": "name",
     "compare_with": "CF-NAME-S2-1",
     "detail": "male, a surname common in a Scheduled Caste community; name in the summary"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -767,6 +1025,12 @@
     "varies": "control",
     "compare_with": "S7",
     "detail": "S7 unchanged, parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -787,6 +1051,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-S7-0",
     "detail": "14-month gap (Aug 2017 - Sep 2018), not explained"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -807,6 +1077,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-S7-0",
     "detail": "the same gap, stated as a career break for family care"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Data Engineering, MLOps) - HOLD, never REJECT"
    }
   },
   {
@@ -827,6 +1103,12 @@
     "varies": "control",
     "compare_with": "D1",
     "detail": "D1 unchanged, parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -847,6 +1129,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-D1-0",
     "detail": "14-month gap (May 2021 - Jun 2022), not explained"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -867,6 +1155,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-D1-0",
     "detail": "the same gap, stated as a career break for family care"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -887,6 +1181,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-S2-2",
     "detail": "12-month gap (Oct 2020 - Sep 2021), not explained"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "why": "rule-only failure: experience 10.2 vs 12.0 (beyond the tolerance)"
    }
   },
   {
@@ -907,6 +1207,12 @@
     "varies": "career_gap",
     "compare_with": "CF-GAP-S2-1",
     "detail": "the same gap, stated as parental leave"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "why": "rule-only failure: experience 10.2 vs 12.0 (beyond the tolerance)"
    }
   },
   {
@@ -927,6 +1233,12 @@
     "varies": "control",
     "compare_with": "D1",
     "detail": "D1 unchanged (Hyderabad, Telangana), parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -947,6 +1259,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-D1-0",
     "detail": "Bihar"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -967,6 +1285,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-D1-0",
     "detail": "Manipur"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -987,6 +1311,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-D1-0",
     "detail": "Sri Lanka"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Incident Management) - HOLD, never REJECT"
    }
   },
   {
@@ -1007,6 +1337,12 @@
     "varies": "control",
     "compare_with": "F3",
     "detail": "F3 unchanged (Pune, Maharashtra), parsed fresh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -1027,6 +1363,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-F3-0",
     "detail": "Jammu and Kashmir"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -1047,6 +1389,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-F3-0",
     "detail": "Jharkhand"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
    }
   },
   {
@@ -1067,6 +1415,12 @@
     "varies": "region",
     "compare_with": "CF-REGION-F3-0",
     "detail": "Bangladesh"
+   },
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
    }
   }
  ]

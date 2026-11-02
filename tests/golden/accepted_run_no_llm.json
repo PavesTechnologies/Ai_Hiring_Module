@@ -1,0 +1,4187 @@
+{
+ "accepted_on": "2026-11-02",
+ "run_at": "2026-11-02T12:23:29.852044+00:00",
+ "mode": "no_llm",
+ "fingerprint": "5ade3e4f032161c832ea9311a93c514c23c5c16f525f6eaa6a45721a1b09f87b",
+ "llm": {
+  "calls": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "case_calls": 0,
+  "log_write_failures": 0,
+  "vote_cache_hits": 0,
+  "dev_cache_hits": 0,
+  "new_cache_entries": 0,
+  "model": null,
+  "main_model": "gemini-3.1-flash-lite",
+  "cached_votes_from_other_models": [],
+  "new_votes_from_other_models": {}
+ },
+ "cases": {
+  "F1": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in FastAPI for an internal ticketing tool",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in FastAPI for an internal ticketing tool",
+      "[EXPERIENCE] Maintained Django REST endpoints and fixed bugs from code review",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Used Git with feature branches and pull requests",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F2": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql); experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
+   "experience_years": 0.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 0.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL with hand-written SQL queries; version-controlled on GitHub with pull requests from two te"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL with hand-written SQL queries; version-controlled on GitHub with pull requests from two teammates.",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL with hand-written SQL queries; version-controlled on GitHub with pull requests from two te",
+      "[PROJECTS] Weather Dashboard: Consumed public REST APIs and cached results; ran on a Linux VM."
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL with hand-written SQL queries; version-controlled on GitHub with pull requests from two te"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Campus Events API: Designed and built a REST API in Python with Flask; stored events in PostgreSQL with hand-written SQL queries; version-controlled on GitHub with pull requests from two te"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F3": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Python Developer Intern — Quantra Systems · Jul 2025 – Jun 2026"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed REST APIs in Django REST Framework",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed REST APIs in Django REST Framework",
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Followed a Git pull-request workflow with code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Wrote and optimised SQL queries on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F4": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql); experience 0.5 years, 0.5 short of the 1-year minimum (within the 1-year tolerance)",
+   "experience_years": 0.5,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 50.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, pytest, Embedded C",
+      "[EXPERIENCE] Built REST APIs in Python (FastAPI) for an IoT device dashboard"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in Python (FastAPI) for an IoT device dashboard",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in Python (FastAPI) for an IoT device dashboard",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, pytest, Embedded C"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, pytest, Embedded C",
+      "[EXPERIENCE] Used Git for version control"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, pytest, Embedded C",
+      "[EXPERIENCE] Wrote SQL queries for device telemetry reports"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F5": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Languages: Python & SQL"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed RESTful API endpoints for the organisation's customer portal",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed RESTful API endpoints for the organisation's customer portal",
+      "[SKILLS] RESTful API Design & Development"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Version Control (Git) & Code Review"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Languages: Python & SQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F6": {
+   "outcome": "REJECT",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience",
+    "Education"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 0.5,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 50.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 50.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "REST APIs": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F7": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Python, REST APIs, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, pandas, NumPy, Power BI, Excel",
+      "[EXPERIENCE] Analysed sales data in Python with pandas and Jupyter notebooks"
+     ]
+    },
+    "REST APIs": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, pandas, NumPy, Power BI, Excel",
+      "[EXPERIENCE] Wrote SQL queries to build weekly reports"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "F8": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Python, REST APIs, git, sql); experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
+   "experience_years": 0.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 0.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, FastAPI, pytest, Docker, Kubernetes, AWS, Azure, React, Node.js, Java, Go, Machine Learning, Generative AI, Linux"
+     ]
+    },
+    "REST APIs": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, FastAPI, pytest, Docker, Kubernetes, AWS, Azure, React, Node.js, Java, Go, Machine Learning, Generative AI, Linux"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, FastAPI, pytest, Docker, Kubernetes, AWS, Azure, React, Node.js, Java, Go, Machine Learning, Generative AI, Linux"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, FastAPI, pytest, Docker, Kubernetes, AWS, Azure, React, Node.js, Java, Go, Machine Learning, Generative AI, Linux"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D1": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D2": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 6.7,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D3": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 4.7,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[CERTIFICATIONS] ITIL 4 Foundation; ServiceNow Certified System Administrator (CSA)"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[CERTIFICATIONS] ITIL 4 Foundation; ServiceNow Certified System Administrator (CSA)"
+     ]
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[CERTIFICATIONS] ITIL 4 Foundation; ServiceNow Certified System Administrator (CSA)"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D4": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 9.9,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SUMMARY] Organisational change management consultant with 8 years leading people through business transformations.",
+      "[EXPERIENCE] Change Management Lead — Harbourstone Consulting · 2020 – present",
+      "[EXPERIENCE] Led change management for an ERP rollout affecting 6,000 employees"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D5": {
+   "outcome": "HOLD",
+   "core": "4/4",
+   "score": null,
+   "failed_checks": [
+    "Experience"
+   ],
+   "needs_review_reason": "Needs recruiter review: experience 3.7 years, 0.3 short of the 4-year minimum (within the 1-year tolerance)",
+   "experience_years": 3.7,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 92.5
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident Management and Change Management modules, including CAB workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident Management and Change Management modules, including CAB workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, Flow Designer, JavaScript"
+     ]
+    },
+    "Incident Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident Management and Change Management modules, including CAB workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident Management and Change Management modules, including CAB workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, Flow Designer, JavaScript"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built Service Catalog items with Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built Service Catalog items with Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, Flow Designer, JavaScript"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for a mid-size client",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for a mid-size client",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, Flow Designer, JavaScript",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA)"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D6": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 7.9,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D7": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Service Catalog, ServiceNow ITSM)",
+   "experience_years": 6.9,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident Management, Problem Management and Change Management in Jira Service Management",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident Management, Problem Management and Change Management in Jira Service Management",
+      "[SKILLS] Incident Management, Change Management, Problem Management, BMC Remedy, Jira Service Management, SLA Management",
+      "[CERTIFICATIONS] ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident Management, Problem Management and Change Management in Jira Service Management",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident Management, Problem Management and Change Management in Jira Service Management",
+      "[SKILLS] Incident Management, Change Management, Problem Management, BMC Remedy, Jira Service Management, SLA Management",
+      "[CERTIFICATIONS] ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "D8": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 5.9,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Incident Management, ServiceNow (end user), customer support, Windows troubleshooting"
+     ]
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H1": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 5.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H2": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H3": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 9.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H4": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H5": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 7.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[CERTIFICATIONS] ITIL 4 Foundation; CCNP Enterprise; ServiceNow Certified System Administrator (appearing, Dec 2026)"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[CERTIFICATIONS] ITIL 4 Foundation; CCNP Enterprise; ServiceNow Certified System Administrator (appearing, Dec 2026)"
+     ]
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H6": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Change Management, Incident Management, Service Catalog, ServiceNow ITSM)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL, Salesforce CRM, Negotiation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL, Salesforce CRM, Negotiation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL, Salesforce CRM, Negotiation"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Sold ServiceNow ITSM implementation services to mid-market clients",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL, Salesforce CRM, Negotiation"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H7": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Python, REST APIs, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "REST APIs": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Tested REST endpoints manually using Postman"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H8": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in Java with Spring Boot",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in Java with Spring Boot",
+      "[SKILLS] Java, Spring Boot, REST APIs, SQL, MySQL, Git, JUnit"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Java, Spring Boot, REST APIs, SQL, MySQL, Git, JUnit",
+      "[EXPERIENCE] Used Git with pull requests and code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Java, Spring Boot, REST APIs, SQL, MySQL, Git, JUnit",
+      "[EXPERIENCE] Wrote SQL queries and stored procedures on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H9": {
+   "outcome": "REJECT",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience",
+    "Education"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 0.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 50.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 40.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Invoice Tracker: Python, Flask, PostgreSQL, deployed with Docker",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Invoice Tracker: Python, Flask, PostgreSQL, deployed with Docker",
+      "[SKILLS] Python, SQL, REST APIs, Git, Flask, PostgreSQL, Docker",
+      "[SUMMARY] Commerce graduate who moved into software through a Python bootcamp."
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in Flask with PostgreSQL",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in Flask with PostgreSQL",
+      "[SKILLS] Python, SQL, REST APIs, Git, Flask, PostgreSQL, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Flask, PostgreSQL, Docker",
+      "[EXPERIENCE] Used Git and GitHub pull requests"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Flask, PostgreSQL, Docker",
+      "[EXPERIENCE] Wrote SQL queries for reporting"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "H10": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Python, REST APIs, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "REST APIs": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S1": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps)",
+   "experience_years": 15.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for the analytics platform, moving it from on-premise Hadoop",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for the analytics platform, moving it from on-premise Hadoop"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Python, Kubernetes, Data Governance"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Python, Kubernetes, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed and deployed an ML platform with MLflow, a feature store and automated retraining, taking 40+ models to production",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed and deployed an ML platform with MLflow, a feature store and automated retraining, taking 40+ models to production",
+      "[SUMMARY] Data and ML platform leader with 15 years of experience, the last 7 leading platform teams.",
+      "[EXPERIENCE] Director, Data & ML Platforms — Lumen Commerce · Oct 2019 – present"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S2": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S3": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Data Engineering, MLOps, Machine Learning)",
+   "experience_years": 14.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for model training and serving",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for model training and serving"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Machine Learning, Deep Learning, PyTorch, AWS SageMaker, MLOps, Python"
+     ]
+    },
+    "Machine Learning": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SUMMARY] Machine learning leader with 14 years of experience in applied ML and research.",
+      "[EXPERIENCE] Head of Applied Machine Learning — Vistara Health AI · Oct 2019 – present",
+      "[EXPERIENCE] Led a team of 25 ML engineers and researchers building diagnostic models"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S4": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Cloud Architecture, Data Engineering, MLOps, Machine Learning)",
+   "experience_years": 18.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Machine Learning": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S5": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Cloud Architecture, Data Engineering, MLOps, Machine Learning)",
+   "experience_years": 14.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, Cloud Architecture, AI Strategy, Leadership"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, Cloud Architecture, AI Strategy, Leadership"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, Cloud Architecture, AI Strategy, Leadership"
+     ]
+    },
+    "Machine Learning": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, Cloud Architecture, AI Strategy, Leadership"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S6": {
+   "outcome": "HOLD",
+   "core": "0/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 4 core skills not confirmed without the LLM (Cloud Architecture, Data Engineering, MLOps, Machine Learning)",
+   "experience_years": 13.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Recommended cloud architecture options on AWS and Azure for client data platforms"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Assessed clients' MLOps maturity and recommended target operating models"
+     ]
+    },
+    "Machine Learning": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Advised retail and banking clients on data platform and ML platform strategy",
+      "[SKILLS] Data Strategy, ML Platform Strategy, Cloud Strategy, Stakeholder Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S7": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps)",
+   "experience_years": 20.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads",
+      "[EXPERIENCE] Developed ETL pipelines and the first ML models in Python",
+      "[SUMMARY] Hands-on data and ML platform leader with 20 years of experience, self-taught."
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "S8": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Data Engineering, MLOps, Machine Learning)",
+   "experience_years": 13.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for the checkout platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for the checkout platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    },
+    "Machine Learning": {
+     "status": "UNCERTAIN",
+     "method": null,
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": []
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-F1-0": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in FastAPI for an internal ticketing tool",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in FastAPI for an internal ticketing tool",
+      "[EXPERIENCE] Maintained Django REST endpoints and fixed bugs from code review",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Used Git with feature branches and pull requests",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-F1-2": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in FastAPI for an internal ticketing tool",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in FastAPI for an internal ticketing tool",
+      "[EXPERIENCE] Maintained Django REST endpoints and fixed bugs from code review",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Used Git with feature branches and pull requests",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-F1-3": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in FastAPI for an internal ticketing tool",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in FastAPI for an internal ticketing tool",
+      "[EXPERIENCE] Maintained Django REST endpoints and fixed bugs from code review",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Used Git with feature branches and pull requests",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-F1-4": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+     "paraphrase": null,
+     "evidence": [
+      "[PROJECTS] Library API: Python, FastAPI, PostgreSQL, deployed on AWS EC2",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Built REST APIs in FastAPI for an internal ticketing tool",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Built REST APIs in FastAPI for an internal ticketing tool",
+      "[EXPERIENCE] Maintained Django REST endpoints and fixed bugs from code review",
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Used Git with feature branches and pull requests",
+      "[PROJECTS] Expense Tracker: Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-S2-0": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-S2-1": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-S2-2": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-S2-3": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-NAME-S2-4": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps); experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S7-0": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps)",
+   "experience_years": 20.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads",
+      "[EXPERIENCE] Developed ETL pipelines and the first ML models in Python",
+      "[SUMMARY] Hands-on data and ML platform leader with 20 years of experience, self-taught."
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S7-1": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps)",
+   "experience_years": 19.0,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads",
+      "[EXPERIENCE] Developed ETL pipelines and the first ML models in Python",
+      "[SUMMARY] Hands-on data and ML platform leader with 20 years of experience, self-taught."
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S7-2": {
+   "outcome": "HOLD",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 2 core skills not confirmed without the LLM (Data Engineering, MLOps)",
+   "experience_years": 19.0,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Data Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the AWS cloud architecture for data and ML workloads",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the AWS cloud architecture for data and ML workloads",
+      "[EXPERIENCE] Developed ETL pipelines and the first ML models in Python",
+      "[SUMMARY] Hands-on data and ML platform leader with 20 years of experience, self-taught."
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-D1-0": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-D1-1": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 5.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-D1-2": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 5.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S2-1": {
+   "outcome": "REJECT",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 10.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 85.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S2-2": {
+   "outcome": "REJECT",
+   "core": "2/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Experience"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 10.2,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 85.0
+   },
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-D1-0": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-D1-2": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-D1-3": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-D1-4": {
+   "outcome": "HOLD",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 1 core skill not confirmed without the LLM (Incident Management)",
+   "experience_years": 6.4,
+   "experience_ongoing": true,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Change Management": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Configured Incident, Problem and Change Management workflows",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Configured Incident, Problem and Change Management workflows",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Incident Management": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management",
+      "[CERTIFICATIONS] ServiceNow Certified System Administrator (CSA); ServiceNow CIS-ITSM; ITIL 4 Foundation"
+     ]
+    },
+    "Service Catalog": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed Service Catalog items and request fulfilment flows in Flow Designer",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed Service Catalog items and request fulfilment flows in Flow Designer",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    },
+    "ServiceNow ITSM": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Implemented ServiceNow ITSM for three enterprise clients",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Implemented ServiceNow ITSM for three enterprise clients",
+      "[SUMMARY] ServiceNow ITSM consultant with 6 years of implementation experience.",
+      "[SKILLS] ServiceNow ITSM, Incident Management, Change Management, Problem Management, Service Catalog, CMDB, Flow Designer, JavaScript, SLA Management"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-F3-0": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Python Developer Intern — Quantra Systems · Jul 2025 – Jun 2026"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed REST APIs in Django REST Framework",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed REST APIs in Django REST Framework",
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Followed a Git pull-request workflow with code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Wrote and optimised SQL queries on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-F3-2": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Python Developer Intern — Quantra Systems · Jul 2025 – Jun 2026"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed REST APIs in Django REST Framework",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed REST APIs in Django REST Framework",
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Followed a Git pull-request workflow with code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Wrote and optimised SQL queries on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-F3-3": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Python Developer Intern — Quantra Systems · Jul 2025 – Jun 2026"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed REST APIs in Django REST Framework",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed REST APIs in Django REST Framework",
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Followed a Git pull-request workflow with code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Wrote and optimised SQL queries on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-REGION-F3-4": {
+   "outcome": "HOLD",
+   "core": "1/4",
+   "score": null,
+   "failed_checks": [
+    "Core skills"
+   ],
+   "needs_review_reason": "Awaiting full scoring (scored without the LLM on request): 3 core skills not confirmed without the LLM (Python, git, sql)",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "no_llm",
+   "awaiting_full_scoring": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "Python": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Python Developer Intern — Quantra Systems · Jul 2025 – Jun 2026"
+     ]
+    },
+    "REST APIs": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Developed REST APIs in Django REST Framework",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Developed REST APIs in Django REST Framework",
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker"
+     ]
+    },
+    "git": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Followed a Git pull-request workflow with code reviews"
+     ]
+    },
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "awaiting_full_scoring",
+     "votes": [],
+     "quote": "",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, Django, pytest, Linux, Docker",
+      "[EXPERIENCE] Wrote and optimised SQL queries on MySQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  }
+ }
+}

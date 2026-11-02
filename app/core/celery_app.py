@@ -109,6 +109,7 @@ celery_app.conf.imports = (
     "app.tasks.semantic_scoring_tasks",
     "app.tasks.ai_evaluation_tasks",
     "app.tasks.scoring_v2_tasks",
+    "app.tasks.full_scoring_tasks",
     "app.tasks.composite_scoring_tasks",
     "app.tasks.jd_embedding_tasks",
     "app.tasks.embedding_health_tasks",
@@ -196,6 +197,12 @@ celery_app.conf.beat_schedule = {
         # Talent Pool Eligibility requirement: "daily" per spec, off-peak,
         # its own distinct hour from the other daily jobs above.
         "schedule": crontab(minute=0, hour=5),
+    },
+    "complete-full-scoring": {
+        "task": "scoring.complete_full_scoring_scan",
+        # No-LLM fallback HOLDs: full scoring once quota is back (the scan
+        # itself stops queueing when the daily cap has no room left).
+        "schedule": crontab(minute=40),
     },
     "recover-undecided-candidates": {
         "task": "scoring.recover_undecided_candidates",

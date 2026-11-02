@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text,
+    Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, false, func, text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -170,6 +170,8 @@ class CandidateScoringResult(Base):
     __tablename__ = "candidate_scoring_results"
     __table_args__ = (
         Index("ix_candidate_scoring_results_cc_version", "campaign_candidate_id", "scoring_version", "created_at"),
+        Index("ix_candidate_scoring_results_awaiting_full", "campaign_candidate_id",
+              postgresql_where=text("awaiting_full_scoring")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -184,6 +186,12 @@ class CandidateScoringResult(Base):
     scoring_config_version: Mapped[str] = mapped_column(String(64), nullable=False)
     config_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     acted_on: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # "llm" (full) or "no_llm" (the fallback: scan, auto-confirm and rules only, when the daily
+    # cap or a provider failure stopped the core-skill votes - c6e8a0b2d4f7).
+    scoring_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="llm", server_default="llm")
+    # A no_llm result that held the candidate for review, until the full scoring has run.
+    awaiting_full_scoring: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                        server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
