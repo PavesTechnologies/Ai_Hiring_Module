@@ -18,8 +18,8 @@
   "soft_skills": [],
   "inferred_skills": [
    {
-    "skill": "Team Management",
-    "evidence": "Lead a team of 22 engineers"
+    "skill": "Program Management",
+    "evidence": "Head of Data Engineering"
    }
   ],
   "work_experience": [
@@ -31,7 +31,7 @@
     "is_current": true,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics; Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining; Designed the Azure cloud architecture for the data and ML platform; Lead a team of 22 engineers"
+    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics. Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining. Designed the Azure cloud architecture for the data and ML platform. Lead a team of 22 engineers"
    },
    {
     "title": "Senior Data Engineer",
@@ -41,7 +41,7 @@
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Developed Spark jobs and a Delta Lake warehouse; Built the first ML feature pipelines with the data science team"
+    "description": "Developed Spark jobs and a Delta Lake warehouse. Built the first ML feature pipelines with the data science team"
    }
   ],
   "education": [
@@ -59,7 +59,7 @@
   "total_experience_years": 11.0,
   "department": null,
   "location": "Pune",
-  "summary": "Arvind Kulkarni is a data platform leader with 11 years of experience, the last 5 leading teams.",
+  "summary": "[candidate] is a data platform leader with 11 years of experience, the last 5 leading teams.",
   "metadata": {}
  },
  "candidate_skills": [
@@ -104,6 +104,14 @@
    "scoring_weight": 1.0
   },
   {
+   "skill": "Program Management",
+   "raw_extracted_text": "Program Management (inferred: Head of Data Engineering)",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
@@ -117,7 +125,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-02"
  },
  "resume": {
   "file_format": "DOCX",

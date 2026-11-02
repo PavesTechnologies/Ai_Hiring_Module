@@ -598,7 +598,6 @@
     "found": true,
     "found_senses": [],
     "sources": [
-     "INFERRED",
      "SCAN"
     ],
     "confirmed": true,
@@ -617,7 +616,7 @@
      "Head of Data Engineering",
      "Head of Data Engineering"
     ],
-    "evidence_hash": "08a4f702944f1b30",
+    "evidence_hash": "5cc3474829149a33",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -691,8 +690,9 @@
       "used_fallback": false
      }
     ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
+    "vote_reason": "listed_only",
+    "note": "listed only, not shown in work",
+    "cached": true
    }
   ],
   "provider": "GOOGLE",
@@ -3287,6 +3287,7 @@
     "found": true,
     "found_senses": [],
     "sources": [
+     "INFERRED",
      "SCAN"
     ],
     "confirmed": true,
@@ -3305,7 +3306,7 @@
      "Head of Data Engineering",
      "Head of Data Engineering"
     ],
-    "evidence_hash": "5cc3474829149a33",
+    "evidence_hash": "08a4f702944f1b30",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -3380,7 +3381,7 @@
     "quote_verified": true,
     "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
     "cached": true,
-    "vote_reason": "all_votes_yes",
+    "vote_reason": "listed_only",
     "note": "listed only, not shown in work"
    }
   ],
@@ -5801,7 +5802,6 @@
     "found": true,
     "found_senses": [],
     "sources": [
-     "INFERRED",
      "SCAN"
     ],
     "confirmed": true,
@@ -5820,17 +5820,17 @@
      "Head of Data Engineering",
      "Head of Data Engineering"
     ],
-    "evidence_hash": "08a4f702944f1b30",
+    "evidence_hash": "5cc3474829149a33",
     "llm": {
      "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
     },
     "llm_votes": [
      {
       "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
      },
      {
       "provider": "GOOGLE",
@@ -5894,12 +5894,13 @@
       "used_fallback": false
      }
     ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
+    "vote_reason": "listed_only",
+    "note": "listed only, not shown in work",
+    "cached": true
    }
   ],
   "provider": "GOOGLE",
-  "model": "gemini-3.5-flash-lite",
-  "used_fallback": true
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
  }
 }

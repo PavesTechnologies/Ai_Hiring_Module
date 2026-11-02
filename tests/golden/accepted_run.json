@@ -1,15 +1,15 @@
 {
  "accepted_on": "2026-11-02",
- "run_at": "2026-11-02T07:12:17.328045+00:00",
- "fingerprint": "7f106ec62d2853648400d9721266b6ad92d4a4b35b9b70f0ef7fd98f2dd51ef3",
+ "run_at": "2026-11-02T08:54:25.562895+00:00",
+ "fingerprint": "340e6b07a82a390404ca1f7c228915948fcb1e489eaa6c9432803c65717b1dce",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
   "output_tokens": 0,
   "vote_cache_hits": 58,
   "dev_cache_hits": 0,
-  "new_cache_entries": 0,
-  "model": null
+  "new_cache_entries": 3,
+  "model": "gemini-3.1-flash-lite"
  },
  "cases": {
   "F1": {
@@ -3011,7 +3011,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3165,7 +3165,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3242,7 +3242,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },

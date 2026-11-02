@@ -18,6 +18,8 @@
    "Docker",
    "Linux",
    "AWS",
+   "Alembic",
+   "PostgreSQL",
    "Flask",
    "SQLite"
   ],
@@ -32,7 +34,7 @@
     "is_current": false,
     "is_internship": true,
     "is_volunteer": false,
-    "description": "Built REST APIs in FastAPI for an internal ticketing tool. Wrote SQL queries and Alembic migrations on PostgreSQL. Added pytest unit tests, raising coverage from 40% to 72%."
+    "description": "Built REST APIs in FastAPI for an internal ticketing tool. Wrote SQL queries and Alembic migrations on PostgreSQL. Added pytest unit tests, raising coverage from 40% to 72%"
    },
    {
     "title": "Backend Developer Intern",
@@ -42,7 +44,7 @@
     "is_current": false,
     "is_internship": true,
     "is_volunteer": false,
-    "description": "Maintained Django REST endpoints and fixed bugs from code review. Used Git with feature branches and pull requests. Containerised a service with Docker for local development."
+    "description": "Maintained Django REST endpoints and fixed bugs from code review. Used Git with feature branches and pull requests. Containerised a service with Docker for local development"
    }
   ],
   "education": [
@@ -58,7 +60,7 @@
   "projects": [
    {
     "name": "Library API",
-    "description": "deployed on AWS EC2",
+    "description": "Python, FastAPI, PostgreSQL, deployed on AWS EC2",
     "tech": [
      "Python",
      "FastAPI",
@@ -68,7 +70,7 @@
    },
    {
     "name": "Expense Tracker",
-    "description": "with pytest unit tests and a GitHub Actions workflow",
+    "description": "Python, Flask, SQLite, with pytest unit tests and a GitHub Actions workflow",
     "tech": [
      "Python",
      "Flask",
@@ -88,6 +90,14 @@
   {
    "skill": "AWS",
    "raw_extracted_text": "AWS",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "Alembic",
+   "raw_extracted_text": "Alembic",
    "confidence": 1.0,
    "match_tier": "EXACT",
    "status": "AUTO_VERIFIED",
@@ -128,6 +138,14 @@
   {
    "skill": "Linux",
    "raw_extracted_text": "Linux",
+   "confidence": 1.0,
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
+  },
+  {
+   "skill": "PostgreSQL",
+   "raw_extracted_text": "PostgreSQL",
    "confidence": 1.0,
    "match_tier": "EXACT",
    "status": "AUTO_VERIFIED",
@@ -187,7 +205,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-02"
  },
  "resume": {
   "file_format": "DOCX",

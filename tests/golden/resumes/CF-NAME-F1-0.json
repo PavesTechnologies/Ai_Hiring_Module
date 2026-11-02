@@ -21,8 +21,7 @@
    "Alembic",
    "PostgreSQL",
    "Flask",
-   "SQLite",
-   "GitHub Actions"
+   "SQLite"
   ],
   "soft_skills": [],
   "inferred_skills": [],
@@ -35,7 +34,7 @@
     "is_current": false,
     "is_internship": true,
     "is_volunteer": false,
-    "description": "Built REST APIs in FastAPI for an internal ticketing tool. Wrote SQL queries and Alembic migrations on PostgreSQL. Added pytest unit tests, raising coverage from 40% to 72%."
+    "description": "Built REST APIs in FastAPI for an internal ticketing tool. Wrote SQL queries and Alembic migrations on PostgreSQL. Added pytest unit tests, raising coverage from 40% to 72%"
    },
    {
     "title": "Backend Developer Intern",
@@ -45,7 +44,7 @@
     "is_current": false,
     "is_internship": true,
     "is_volunteer": false,
-    "description": "Maintained Django REST endpoints and fixed bugs from code review. Used Git with feature branches and pull requests. Containerised a service with Docker for local development."
+    "description": "Maintained Django REST endpoints and fixed bugs from code review. Used Git with feature branches and pull requests. Containerised a service with Docker for local development"
    }
   ],
   "education": [
@@ -66,7 +65,7 @@
      "Python",
      "FastAPI",
      "PostgreSQL",
-     "AWS"
+     "AWS EC2"
     ]
    },
    {
@@ -132,14 +131,6 @@
   {
    "skill": "Flask",
    "raw_extracted_text": "Flask",
-   "confidence": 1.0,
-   "match_tier": "EXACT",
-   "status": "AUTO_VERIFIED",
-   "scoring_weight": 1.0
-  },
-  {
-   "skill": "GitHub Actions",
-   "raw_extracted_text": "GitHub Actions",
    "confidence": 1.0,
    "match_tier": "EXACT",
    "status": "AUTO_VERIFIED",
@@ -215,7 +206,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-02"
  },
  "resume": {
   "file_format": "DOCX",
