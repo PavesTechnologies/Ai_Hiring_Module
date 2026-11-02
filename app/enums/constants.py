@@ -136,6 +136,10 @@ class ActionType(enum.Enum):
     CANDIDATE_RESCORE_REQUESTED = "CANDIDATE_RESCORE_REQUESTED"
     INDIVIDUAL_UPLOAD_DLQ_REPLAYED = "INDIVIDUAL_UPLOAD_DLQ_REPLAYED"
     PLATFORM_ALERT_SENT = "PLATFORM_ALERT_SENT"
+    # Embedding-health alert cooldown (a3c5e7f9b1d4): an alert held back because one was sent
+    # under 24 hours ago, and a campaign back under the threshold after an alert.
+    PLATFORM_ALERT_SKIPPED = "PLATFORM_ALERT_SKIPPED"
+    PLATFORM_ALERT_CLEARED = "PLATFORM_ALERT_CLEARED"
     # GDPR-style candidate hard delete — the DB-side audit_action_type_enum
     # does NOT yet contain this value (same caveat as the other entries
     # above); needs the paired migration

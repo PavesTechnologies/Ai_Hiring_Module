@@ -195,5 +195,13 @@ class AuditRepository:
         )
         return self.db.execute(stmt).scalars().first()
 
+    def get_latest_of(self, campaign_id: UUID, action_types, condition: str | None = None) -> AuditLog | None:
+        """The most recent entry of any of these types for a campaign (optionally with detail.condition)."""
+        stmt = select(AuditLog).where(AuditLog.campaign_id == campaign_id,
+                                      AuditLog.action_type.in_(list(action_types)))
+        if condition is not None:
+            stmt = stmt.where(AuditLog.detail["condition"].astext == condition)
+        return self.db.execute(stmt.order_by(AuditLog.created_at.desc()).limit(1)).scalars().first()
+
     def save(self):
         self.db.commit()

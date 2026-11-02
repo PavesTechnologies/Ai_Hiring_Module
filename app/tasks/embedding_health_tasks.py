@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.core.celery_app import celery_app
@@ -44,6 +45,47 @@ def _read_alert_threshold(config_repo: ConfigRepository) -> float:
             raw, _DEFAULT_EMBEDDING_FAILURE_ALERT_THRESHOLD,
         )
         return _DEFAULT_EMBEDDING_FAILURE_ALERT_THRESHOLD
+
+
+_REPEAT_HOURS_KEY = "EMBEDDING_FAILURE_ALERT_REPEAT_HOURS"
+_DEFAULT_REPEAT_HOURS = 24.0
+
+SEND, SKIP, CLEAR = "send", "skip", "clear"
+_ALERT_STATE_ACTIONS = (ActionType.PLATFORM_ALERT_SENT, ActionType.PLATFORM_ALERT_SKIPPED,
+                        ActionType.PLATFORM_ALERT_CLEARED)
+
+
+def _read_repeat_hours(config_repo: ConfigRepository) -> float:
+    raw = config_repo.get_configs_by_keys([_REPEAT_HOURS_KEY]).get(_REPEAT_HOURS_KEY)
+    try:
+        return float(raw) if raw is not None else _DEFAULT_REPEAT_HOURS
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s value %r - using %s.", _REPEAT_HOURS_KEY, raw, _DEFAULT_REPEAT_HOURS)
+        return _DEFAULT_REPEAT_HOURS
+
+
+def _action_value(entry) -> str | None:
+    action = getattr(entry, "action_type", None)
+    return getattr(action, "value", action)
+
+
+def alert_decision(over_threshold: bool, latest, last_sent_at: datetime | None, now: datetime,
+                   repeat_hours: float) -> str | None:
+    """
+    The cooldown, from the campaign's latest alert-state audit entry (SENT / SKIPPED / CLEARED):
+    - over the threshold, and not alerting (no entry, or the latest is CLEARED): SEND - a crossing;
+    - over, already alerting: SEND if the last email is repeat_hours old or more, else SKIP;
+    - back under (or nothing in SCREENING) while alerting: CLEAR - so the next crossing sends at once;
+    - otherwise nothing.
+    """
+    alerting = _action_value(latest) in (ActionType.PLATFORM_ALERT_SENT.value, ActionType.PLATFORM_ALERT_SKIPPED.value)
+    if not over_threshold:
+        return CLEAR if alerting else None
+    if not alerting:
+        return SEND
+    if last_sent_at is None or now - last_sent_at >= timedelta(hours=repeat_hours):
+        return SEND
+    return SKIP
 
 
 def _build_campaign_monitoring_link(campaign_id) -> str:
@@ -91,7 +133,10 @@ def monitor_embedding_health() -> None:
     it exceeds EMBEDDING_FAILURE_ALERT_THRESHOLD, queues an
     EMBEDDING_HEALTH_ALERT email to every active HR_ADMIN through the
     notifications path (see _send_embedding_health_alert) and records the
-    alert via ActionType.PLATFORM_ALERT_SENT, with how many were queued.
+    alert via ActionType.PLATFORM_ALERT_SENT, with how many were queued -
+    subject to the cooldown in alert_decision (EMBEDDING_FAILURE_ALERT_
+    REPEAT_HOURS): a held-back alert is audited as PLATFORM_ALERT_SKIPPED,
+    a recovery after an alert as PLATFORM_ALERT_CLEARED.
     """
     db = SessionLocal()
     task_log = None
@@ -118,47 +163,64 @@ def monitor_embedding_health() -> None:
             if campaign.status == CampaignStatus.ACTIVE
         ]
 
-        alerts_raised = 0
+        alerts_raised = alerts_skipped = alerts_cleared = 0
+        repeat_hours = _read_repeat_hours(config_repo)
+        audit_repo = AuditRepository(db)
         for campaign in active_campaigns:
             affected_count, total_screening_count = campaign_candidate_repo.get_screening_semantic_health_stats(
                 campaign.id,
             )
-            if total_screening_count == 0:
+            failure_pct = (affected_count / total_screening_count) * 100 if total_screening_count else 0.0
+            latest = audit_repo.get_latest_of(campaign.id, _ALERT_STATE_ACTIONS,
+                                              _EMBEDDING_FAILURE_RATE_EXCEEDED_CONDITION)
+            last_sent = audit_repo.get_latest_of(campaign.id, (ActionType.PLATFORM_ALERT_SENT,),
+                                                 _EMBEDDING_FAILURE_RATE_EXCEEDED_CONDITION)
+            now = datetime.now(timezone.utc)
+            decision = alert_decision(total_screening_count > 0 and failure_pct > threshold, latest,
+                                      getattr(last_sent, "created_at", None), now, repeat_hours)
+            if decision is None:
                 continue
 
-            failure_pct = (affected_count / total_screening_count) * 100
-            if failure_pct <= threshold:
-                continue
-
-            emails_queued = _send_embedding_health_alert(
-                db, user_repo, campaign, affected_count, total_screening_count, failure_pct, cb_state,
-            )
+            details = {
+                "condition": _EMBEDDING_FAILURE_RATE_EXCEEDED_CONDITION,
+                "campaign_name": campaign.name,
+                "affected_count": affected_count,
+                "total_screening_count": total_screening_count,
+                "failure_percentage": round(failure_pct, 2),
+                "threshold": threshold,
+                "circuit_breaker_state": cb_state.state.value if cb_state is not None else CBState.CLOSED.value,
+            }
+            if decision == SEND:
+                action = ActionType.PLATFORM_ALERT_SENT
+                details["emails_queued"] = _send_embedding_health_alert(
+                    db, user_repo, campaign, affected_count, total_screening_count, failure_pct, cb_state,
+                )
+                alerts_raised += 1
+            elif decision == SKIP:
+                action = ActionType.PLATFORM_ALERT_SKIPPED
+                details["last_sent_at"] = last_sent.created_at.isoformat()
+                details["next_send_after"] = (last_sent.created_at + timedelta(hours=repeat_hours)).isoformat()
+                alerts_skipped += 1
+            else:
+                action = ActionType.PLATFORM_ALERT_CLEARED
+                alerts_cleared += 1
 
             audit_service.log(
                 actor_id=None,
                 actor_role="SYSTEM",
-                action_type=ActionType.PLATFORM_ALERT_SENT,
+                action_type=action,
                 entity_type=EntityType.CAMPAIGN,
                 entity_id=campaign.id,
                 campaign_id=campaign.id,
-                details={
-                    "condition": _EMBEDDING_FAILURE_RATE_EXCEEDED_CONDITION,
-                    "campaign_name": campaign.name,
-                    "affected_count": affected_count,
-                    "total_screening_count": total_screening_count,
-                    "failure_percentage": round(failure_pct, 2),
-                    "threshold": threshold,
-                    "circuit_breaker_state": cb_state.state.value if cb_state is not None else CBState.CLOSED.value,
-                    "emails_queued": emails_queued,
-                },
+                details=details,
             )
-            # Each alert's audit entry on its own: a failed email queue for a later campaign
+            # Each campaign's entry on its own: a failed email queue for a later campaign
             # rolls the session back and must not take this one with it.
             db.commit()
-            alerts_raised += 1
 
         db.commit()
-        summary = json.dumps({"campaigns_checked": len(active_campaigns), "alerts_raised": alerts_raised})
+        summary = json.dumps({"campaigns_checked": len(active_campaigns), "alerts_raised": alerts_raised,
+                              "alerts_skipped": alerts_skipped, "alerts_cleared": alerts_cleared})
         task_log_service.mark_success(task_log, summary=summary)
         logger.info(
             "Embedding health check completed | campaigns_checked=%s alerts_raised=%s",

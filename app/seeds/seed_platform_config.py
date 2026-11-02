@@ -394,6 +394,12 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="EMBEDDING_FAILURE_ALERT_REPEAT_HOURS",
+            value="24",
+            description="Embedding-health alert cooldown: after an alert email, a campaign still over EMBEDDING_FAILURE_ALERT_THRESHOLD is emailed about again only this many hours later (each check in between is audited as PLATFORM_ALERT_SKIPPED); a campaign that recovers and crosses again is emailed at once",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="EMBEDDING_REINDEX_THRESHOLD",
             value="50000",
             description="Once resume_embeddings row count exceeds this, the Embedding Storage Dashboard shows a warning and queues REINDEX_IVFFLAT to rebuild idx_resume_embeddings_embedding with better-tuned clustering",
