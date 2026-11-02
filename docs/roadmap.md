@@ -108,11 +108,20 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
 - [x] The pipeline board's drag-and-drop goes through the stage-move endpoint and the reason-code picker (2026-11-02). That endpoint allows recruiters and hiring managers, so an HR_ADMIN's drag is refused (403) with the server's message.
 - Monitoring stays a dashboard panel for now.
 
-## 5. Retire v1 - next
+## 5. Retire v1 - in progress
 
-- Scoring v2 everywhere, with a no-LLM fallback.
-- Shadow mode generalised to "current vs candidate version".
-- The v1 code removed.
+Plan approved 2026-11-02, built in order, each phase with a golden run before merge:
+
+- [x] **A. An undecided v2 result never rejects** (2026-11-02). The daily cap (NOT_RUN) no longer rejects; PENDING is retried with backoff, then dead-lettered; an hourly job re-queues candidates whose decision never landed.
+- [x] **B. No-LLM fallback** (2026-11-02). The daily cap falls back at once, a provider failure on the last attempt. Scan, auto-confirm and rules only:
+  - REJECT only on a rule-only failure (experience beyond the tolerance, missing mandatory education);
+  - any core skill that needs a vote, or isn't found, is UNCERTAIN, so HOLD, marked "Awaiting full scoring";
+  - every core skill auto-confirmed: the full outcome.
+
+  Fallback HOLDs are re-scored hourly once quota is back. The full outcome is applied only if no person has acted on the candidate since; otherwise it's recorded and the stage is left alone. The golden set has a no-LLM accepted run, checked against each case's `expected_no_llm`.
+- [ ] **C.** Scoring v2 everywhere; v1 stops running; readers move to the v2 breakdown.
+- [ ] **D.** Shadow mode generalised to "current vs candidate scoring version".
+- [ ] **E.** The v1 code, tests and settings removed.
 
 ## 6. Go to production
 
