@@ -192,12 +192,22 @@ class GoldenVotes:
         self._repo, self.cache, self.dev_cache = repo, cache, dev_cache
         self.new: dict[str, dict] = {}
         self.hits = self.dev_hits = 0
+        # Two cases can share a confirmation cache key (same resume text and core skills) while
+        # their evidence differs (e.g. S2 and its refrozen control) - one shared entry would hold
+        # one case's answers and the other would miss on every alternate run. New answers are
+        # kept per case ("<case>|<key>"), looked up before the plain key older entries use.
+        self.case_id: str | None = None
 
     def __getattr__(self, name):
         return getattr(self._repo, name)
 
+    def _scoped(self, cache_key: str) -> str:
+        return f"{self.case_id}|{cache_key}" if self.case_id else cache_key
+
     def get_confirmation(self, cache_key: str):
-        entry = self.cache.get(cache_key) or self.new.get(cache_key)
+        scoped = self._scoped(cache_key)
+        entry = (self.cache.get(scoped) or self.new.get(scoped)
+                 or self.cache.get(cache_key) or self.new.get(cache_key))
         if entry is not None:
             self.hits += 1
             return SimpleNamespace(**entry)
@@ -205,7 +215,7 @@ class GoldenVotes:
             row = self._repo.get_confirmation(cache_key)
             if row is not None:
                 self.dev_hits += 1
-                self.new[cache_key] = {"results": row.results, "provider": row.provider, "model": row.model,
+                self.new[scoped] = {"results": row.results, "provider": row.provider, "model": row.model,
                                        "used_fallback": bool(row.used_fallback)}
                 return row
         return None
@@ -215,7 +225,7 @@ class GoldenVotes:
         if not outcome.cache_key or outcome.llm_calls == 0:
             return
         call = outcome.call
-        self.new[outcome.cache_key] = {
+        self.new[self._scoped(outcome.cache_key)] = {
             "results": [r for r in outcome.results if r.get("evidence_hash")],
             "provider": getattr(call, "provider", None), "model": getattr(call, "model", None),
             "used_fallback": bool(getattr(call, "used_fallback", False)),
@@ -496,6 +506,7 @@ def run(args) -> int:
             stack.enter_context(llm_call_source(LLM_SOURCE))
             stack.enter_context(llm_call_context(LLM_SOURCE))       # apart from app usage in monitoring
             for case in cases:
+                votes.case_id = case["id"]
                 with db.begin_nested():
                     result = score_case(world, case, v2, config_repo, v2.evidence_service)
                 results[case["id"]] = result

@@ -138,3 +138,17 @@ def test_votes_come_from_the_golden_cache_then_dev_and_new_answers_are_kept_for_
     assert votes.new["asked"]["results"] == [{"evidence_hash": "e", "status": "CONFIRMED"}]
     no_dev = GoldenVotes(repo, {}, dev_cache=False)
     assert no_dev.get_confirmation("in-dev") is None
+
+
+def test_new_votes_are_kept_per_case_and_found_before_the_shared_entry():
+    shared = {"results": [{"x": "shared"}], "provider": "GOOGLE", "model": "m", "used_fallback": False}
+    votes = GoldenVotes(SimpleNamespace(get_confirmation=lambda key: None), {"K": shared}, dev_cache=False)
+    votes.case_id = "S2"
+    assert votes.get_confirmation("K").results == [{"x": "shared"}]          # older plain entries still serve
+    outcome = SimpleNamespace(cache_key="K", llm_calls=3, results=[{"x": "s2", "evidence_hash": "h"}],
+                              call=SimpleNamespace(provider="GOOGLE", model="m", used_fallback=False))
+    votes.record(outcome)
+    assert list(votes.new) == ["S2|K"]
+    assert votes.get_confirmation("K").results == [{"x": "s2", "evidence_hash": "h"}]   # the case's own first
+    votes.case_id = "CF-NAME-S2-0"
+    assert votes.get_confirmation("K").results == [{"x": "shared"}]          # the other case keeps the shared one
