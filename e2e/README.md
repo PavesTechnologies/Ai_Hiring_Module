@@ -70,6 +70,21 @@ P7. no email (SES guard in the driver; `e2e.ps1 test` fails if the worker logged
 
 Report: `/data/storage/e2e_phase2_report.json`.
 
+Then `scripts/e2e/run_fallback_e2e.py` (retire v1, phases A and B) on a synthetic resume whose core
+skills need votes (one copy per scenario, so the confirmation cache can't answer). The stub LLM can be
+switched to a provider outage (`e2e_stub_mode.json`); the e2e worker retries in seconds:
+
+A1. outage, with the last-attempt fallback switched off (e2e worker only): retries, a dead letter; the
+    outage ends and a replay through the API resolves it
+A2. outage as in production: retries, then the no-LLM fallback on the last attempt (HOLD awaiting full scoring)
+A3. a candidate stuck in Screening: the recovery job re-queues it
+B1. daily cap reached: no-LLM fallback at once, HOLD "Awaiting full scoring"
+B2. the cap resets: the hourly scan re-scores and applies the full outcome
+B3. a recruiter moves the candidate first: the full result is recorded only, the stage untouched
+
+Report: `/data/storage/e2e_fallback_report.json` (stages, result rows, audit entries, task logs, dead
+letters and LLM calls per step).
+
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
 

@@ -1,10 +1,16 @@
 """
 Deterministic stub LLM for the isolated e2e stack - no network, no keys.
 
-Answers the two structured calls the re-parse flow makes:
+Answers the structured calls the e2e flows make:
   - resume extraction (prompt contains the resume text after "Job Description:")
   - core-skill confirmation (CoreSkillCheckResponse)
+  - AI evaluation (AIEvaluationGenerationSchema): a fixed SHORTLIST recommendation
 Anything else raises, so an unexpected LLM call shows up as a failure.
+
+Every call goes through the normal CountedProvider, so it is logged in llm_call_log (model
+e2e-stub-v1) and counts toward the daily cap like a real call. A driver can switch the stub to a
+provider outage for core-skill confirmation by writing {"confirm": "outage"} to
+e2e_stub_mode.json on the shared storage volume (set_mode below).
 
 Resume extraction reads the fixture layout written by scripts/e2e/export_fixtures.py.
 The FIRST parse of a given text returns only part of its competency line
@@ -18,7 +24,7 @@ import re
 from pathlib import Path
 
 from app.core.config import settings
-from app.services.llm.base import LLMErrorReason, LLMPermanentError
+from app.services.llm.base import LLMErrorReason, LLMPermanentError, LLMTransientError
 
 _HEADINGS = {"PROFILE", "CORE COMPETENCIES", "PROFESSIONAL EXPERIENCE", "EDUCATION", "CERTIFICATIONS"}
 _DATES = re.compile(r"^(\d{4}(?:-\d{2})?)\s*-\s*(\d{4}(?:-\d{2})?|present|current)$", re.I)
@@ -29,6 +35,22 @@ FIRST_PARSE_COMPETENCIES = 3
 
 def _counter_file() -> Path:
     return Path(settings.local_storage_dir) / "e2e_stub_llm_calls.json"
+
+
+def _mode_file() -> Path:
+    return Path(settings.local_storage_dir) / "e2e_stub_mode.json"
+
+
+def mode() -> dict:
+    path = _mode_file()
+    return json.loads(path.read_text("utf-8")) if path.exists() else {}
+
+
+def set_mode(**values) -> None:
+    """e.g. set_mode(confirm="outage"), set_mode(confirm="ok", last_attempt_fallback=False)."""
+    path = _mode_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({**mode(), **values}), "utf-8")
 
 
 def _bump(key: str) -> int:
@@ -95,7 +117,14 @@ class E2EStubProvider:
     def generate_json(self, prompt: str, response_schema, *, deterministic: bool = False) -> dict:
         name = getattr(response_schema, "__name__", "")
         if name == "CoreSkillCheckResponse":
+            if mode().get("confirm") == "outage":
+                raise LLMTransientError("e2e stub: provider outage", reason=LLMErrorReason.UNAVAILABLE)
             return confirm(prompt)
+        if name == "AIEvaluationGenerationSchema":
+            return {"scores": {"technical_match": 80, "experience_match": 75, "education_match": 70,
+                               "domain_match": 75, "overall_score": 76},
+                    "confidence_score": 80, "recommendation": "SHORTLIST",
+                    "strengths": ["e2e stub"], "gaps": []}
         if name.startswith("ResumeExtraction"):
             text = prompt.split("Job Description:", 1)[-1]
             key = hashlib.sha256(" ".join(text.split()).encode("utf-8")).hexdigest()
@@ -111,7 +140,9 @@ def install() -> None:
     import sys
     from app.services.llm import factory
 
-    stub = lambda *args, **kwargs: E2EStubProvider()  # noqa: E731
+    from app.services.llm.call_log import CountedProvider
+    # Logged in llm_call_log like any provider, so the daily cap and the reports see the calls.
+    stub = lambda *args, **kwargs: CountedProvider(E2EStubProvider())  # noqa: E731
     factory.resolve_active_provider = stub
     factory.resolve_provider = stub
     for module in list(sys.modules.values()):
