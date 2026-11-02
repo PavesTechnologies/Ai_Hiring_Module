@@ -1057,6 +1057,28 @@ class CampaignCandidateRepository:
             .all()
         )
 
+    def get_never_screened(self, campaign_statuses, created_before: datetime) -> list[CampaignCandidate]:
+        """
+        Candidates whose screening decision never landed: still UPLOADED or SCREENING with no
+        screened_at, a parsed resume, on a campaign in one of campaign_statuses, added before
+        created_before (so a just-uploaded candidate still being scored isn't picked). The scoring
+        recovery job re-queues these (deterministic_scoring_tasks.recover_undecided_candidates).
+        """
+        from app.models.candidates import ParseStatus
+        return (
+            self.db.query(CampaignCandidate)
+            .join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+            .join(Resume, Resume.id == CampaignCandidate.resume_id)
+            .filter(
+                CampaignCandidate.pipeline_stage.in_([PipelineStage.UPLOADED, PipelineStage.SCREENING]),
+                CampaignCandidate.screened_at.is_(None),
+                Resume.parse_status == ParseStatus.PARSED,
+                HiringCampaign.status.in_(list(campaign_statuses)),
+                CampaignCandidate.created_at < created_before,
+            )
+            .all()
+        )
+
     def get_screening_semantic_health_stats(self, campaign_id: UUID) -> tuple[int, int]:
         """
         Requirement 5 (embedding health monitoring): returns (affected_count,

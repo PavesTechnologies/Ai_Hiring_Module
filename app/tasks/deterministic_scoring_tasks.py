@@ -1,7 +1,7 @@
 import json
 import logging
-from datetime import datetime, timezone
-from uuid import UUID
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
@@ -30,7 +30,9 @@ from app.services.campaign.candidate_scoring_service import (
 )
 from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
 from app.repositories.scoring_result_repository import ScoringResultRepository
-from app.services.campaign.scoring_v2 import OUTCOME_PENDING
+from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
+from app.services.campaign.scoring_v2 import OUTCOME_NOT_RUN, OUTCOME_PENDING
+from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.campaign.scoring_v2_service import (
     ScoringV2Service, v1_result_row, v2_rejection_reason, v2_should_run,
 )
@@ -53,6 +55,17 @@ DETERMINISTIC_SCORE_TASK_TYPE = "DETERMINISTIC_SCORE"
 
 
 _SCOREABLE_CAMPAIGN_STATUSES = {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}
+
+# v2 decides but couldn't confirm (PENDING: provider failure; NOT_RUN: daily LLM call cap): the
+# whole scoring is retried with backoff (~30 min in all), then dead-lettered (replayable); the
+# hourly recovery job re-queues candidates whose decision never landed. Never a REJECT.
+_DECISION_PENDING_RETRY_POLICY = RetryPolicy(max_attempts=4, base_delay_seconds=120, max_delay_seconds=1800)
+_UNDECIDED_OUTCOMES = (OUTCOME_PENDING, OUTCOME_NOT_RUN)
+DECISION_RECOVERY_TASK_TYPE = "SCORING_DECISION_RECOVERY_SCAN"
+_RECOVERY_HOURS_KEY = "SCORING_DECISION_RECOVERY_HOURS"
+_DEFAULT_RECOVERY_HOURS = 6.0
+_RECOVERY_GRACE = timedelta(minutes=30)
+_IN_FLIGHT = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY)
 
 
 _EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
@@ -380,10 +393,13 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
                 db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
                 experience_result, education_result, domain_result, acted_on=True,
             )
-            if v2_breakdown is not None and v2_breakdown.get("outcome") == OUTCOME_PENDING:
-                # A quota/provider failure must never decide (and never reject):
-                # roll back and retry the whole scoring later.
-                raise ScoringV2DecisionPending(v2_breakdown.get("outcome_reason") or "v2 confirmation unavailable")
+            if v2_breakdown is not None and v2_breakdown.get("outcome") in _UNDECIDED_OUTCOMES:
+                # A provider failure (PENDING) or the daily cap (NOT_RUN) must never decide (and
+                # never reject - NOT_RUN carries deterministic_passed=None): roll back and retry
+                # the whole scoring later.
+                raise ScoringV2DecisionPending(
+                    f"{v2_breakdown.get('outcome')}: {v2_breakdown.get('outcome_reason') or 'v2 confirmation unavailable'}"
+                )
         acting_on_v2 = v2_decides and v2_breakdown is not None
         _record_v1_result(db, campaign, campaign_candidate, breakdown,
                           acted_on=not acting_on_v2, score_weights=score_weights)
@@ -503,11 +519,113 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
                     campaign_candidate.id,
                 )
 
+    except ScoringV2DecisionPending as ex:
+        db.rollback()
+        _retry_or_dead_letter(self, db, task_log_service, task_log, campaign_candidate_id, score_only, ex)
     except Exception as ex:
         db.rollback()
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         logger.exception("Deterministic scoring task failed for campaign_candidate_id %s", campaign_candidate_id)
         raise
+    finally:
+        db.close()
+
+
+def _retry_or_dead_letter(task, db, task_log_service, task_log, campaign_candidate_id, score_only, ex) -> None:
+    """v2 couldn't decide: retry with backoff; after the last attempt, a replayable dead-letter row."""
+    attempt_number = task.request.retries + 1
+    if attempt_number < _DECISION_PENDING_RETRY_POLICY.max_attempts:
+        if task_log:
+            task_log_service.mark_retry(task_log)
+        delay = compute_backoff_seconds(_DECISION_PENDING_RETRY_POLICY, attempt_number)
+        logger.warning("Scoring decision pending, retrying | campaign_candidate_id=%s attempt=%s delay=%ss: %s",
+                       campaign_candidate_id, attempt_number, delay, ex)
+        task.retry(exc=ex, countdown=delay, max_retries=_DECISION_PENDING_RETRY_POLICY.max_attempts)
+        return
+    try:
+        dead_letters = DeadLetterQueueRepository(db)
+        dead_letters.create(
+            original_task_id=task.request.id, task_type=DETERMINISTIC_SCORE_TASK_TYPE,
+            final_error_message=f"Scoring decision pending after {attempt_number} attempts: {ex}"[:2000],
+            input_payload={"campaign_candidate_id": campaign_candidate_id, "score_only": bool(score_only)},
+            retry_count=attempt_number,
+            first_attempted_at=getattr(task_log, "queued_at", None) or datetime.now(timezone.utc),
+            last_attempted_at=datetime.now(timezone.utc), campaign_candidate_id=UUID(campaign_candidate_id),
+        )
+        dead_letters.commit()
+    except Exception:
+        logger.exception("Failed to dead-letter DETERMINISTIC_SCORE for campaign_candidate_id=%s", campaign_candidate_id)
+        db.rollback()
+    if task_log:
+        task_log_service.mark_dead(task_log, str(ex))
+    logger.error("Scoring decision still pending - dead-lettered | campaign_candidate_id=%s: %s",
+                 campaign_candidate_id, ex)
+
+
+def _read_recovery_hours(config_repo) -> float:
+    raw = config_repo.get_configs_by_keys([_RECOVERY_HOURS_KEY]).get(_RECOVERY_HOURS_KEY)
+    try:
+        return float(raw) if raw is not None else _DEFAULT_RECOVERY_HOURS
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s value %r - using %s.", _RECOVERY_HOURS_KEY, raw, _DEFAULT_RECOVERY_HOURS)
+        return _DEFAULT_RECOVERY_HOURS
+
+
+def recovery_action(logs, now: datetime, recovery_hours: float) -> str:
+    """
+    For one never-screened candidate, from its DETERMINISTIC_SCORE task logs: "in_flight" (one is
+    queued / running / waiting to retry), "recent" (the last attempt ended under recovery_hours
+    ago - e.g. dead-lettered on the daily cap, which only a reset fixes), else "requeue".
+    """
+    if any(log.status in _IN_FLIGHT for log in logs):
+        return "in_flight"
+    ends = [log.completed_at or log.started_at or log.queued_at for log in logs]
+    ends = [end for end in ends if end is not None]
+    if ends and now - max(ends) < timedelta(hours=recovery_hours):
+        return "recent"
+    return "requeue"
+
+
+@celery_app.task(name="scoring.recover_undecided_candidates")
+def recover_undecided_candidates() -> None:
+    """
+    Hourly safety net: candidates whose screening decision never landed (still UPLOADED or
+    SCREENING, never screened, resume parsed, campaign scoreable) - a v2 decision that stayed
+    PENDING / NOT_RUN through every retry, or scoring that was never queued - are queued again,
+    at most once per SCORING_DECISION_RECOVERY_HOURS (seeded 6) each, never twice at once.
+    """
+    db = SessionLocal()
+    task_log = None
+    task_log_service = CeleryTaskLogService(CeleryTaskLogRepository(db))
+    try:
+        task_log = task_log_service.mark_running(
+            task_log_service.create_log(task_id=str(uuid4()), task_type=DECISION_RECOVERY_TASK_TYPE))
+        now = datetime.now(timezone.utc)
+        recovery_hours = _read_recovery_hours(ConfigRepository(db))
+        task_log_repo = task_log_service.repository
+        counts = {"found": 0, "requeued": 0, "in_flight": 0, "recent": 0}
+        for campaign_candidate in CampaignCandidateRepository(db).get_never_screened(
+                _SCOREABLE_CAMPAIGN_STATUSES, created_before=now - _RECOVERY_GRACE):
+            counts["found"] += 1
+            logs = task_log_repo.get_by_campaign_candidate_and_task_type(
+                campaign_candidate.id, DETERMINISTIC_SCORE_TASK_TYPE)
+            action = recovery_action(logs, now, recovery_hours)
+            if action != "requeue":
+                counts[action] += 1
+                continue
+            scoring_task_id = str(uuid4())
+            task_log_service.create_log(task_id=scoring_task_id, task_type=DETERMINISTIC_SCORE_TASK_TYPE,
+                                        campaign_candidate_id=campaign_candidate.id)
+            calculate_deterministic_score_task.apply_async(
+                kwargs={"campaign_candidate_id": str(campaign_candidate.id)}, task_id=scoring_task_id)
+            counts["requeued"] += 1
+        task_log_service.mark_success(task_log, summary=json.dumps(counts))
+        logger.info("Scoring decision recovery | %s", counts)
+    except Exception as ex:
+        db.rollback()
+        if task_log:
+            task_log_service.mark_failure(task_log, str(ex))
+        logger.exception("Scoring decision recovery scan failed")
     finally:
         db.close()

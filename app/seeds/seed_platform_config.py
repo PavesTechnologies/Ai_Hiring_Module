@@ -400,6 +400,12 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
+            key="SCORING_DECISION_RECOVERY_HOURS",
+            value="6",
+            description="Scoring recovery: a candidate whose screening decision never landed (v2 confirmation PENDING / daily cap through every retry, or scoring never queued) is queued again by the hourly recovery job, at most once per this many hours",
+        ),
+        PlatformConfig(
+            id=uuid.uuid4(),
             key="EMBEDDING_REINDEX_THRESHOLD",
             value="50000",
             description="Once resume_embeddings row count exceeds this, the Embedding Storage Dashboard shows a warning and queues REINDEX_IVFFLAT to rebuild idx_resume_embeddings_embedding with better-tuned clustering",

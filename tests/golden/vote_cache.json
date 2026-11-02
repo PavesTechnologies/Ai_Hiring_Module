@@ -3872,6 +3872,117 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
+ "S2|7e3abde28b4982b455aaad56a97cbdcf441b25706599eaee97a4a3f7d568cb0c": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "MLOps",
+    "found": true,
+    "quote": "MLOps",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "listed_only",
+    "status": "UNCERTAIN",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "found_senses": [],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "cached": true,
+    "vote_reason": "listed_only",
+    "note": "listed only, not shown in work"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
  "a20c38357450ce8c0d1614e254ebffba151ef9a7ce1d16cb1ab5d50a44b9db81": {
   "results": [
    {

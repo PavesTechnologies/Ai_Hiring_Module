@@ -197,6 +197,13 @@ celery_app.conf.beat_schedule = {
         # its own distinct hour from the other daily jobs above.
         "schedule": crontab(minute=0, hour=5),
     },
+    "recover-undecided-candidates": {
+        "task": "scoring.recover_undecided_candidates",
+        # A screening decision that never landed (v2 PENDING / NOT_RUN through
+        # every retry, or scoring never queued) is queued again - hourly, each
+        # candidate at most once per SCORING_DECISION_RECOVERY_HOURS.
+        "schedule": crontab(minute=20),
+    },
     "recover-stalled-resume-uploads": {
         "task": "resume.recover_stalled_uploads",
         # Resume-upload resilience: periodic safety net alongside the
