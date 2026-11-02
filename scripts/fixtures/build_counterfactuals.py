@@ -67,6 +67,14 @@ VARIANTS = [
     ("CF-GAP-D1-2", "GAP-D1", "D1", "CF-GAP-D1-0", "career_gap", "the same gap, stated as a career break for family care",
      ("gap", "ServiceNow Developer", "Jul 2020 – Jun 2022", "Jul 2020 – Apr 2021",
       "*Career break (family care)* · May 2021 – Jun 2022")),
+    # S2 is near its 12-year minimum, so a stated break counted as a job would change the outcome. The gap moves
+    # S2's own outcome on purpose, so the pair is the gap left silent against the same gap stated, each the
+    # other's partner.
+    ("CF-GAP-S2-1", "GAP-S2", "S2", "CF-GAP-S2-2", "career_gap", "12-month gap (Oct 2020 - Sep 2021), not explained",
+     ("gap", "Senior Data Engineer", "Oct 2015 – Sep 2021", "Oct 2015 – Sep 2020", None)),
+    ("CF-GAP-S2-2", "GAP-S2", "S2", "CF-GAP-S2-1", "career_gap", "the same gap, stated as parental leave",
+     ("gap", "Senior Data Engineer", "Oct 2015 – Sep 2021", "Oct 2015 – Sep 2020",
+      "*Parental leave* · Oct 2020 – Sep 2021")),
     ("CF-REGION-D1-0", "REGION-D1", "D1", "D1", "control", "D1 unchanged (Hyderabad, Telangana), parsed fresh",
      ("none",)),
     ("CF-REGION-D1-2", "REGION-D1", "D1", "CF-REGION-D1-0", "region", "Bihar", ("region", "Hyderabad", "Patna")),
@@ -79,6 +87,12 @@ VARIANTS = [
     ("CF-REGION-F3-4", "REGION-F3", "F3", "CF-REGION-F3-0", "region", "Bangladesh",
      ("region", "Pune", "Dhaka, Bangladesh")),
 ]
+
+
+# Variants whose outcome differs from their base's by design: id -> (outcomes, why).
+_S2_GAP = (["REJECT"], "About 10.2 years against 12: short by more than the 1.2-year tolerance. "
+                       "A stated break is not experience.")
+EXPECTED = {"CF-GAP-S2-1": _S2_GAP, "CF-GAP-S2-2": _S2_GAP}
 
 
 def base_lines(base: str) -> list[str]:
@@ -177,11 +191,16 @@ def add_to_golden(cases: list[dict]) -> None:
     kept = [c for c in golden["cases"] if c.get("set") != "counterfactual"]
     for case in cases:
         base = by_id[case["base"]]
+        # An existing case keeps its expectations: they may have been reviewed and edited since.
+        expected = (by_id[case["id"]]["expected"] if case["id"] in by_id else
+                    {"outcomes": EXPECTED.get(case["id"], (base["expected"]["outcomes"],))[0],
+                     "core": base["expected"]["core"],
+                     "note": f"Must match {case['compare_with']}: outcome and core-skill results."
+                             + (f" {EXPECTED[case['id']][1]}" if case["id"] in EXPECTED else "")})
         kept.append({
             "id": case["id"], "set": "counterfactual", "jd": base["jd"], "resume": f"resumes/{case['id']}.json",
             "source_docx": f"tests/fixtures/counterfactual/{case['id']}.docx",
-            "expected": {"outcomes": base["expected"]["outcomes"], "core": base["expected"]["core"],
-                         "note": f"Must match {case['compare_with']}: outcome and core-skill results."},
+            "expected": expected,
             "counterfactual": {"group": case["group"], "varies": case["varies"],
                                "compare_with": case["compare_with"], "detail": case["detail"]},
         })

@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.services.monitoring.regions import region_of
-from app.services.resume.work_experience_duration import _entry_month_range
+from app.services.resume.work_experience_duration import _entry_month_range, is_career_break
 
 MIN_GROUP_SIZE_KEY = "FAIRNESS_MIN_GROUP_SIZE"
 DEFAULT_MIN_GROUP_SIZE = 10
@@ -49,10 +49,13 @@ def experience_band(years) -> str:
 
 
 def longest_gap_months(parsed: dict) -> int | None:
-    """The longest stretch of months with no role between the first and last role; None without dated roles."""
+    """
+    The longest stretch of months with no role between the first and last role; None without dated roles.
+    A stated career break is not a role: its months are a gap.
+    """
     covered = set()
     for entry in (parsed or {}).get("work_experience") or []:
-        span = _entry_month_range(entry) if isinstance(entry, dict) else None
+        span = _entry_month_range(entry) if isinstance(entry, dict) and not is_career_break(entry) else None
         if span is not None:
             covered.update(range(span[0], span[1] + 1))
     if not covered:

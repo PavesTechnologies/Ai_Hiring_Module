@@ -1451,6 +1451,116 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
+ "2a52fc424c6915e939c27509b726b14f09690377ac218a193aa59b78b125e1cb": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
  "2ebe7f57a0606d48cdd3052ded9201f51bc0a99dc0ba29212b27802b6139f577": {
   "results": [
    {
@@ -2342,6 +2452,116 @@
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "56f3c6d7a99beccfbddf8abde93772ff5262c3fca1e12fa7fe5ec2cc26453ae8": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    }
   ],
   "provider": "GOOGLE",

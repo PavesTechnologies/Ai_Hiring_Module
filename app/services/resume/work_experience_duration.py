@@ -1,9 +1,16 @@
+import re
 from datetime import datetime
 
 from dateutil import parser as date_parser
 
 _CURRENT_MARKERS = {"present", "current", "till date", "ongoing", "now", "till now"}
 _DEFAULT_ANCHOR = datetime(2000, 1, 1)
+# A stated break in a career, which a resume may list like a role ("Parental leave · Oct 2020 - Sep 2021").
+_CAREER_BREAK = re.compile(
+    r"\b(career[\s-]+break|family[\s-]+care|sabbatical|(?:parental|maternity|paternity)[\s-]+leave"
+    r"|care[\s-]?giv(?:ing|ers?))\b",
+    re.IGNORECASE,
+)
 
 
 def _parse_month(date_str: str | None) -> datetime | None:
@@ -72,20 +79,34 @@ def _months(entries: list[dict]) -> set[int]:
     return covered
 
 
+def is_career_break(entry: dict) -> bool:
+    """
+    A stated career break - career break, family care, sabbatical, parental / maternity / paternity
+    leave, caregiving - listed as an entry. It is not experience. Read from the title and the company
+    (where a parse puts such a line); the description only when the entry has neither, so a real job
+    that merely mentions one ("benefits for caregivers") still counts.
+    """
+    if not isinstance(entry, dict):
+        return False
+    named = " ".join(str(entry.get(k) or "") for k in ("title", "company")).strip()
+    return bool(_CAREER_BREAK.search(named or str(entry.get("description") or "")))
+
+
 def _professional(entries: list[dict]) -> list[dict]:
-    return [e for e in entries if not e.get("is_internship") and not e.get("is_volunteer")]
+    return [e for e in entries if not e.get("is_internship") and not e.get("is_volunteer")
+            and not is_career_break(e)]
 
 
 def _internships(entries: list[dict]) -> list[dict]:
-    return [e for e in entries if e.get("is_internship") and not e.get("is_volunteer")]
+    return [e for e in entries if e.get("is_internship") and not e.get("is_volunteer") and not is_career_break(e)]
 
 
 def annotate_work_experience_durations(parsed_json: dict | None) -> dict | None:
     """
     Returns a copy of parsed_json with a computed duration attached to each
     work_experience entry, and total_experience_years recomputed from those
-    same entries (professional employment only — internships and volunteer
-    entries excluded) rather than trusting the AI-extracted figure verbatim,
+    same entries (professional employment only — internships, volunteer
+    entries and stated career breaks excluded) rather than trusting the AI-extracted figure verbatim,
     which is often just whatever the resume's own text claimed and can drift
     from what the listed start/end dates actually add up to. Response-time-
     only — never persisted, doesn't touch the stored parsed_json or the
@@ -116,7 +137,8 @@ def experience_years_for_scoring(parsed_json: dict | None, internship_credit: fl
     Professional months covered (both end months included; concurrent roles
     counted once), plus internship months that don't overlap a professional
     role times internship_credit (the JD's setting: 1.0, 0.5 or 0.0 - see
-    jd_calibration_rules.jd_internship_credit). Volunteer roles never count.
+    jd_calibration_rules.jd_internship_credit). Volunteer roles and stated
+    career breaks (is_career_break) never count.
     Dates are preferred over the AI's figure. "Nothing counted" is 0 years
     rather than missing: a fresher with no roles, or only uncredited
     internships / volunteer roles, has 0 years against the minimum - a

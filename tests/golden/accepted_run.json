@@ -1,15 +1,15 @@
 {
- "accepted_on": "2026-10-30",
- "run_at": "2026-10-30T12:38:54.686699+00:00",
- "fingerprint": "90a47ee61f0dbbdea63d597d721613dc36cb2f64a3293fd7da283d63f53fb3d8",
+ "accepted_on": "2026-11-02",
+ "run_at": "2026-11-02T05:56:40.947682+00:00",
+ "fingerprint": "7f106ec62d2853648400d9721266b6ad92d4a4b35b9b70f0ef7fd98f2dd51ef3",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
   "output_tokens": 0,
   "vote_cache_hits": 56,
   "dev_cache_hits": 0,
-  "new_cache_entries": 0,
-  "model": null
+  "new_cache_entries": 2,
+  "model": "gemini-3.1-flash-lite"
  },
  "cases": {
   "F1": {
@@ -573,7 +573,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -640,7 +640,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.6,
+   "experience_years": 6.7,
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -720,7 +720,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 4.6,
+   "experience_years": 4.7,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -809,7 +809,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 9.8,
+   "experience_years": 9.9,
    "skills": {
     "Change Management": {
      "status": "SENSE_MISMATCH",
@@ -863,8 +863,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 3.6 years, 0.4 short of the 4-year minimum (within the 1-year tolerance)",
-   "experience_years": 3.6,
+   "needs_review_reason": "Needs recruiter review: experience 3.7 years, 0.3 short of the 4-year minimum (within the 1-year tolerance)",
+   "experience_years": 3.7,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -928,7 +928,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 7.8,
+   "experience_years": 7.9,
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -979,7 +979,7 @@
     "Core skills"
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: Service Catalog, ServiceNow ITSM)",
-   "experience_years": 6.8,
+   "experience_years": 6.9,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -1038,7 +1038,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 5.8,
+   "experience_years": 5.9,
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1167,7 +1167,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1309,7 +1309,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1370,7 +1370,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 7.3,
+   "experience_years": 7.4,
    "skills": {
     "Change Management": {
      "status": "REJECTED",
@@ -1433,7 +1433,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "UNCERTAIN",
@@ -1635,7 +1635,7 @@
     "Education"
    ],
    "needs_review_reason": null,
-   "experience_years": 0.3,
+   "experience_years": 0.4,
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -1756,7 +1756,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 15.1,
+   "experience_years": 15.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1834,8 +1834,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1903,7 +1903,7 @@
     "Core skills"
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1, 1 uncertain (missing: Data Engineering, MLOps)",
-   "experience_years": 14.1,
+   "experience_years": 14.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1970,7 +1970,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 18.1,
+   "experience_years": 18.2,
    "skills": {
     "Cloud Architecture": {
      "status": "NOT_FOUND",
@@ -2031,7 +2031,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 14.1,
+   "experience_years": 14.2,
    "skills": {
     "Cloud Architecture": {
      "status": "UNCERTAIN",
@@ -2106,7 +2106,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 13.1,
+   "experience_years": 13.2,
    "skills": {
     "Cloud Architecture": {
      "status": "UNCERTAIN",
@@ -2174,7 +2174,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 20.1,
+   "experience_years": 20.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2263,7 +2263,7 @@
     "Core skills"
    ],
    "needs_review_reason": null,
-   "experience_years": 13.1,
+   "experience_years": 13.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2603,8 +2603,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2671,8 +2671,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2739,8 +2739,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2807,8 +2807,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2875,8 +2875,8 @@
    "failed_checks": [
     "Experience"
    ],
-   "needs_review_reason": "Needs recruiter review: experience 11.1 years, 0.9 short of the 12-year minimum (within the 1.2-year tolerance)",
-   "experience_years": 11.1,
+   "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
+   "experience_years": 11.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2942,7 +2942,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 20.1,
+   "experience_years": 20.2,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3029,7 +3029,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 18.9,
+   "experience_years": 19.0,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3116,7 +3116,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 20.1,
+   "experience_years": 19.0,
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3203,7 +3203,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3337,7 +3337,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 5.2,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3398,13 +3398,149 @@
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
+  "CF-GAP-S2-1": {
+   "outcome": "REJECT",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [
+    "Experience"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 10.2,
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "CONFIRMED",
+     "method": "llm",
+     "reason": "all_votes_yes",
+     "votes": [
+      "yes",
+      "yes",
+      "yes"
+     ],
+     "quote": "Head of Data Engineering",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "listed_only",
+     "votes": [
+      "yes",
+      "yes",
+      "yes"
+     ],
+     "quote": "MLOps",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 3,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
+  "CF-GAP-S2-2": {
+   "outcome": "REJECT",
+   "core": "3/4",
+   "score": null,
+   "failed_checks": [
+    "Experience"
+   ],
+   "needs_review_reason": null,
+   "experience_years": 10.2,
+   "skills": {
+    "Cloud Architecture": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform"
+     ]
+    },
+    "Data Engineering": {
+     "status": "CONFIRMED",
+     "method": "llm",
+     "reason": "all_votes_yes",
+     "votes": [
+      "yes",
+      "yes",
+      "yes"
+     ],
+     "quote": "Head of Data Engineering",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Head of Data Engineering — Orbit Payments · Oct 2021 – present"
+     ]
+    },
+    "MLOps": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "listed_only",
+     "votes": [
+      "yes",
+      "yes",
+      "yes"
+     ],
+     "quote": "MLOps",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Azure, Databricks, Spark, Python, MLOps, Data Governance"
+     ]
+    },
+    "Machine Learning": {
+     "status": "CONFIRMED",
+     "method": "auto",
+     "reason": "auto_exact_scan",
+     "votes": [],
+     "quote": "Designed the Azure cloud architecture for the data and ML platform",
+     "paraphrase": null,
+     "evidence": [
+      "[EXPERIENCE] Designed the Azure cloud architecture for the data and ML platform",
+      "[EXPERIENCE] Built the first ML feature pipelines with the data science team"
+     ]
+    }
+   },
+   "llm_calls": 3,
+   "problem": null,
+   "scoring_config_version": "6954e19c32004b18"
+  },
   "CF-REGION-D1-0": {
    "outcome": "PASS",
    "core": "4/4",
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3471,7 +3607,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3538,7 +3674,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3605,7 +3741,7 @@
    "score": null,
    "failed_checks": [],
    "needs_review_reason": null,
-   "experience_years": 6.3,
+   "experience_years": 6.4,
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",

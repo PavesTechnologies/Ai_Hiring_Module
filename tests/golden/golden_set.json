@@ -870,6 +870,46 @@
    }
   },
   {
+   "id": "CF-GAP-S2-1",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-GAP-S2-1.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-S2-1.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Must match CF-GAP-S2-2: outcome and core-skill results. About 10.2 years against 12: short by more than the 1.2-year tolerance. A stated break is not experience."
+   },
+   "counterfactual": {
+    "group": "GAP-S2",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-S2-2",
+    "detail": "12-month gap (Oct 2020 - Sep 2021), not explained"
+   }
+  },
+  {
+   "id": "CF-GAP-S2-2",
+   "set": "counterfactual",
+   "jd": "JD-S",
+   "resume": "resumes/CF-GAP-S2-2.json",
+   "source_docx": "tests/fixtures/counterfactual/CF-GAP-S2-2.docx",
+   "expected": {
+    "outcomes": [
+     "REJECT"
+    ],
+    "core": null,
+    "note": "Must match CF-GAP-S2-1: outcome and core-skill results. About 10.2 years against 12: short by more than the 1.2-year tolerance. A stated break is not experience."
+   },
+   "counterfactual": {
+    "group": "GAP-S2",
+    "varies": "career_gap",
+    "compare_with": "CF-GAP-S2-1",
+    "detail": "the same gap, stated as parental leave"
+   }
+  },
+  {
    "id": "CF-REGION-D1-0",
    "set": "counterfactual",
    "jd": "JD-D",
