@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.middleware.rbac import require_roles
 from app.models.identity import UserRole
+from app.repositories.config_repository import ConfigRepository
 from app.schemas.response import APIResponse
 from app.services.campaign.outcome_override_report import override_report
 from app.services.campaign.outcome_overrides import reason_code_options
@@ -35,7 +36,7 @@ def list_reason_codes():
         "Moves against the system's screening outcome (OVERRIDE) and HOLD resolutions (REVIEW_DECISION): "
         "the most common patterns (kind, system outcome, direction, reason), and counts by reason, by the "
         "failed checks and missing core skills behind the overridden outcome, by template, role and "
-        "campaign (with the override rate). No candidate details. HR_ADMIN only."
+        "campaign (with the override rate and the override-rate alert). No candidate details. HR_ADMIN only."
     ),
     dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
@@ -46,5 +47,6 @@ def get_override_report(
     top: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    return APIResponse.ok(data=override_report(db, campaign_id=campaign_id, since=since, until=until, top=top),
+    return APIResponse.ok(data=override_report(db, campaign_id=campaign_id, since=since, until=until, top=top,
+                                               config_repository=ConfigRepository(db)),
                           message="Override report.")

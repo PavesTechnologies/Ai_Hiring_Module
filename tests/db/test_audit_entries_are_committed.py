@@ -98,14 +98,6 @@ def test_the_rejected_export_keeps_its_audit_entry(db, http, campaign):
     assert len(kept) == 1
 
 
-def test_the_override_report_export_keeps_its_audit_entry(db, http, campaign):
-    kept = _kept_after_rollback(
-        db, "OVERRIDE_REPORT_EXPORTED",
-        lambda: http.get("/campaign-candidates/override-report/export", params={"campaign_id": str(campaign.id)},
-                         headers=_AUTH))
-    assert len(kept) == 1
-
-
 def test_the_rejection_analytics_export_keeps_its_audit_entry(db, http):
     kept = _kept_after_rollback(
         db, "DETERMINISTIC_ANALYTICS_EXPORTED",

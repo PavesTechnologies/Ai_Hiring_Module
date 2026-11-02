@@ -8,7 +8,6 @@ import pytest
 from app.exceptions.campaign_exceptions import CampaignException
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignRejectionAnalyticsResponse,
-    OverrideReportResponse,
     OverrideReportRow,
 )
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
@@ -385,15 +384,15 @@ def test_rule2_does_not_recommend_when_below_threshold():
     assert not any(r.rule == "EXPERIENCE_MISMATCH" for r in analytics.recommendations)
 
 
-def test_rule3_recommends_when_override_rate_above_threshold():
+def test_rule3_recommends_when_override_rate_above_threshold(monkeypatch):
+    monkeypatch.setattr("app.services.campaign.campaign_candidate_service.campaign_override_rate",
+                        lambda db, campaign_id: 60.0)
     rejections = [_make_rejection(mandatory_skills=[_missing_skill("Python")]) for _ in range(10)]
     campaign = SimpleNamespace(id=uuid4(), name="Campaign", job_description=None)
     campaign_repo = MagicMock()
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 25
-    campaign_candidate_repo.get_overridden.return_value = [1, 2, 3]  # 3 overrides
-    campaign_candidate_repo.get_rejected_by_campaign.return_value = [1, 2, 3, 4, 5]  # 5 rejected -> 60%
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {"OVERRIDE_RATE_ALERT_THRESHOLD": "20"}
@@ -412,15 +411,15 @@ def test_rule3_recommends_when_override_rate_above_threshold():
     assert rule3.details["override_rate"] == 60.0
 
 
-def test_rule3_does_not_recommend_when_override_rate_below_threshold():
+def test_rule3_does_not_recommend_when_override_rate_below_threshold(monkeypatch):
+    monkeypatch.setattr("app.services.campaign.campaign_candidate_service.campaign_override_rate",
+                        lambda db, campaign_id: 20.0)  # 20%, not > 20%
     rejections = [_make_rejection(mandatory_skills=[_missing_skill("Python")]) for _ in range(10)]
     campaign = SimpleNamespace(id=uuid4(), name="Campaign", job_description=None)
     campaign_repo = MagicMock()
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 25
-    campaign_candidate_repo.get_overridden.return_value = [1]
-    campaign_candidate_repo.get_rejected_by_campaign.return_value = [1, 2, 3, 4, 5]  # 20%, not > 20%
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
     service = make_service(
@@ -475,12 +474,7 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
         override_timestamp=datetime.now(timezone.utc),
         current_pipeline_stage="SCREENING",
     )
-    monkeypatch.setattr(
-        service, "get_override_report",
-        lambda campaign_id=None, date_from=None, date_to=None: OverrideReportResponse(
-            rows=[override_row], total_count=1, weekly_trend=[], campaign_alerts=[],
-        ),
-    )
+    monkeypatch.setattr(service, "_override_log_rows", lambda date_from=None, date_to=None: [override_row])
 
     response = service.export_deterministic_rejection_summary(
         date_from=None, date_to=None, actor_id="hr-1", actor_role="HR_ADMIN",

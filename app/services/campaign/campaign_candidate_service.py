@@ -2,7 +2,7 @@ import hashlib
 import logging
 from uuid import UUID, uuid4
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from fastapi.responses import StreamingResponse
 
@@ -53,7 +53,6 @@ from app.repositories.skill_repository import SkillRepository
 from app.schemas.campaign.campaign_candidate_schema import (
     AiSummaryDetail,
     CampaignCandidateCreateRequest,
-    CampaignOverrideAlert,
     CampaignBoardColumn,
     CampaignBoardResponse,
     CampaignRejectionAnalyticsResponse,
@@ -74,9 +73,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MandatorySkillBreakdownItem,
     MissingMandatorySkillItem,
     MissingSkillOccurrence,
-    OverrideReportResponse,
     OverrideReportRow,
-    OverrideWeeklyTrendPoint,
     PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
     ScoreCalculationDetail,
@@ -107,6 +104,7 @@ from app.services.campaign.layer_failure import (
     get_layer_failures,
 )
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
+from app.services.campaign.outcome_override_report import campaign_override_rate
 from app.services.campaign.outcome_overrides import check_move
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
@@ -148,8 +146,6 @@ SEMANTIC_SCORE_TASK_TYPE = "SEMANTIC_SCORE"
 _HR_OVERRIDE_CHANGE_REASON = "RECRUITER override of deterministic rejection"
 _OVERRIDE_RATE_ALERT_THRESHOLD_KEY = "OVERRIDE_RATE_ALERT_THRESHOLD"
 _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
-_OVERRIDE_RECOMMENDATION = "Review campaign JD skills or thresholds."
-_WEEKLY_TREND_WEEKS = 8
 
 # M07-E03 S05: Deterministic Rejection Analytics
 _MIN_CANDIDATES_FOR_ANALYTICS_KEY = "MIN_CANDIDATES_FOR_ANALYTICS"
@@ -1990,8 +1986,7 @@ class CampaignCandidateService:
         unmodified repository method.
 
         Reuses ExcelExport (no new XLSX engine) and AuditService, the same
-        StreamingResponse convention as export_rejected_candidates/
-        export_override_report. Never includes candidate name/email/phone/
+        StreamingResponse convention as export_rejected_candidates. Never includes candidate name/email/phone/
         resume - only the opaque candidate_uuid plus ranking/score fields
         already computed and persisted by the scoring pipeline.
         """
@@ -2673,41 +2668,24 @@ class CampaignCandidateService:
 
 
     # ------------------------------------------------------------------
-    # M07-E03 S04 T03: Override Report
+    # M07-E03 S04 T03: override rows (the Override Report itself was retired 2026-11-02)
     # ------------------------------------------------------------------
 
-    def get_override_report(
-        self,
-        campaign_id: UUID | None = None,
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
-    ) -> OverrideReportResponse:
-        overridden = self.campaign_candidate_repo.get_overridden(
-            campaign_id=campaign_id, date_from=date_from, date_to=date_to,
-        )
-
+    def _override_log_rows(self, date_from: datetime | None, date_to: datetime | None) -> list[OverrideReportRow]:
+        """
+        HR overrides of a rejection (REJECTED -> SCREENING), for the deterministic-rejection summary
+        export's Override Log sheet. The Override Report that used to show these was retired on
+        2026-11-02: moves against the system's outcome are now recorded with reason codes
+        (candidate_outcome_overrides, GET /outcome-overrides/report), and the override-rate alert
+        comes from there.
+        """
+        overridden = self.campaign_candidate_repo.get_overridden(campaign_id=None, date_from=date_from, date_to=date_to)
         campaign_cache: dict[UUID, HiringCampaign | None] = {}
-        hr_user_ids = [cc.decision_by_user_id for cc in overridden if cc.decision_by_user_id]
-        # Reuses CampaignRepository.get_hiring_manager_names - despite its
-        # name, it is a generic user_id -> full_name batch lookup (any list
-        # of user ids) - reused here instead of adding a dedicated
-        # UserRepository/method for this one lookup.
-        hr_names = self.campaign_repo.get_hiring_manager_names(hr_user_ids)
-
-        rows = []
-        for cc in overridden:
-            campaign = self._get_campaign_cached(cc.campaign_id, campaign_cache)
-            rows.append(self._to_override_report_row(cc, campaign, hr_names))
-
-        weekly_trend = self._compute_weekly_trend(campaign_id)
-        campaign_alerts = self._compute_campaign_alerts(campaign_id, rows, campaign_cache)
-
-        return OverrideReportResponse(
-            rows=rows,
-            total_count=len(rows),
-            weekly_trend=weekly_trend,
-            campaign_alerts=campaign_alerts,
-        )
+        # Reuses CampaignRepository.get_hiring_manager_names - a generic user_id -> full_name lookup.
+        hr_names = self.campaign_repo.get_hiring_manager_names(
+            [cc.decision_by_user_id for cc in overridden if cc.decision_by_user_id])
+        return [self._to_override_report_row(cc, self._get_campaign_cached(cc.campaign_id, campaign_cache), hr_names)
+                for cc in overridden]
 
     def _get_campaign_cached(
         self, campaign_id: UUID, campaign_cache: dict[UUID, HiringCampaign | None],
@@ -2746,144 +2724,6 @@ class CampaignCandidateService:
             override_timestamp=campaign_candidate.decision_at,
             current_pipeline_stage=campaign_candidate.pipeline_stage,
         )
-
-    def _compute_weekly_trend(self, campaign_id: UUID | None) -> list[OverrideWeeklyTrendPoint]:
-        """
-        Fixed last-8-weeks window (independent of the report's date_from/
-        date_to row filters, per this story's "Trend: last 8 weeks" spec),
-        Monday-anchored week buckets.
-        """
-        now = datetime.now(timezone.utc)
-        current_week_start = (now - timedelta(days=now.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0,
-        )
-        window_start = current_week_start - timedelta(weeks=_WEEKLY_TREND_WEEKS - 1)
-
-        overridden = self.campaign_candidate_repo.get_overridden(
-            campaign_id=campaign_id, date_from=window_start, date_to=None,
-        )
-
-        buckets = {
-            (current_week_start - timedelta(weeks=offset)).date(): 0
-            for offset in range(_WEEKLY_TREND_WEEKS)
-        }
-        for cc in overridden:
-            if cc.decision_at is None:
-                continue
-            week_start = (cc.decision_at - timedelta(days=cc.decision_at.weekday())).replace(
-                hour=0, minute=0, second=0, microsecond=0,
-            ).date()
-            if week_start in buckets:
-                buckets[week_start] += 1
-
-        return [
-            OverrideWeeklyTrendPoint(week_start=week_start, override_count=count)
-            for week_start, count in sorted(buckets.items())
-        ]
-
-    def _compute_campaign_alerts(
-        self,
-        campaign_id: UUID | None,
-        rows: list[OverrideReportRow],
-        campaign_cache: dict[UUID, HiringCampaign | None],
-    ) -> list[CampaignOverrideAlert]:
-        threshold = _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD
-        if self.config_repo is not None:
-            configs = self.config_repo.get_configs_by_keys([_OVERRIDE_RATE_ALERT_THRESHOLD_KEY])
-            raw_threshold = configs.get(_OVERRIDE_RATE_ALERT_THRESHOLD_KEY)
-            if raw_threshold is not None:
-                threshold = float(raw_threshold)
-
-        campaign_ids = {campaign_id} if campaign_id is not None else {row.campaign_id for row in rows}
-
-        override_counts: dict[UUID, int] = {}
-        for row in rows:
-            override_counts[row.campaign_id] = override_counts.get(row.campaign_id, 0) + 1
-
-        # One aggregate query for every campaign's denominator instead of
-        # loading each campaign's rejected rows just to count them.
-        rejected_counts = self.campaign_candidate_repo.count_rejected_by_campaigns(campaign_ids)
-
-        alerts = []
-        for cid in campaign_ids:
-            campaign = self._get_campaign_cached(cid, campaign_cache)
-            if campaign is None:
-                continue
-
-            override_count = override_counts.get(cid, 0)
-            # Denominator: all-time rejected candidates in this campaign.
-            # override_rate answers "of the candidates this campaign's
-            # deterministic filter rejected, what fraction did HR override",
-            # which is what the "review JD skills or thresholds" hint is about.
-            rejected_count = rejected_counts.get(cid, 0)
-            override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
-            alert = override_rate > threshold
-
-            alerts.append(CampaignOverrideAlert(
-                campaign_id=cid,
-                campaign_name=campaign.name,
-                override_count=override_count,
-                rejected_count=rejected_count,
-                override_rate=round(override_rate, 2),
-                override_alert=alert,
-                recommendation=_OVERRIDE_RECOMMENDATION if alert else None,
-            ))
-
-        return alerts
-
-    def export_override_report(
-        self,
-        campaign_id: UUID | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
-        actor_id: str,
-        actor_role: str | None,
-    ) -> StreamingResponse:
-        """
-        Reuses ExcelExport (no new XLSX engine) and AuditService, same
-        StreamingResponse convention as export_rejected_candidates. Never
-        includes candidate name/email/phone/resume - only the opaque
-        candidate_uuid. HR full name is not candidate PII and is included
-        as explicitly required by this report.
-        """
-        report = self.get_override_report(campaign_id=campaign_id, date_from=date_from, date_to=date_to)
-
-        rows = [self._to_override_export_row(row) for row in report.rows]
-
-        excel_file = ExcelExport.export_override_report(rows)
-        filename = f"override_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
-        self.audit_service.log(
-            actor_id=actor_id,
-            actor_role=actor_role,
-            action_type=ActionType.OVERRIDE_REPORT_EXPORTED,
-            entity_type=EntityType.CAMPAIGN_CANDIDATE,
-            entity_id=campaign_id if campaign_id is not None else self.EXPORT_AUDIT_ENTITY_ID,
-            campaign_id=campaign_id,
-            details={"exported_count": len(rows)},
-        )
-
-        # AuditRepository.create only flushes: commit, or the row is rolled back
-        # when the request session closes (nothing else commits it).
-        self.campaign_candidate_repo.commit()
-
-        return StreamingResponse(
-            excel_file,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-
-    @staticmethod
-    def _to_override_export_row(row: OverrideReportRow) -> dict:
-        return {
-            "campaign_name": row.campaign_name,
-            "candidate_uuid": str(row.candidate_uuid),
-            "original_rejection_reason": row.original_rejection_reason or "",
-            "override_reason": row.override_reason,
-            "hr_full_name": row.hr_full_name or "",
-            "override_timestamp": row.override_timestamp,
-            "current_pipeline_stage": row.current_pipeline_stage.value,
-        }
 
     # ------------------------------------------------------------------
     # M07-E03 S05 T01/T02: Campaign Rejection Analytics + JD Calibration
@@ -3127,18 +2967,15 @@ class CampaignCandidateService:
 
     def _compute_rule3_override_rate(self, campaign_id: UUID) -> tuple[float, float]:
         """
-        Same override_rate formula as the Override Report's per-campaign
-        alert (overrides / all-time REJECTED candidates) - deliberately the
-        SAME denominator convention as _compute_campaign_alerts (M07-E03
-        S04), so this rule and that report's alert always agree.
+        The campaign's override rate as the recruiter-overrides report's alert computes it
+        (campaign_override_rate: candidates overridden against the system's outcome / candidates
+        with a decided outcome, in %), with the same OVERRIDE_RATE_ALERT_THRESHOLD - so this
+        recommendation and the dashboard alert always agree.
         """
         threshold = self._read_config_float(
             _OVERRIDE_RATE_ALERT_THRESHOLD_KEY, _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD,
         )
-        override_count = len(self.campaign_candidate_repo.get_overridden(campaign_id=campaign_id))
-        rejected_count = len(self.campaign_candidate_repo.get_rejected_by_campaign(campaign_id))
-        override_rate = (override_count / rejected_count * 100) if rejected_count else 0.0
-        return round(override_rate, 2), threshold
+        return campaign_override_rate(self.campaign_candidate_repo.db, campaign_id), threshold
 
     # ------------------------------------------------------------------
     # M07-E03 S05 T03: Platform-wide Deterministic Rejection Summary Export
@@ -3174,8 +3011,7 @@ class CampaignCandidateService:
         all_rejections = [rejection for rejections in rejections_by_campaign.values() for rejection in rejections]
         skill_gap_rows = self._build_skill_gap_rows(all_rejections)
 
-        override_report = self.get_override_report(campaign_id=None, date_from=date_from, date_to=date_to)
-        override_log_rows = [self._to_override_log_row(row) for row in override_report.rows]
+        override_log_rows = [self._to_override_log_row(row) for row in self._override_log_rows(date_from, date_to)]
 
         excel_file = ExcelExport.export_deterministic_rejection_summary(
             campaign_summary_rows, skill_gap_rows, override_log_rows,
@@ -3231,8 +3067,8 @@ class CampaignCandidateService:
         # Date-scoped together with deterministic_rejections above, so this
         # column stays internally consistent with the rest of THIS report's
         # row - a deliberately different denominator convention from
-        # _compute_rule3_override_rate's all-time one, since that rule must
-        # instead match the already-shipped Override Report's alert exactly.
+        # _compute_rule3_override_rate's all-time one, which matches the
+        # recruiter-overrides report's alert.
         override_count = len(
             self.campaign_candidate_repo.get_overridden(campaign_id=campaign.id, date_from=date_from, date_to=date_to)
         )

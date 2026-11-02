@@ -32,7 +32,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
     CandidateTimelineResponse,
     HrOverrideRequest,
-    OverrideReportResponse,
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,
     SendRejectionEmailResponse,
@@ -328,60 +327,6 @@ def get_rejection_history(
     return APIResponse.ok(
         data=history,
         message="Rejection history retrieved successfully.",
-    )
-
-
-@router.get(
-    "/override-report",
-    response_model=APIResponse[OverrideReportResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get HR Override Report",
-    description=(
-        "HR_ADMIN override events, optionally filtered by campaign and date range, plus a "
-        "weekly trend (last 8 weeks) and per-campaign override-rate alerting. HR_ADMIN only."
-    ),
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
-)
-def get_override_report(
-    campaign_id: UUID | None = Query(default=None),
-    date_from: datetime | None = Query(default=None),
-    date_to: datetime | None = Query(default=None),
-    service: CampaignCandidateService = Depends(
-        get_campaign_candidate_service,
-    ),
-):
-    report = service.get_override_report(
-        campaign_id=campaign_id, date_from=date_from, date_to=date_to,
-    )
-
-    return APIResponse.ok(
-        data=report,
-        message="Override report retrieved successfully.",
-    )
-
-
-@router.get(
-    "/override-report/export",
-    status_code=status.HTTP_200_OK,
-    summary="Export HR Override Report",
-    description="Exports the HR override report to XLSX. HR_ADMIN only. Never includes candidate PII.",
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
-)
-def export_override_report(
-    campaign_id: UUID | None = Query(default=None),
-    date_from: datetime | None = Query(default=None),
-    date_to: datetime | None = Query(default=None),
-    service: CampaignCandidateService = Depends(
-        get_campaign_candidate_service,
-    ),
-    user: TokenUser = Depends(get_current_user),
-) -> StreamingResponse:
-    return service.export_override_report(
-        campaign_id=campaign_id,
-        date_from=date_from,
-        date_to=date_to,
-        actor_id=user.user_id,
-        actor_role=authorising_role(user, (UserRole.HR_ADMIN,)),
     )
 
 

@@ -38,7 +38,7 @@ def test_export_route_is_hr_admin_only_not_the_read_only_convention():
     Exports follow the export RBAC convention (HR_ADMIN only), NOT the
     read-only ranked-list/explainability convention (HR_ADMIN + RECRUITER
     + HIRING_MANAGER) - deliberately stricter, matching every other export
-    endpoint in this codebase (export-rejected, override-report/export,
+    endpoint in this codebase (export-rejected,
     rejection-analytics/export).
     """
     assert _allowed_roles(_get_route(_EXPORT_PATH)) == frozenset({UserRole.HR_ADMIN.value})
@@ -56,6 +56,6 @@ def test_ranked_list_route_rbac_unaffected_by_the_new_export_route():
 
 
 def test_export_route_has_no_response_model_matching_other_streaming_exports():
-    """StreamingResponse exports never declare a Pydantic response_model - matches export-rejected/override-report/export."""
+    """StreamingResponse exports never declare a Pydantic response_model - matches export-rejected."""
     assert _get_route(_EXPORT_PATH).response_model is None
     assert _get_route(_EXPORT_REJECTED_PATH).response_model is None

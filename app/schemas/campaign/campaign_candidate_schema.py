@@ -2,7 +2,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from datetime import date, datetime
+from datetime import datetime
 
 from app.models.candidates import ParseStatus
 from app.schemas.campaign.layer_failure_schema import LayerFailureResponse
@@ -910,37 +910,6 @@ class OverrideReportRow(BaseModel):
 
     model_config = ConfigDict(from_attributes=True,
     )
-
-
-class OverrideWeeklyTrendPoint(BaseModel):
-    """One week's override count - Monday-anchored week_start, last 8 weeks."""
-
-    week_start: date
-    override_count: int
-
-
-class CampaignOverrideAlert(BaseModel):
-    """
-    override_rate = overrides / rejected candidates in this campaign (%),
-    all-time (not scoped to the report's date-range filter, which only
-    scopes `rows`). override_alert is True when override_rate exceeds
-    the OVERRIDE_RATE_ALERT_THRESHOLD platform_config key.
-    """
-
-    campaign_id: UUID
-    campaign_name: str
-    override_count: int
-    rejected_count: int
-    override_rate: float
-    override_alert: bool
-    recommendation: str | None = None
-
-
-class OverrideReportResponse(BaseModel):
-    rows: list[OverrideReportRow]
-    total_count: int
-    weekly_trend: list[OverrideWeeklyTrendPoint]
-    campaign_alerts: list[CampaignOverrideAlert]
 
 
 class RejectionBreakdownEntry(BaseModel):

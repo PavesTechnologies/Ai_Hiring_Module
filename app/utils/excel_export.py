@@ -268,67 +268,6 @@ class ExcelExport:
         return output
 
     @staticmethod
-    def export_override_report(rows):
-        """
-        M07-E03 S04 T03: rows is an iterable of dicts (see
-        CampaignCandidateService._to_override_export_row) - one row per HR
-        override event. Never includes candidate name/email/phone/resume -
-        only the opaque candidate_uuid. HR full name is not candidate PII
-        and is included as explicitly required by this report.
-        """
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Override Report"
-
-        ws.append([
-            "Campaign Name",
-            "Candidate UUID",
-            "Original Rejection Reason",
-            "Override Reason",
-            "HR Full Name",
-            "Override Timestamp",
-            "Current Pipeline Stage",
-        ])
-
-        for cell in ws[1]:
-            cell.font = ExcelExport.HEADER_FONT
-            cell.fill = ExcelExport.HEADER_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-
-        ws.freeze_panes = "A2"
-
-        for row in rows:
-            ws.append([
-                row["campaign_name"],
-                row["candidate_uuid"],
-                row["original_rejection_reason"],
-                row["override_reason"],
-                row["hr_full_name"],
-                row["override_timestamp"].strftime("%d-%b-%Y %I:%M %p") if row["override_timestamp"] else "",
-                row["current_pipeline_stage"],
-            ])
-
-        ws.auto_filter.ref = ws.dimensions
-
-        for column_cells in ws.columns:
-            max_length = 0
-            for cell in column_cells:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except Exception:
-                    pass
-            ws.column_dimensions[
-                get_column_letter(column_cells[0].column)
-            ].width = min(max_length + 3, 50)
-
-        output = BytesIO()
-        wb.save(output)
-        output.seek(0)
-
-        return output
-
-    @staticmethod
     def export_bulk_import_errors(failures):
         """
         S07-T03: failures is an iterable of dicts with the original uploaded

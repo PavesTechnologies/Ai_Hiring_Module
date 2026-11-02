@@ -188,7 +188,7 @@ try:
             id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
             value="20",
-            description="Override rate (%, overrides / rejected candidates) above which a campaign is flagged override_alert in the Override Report",
+            description="Override rate (%: candidates overridden against the system's outcome / candidates with a decided outcome) above which a campaign is flagged in the recruiter-overrides report and the dashboard alert",
         ),
         PlatformConfig(
             id=uuid.uuid4(),
