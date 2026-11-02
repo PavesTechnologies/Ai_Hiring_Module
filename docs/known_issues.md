@@ -17,7 +17,7 @@ Seen in one parse each. The golden runner shows whether it changes an outcome.
 
 ## A resume parse can vary between runs (found 2026-10-30)
 
-**Status:** measured 2026-11-02, still open.
+**Status:** the name effect is fixed 2026-11-02 (the name is hidden from the parse); ordinary run-to-run variation remains.
 
 Parsing the same resume again can give different results. For the counterfactual name variants of F1, all three lost three skills that their control kept: Alembic, PostgreSQL and GitHub Actions. The documents are identical apart from the name. Other examples:
 - an inferred skill worded differently ("Team Management" / "Team Leadership");
