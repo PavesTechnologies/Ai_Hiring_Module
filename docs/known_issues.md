@@ -43,7 +43,16 @@ The F1 pattern could be chance (the 12-skill mode also hit the control and the M
 
 No other skill differed. Changing only the name changes which of these three skills the parse keeps, and every variant lost against the control. GitHub Actions holds up after correcting for the nine comparisons (p 0.006 for Krishnan and Hmar, 0.05 for Khan); Alembic and PostgreSQL don't on their own (p 0.10). One resume and three names can't say whether it follows gender, religion or region, or just the particular name. No outcome or core-skill result changed (none of the three is core for F1's JD).
 
-**To do (not started):** evaluate masking the name before the parse, as votes already do, then re-measure. More resumes and names would show whether the effect follows a group.
+**Fix and re-measure (2026-11-02):** the name is now found before the parse (header line, else a small LLM call on the header lines) and replaced by "[candidate]" in the text the parse sees; full_name is set from it (the typed name for single uploads). The four F1 resumes now give the parse byte-identical text. Interleaved study (10 rounds, each parsing all four resumes with the name visible and hidden, in shuffled order, all on gemini-3.1-flash-lite):
+
+| F1 resume | Alembic visible / hidden | PostgreSQL visible / hidden | GitHub Actions visible / hidden |
+|---|---|---|---|
+| Aarav Menon (control) | 5 / 10 | 4 / 10 | 8 / 4 |
+| Ananya Krishnan | 1 / 10 | 1 / 10 | 1 / 4 |
+| Mohammed Irfan Khan | 0 / 9 | 0 / 9 | 0 / 4 |
+| Lalremruati Hmar | 8 / 9 | 8 / 9 | 3 / 4 |
+
+With the name visible the effect holds when time can't explain it (GitHub Actions: p 0.006 for Khan, 0.05 for Krishnan after correction). With it hidden the four match. The earlier 10-parse runs took each resume's parses in one block, so a change over time could have looked like a name effect; the interleaved run rules that out. GitHub Actions is still kept only about 4 times in 10 for everyone - ordinary run-to-run variation, now the same for every name.
 
 ---
 
