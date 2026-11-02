@@ -82,6 +82,9 @@ class CampaignCandidateResponse(BaseModel):
     decision_source: DecisionSource | None = None
     decision_reason: str | None = None
     decision_at: datetime | None = None
+    # Retire v1, phase B: held by the no-LLM fallback until the full scoring runs (the UI's
+    # "Awaiting full scoring" badge) - read off the stored deterministic breakdown.
+    awaiting_full_scoring: bool = False
 
     # M10-E03 Phase 1: derived per-request, never stored (see
     # CampaignCandidateService._derive_ranking_status). rank is only

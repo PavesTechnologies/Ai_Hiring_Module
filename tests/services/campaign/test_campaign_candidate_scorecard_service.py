@@ -361,3 +361,18 @@ def test_education_gap_display_formats_required_and_found():
 def test_education_gap_display_blank_when_passed():
     breakdown = {"education_validation": {"passed": True}}
     assert CampaignCandidateService._education_gap_display(breakdown) == ""
+
+
+@pytest.mark.parametrize("breakdown, expected", [
+    ({"awaiting_full_scoring": True, "needs_review": True}, True),     # a no-LLM fallback HOLD
+    ({"awaiting_full_scoring": False, "full_scoring_recorded_only": True}, False),
+    ({}, False),
+])
+def test_the_scorecard_says_whether_the_candidate_awaits_full_scoring(breakdown, expected):
+    candidate = _make_campaign_candidate(pipeline_stage=PipelineStage.HOLD, score_breakdown=breakdown)
+    service = make_service(
+        campaign_candidate_repo=_repo_returning(candidate),
+        candidate_repo=MagicMock(get_by_id=MagicMock(return_value=None)),
+        resume_repo=MagicMock(get_by_id=MagicMock(return_value=None)),
+    )
+    assert service.get_campaign_candidate_scorecard(candidate.id).awaiting_full_scoring is expected

@@ -162,6 +162,11 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
         if acted_by_person:
             completion["not_applied_reason"] = f"a person acted on the candidate since the fallback: {acted_by_person}"
             effect = "recorded only"
+            # Nothing else on the candidate changes, but the wait is over (the badge goes).
+            campaign_candidate.deterministic_breakdown = {**(campaign_candidate.deterministic_breakdown or {}),
+                                                          "awaiting_full_scoring": False,
+                                                          "full_scoring_recorded_only": True}
+            candidate_repo.update(campaign_candidate)
         else:
             full_row.acted_on, fallback.acted_on = True, False
             _act_on_v2(campaign_candidate, dict(campaign_candidate.deterministic_breakdown or {}), full)

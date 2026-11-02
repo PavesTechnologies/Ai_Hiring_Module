@@ -116,7 +116,10 @@ def test_recorded_only_when_a_person_acted_since():
     w.apply.assert_not_called()
     assert (w.full_row.acted_on, w.fallback.acted_on, w.fallback.awaiting_full_scoring) == (False, True, False)
     assert w.full_row.breakdown["applied"] is False and "a person acted" in w.full_row.breakdown["not_applied_reason"]
-    assert w.cc.deterministic_breakdown["awaiting_full_scoring"] is True    # the candidate's record untouched
+    # the decision and stage untouched; only the wait is over (no more badge)
+    assert w.cc.deterministic_breakdown["awaiting_full_scoring"] is False
+    assert w.cc.deterministic_breakdown["full_scoring_recorded_only"] is True
+    assert w.cc.deterministic_breakdown["needs_review"] is True
 
 
 @pytest.mark.parametrize("outcome", ["PENDING", "NOT_RUN"])

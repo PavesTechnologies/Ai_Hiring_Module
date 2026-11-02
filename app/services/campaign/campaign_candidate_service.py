@@ -1208,6 +1208,10 @@ class CampaignCandidateService:
             decision_source=getattr(campaign_candidate, "decision_source", None),
             decision_reason=getattr(campaign_candidate, "decision_reason", None),
             decision_at=getattr(campaign_candidate, "decision_at", None),
+            awaiting_full_scoring=(
+                (getattr(campaign_candidate, "deterministic_breakdown", None) or {}).get("awaiting_full_scoring") is True
+                if isinstance(getattr(campaign_candidate, "deterministic_breakdown", None), dict) else False
+            ),
             rank=rank,
             ranking_status=self._derive_ranking_status(campaign_candidate),
             location=None,
