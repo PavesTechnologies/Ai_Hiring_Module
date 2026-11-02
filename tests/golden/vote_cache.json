@@ -1618,116 +1618,6 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "30932975d1167eeb2fbe51bfea895ee5e965af1f4e6a02704358820323474720": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.5-flash-lite",
-  "used_fallback": true
- },
  "309a1259337f218b63424f8dbf59e8019518d3be2c337fa3eabec00f654a5987": {
   "results": [
    {
@@ -1837,116 +1727,6 @@
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
- },
- "33758b29725404b0b07733831e63563b3c798afb829b27fadcffd807490bed93": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Git",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "SQL",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.5-flash-lite",
-  "used_fallback": true
  },
  "34cd95f886b038942697bf1949c4bf5a62775bbe6d15177de8cea58186b4889f": {
   "results": [
@@ -3448,116 +3228,6 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "91ff8d1dc08c7ef4fe1595d7e136fc835e5b7fcd87d7e02d8e4560db9cefbe21": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.5-flash-lite",
-  "used_fallback": true
- },
  "95ac2b21da6ca08f16ed833089d312e7cd5263ada90dd807fa74c7cd5b0599fd": {
   "results": [
    {
@@ -3866,6 +3536,446 @@
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-2|30932975d1167eeb2fbe51bfea895ee5e965af1f4e6a02704358820323474720": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries and Alembic migrations",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries and Alembic migrations on PostgreSQL",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-3|33758b29725404b0b07733831e63563b3c798afb829b27fadcffd807490bed93": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries and Alembic migrations",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-4|91ff8d1dc08c7ef4fe1595d7e136fc835e5b7fcd87d7e02d8e4560db9cefbe21": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries",
+     "Wrote SQL queries",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-S2-1|de854a67042435bd63a62e945d9f07d7955dc104c36badbce0aff4b750a330b0": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    }
   ],
   "provider": "GOOGLE",
@@ -5522,116 +5632,6 @@
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
- },
- "de854a67042435bd63a62e945d9f07d7955dc104c36badbce0aff4b750a330b0": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Head of Data Engineering",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Head of Data Engineering",
-     "Head of Data Engineering",
-     "Head of Data Engineering"
-    ],
-    "evidence_hash": "5cc3474829149a33",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "9ccb43f0b48c0269",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.5-flash-lite",
-     "used_fallback": true
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.5-flash-lite",
-  "used_fallback": true
  },
  "df7300700e5ec0d4d16a5035bff27947a834919a7710d4369fcdc5db19325fdd": {
   "results": [

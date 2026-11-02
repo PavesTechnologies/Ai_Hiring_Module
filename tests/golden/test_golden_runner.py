@@ -152,3 +152,15 @@ def test_new_votes_are_kept_per_case_and_found_before_the_shared_entry():
     assert votes.get_confirmation("K").results == [{"x": "s2", "evidence_hash": "h"}]   # the case's own first
     votes.case_id = "CF-NAME-S2-0"
     assert votes.get_confirmation("K").results == [{"x": "shared"}]          # the other case keeps the shared one
+
+
+def test_cached_votes_from_a_model_other_than_the_main_one_are_reported():
+    main = {"results": [], "provider": "GOOGLE", "model": "gemini-3.1-flash-lite", "used_fallback": False}
+    backup = {"results": [], "provider": "GOOGLE", "model": "gemini-3.5-flash-lite", "used_fallback": True}
+    votes = GoldenVotes(SimpleNamespace(get_confirmation=lambda key: None), {"A": main, "B": backup}, dev_cache=False)
+    votes.main_model, votes.case_id = "gemini-3.1-flash-lite", "S7"
+    votes.get_confirmation("A")
+    votes.get_confirmation("B")
+    assert votes.hits == 2
+    assert votes.other_model_hits == [{"case": "S7", "key": "B", "model": "gemini-3.5-flash-lite",
+                                       "used_fallback": True}]

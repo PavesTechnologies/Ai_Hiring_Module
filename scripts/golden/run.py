@@ -197,6 +197,10 @@ class GoldenVotes:
         # one case's answers and the other would miss on every alternate run. New answers are
         # kept per case ("<case>|<key>"), looked up before the plain key older entries use.
         self.case_id: str | None = None
+        # The model scoring asks (the active assignment's main model); a cached vote answered by
+        # any other model (a backup after a rate limit) is reported - and re-asked when wanted.
+        self.main_model: str | None = None
+        self.other_model_hits: list[dict] = []
 
     def __getattr__(self, name):
         return getattr(self._repo, name)
@@ -210,6 +214,10 @@ class GoldenVotes:
                  or self.cache.get(cache_key) or self.new.get(cache_key))
         if entry is not None:
             self.hits += 1
+            if self.main_model and entry.get("model") != self.main_model:
+                self.other_model_hits.append({"case": self.case_id, "key": cache_key[:16],
+                                              "model": entry.get("model"),
+                                              "used_fallback": bool(entry.get("used_fallback"))})
             return SimpleNamespace(**entry)
         if self.dev_cache:
             row = self._repo.get_confirmation(cache_key)
@@ -462,6 +470,7 @@ def run(args) -> int:
     from app.services.cache_service import CacheService
     from app.services.campaign.scoring_v2_service import ScoringV2Service
     from app.services.llm.base import LLMError
+    from app.services.llm import call_log
     from app.services.llm.call_log import llm_call_context, llm_call_source
     from app.services.llm.factory import resolve_active_provider
     from app.services.llm.model_selection import LLMPurpose
@@ -485,6 +494,7 @@ def run(args) -> int:
         v2 = ScoringV2Service(db, SkillRepository(db), config_repo, cache_service=CacheService(get_redis_client()),
                               provider_resolver=lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION))
         votes = GoldenVotes(v2.detection_repository, cache, dev_cache=args.dev_cache)
+        votes.main_model = getattr(v2.provider_resolver(), "model", None)
         v2.detection_repository = votes
         world = World(db, golden)
         original_confirm = confirmation.CoreSkillConfirmationService.confirm
@@ -500,7 +510,22 @@ def run(args) -> int:
         patches = [patch.object(confirmation.CoreSkillConfirmationService, "confirm", confirm)]
         if args.cache_only:
             patches.append(patch.object(confirmation, "structured_call", no_llm))
+        # Every LLM call is logged in llm_call_log - but the case's resume and campaign rows live only
+        # in this rolled-back transaction, so a call tagged with them can't be written (foreign key).
+        # The golden run's calls are logged without them; a write that still fails is counted.
+        log_write_failures = []
+        original_recorder = call_log._recorder
+
+        def recorder(row):
+            try:
+                original_recorder({**row, "resume_id": None, "campaign_id": None})
+            except Exception as exc:
+                log_write_failures.append(str(exc).splitlines()[0][:200])
+                raise
+
         with contextlib.ExitStack() as stack:
+            stack.callback(call_log.set_recorder, original_recorder)
+            call_log.set_recorder(recorder)
             for p in patches:
                 stack.enter_context(p)
             stack.enter_context(llm_call_source(LLM_SOURCE))
@@ -536,11 +561,18 @@ def run(args) -> int:
             "where created_at >= :t and context = :ctx"), {"t": started, "ctx": LLM_SOURCE}).one()
     fingerprint = scoring_fingerprint()
     model = next((e.get("model") for e in votes.new.values() if e.get("model")), None)
+    case_calls = sum(int(r.get("llm_calls") or 0) for r in results.values())
+    new_other_model = {k: e.get("model") for k, e in votes.new.items()
+                       if votes.main_model and e.get("model") != votes.main_model}
     run_record = {
         "run_at": started.isoformat(), "fingerprint": fingerprint, "cases": results,
         "llm": {"calls": calls, "input_tokens": tokens_in, "output_tokens": tokens_out,
+                # what the cases themselves counted - equal to `calls` unless logging failed
+                "case_calls": case_calls, "log_write_failures": len(log_write_failures),
                 "vote_cache_hits": votes.hits, "dev_cache_hits": votes.dev_hits, "new_cache_entries": len(votes.new),
-                "model": model},
+                "model": model, "main_model": votes.main_model,
+                "cached_votes_from_other_models": votes.other_model_hits,
+                "new_votes_from_other_models": new_other_model},
     }
     failed_pairs = [p for p in pairs if p["differences"] and p["varies"] != "control"]
     failed = {cid: p for cid, p in problems.items() if p}
@@ -549,7 +581,12 @@ def run(args) -> int:
           f"{len(failed_pairs)} of {len([p for p in pairs if p['varies'] != 'control'])} | changed since accepted "
           f"{len([c for c in changes.values() if c])} ({len([c for c in changes.values() if only_calendar(c)])} "
           f"calendar drift only) | LLM calls {calls} (tokens {tokens_in} in, {tokens_out} out) | "
-          f"vote cache hits {votes.hits}, dev {votes.dev_hits}\nreport: {report_path}")
+          f"vote cache hits {votes.hits}, dev {votes.dev_hits}"
+          + (f" | CALL LOG MISMATCH: cases made {case_calls}, {calls} logged, {len(log_write_failures)} write(s) failed"
+             if case_calls != calls else "")
+          + (f" | cached votes from a non-main model: {len(votes.other_model_hits)}" if votes.other_model_hits else "")
+          + (f" | new votes from a non-main model: {len(new_other_model)}" if new_other_model else "")
+          + f"\nreport: {report_path}")
     if args.accept:
         if args.only or misses:
             print("--accept needs the whole set and no cache misses - nothing accepted")
@@ -603,6 +640,17 @@ def write_report(run_record, failed, pairs, changes, accepted, misses, args, new
              f"- Fingerprint: `{run_record['fingerprint'][:16]}`"
              + ("" if not accepted else f" (accepted run: `{accepted.get('fingerprint', '')[:16]}`, "
                                          f"{accepted.get('accepted_on')})"), ""]
+    if llm.get("case_calls") is not None and llm["case_calls"] != llm["calls"]:
+        lines += ["## LLM call log mismatch", "",
+                  f"The cases made {llm['case_calls']} calls; {llm['calls']} are in llm_call_log "
+                  f"({llm.get('log_write_failures', 0)} write(s) failed).", ""]
+    if llm.get("cached_votes_from_other_models") or llm.get("new_votes_from_other_models"):
+        lines += [f"## Votes not answered by the main model ({llm.get('main_model')})", ""]
+        lines += [f"- {h['case']}: cached `{h['key']}` answered by {h['model']}"
+                  + (" (backup after a failure)" if h["used_fallback"] else "")
+                  for h in llm.get("cached_votes_from_other_models") or []]
+        lines += [f"- new `{k[:24]}` answered by {m}" for k, m in (llm.get("new_votes_from_other_models") or {}).items()]
+        lines.append("")
     if misses:
         lines += ["## Vote-cache misses (--cache-only)", "", *[f"- {m}" for m in misses], ""]
     lines += ["## Expectations", ""]

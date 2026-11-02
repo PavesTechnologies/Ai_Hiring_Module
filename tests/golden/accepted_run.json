@@ -1,15 +1,20 @@
 {
  "accepted_on": "2026-11-02",
- "run_at": "2026-11-02T11:13:16.030856+00:00",
+ "run_at": "2026-11-02T11:44:14.294998+00:00",
  "fingerprint": "fd2ab746f4b347d214059d4eed98e92906a231cf9d2a5af43be4b0afcf47a7e9",
  "llm": {
-  "calls": 0,
-  "input_tokens": 0,
-  "output_tokens": 0,
-  "vote_cache_hits": 58,
+  "calls": 12,
+  "input_tokens": 6132,
+  "output_tokens": 960,
+  "case_calls": 12,
+  "log_write_failures": 0,
+  "vote_cache_hits": 54,
   "dev_cache_hits": 0,
-  "new_cache_entries": 1,
-  "model": "gemini-3.1-flash-lite"
+  "new_cache_entries": 4,
+  "model": "gemini-3.1-flash-lite",
+  "main_model": "gemini-3.1-flash-lite",
+  "cached_votes_from_other_models": [],
+  "new_votes_from_other_models": {}
  },
  "cases": {
   "F1": {
@@ -2143,7 +2148,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2764,7 +2769,7 @@
       "yes",
       "yes"
      ],
-     "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
+     "quote": "Wrote SQL queries and Alembic migrations",
      "paraphrase": null,
      "evidence": [
       "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
@@ -2772,7 +2777,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2845,7 +2850,7 @@
       "yes",
       "yes"
      ],
-     "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
+     "quote": "Wrote SQL queries and Alembic migrations",
      "paraphrase": null,
      "evidence": [
       "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
@@ -2853,7 +2858,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -2926,7 +2931,7 @@
       "yes",
       "yes"
      ],
-     "quote": "Wrote SQL queries and Alembic migrations on PostgreSQL",
+     "quote": "Wrote SQL queries",
      "paraphrase": null,
      "evidence": [
       "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
@@ -2934,7 +2939,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3088,7 +3093,7 @@
      ]
     }
    },
-   "llm_calls": 0,
+   "llm_calls": 3,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
