@@ -100,10 +100,11 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
   - clause splitting for paraphrase lines;
   - one line confirming two core skills;
   - title lines as weak evidence.
-- A stated career break is parsed as a job ([known issues](known_issues.md)).
-- Parses vary between runs: measure the spread over repeated parses of the counterfactual resumes ([known issues](known_issues.md)).
-- The older HR override report (REJECTED → SCREENING only, with rate alerts) still runs next to the new overrides report: decide whether to retire it or point its alerts at the new table.
-- The pipeline board's drag-and-drop move calls `POST /campaign-candidates/{id}/stage`, which doesn't exist in the backend. It fails with a 404.
+- [x] A stated career break no longer counts as experience (2026-11-02); golden pair GAP-S2.
+- Parses vary between runs: measured over 3 parses per name variant (2026-11-02). F1 shows a pattern with two names that 3 runs can't settle; more runs needed ([known issues](known_issues.md)).
+- [x] The older HR override report is retired (2026-11-02). Its rate alert reads the new overrides table (candidates overridden / candidates with a decided outcome).
+- [x] The pipeline board's drag-and-drop goes through the stage-move endpoint and the reason-code picker (2026-11-02). That endpoint allows recruiters and hiring managers, so an HR_ADMIN's drag is refused (403) with the server's message.
+- Monitoring stays a dashboard panel for now.
 
 ## 5. Retire v1
 

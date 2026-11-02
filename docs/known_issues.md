@@ -7,7 +7,7 @@ workaround is until someone actually fixes it.
 
 ## A stated career break is parsed as a job (found 2026-10-30)
 
-**Status:** open.
+**Status:** fixed 2026-11-02 in experience counting: `is_career_break` (career break, family care, sabbatical, parental / maternity / paternity leave, caregiving - in the entry's title or company) excludes the entry from experience, and the fairness report counts its months as a gap. The parse still returns it as an entry. Golden pair GAP-S2 (silent gap against stated parental leave) checks it.
 
 The golden set's counterfactual pairs (CF-GAP-S7-2, CF-GAP-D1-2) add the line "Career break (family care) · May 2021 – Jun 2022". The resume parse returns it as a `work_experience` entry: in D1 the company is "family care", in S7 there's no company. Those months can then count as work experience, so a candidate who states a break could get more experience than one who leaves the same gap unexplained.
 
@@ -17,7 +17,7 @@ Seen in one parse each. The golden runner shows whether it changes an outcome.
 
 ## A resume parse can vary between runs (found 2026-10-30)
 
-**Status:** open, to be measured.
+**Status:** measured 2026-11-02, still open.
 
 Parsing the same resume again can give different results. For the counterfactual name variants of F1, all three lost three skills that their control kept: Alembic, PostgreSQL and GitHub Actions. The documents are identical apart from the name. Other examples:
 - an inferred skill worded differently ("Team Management" / "Team Leadership");
@@ -25,7 +25,14 @@ Parsing the same resume again can give different results. For the counterfactual
 
 With one parse per resume, chance can't be told apart from an effect of the name.
 
-**To do:** parse each counterfactual resume several times and compare the spread within a resume with the difference between names.
+**Measured (2026-11-02, gemini-3.1-flash-lite, 3 parses per resume):**
+- F1's parse has two modes: 15 skills, or 12 without Alembic, PostgreSQL and GitHub Actions (named only in experience and project bullets). Full parses, counting the frozen one: control 3 of 4, Lalremruati Hmar 3 of 4, Ananya Krishnan 0 of 4, Mohammed Irfan Khan 0 of 4.
+- S2 (five names): no name lost a skill the control kept. Small differences were gains (Data Engineering, Program Management) and one-off skills.
+- No outcome or core-skill result changed: the three skills aren't core for F1's JD.
+
+The F1 pattern could be chance (the 12-skill mode also hit the control and the Mizo name), but two names never got the full parse. Not settled with this many runs.
+
+**To do:** about 10 parses each of the four F1 resumes would settle it. If a name does matter, masking the name before the parse (as votes already do) is the fix to evaluate.
 
 ---
 
