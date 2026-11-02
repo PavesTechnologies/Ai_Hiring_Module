@@ -55,3 +55,11 @@ class ResumeProcessingContext:
     # added to.
     reparse: bool = False
     parse_call: dict | None = None
+
+    # The candidate's name is hidden from the parse (candidate_name.py). known_name: the name the
+    # uploader typed (single uploads) or the candidate's stored name; candidate_name: the name as
+    # written in the resume header; parse_text: redacted_text with both replaced - what the model sees.
+    known_name: str | None = None
+    candidate_name: str | None = None
+    name_source: str | None = None
+    parse_text: str | None = None

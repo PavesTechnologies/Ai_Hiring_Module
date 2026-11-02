@@ -296,6 +296,23 @@ def _enqueue_deterministic_scoring(
             )
 
 
+def _stored_candidate_name(db, candidate_id) -> str | None:
+    """The candidate's name as the uploader typed it (decrypted), or None - never blocks the parse."""
+    from app.core.encryption_service import EncryptionService
+    from app.models.candidates import Candidate
+    from app.repositories.encryption_key_repository import EncryptionKeyRepository
+    try:
+        candidate = db.get(Candidate, candidate_id) if candidate_id else None
+        if candidate is None or not candidate.full_name_encrypted:
+            return None
+        return EncryptionService(EncryptionKeyRepository(db)).decrypt(
+            candidate.full_name_encrypted, candidate.encryption_key_id)
+    except Exception:
+        logger.exception("Reading the candidate's name failed - the name in the resume is still hidden | "
+                         "candidate_id=%s", candidate_id)
+        return None
+
+
 @celery_app.task(name="resume.process_document", bind=True)
 def process_resume_document(
     self, resume_id: str, prompt_template_id: str, reparse: dict | None = None, new_version: dict | None = None,
@@ -414,6 +431,8 @@ def process_resume_document(
             # Recruiter re-parse (ResumeReparseService): fresh LLM parse, the
             # resume's skills replaced rather than added to.
             reparse=bool(reparse),
+            # The name the uploader typed: hidden from the parse and kept as its full_name.
+            known_name=_stored_candidate_name(db, resume.candidate_id),
         )
         logger.warning("=== pipeline.run() RETURNED === resume_id=%s", processed_resume_id)
 

@@ -16,6 +16,7 @@ from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.document_processing.text_extraction_service import TextExtractionService
+from app.services.resume.candidate_name import find_candidate_name
 from app.services.resume.resume_processing_context import ResumeProcessingContext
 from app.services.resume.resume_service import ResumeService
 from app.services.resume.resume_text_extraction_service import ResumeTextExtractionService
@@ -26,7 +27,10 @@ from app.services.skills.evidence_rules import roles_of
 from app.services.llm.call_log import llm_call_source, llm_call_subject
 from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
 from app.services.skills.text_evidence import evidence_found_in  # noqa: F401 - re-exported
-from app.services.skills.skill_normalization_service import SkillMatchTier, SkillNormalizationService
+from app.services.skills.name_mask import PLACEHOLDER, NameMask
+from app.services.skills.skill_normalization_service import (
+    SkillMatchTier, SkillNormalizationService, load_cached_active_skills,
+)
 from app.core.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
@@ -130,8 +134,13 @@ class ResumeProcessingPipeline:
         parse_cache_enabled: bool = False,
         bypass_parse_cache: bool = False,
         reparse: bool = False,
+        known_name: str | None = None,
     ) -> UUID:
         """
+        known_name: the candidate's name as the uploader typed it (single uploads) or as stored
+        - hidden from the parse along with the name found in the resume, and kept as the
+        parse's full_name.
+
         initial_context lets a caller that already ran some of these stages
         itself (bulk upload, which must extract text and run AI extraction
         before Candidate/Resume — and therefore this context — can exist)
@@ -164,6 +173,8 @@ class ResumeProcessingPipeline:
         context.parse_cache_enabled = parse_cache_enabled
         context.bypass_parse_cache = bypass_parse_cache or reparse
         context.reparse = reparse
+        if known_name:
+            context.known_name = known_name
 
         for stage, output_attr, fn in (
             (ProcessingStage.TEXT_EXTRACTION, "raw_text", lambda: self._run_text_extraction(context)),
@@ -233,14 +244,47 @@ class ResumeProcessingPipeline:
             except Exception:
                 logger.exception("Rollback after text-hash failure failed | resume_id=%s", context.resume_id)
 
+    def _hide_candidate_name(self, context: ResumeProcessingContext) -> None:
+        """
+        parse_text: the redacted text with the candidate's name replaced, so the parse never sees
+        it (a name can carry gender or community, and changed what the parse kept). The name as
+        written comes from the resume header (candidate_name.find_candidate_name); a typed or
+        stored name is hidden too. Skill terms that are also name parts stay (NameMask).
+        """
+        if getattr(context, "parse_text", None) is not None:
+            return
+        if getattr(context, "candidate_name", None) is None:
+            context.candidate_name, context.name_source = find_candidate_name(
+                context.redacted_text, self.extraction_service)
+        names = [n for n in (context.candidate_name, getattr(context, "known_name", None)) if n]
+        if not names:
+            logger.warning("No candidate name found to hide from the parse | resume_id=%s",
+                           getattr(context, "resume_id", None))
+            context.parse_text = context.redacted_text
+            return
+        context.parse_text = NameMask.build(names, self._catalog_terms()).apply(context.redacted_text)
+
+    def _catalog_terms(self) -> list[str]:
+        normalizer = getattr(self, "skill_normalization_service", None)
+        repository = getattr(normalizer, "skill_repository", None) or getattr(self, "skill_repository", None)
+        if repository is None:
+            return []
+        try:
+            catalog = load_cached_active_skills(repository, getattr(normalizer, "cache_service", None))
+        except Exception:
+            logger.exception("Loading the skill catalogue for the name mask failed - every name part is hidden.")
+            return []
+        return [term for skill in catalog for term in [skill.canonical_name, *(skill.aliases or [])] if term]
+
     def _run_ai_extraction(self, context: ResumeProcessingContext) -> None:
         prompt_template = self.prompt_template_repository.get_by_id(context.prompt_template_id)
         if prompt_template is None:
             raise ValueError(f"Prompt template '{context.prompt_template_id}' no longer exists.")
+        self._hide_candidate_name(context)
         provider = self.extraction_service.provider
         cache_key = None
         if self.detection_repository is not None:
-            cache_key = parse_cache_key(context.redacted_text, prompt_template.content_hash,
+            cache_key = parse_cache_key(context.parse_text, prompt_template.content_hash,
                                         getattr(provider, "provider_name", None), getattr(provider, "model", None))
             if context.parse_cache_enabled and not context.bypass_parse_cache:
                 cached = self._cache_lookup(cache_key)
@@ -253,7 +297,7 @@ class ResumeProcessingPipeline:
         # Logged against this resume (its campaign comes from campaign_candidates in monitoring).
         with llm_call_source("resume_parse"), llm_call_subject(resume_id=getattr(context, "resume_id", None)):
             context.raw_extraction = self.extraction_service.extract_raw(
-                context.redacted_text,
+                context.parse_text,
                 prompt=prompt_template.template_text,
                 response_schema=ResumeExtractionGenerationSchema,
             )
@@ -276,7 +320,8 @@ class ResumeProcessingPipeline:
         """Stored under the model that answered - a backup model's answer never serves as the main model's."""
         try:
             self.detection_repository.put_parse_cache(
-                cache_key=parse_cache_key(context.redacted_text, prompt_hash, call.provider, call.model),
+                cache_key=parse_cache_key(getattr(context, "parse_text", None) or context.redacted_text, prompt_hash,
+                                          call.provider, call.model),
                 text_hash=text_hash(context.redacted_text), prompt_hash=prompt_hash,
                 provider=call.provider, model=call.model, detection_version=DETECTION_VERSION,
                 raw_extraction=context.raw_extraction,
@@ -289,9 +334,10 @@ class ResumeProcessingPipeline:
         # Inferred skills must quote the resume - drop any whose evidence
         # isn't in the text the model was given, before it can be stored
         # in parsed_json or counted in matching.
+        given = getattr(context, "parse_text", None) or context.redacted_text
         verified = [
             item for item in extraction.inferred_skills
-            if evidence_found_in(item.evidence, context.redacted_text)
+            if evidence_found_in(item.evidence, given)
         ]
         if len(verified) != len(extraction.inferred_skills):
             logger.warning(
@@ -299,6 +345,13 @@ class ResumeProcessingPipeline:
                 len(extraction.inferred_skills) - len(verified), getattr(context, "resume_id", None),
             )
             extraction.inferred_skills = verified
+        # The model saw the name hidden: full_name is the typed / stored name, else the one found
+        # in the header. Only when neither exists (nothing was hidden) does the model's own stand.
+        name = getattr(context, "known_name", None) or getattr(context, "candidate_name", None)
+        if name:
+            extraction.full_name = name
+        elif extraction.full_name and PLACEHOLDER in extraction.full_name:
+            extraction.full_name = None
         context.validated_extraction = extraction
 
     def _run_skill_normalization(self, context: ResumeProcessingContext) -> None:
