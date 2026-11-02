@@ -9,6 +9,13 @@ from app.exceptions.email_exception import EmailDeliveryException
 
 logger = logging.getLogger(__name__)
 
+LOG_ONLY_PREFIX = "log-only-"
+
+
+def email_delivery_is_log() -> bool:
+    """EMAIL_DELIVERY=log: emails are rendered and logged, never sent."""
+    return (settings.email_delivery or "ses").lower() == "log"
+
 
 class SESEmailClient:
     """
@@ -16,6 +23,9 @@ class SESEmailClient:
     no business/domain logic). Reuses the same AWS credentials/region
     already configured for S3 in app.core.config.settings; only the
     verified sender address (ses_from_email) is SES-specific.
+
+    One email path: only notifications.send_candidate_email (app/tasks/email_tasks.py) may use
+    this - every email is an email_notifications row first (tests/test_no_email_paths.py checks).
     """
 
     def __init__(self):
@@ -37,16 +47,12 @@ class SESEmailClient:
         (wrapping the original botocore exception) on failure - the caller
         classifies transient vs. permanent and decides whether to retry.
 
-        HTML template design fix: is_html defaults to False so the
-        existing plain-text-only caller (embedding_health_tasks.py's
-        ops alert, which isn't built from an EmailTemplate row and was
-        never meant to be HTML) is unaffected. email_tasks.py passes
-        True since EmailTemplate.body_template is now HTML.
+        email_tasks.py passes is_html=True: EmailTemplate.body_template is HTML.
         """
-        if (settings.email_delivery or "ses").lower() == "log":
+        if email_delivery_is_log():
             # Isolated local stack: nothing leaves the machine - no SES client
             # is ever created. Logged so tests can see what would have gone out.
-            message_id = f"log-only-{uuid4()}"
+            message_id = f"{LOG_ONLY_PREFIX}{uuid4()}"
             logger.warning("EMAIL NOT SENT (EMAIL_DELIVERY=log) | id=%s to=%s subject=%s",
                            message_id, to_address, subject)
             return message_id

@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.campaigns import CampaignStatus
 from app.models.config import CBState
+from app.models.email import EmailTriggerEvent
 from app.models.identity import UserRole
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.CampaignRepository import CampaignRepository
@@ -18,7 +19,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.user_repository import UserRepository
 from app.services.audit_service import AuditService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.services.notifications.ses_email_client import SESEmailClient
+from app.services.notifications.internal_user_emails import queue_internal_user_emails
 from app.tasks.embedding_tasks import EMBEDDING_SERVICE_NAME
 
 logger = logging.getLogger(__name__)
@@ -51,49 +52,32 @@ def _build_campaign_monitoring_link(campaign_id) -> str:
 
 
 def _send_embedding_health_alert(
-    user_repo: UserRepository, campaign, affected_count: int, total_screening_count: int,
+    db, user_repo: UserRepository, campaign, affected_count: int, total_screening_count: int,
     failure_pct: float, cb_state,
-) -> None:
+) -> int:
     """
-    Requirement 5's "send HR_ADMIN email" - bypasses the EmailNotification/
-    EmailTemplate system entirely (that system's candidate_id FK is
-    required NOT NULL, and this alert has no candidate to attach to - see
-    the deferred "D11" gap noted in app/models/email.py). Sends directly
-    via the same low-level SESEmailClient send_candidate_email_task itself
-    uses, straight to every active HR_ADMIN.
+    Requirement 5's "send HR_ADMIN email": one EMBEDDING_HEALTH_ALERT notification per active
+    HR_ADMIN, through the notifications path like every other email (recorded in
+    email_notifications, governed by EMAIL_DELIVERY, opt-outs honoured). Returns how many were queued.
     """
     hr_admins = user_repo.get_active_by_role(UserRole.HR_ADMIN)
     if not hr_admins:
         logger.warning(
             "No active HR_ADMIN users to notify for embedding health alert on campaign_id=%s", campaign.id,
         )
-        return
+        return 0
 
-    monitoring_link = _build_campaign_monitoring_link(campaign.id)
-    circuit_state_value = cb_state.state.value if cb_state is not None else CBState.CLOSED.value
-    suspended_note = (
-        "\n\nEmbedding generation is currently SUSPENDED (circuit breaker OPEN) - "
-        "new resumes will not be embedded until it recovers."
-        if cb_state is not None and cb_state.state == CBState.OPEN else ""
-    )
-    subject = f"Embedding health alert: campaign '{campaign.name}'"
-    body = (
-        f"Campaign: {campaign.name}\n"
-        f"Affected candidates: {affected_count} of {total_screening_count} in SCREENING\n"
-        f"Failure percentage: {failure_pct:.2f}%\n"
-        f"Circuit breaker state: {circuit_state_value}\n"
-        f"Campaign monitoring link: {monitoring_link}"
-        f"{suspended_note}"
-    )
-
-    email_client = SESEmailClient()
-    for admin in hr_admins:
-        try:
-            email_client.send_email(to_address=admin.email, subject=subject, body_text=body)
-        except Exception:
-            logger.exception(
-                "Failed to send embedding health alert email to %s for campaign_id=%s", admin.email, campaign.id,
-            )
+    suspended = cb_state is not None and cb_state.state == CBState.OPEN
+    return queue_internal_user_emails(db, hr_admins, EmailTriggerEvent.EMBEDDING_HEALTH_ALERT, {
+        "campaign_name": campaign.name,
+        "affected_count": affected_count,
+        "total_screening_count": total_screening_count,
+        "failure_percentage": f"{failure_pct:.2f}",
+        "circuit_breaker_state": cb_state.state.value if cb_state is not None else CBState.CLOSED.value,
+        "monitoring_link": _build_campaign_monitoring_link(campaign.id),
+        "suspended_note": ("Embedding generation is currently SUSPENDED (circuit breaker OPEN) - "
+                           "new resumes will not be embedded until it recovers.") if suspended else "",
+    })
 
 
 @celery_app.task(name="embedding.monitor_health")
@@ -104,10 +88,10 @@ def monitor_embedding_health() -> None:
     candidates with a NULL semantic_score that haven't already been
     triaged to MANUAL_REVIEW (see
     CampaignCandidateRepository.get_screening_semantic_health_stats) - if
-    it exceeds EMBEDDING_FAILURE_ALERT_THRESHOLD, emails every active
-    HR_ADMIN directly (see _send_embedding_health_alert) and records the
-    alert via ActionType.PLATFORM_ALERT_SENT (already a live audit
-    action - no new enum value/migration needed).
+    it exceeds EMBEDDING_FAILURE_ALERT_THRESHOLD, queues an
+    EMBEDDING_HEALTH_ALERT email to every active HR_ADMIN through the
+    notifications path (see _send_embedding_health_alert) and records the
+    alert via ActionType.PLATFORM_ALERT_SENT, with how many were queued.
     """
     db = SessionLocal()
     task_log = None
@@ -146,8 +130,8 @@ def monitor_embedding_health() -> None:
             if failure_pct <= threshold:
                 continue
 
-            _send_embedding_health_alert(
-                user_repo, campaign, affected_count, total_screening_count, failure_pct, cb_state,
+            emails_queued = _send_embedding_health_alert(
+                db, user_repo, campaign, affected_count, total_screening_count, failure_pct, cb_state,
             )
 
             audit_service.log(
@@ -165,8 +149,12 @@ def monitor_embedding_health() -> None:
                     "failure_percentage": round(failure_pct, 2),
                     "threshold": threshold,
                     "circuit_breaker_state": cb_state.state.value if cb_state is not None else CBState.CLOSED.value,
+                    "emails_queued": emails_queued,
                 },
             )
+            # Each alert's audit entry on its own: a failed email queue for a later campaign
+            # rolls the session back and must not take this one with it.
+            db.commit()
             alerts_raised += 1
 
         db.commit()

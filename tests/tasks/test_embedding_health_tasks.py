@@ -6,6 +6,7 @@ from app.enums.constants import ActionType
 from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.config import CBState
+from app.models.email import EmailTriggerEvent
 from app.models.identity import UserRole
 
 TASKS_MODULE = "app.tasks.embedding_health_tasks"
@@ -40,7 +41,7 @@ class _Harness:
 
         self.task_log_repo.create.side_effect = _create
         self.task_log_repo.update.side_effect = lambda log: log
-        self.email_client_instance = MagicMock()
+        self.queue = MagicMock(return_value=1)
 
     def __enter__(self):
         self._patches = [
@@ -53,7 +54,7 @@ class _Harness:
             patch(f"{TASKS_MODULE}.AuditRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
-            patch(f"{TASKS_MODULE}.SESEmailClient", return_value=self.email_client_instance),
+            patch(f"{TASKS_MODULE}.queue_internal_user_emails", self.queue),
         ]
         for p in self._patches:
             p.start()
@@ -75,7 +76,7 @@ def test_no_alert_when_failure_percentage_below_threshold():
 
         monitor_embedding_health()
 
-        h.email_client_instance.send_email.assert_not_called()
+        h.queue.assert_not_called()
         h.audit_service_instance.log.assert_not_called()
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
@@ -92,17 +93,21 @@ def test_alert_sent_when_failure_percentage_exceeds_threshold():
 
         monitor_embedding_health()
 
-        h.email_client_instance.send_email.assert_called_once()
-        send_kwargs = h.email_client_instance.send_email.call_args.kwargs
-        assert send_kwargs["to_address"] == "admin@example.com"
-        assert "Frontend Hiring" in send_kwargs["subject"]
-        assert "50.00%" in send_kwargs["body_text"]
+        # through the notifications path - recorded, governed by EMAIL_DELIVERY - never SES directly
+        h.queue.assert_called_once()
+        _db, users, trigger, context = h.queue.call_args.args
+        assert [u.email for u in users] == ["admin@example.com"]
+        assert trigger == EmailTriggerEvent.EMBEDDING_HEALTH_ALERT
+        assert context["campaign_name"] == "Frontend Hiring" and context["failure_percentage"] == "50.00"
+        assert context["affected_count"] == 10 and context["total_screening_count"] == 20
+        assert context["suspended_note"] == ""
 
         h.audit_service_instance.log.assert_called_once()
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["action_type"] == ActionType.PLATFORM_ALERT_SENT
         assert audit_kwargs["details"]["affected_count"] == 10
         assert audit_kwargs["details"]["total_screening_count"] == 20
+        assert audit_kwargs["details"]["emails_queued"] == 1
 
 
 def test_alert_mentions_suspended_when_circuit_breaker_open():
@@ -116,8 +121,7 @@ def test_alert_mentions_suspended_when_circuit_breaker_open():
 
         monitor_embedding_health()
 
-        send_kwargs = h.email_client_instance.send_email.call_args.kwargs
-        assert "SUSPENDED" in send_kwargs["body_text"]
+        assert "SUSPENDED" in h.queue.call_args.args[3]["suspended_note"]
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["details"]["circuit_breaker_state"] == "OPEN"
 
@@ -133,7 +137,7 @@ def test_no_alert_when_no_screening_candidates_at_all():
 
         monitor_embedding_health()
 
-        h.email_client_instance.send_email.assert_not_called()
+        h.queue.assert_not_called()
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
 
@@ -160,7 +164,7 @@ def test_no_active_hr_admin_skips_email_but_still_completes():
 
         monitor_embedding_health()
 
-        h.email_client_instance.send_email.assert_not_called()
+        h.queue.assert_not_called()
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.SUCCESS
 
@@ -175,3 +179,8 @@ def test_task_marks_failure_on_unexpected_exception():
 
         task_log = h.task_log_repo.update.call_args.args[0]
         assert task_log.status == TaskStatus.FAILURE
+
+
+def test_the_task_has_no_direct_ses_path():
+    import app.tasks.embedding_health_tasks as tasks
+    assert not hasattr(tasks, "SESEmailClient")

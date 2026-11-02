@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 
@@ -52,7 +52,7 @@ class CandidateRejectionEmailService:
         False leaves every existing automated caller's behavior unchanged.
         """
         already_notified = not allow_resend and any(
-            notification.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT)
+            notification.status in QUEUED_OR_DELIVERED
             for notification in self.email_notification_repo.get_by_campaign_candidate_id_and_trigger_event(
                 campaign_candidate_id, EmailTriggerEvent.CANDIDATE_REJECTED,
             )

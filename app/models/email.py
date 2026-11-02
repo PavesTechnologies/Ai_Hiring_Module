@@ -59,12 +59,23 @@ class EmailTriggerEvent(enum.Enum):
     # from the candidate-facing INTERVIEW_RESCHEDULED for the same
     # tone/content reason CANCELLED already has its own interviewer variant.
     INTERVIEW_INTERVIEWER_RESCHEDULED = "INTERVIEW_INTERVIEWER_RESCHEDULED"
+    # Embedding health check: a campaign's share of SCREENING candidates without a semantic
+    # score is over EMBEDDING_FAILURE_ALERT_THRESHOLD - to every active HR_ADMIN (INTERNAL_USER).
+    # It used to call SES directly; now it is a notification like every other email.
+    EMBEDDING_HEALTH_ALERT = "EMBEDDING_HEALTH_ALERT"
 
 
 class EmailNotificationStatus(enum.Enum):
     QUEUED = "QUEUED"
     SENT = "SENT"
     FAILED = "FAILED"
+    # EMAIL_DELIVERY=log: the email was rendered and logged, never sent - recorded as such
+    # rather than as SENT.
+    LOGGED = "LOGGED"
+
+
+# A notification in one of these needs no second one for the same event and recipient.
+QUEUED_OR_DELIVERED = (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT, EmailNotificationStatus.LOGGED)
 
 
 class EmailRecipientType(enum.Enum):
@@ -81,6 +92,9 @@ class EmailRecipientType(enum.Enum):
     # InterviewScheduleHistory snapshotting rather than pointing at
     # current state).
     EXTERNAL_INTERVIEWER = "EXTERNAL_INTERVIEWER"
+    # A platform user (e.g. an HR_ADMIN for an ops alert): recipient_user_id plus the
+    # recipient_email/name snapshot; candidate_id and interview_interviewer_id NULL.
+    INTERNAL_USER = "INTERNAL_USER"
 
 
 class EmailTemplate(Base):
@@ -123,11 +137,14 @@ class EmailNotification(Base):
     __tablename__ = "email_notifications"
     __table_args__ = (
         CheckConstraint(
-            "(recipient_type = 'CANDIDATE' AND candidate_id IS NOT NULL "
-            "AND interview_interviewer_id IS NULL AND recipient_email IS NULL AND recipient_name IS NULL) "
+            "(recipient_type = 'CANDIDATE' AND candidate_id IS NOT NULL AND interview_interviewer_id IS NULL "
+            "AND recipient_user_id IS NULL AND recipient_email IS NULL AND recipient_name IS NULL) "
             "OR "
-            "(recipient_type = 'EXTERNAL_INTERVIEWER' AND candidate_id IS NULL "
-            "AND interview_interviewer_id IS NOT NULL AND recipient_email IS NOT NULL AND recipient_name IS NOT NULL)",
+            "(recipient_type = 'EXTERNAL_INTERVIEWER' AND candidate_id IS NULL AND interview_interviewer_id IS NOT NULL "
+            "AND recipient_user_id IS NULL AND recipient_email IS NOT NULL AND recipient_name IS NOT NULL) "
+            "OR "
+            "(recipient_type = 'INTERNAL_USER' AND candidate_id IS NULL AND interview_interviewer_id IS NULL "
+            "AND recipient_user_id IS NOT NULL AND recipient_email IS NOT NULL AND recipient_name IS NOT NULL)",
             name="chk_email_notifications_recipient_shape",
         ),
     )
@@ -162,6 +179,8 @@ class EmailNotification(Base):
     )
     recipient_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     recipient_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # INTERNAL_USER only: which user (users.id) - the email/name above are its snapshot.
+    recipient_user_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     # Point-in-time display values (interview_date/time/mode/
     # interviewer_name, ...) snapshotted at queue time - deliberately NOT
     # re-resolved live at send time the way job_title/candidate_name are.

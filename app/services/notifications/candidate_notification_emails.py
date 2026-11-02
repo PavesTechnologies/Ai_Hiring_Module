@@ -1,7 +1,7 @@
 import logging
 from zoneinfo import ZoneInfo
 
-from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailTriggerEvent
 from app.models.interview import InterviewPlatform
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
@@ -54,7 +54,7 @@ Two dedup shapes, matching two different real-world repeat patterns:
 
 
 def _already_notified(notifications) -> bool:
-    return any(n.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT) for n in notifications)
+    return any(n.status in QUEUED_OR_DELIVERED for n in notifications)
 
 
 def _meeting_info_line(schedule) -> str:

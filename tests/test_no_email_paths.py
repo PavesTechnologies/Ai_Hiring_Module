@@ -58,7 +58,7 @@ V2_MODULES = [
 ]
 EMAIL_MODULE_MARKERS = ("ses_email_client", "email_tasks", "candidate_notification_emails",
                         "candidate_rejection_email_service", "interview_feedback_request_emails",
-                        "interview_interviewer_lifecycle_emails")
+                        "interview_interviewer_lifecycle_emails", "internal_user_emails")
 EMAIL_CALL_MARKERS = ("send_email", "send_candidate_email", "queue_rejection_email")
 
 
@@ -104,7 +104,8 @@ def email_guard():
     patches += [patch.object(email_tasks.send_candidate_email_task, "apply_async", _fail),
                 patch.object(email_tasks.send_candidate_email_task, "delay", _fail)]
     for module_name in ("candidate_notification_emails", "candidate_rejection_email_service",
-                        "interview_feedback_request_emails", "interview_interviewer_lifecycle_emails"):
+                        "interview_feedback_request_emails", "interview_interviewer_lifecycle_emails",
+                        "internal_user_emails"):
         module = importlib.import_module(f"app.services.notifications.{module_name}")
         for attr in dir(module):
             if attr.startswith("queue_") and callable(getattr(module, attr)):

@@ -354,6 +354,32 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
+    # Embedding health check (embedding_health_tasks.py) - to every active HR_ADMIN
+    # (INTERNAL_USER). Ops-facing: no candidate details. {suspended_note} is "" unless the
+    # embedding circuit breaker is OPEN.
+    {
+        "trigger_event": EmailTriggerEvent.EMBEDDING_HEALTH_ALERT,
+        "name": "Embedding Health Alert",
+        "subject": "Embedding health alert: campaign '{campaign_name}'",
+        "body_template": _card(
+            "Embedding Health Alert",
+            '<p style="margin:0 0 18px;">Hello {recipient_name},</p>'
+            '<p style="margin:0 0 25px;">Too many candidates in screening have no semantic score '
+            "for this campaign.</p>"
+            + _section_title("Details")
+            + _details_box(
+                [
+                    ("Campaign", "{campaign_name}"),
+                    ("Affected", "{affected_count} of {total_screening_count} in SCREENING"),
+                    ("Failure rate", "{failure_percentage}%"),
+                    ("Circuit breaker", "{circuit_breaker_state}"),
+                ],
+            )
+            + '<p style="margin:25px 0 0;">{suspended_note}</p>'
+            + _cta_button("{monitoring_link}", "Open the campaign"),
+        ),
+        "is_active": True,
+    },
 ]
 
 try:

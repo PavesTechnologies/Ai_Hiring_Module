@@ -1,7 +1,7 @@
 import logging
 from zoneinfo import ZoneInfo
 
-from app.models.email import EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
+from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.tasks.email_tasks import send_candidate_email_task
@@ -68,7 +68,7 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
         existing = notification_repo.get_by_interview_schedule_id_and_interviewer_id_and_trigger_event(
             schedule.id, interviewer.id, trigger_event,
         )
-        if any(n.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT) for n in existing):
+        if any(n.status in QUEUED_OR_DELIVERED for n in existing):
             logger.info(
                 "%s email already queued/sent - skipping duplicate | interview_schedule_id=%s interviewer_id=%s",
                 trigger_event.value, schedule.id, interviewer.id,

@@ -21,7 +21,7 @@ from app.repositories.jd_repository import JDRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
-from app.services.notifications.ses_email_client import SESEmailClient
+from app.services.notifications.ses_email_client import LOG_ONLY_PREFIX, SESEmailClient
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +118,8 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         if notification is None:
             raise ValueError(f"EmailNotification '{email_notification_id}' not found.")
 
-        if notification.status == EmailNotificationStatus.SENT:
-            task_log_service.mark_success(task_log, summary="Notification already SENT.")
+        if notification.status in (EmailNotificationStatus.SENT, EmailNotificationStatus.LOGGED):
+            task_log_service.mark_success(task_log, summary=f"Notification already {notification.status.value}.")
             return
 
         template = template_repo.get_by_id(notification.template_id)
@@ -168,16 +168,19 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         subject = template.subject.format(**context)
         body = template.body_template.format(**_html_escape_context(context))
 
-        SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body, is_html=True)
+        message_id = SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body, is_html=True)
 
-        notification.status = EmailNotificationStatus.SENT
+        # EMAIL_DELIVERY=log: rendered and logged, never sent - recorded as LOGGED, not SENT.
+        logged_only = str(message_id).startswith(LOG_ONLY_PREFIX)
+        notification.status = EmailNotificationStatus.LOGGED if logged_only else EmailNotificationStatus.SENT
         notification.sent_at = datetime.now(timezone.utc)
         notification_repo.update(notification)
         notification_repo.commit()
 
         task_log_service.mark_success(
             task_log,
-            summary=f"Sent {notification.trigger_event.value} to recipient_type={notification.recipient_type.value}.",
+            summary=f"{'Logged (not sent)' if logged_only else 'Sent'} {notification.trigger_event.value} "
+                    f"to recipient_type={notification.recipient_type.value}.",
         )
 
     except Exception as ex:

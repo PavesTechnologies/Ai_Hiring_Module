@@ -2,7 +2,7 @@ import logging
 
 from app.core.config import settings
 from app.core.feedback_token import sign_feedback_token
-from app.models.email import EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
+from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.tasks.email_tasks import send_candidate_email_task
@@ -37,7 +37,7 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
         existing = notification_repo.get_by_interview_schedule_id_and_interviewer_id_and_trigger_event(
             schedule.id, interviewer.id, EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
         )
-        if any(n.status in (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT) for n in existing):
+        if any(n.status in QUEUED_OR_DELIVERED for n in existing):
             logger.info(
                 "INTERVIEW_FEEDBACK_REQUESTED email already queued/sent - skipping duplicate | "
                 "interview_schedule_id=%s interviewer_id=%s", schedule.id, interviewer.id,
