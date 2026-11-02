@@ -5,8 +5,8 @@ The agreed order (2026-10-30):
 1. Dev data cleanup - **done**
 2. Production configuration seed - **done**
 3. Senior test set - **done**
-4. Phase 4: golden set and checks - **built** (2026-10-30); open items listed under it
-5. Retire v1
+4. Phase 4: golden set and checks - **done** (2026-11-02)
+5. Retire v1 - **next**
 6. Go to production
 
 **Every phase is completed in dev on synthetic data. Only the finalised system goes to production.**
@@ -70,7 +70,7 @@ Adding descriptions for the senior skills afterwards changed no outcome in a dry
 
 Re-scoring: `python -m scripts.rescore_score_only --campaign "<name pattern>" [--expect N] --check | --go`.
 
-## 4. Phase 4: golden set and checks - built (2026-10-30)
+## 4. Phase 4: golden set and checks - done (2026-11-02)
 
 Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
 
@@ -95,18 +95,20 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
   - failed, stuck and PENDING work.
 - [x] **Fairness report** (done 2026-10-30), in the same panel. Pass rates by experience band, career gap, education level, region (state or country, never city) and internships, for all candidates and for those meeting the minimum experience. Groups under the minimum size (a setting, 10) are hidden, with notes on what it can't show.
 
-**Open items in Phase 4:**
+**Follow-ups, done 2026-11-02 unless open:**
 - Evaluate the scoring ideas in [scoring_v2_phase4_candidates.md](scoring_v2_phase4_candidates.md) with the golden runner, the set extended with cases that show each problem, before any is built:
   - clause splitting for paraphrase lines;
   - one line confirming two core skills;
   - title lines as weak evidence.
 - [x] A stated career break no longer counts as experience (2026-11-02); golden pair GAP-S2.
-- Parses vary between runs: measured over 3 parses per name variant (2026-11-02). F1 shows a pattern with two names that 3 runs can't settle; more runs needed ([known issues](known_issues.md)).
+- [x] The candidate's name is hidden from the resume parse (2026-11-02). With the name visible, a name changed which skills the parse kept; with it hidden, the name variants match ([known issues](known_issues.md)).
+- [x] Every email goes through the notifications path (2026-11-02): recorded in `email_notifications` and governed by `EMAIL_DELIVERY`, including the embedding-health HR alert that called SES directly.
+- Still open: the three scoring ideas above; refreezing the other 50 golden resumes with the name hidden.
 - [x] The older HR override report is retired (2026-11-02). Its rate alert reads the new overrides table (candidates overridden / candidates with a decided outcome).
 - [x] The pipeline board's drag-and-drop goes through the stage-move endpoint and the reason-code picker (2026-11-02). That endpoint allows recruiters and hiring managers, so an HR_ADMIN's drag is refused (403) with the server's message.
 - Monitoring stays a dashboard panel for now.
 
-## 5. Retire v1
+## 5. Retire v1 - next
 
 - Scoring v2 everywhere, with a no-LLM fallback.
 - Shadow mode generalised to "current vs candidate version".
@@ -122,6 +124,8 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
    - [ ] **Per-model daily LLM call caps:** set `SCORING_V2_DAILY_LLM_CALL_CAP` per model once billing is on, for example `{"default": N, "<model>": N}`. It's never seeded; dev's 400-per-model caps fit the free tier, and a fresh database has the base seed's single default of 300.
    - [ ] **Backup model:** configure a backup model and test that scoring falls back to it.
    - [ ] **Real email tested deliberately:** a planned, explicit test of real delivery. Until then `EMAIL_DELIVERY=log` everywhere.
+   - [ ] **One email path only:** every email is an `email_notifications` row sent by `notifications.send_candidate_email`; nothing else calls SES (`tests/tasks/test_one_email_path.py` guards it). Check it still holds before go-live.
+   - [ ] **No other deployment shares the production database:** confirm that only the production API and workers connect to it (check `pg_stat_activity` client addresses). A second worker on the dev database ran its own scheduled jobs, including an HR alert email, for weeks unnoticed.
    - [ ] **No personal data in logs:** worker logs, task logs and dead-letter rows. See [known issues](known_issues.md).
    - [ ] **Retention policies:** `retention_policies` is empty. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them.
 
