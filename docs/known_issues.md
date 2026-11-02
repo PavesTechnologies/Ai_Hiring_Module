@@ -32,7 +32,18 @@ With one parse per resume, chance can't be told apart from an effect of the name
 
 The F1 pattern could be chance (the 12-skill mode also hit the control and the Mizo name), but two names never got the full parse. Not settled with this many runs.
 
-**To do:** about 10 parses each of the four F1 resumes would settle it. If a name does matter, masking the name before the parse (as votes already do) is the fix to evaluate.
+**10 parses each (2026-11-02, all on gemini-3.1-flash-lite; parses that fell back to another model after a rate limit were redone):**
+
+| F1 resume | Alembic | PostgreSQL | GitHub Actions |
+|---|---|---|---|
+| Aarav Menon (control) | 6/10 | 6/10 | 8/10 |
+| Ananya Krishnan | 0/10 | 0/10 | 0/10 |
+| Mohammed Irfan Khan | 0/10 | 0/10 | 1/10 |
+| Lalremruati Hmar | 7/10 | 7/10 | 0/10 |
+
+No other skill differed. Changing only the name changes which of these three skills the parse keeps, and every variant lost against the control. GitHub Actions holds up after correcting for the nine comparisons (p 0.006 for Krishnan and Hmar, 0.05 for Khan); Alembic and PostgreSQL don't on their own (p 0.10). One resume and three names can't say whether it follows gender, religion or region, or just the particular name. No outcome or core-skill result changed (none of the three is core for F1's JD).
+
+**To do (not started):** evaluate masking the name before the parse, as votes already do, then re-measure. More resumes and names would show whether the effect follows a group.
 
 ---
 
