@@ -87,8 +87,28 @@ def human_acted_since(db, campaign_candidate_id: UUID, since: datetime) -> str |
     return None
 
 
-def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate, full: dict) -> str:
-    """The stage effect of the full outcome on a candidate nobody acted on; returns what happened."""
+TRANSITION_TRIGGER = "FULL_SCORING_AFTER_NO_LLM_FALLBACK"
+
+
+def _audit_transition(audit_service, campaign_candidate, from_stage: PipelineStage) -> None:
+    """The system's own stage move, audited like any transition (actor SYSTEM)."""
+    if audit_service is None:
+        return
+    audit_service.log(
+        actor_id=None, actor_role="SYSTEM", action_type=ActionType.PIPELINE_STAGE_TRANSITIONED,
+        entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=campaign_candidate.id,
+        campaign_id=getattr(campaign_candidate, "campaign_id", None),
+        details={"from_stage": from_stage.value, "to_stage": campaign_candidate.pipeline_stage.value,
+                 "reason_provided": True, "trigger": TRANSITION_TRIGGER},
+    )
+
+
+def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate, full: dict,
+                       audit_service=None) -> str:
+    """
+    The stage effect of the full outcome on a candidate nobody acted on; returns what happened.
+    A move made here is audited as PIPELINE_STAGE_TRANSITIONED with actor SYSTEM.
+    """
     stage = campaign_candidate.pipeline_stage
     outcome = full["outcome"]
     if outcome == OUTCOME_REJECT:
@@ -100,6 +120,8 @@ def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate
             decision_source=DecisionSource.DETERMINISTIC, decision_reason=v2_rejection_reason(full),
             decision_details={"full_scoring": True, "failed_checks": full.get("failed_checks") or []},
         )
+        if moved:
+            _audit_transition(audit_service, campaign_candidate, stage)
         return "rejected" if moved else f"rejection not allowed from {stage.value}"
     if outcome == OUTCOME_PASS and stage == PipelineStage.HOLD:
         details = campaign_candidate.decision_details or {}
@@ -112,6 +134,8 @@ def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate
                 decision_reason="AI evaluation recommended shortlisting this candidate.",
                 decision_details=details.get("ai_response"),
             )
+            if moved:
+                _audit_transition(audit_service, campaign_candidate, stage)
             return "shortlisted (AI recommendation, review cap lifted)" if moved else "shortlist not allowed"
         return "stays on HOLD (no capped AI shortlist to apply)"
     return "no stage change"
@@ -175,7 +199,7 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
             stage_service = StageTransitionService(
                 AllowedTransitionRepository(db), candidate_repo, AuditService(AuditRepository(db)),
                 InterviewScheduleRepository(db))
-            effect = apply_full_outcome(stage_service, campaign_candidate, full)
+            effect = apply_full_outcome(stage_service, campaign_candidate, full, AuditService(AuditRepository(db)))
             candidate_repo.update(campaign_candidate)
         completion["effect"] = effect
         full_row.breakdown = {**(full_row.breakdown or {}), **completion}

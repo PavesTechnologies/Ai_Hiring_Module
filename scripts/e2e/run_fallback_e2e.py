@@ -336,7 +336,9 @@ def run() -> None:  # noqa: C901 - one linear scenario
     report.check(6, "after the reset the scan re-scored it and applied the full outcome (nobody had acted)",
                  bool(full) and full[-1]["applied"] is True and full[-1]["acted_on"] is True
                  and not any(r["awaiting"] for r in c_rows)
-                 and b2["llm_calls"].get("skill_confirmation/-/ok", 0) > 0,
+                 and b2["llm_calls"].get("skill_confirmation/-/ok", 0) > 0
+                 # the scan's own stage move is audited like any transition, actor SYSTEM
+                 and "PIPELINE_STAGE_TRANSITIONED (SYSTEM)" in b2["candidates"][str(c_cc.id)]["audit"],
                  f"full {full[-1] if full else None}; stage {b2['candidates'][str(c_cc.id)]['stage']}")
 
     t = datetime.now(timezone.utc)

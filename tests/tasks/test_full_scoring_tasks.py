@@ -42,9 +42,26 @@ def test_the_full_outcome_applied_to_a_candidate_nobody_touched(stage, outcome, 
     stages.transition_on_ai_success.return_value = True
     full = {"outcome": outcome, "failed_checks": ["Core skills"], "mandatory_skills": [], "core_skill_count": 1,
             "core_confirmed_count": 0, "required_core_missing": [], "core_rejected_by_llm": []}
+    candidate = _cc(stage, details)
+    audit = MagicMock()
+
+    def move(cc, *args, to_stage=PipelineStage.REJECTED, **kwargs):
+        cc.pipeline_stage = to_stage
+        return True
+    stages.transition_to_rejected.side_effect = lambda cc, **kwargs: move(cc)
+    stages.transition_on_ai_success.side_effect = lambda cc, **kwargs: move(cc, to_stage=kwargs["to_stage"])
     with patch(f"{MODULE}.v2_rejection_reason", return_value="Missing core skills"):
-        assert apply_full_outcome(stages, _cc(stage, details), full) == effect
+        assert apply_full_outcome(stages, candidate, full, audit) == effect
     assert stages.transition_to_rejected.called is rejected
+    # every move the job makes is audited as a stage transition by SYSTEM; no move, no entry
+    if rejected or moved_to:
+        kwargs = audit.log.call_args.kwargs
+        assert kwargs["action_type"].value == "PIPELINE_STAGE_TRANSITIONED" and kwargs["actor_role"] == "SYSTEM"
+        assert kwargs["actor_id"] is None and kwargs["details"]["from_stage"] == stage.value
+        assert kwargs["details"]["to_stage"] == candidate.pipeline_stage.value
+        assert kwargs["details"]["trigger"] == "FULL_SCORING_AFTER_NO_LLM_FALLBACK"
+    else:
+        audit.log.assert_not_called()
     if moved_to:
         kwargs = stages.transition_on_ai_success.call_args.kwargs
         assert kwargs["to_stage"] == moved_to and kwargs["decision_type"] == DecisionType.SHORTLISTED
