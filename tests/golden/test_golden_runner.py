@@ -1,7 +1,12 @@
 """The golden runner's comparisons: expectations, counterfactual pairs, the accepted run, and their causes."""
+import datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
-from scripts.golden.run import GoldenVotes, cause, check_expectations, compare_accepted, compare_pair, summarise
+from scripts.golden.run import (
+    GoldenVotes, cause, check_expectations, compare_accepted, compare_pair, has_ongoing_role, numeric_inputs,
+    only_calendar, summarise,
+)
 
 
 def _skill(status="CONFIRMED", method="llm", votes=("yes", "yes", "yes"), evidence=("[EXPERIENCE] Built X",),
@@ -54,6 +59,51 @@ def test_changes_since_the_accepted_run_include_a_method_change_with_the_same_st
     changes = compare_accepted("H7", now, accepted)
     assert len(changes) == 1 and changes[0].startswith("Python: CONFIRMED (auto) -> CONFIRMED (llm)")
     assert compare_accepted("NEW", now, accepted) == ["new case (not in the accepted run)"]
+
+
+def _numbers(years, ongoing=False, **inputs):
+    return {**_result("PASS"), "experience_years": years, "experience_ongoing": ongoing, "score": None,
+            "numeric_inputs": inputs}
+
+
+def test_changes_since_the_accepted_run_include_experience_years_and_numeric_inputs():
+    accepted = {"run_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "cases": {"S7": _numbers(20.1, **{"experience.min_years": 12.0, "domain.score": 1.0})}}
+    now = _numbers(19.0, **{"experience.min_years": 12.0, "domain.score": 0.5, "education.score": 1.0})
+    assert compare_accepted("S7", now, accepted) == [
+        "experience years 20.1 -> 19.0", "domain.score 1.0 -> 0.5", "education.score None -> 1.0"]
+    assert compare_accepted("S7", accepted["cases"]["S7"], accepted) == []
+
+
+def test_an_ongoing_roles_monthly_growth_is_listed_as_calendar_drift():
+    two_months_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=62)
+    accepted = {"run_at": two_months_ago.isoformat(),
+                "cases": {"S2": _numbers(11.1, True, **{"experience.score": 0.9}),
+                          "D1": _numbers(6.3, False)}}
+    drift = compare_accepted("S2", _numbers(11.3, True, **{"experience.score": 0.95}), accepted)
+    assert len(drift) == 2 and only_calendar(drift)
+    assert "calendar: an ongoing role, 2 month(s)" in drift[0]
+    # More than the calendar explains, or no ongoing role: a real change.
+    assert not only_calendar(compare_accepted("S2", _numbers(12.5, True, **{"experience.score": 0.9}), accepted))
+    assert not only_calendar(compare_accepted("D1", _numbers(6.5, False), accepted))
+
+
+def test_an_accepted_run_without_numeric_inputs_still_compares_experience_years():
+    old = {k: v for k, v in _numbers(5.0).items() if k != "numeric_inputs"}
+    assert compare_accepted("X", _numbers(5.0, **{"domain.score": 1.0}), {"cases": {"X": old}}) == []
+    assert compare_accepted("X", _numbers(5.5), {"cases": {"X": old}}) == ["experience years 5.0 -> 5.5"]
+
+
+def test_the_summary_records_every_numeric_check_input_once():
+    inputs = numeric_inputs({"candidate_years": 9, "min_years": 8.0, "near_miss_tolerance_years": None, "passed": True},
+                            {"score": Decimal("1.5"), "required": "B.E.", "required_field": None},
+                            {"score": 0.5, "applicable": True})
+    assert inputs == {"domain.score": 0.5, "education.score": 1.5, "experience.min_years": 8.0,
+                      "experience.near_miss_tolerance_years": None}
+    assert has_ongoing_role({"work_experience": [{"start_date": "Jan 2020", "end_date": "Present"}]})
+    assert not has_ongoing_role({"work_experience": [{"start_date": "Jan 2020", "end_date": "Present",
+                                                      "title": "Career break"}]})
+    assert not has_ongoing_role({"work_experience": [{"start_date": "Jan 2020", "end_date": "Dec 2021"}]})
 
 
 def test_a_paraphrase_confirmation_counts_as_confirmed_in_the_summary():

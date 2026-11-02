@@ -254,10 +254,35 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service) -> d
                              experience_result=experience, education_result=education, domain_result=domain,
                              acted_on=False, use_llm=True, persist=False, evidence_records=records,
                              use_confirmation_cache=True)
-    return summarise(breakdown, records, experience)
+    return summarise(breakdown, records, experience, education, domain, ongoing=has_ongoing_role(parsed))
 
 
-def summarise(b: dict, records, experience) -> dict:
+def has_ongoing_role(parsed: dict) -> bool:
+    """A counted role still running ("present", is_current or no end date): its experience grows each month."""
+    from app.services.resume.work_experience_duration import _CURRENT_MARKERS, is_career_break
+    return any(isinstance(e, dict) and e.get("start_date") and not e.get("is_volunteer") and not is_career_break(e)
+               and (e.get("is_current") or (e.get("end_date") or "").strip().lower() in _CURRENT_MARKERS | {""})
+               for e in parsed.get("work_experience") or [])
+
+
+def numeric_inputs(experience, education, domain) -> dict:
+    """
+    Every number the experience, education and domain checks hand to scoring, keyed "<check>.<field>". A years or
+    score field that is None (a default applies, e.g. no JD tolerance) is kept, so a change to a set value shows.
+    """
+    out = {}
+    for check, result in (("experience", experience), ("education", education), ("domain", domain)):
+        for key, value in (result or {}).items():
+            if key == "candidate_years" or isinstance(value, bool):  # candidate_years is experience_years
+                continue
+            if isinstance(value, (int, float, decimal.Decimal)):
+                out[f"{check}.{key}"] = float(value) if isinstance(value, decimal.Decimal) else value
+            elif value is None and ("years" in key or "score" in key):
+                out[f"{check}.{key}"] = None
+    return dict(sorted(out.items()))
+
+
+def summarise(b: dict, records, experience, education=None, domain=None, *, ongoing: bool = False) -> dict:
     conf, para = b.get("confirmation") or {}, b.get("paraphrase") or {}
     para_by = {str(r["canonical_skill_id"]): r for r in para.get("results") or []}
     proposals = {}
@@ -286,6 +311,8 @@ def summarise(b: dict, records, experience) -> dict:
         "score": b.get("score"), "failed_checks": b.get("failed_checks") or [],
         "needs_review_reason": b.get("needs_review_reason"),
         "experience_years": (experience or {}).get("candidate_years"),
+        "experience_ongoing": ongoing,
+        "numeric_inputs": numeric_inputs(experience, education, domain),
         "skills": skills, "llm_calls": int(conf.get("llm_calls") or 0),
         "problem": conf.get("problem") or para.get("problem"),
         "scoring_config_version": b.get("scoring_config_version"),
@@ -344,6 +371,48 @@ def cause(old: dict | None, new: dict | None) -> str:
     return "; ".join(reasons) or "same evidence and votes - see the full results"
 
 
+CALENDAR = "calendar:"
+
+
+def _months_since(run_at: str | None, now: datetime.datetime | None = None) -> int:
+    if not run_at:
+        return 0
+    then, now = datetime.datetime.fromisoformat(run_at), now or datetime.datetime.now(datetime.timezone.utc)
+    return (now.year * 12 + now.month) - (then.year * 12 + then.month)
+
+
+def _numeric_changes(old: dict, result: dict, months: int) -> list[str]:
+    """
+    Experience years, the score and every numeric scoring input that differs from the accepted run. With an
+    ongoing role, experience grows with the date: a change that matches the months since the accepted run is
+    marked as calendar drift (it and the experience inputs that follow it), and still listed.
+    """
+    out = []
+    a, b = old.get("experience_years"), result.get("experience_years")
+    calendar = False
+    if a != b:
+        drift = (isinstance(a, (int, float)) and isinstance(b, (int, float)) and result.get("experience_ongoing")
+                 and months > 0 and abs((b - a) - months / 12) <= 0.1 + 1e-9)
+        calendar = bool(drift)
+        out.append(f"experience years {a} -> {b}"
+                   + (f" ({CALENDAR} an ongoing role, {months} month(s) since the accepted run)" if drift else ""))
+    if old.get("score") != result.get("score"):
+        out.append(f"score {old.get('score')} -> {result.get('score')}")
+    oi, ni = old.get("numeric_inputs"), result.get("numeric_inputs") or {}
+    if oi is None:                       # accepted before the inputs were recorded: nothing to compare with
+        return out
+    for key in sorted(set(oi) | set(ni)):
+        if oi.get(key) != ni.get(key):
+            follows = calendar and key.startswith("experience.")
+            out.append(f"{key} {oi.get(key)} -> {ni.get(key)}" + (f" ({CALENDAR} follows the experience years)"
+                                                                  if follows else ""))
+    return out
+
+
+def only_calendar(changes: list[str]) -> bool:
+    return bool(changes) and all(CALENDAR in c for c in changes)
+
+
 def compare_accepted(cid: str, result: dict, accepted: dict) -> list[str]:
     old = (accepted.get("cases") or {}).get(cid)
     if old is None:
@@ -353,6 +422,7 @@ def compare_accepted(cid: str, result: dict, accepted: dict) -> list[str]:
         out.append(f"outcome {old['outcome']} -> {result['outcome']}")
     if old["core"] != result["core"]:
         out.append(f"core {old['core']} -> {result['core']}")
+    out += _numeric_changes(old, result, _months_since(accepted.get("run_at")))
     so, sn = skill_statuses(old), skill_statuses(result)
     for name in sorted(set(so) | set(sn)):
         if so.get(name) != sn.get(name) or (old["skills"].get(name) or {}).get("method") != \
@@ -466,7 +536,8 @@ def run(args) -> int:
     report_path = write_report(run_record, failed, pairs, changes, accepted, misses, args, votes.new)
     print(f"\n{len(results)} cases | expectation failures {len(failed)} | counterfactual pairs failing "
           f"{len(failed_pairs)} of {len([p for p in pairs if p['varies'] != 'control'])} | changed since accepted "
-          f"{len([c for c in changes.values() if c])} | LLM calls {calls} (tokens {tokens_in} in, {tokens_out} out) | "
+          f"{len([c for c in changes.values() if c])} ({len([c for c in changes.values() if only_calendar(c)])} "
+          f"calendar drift only) | LLM calls {calls} (tokens {tokens_in} in, {tokens_out} out) | "
           f"vote cache hits {votes.hits}, dev {votes.dev_hits}\nreport: {report_path}")
     if args.accept:
         if args.only or misses:
@@ -535,8 +606,12 @@ def write_report(run_record, failed, pairs, changes, accepted, misses, args, new
     if not accepted:
         lines.append("No accepted run yet.")
     else:
-        changed = {cid: c for cid, c in changes.items() if c}
+        changed = {cid: c for cid, c in changes.items() if c and not only_calendar(c)}
+        drift = {cid: c for cid, c in changes.items() if only_calendar(c)}
         lines += [f"- **{cid}**: " + "; ".join(c) for cid, c in changed.items()] or ["None."]
+        if drift:
+            lines += ["", "Calendar drift only (experience on an ongoing role grows with the date):", ""]
+            lines += [f"- {cid}: " + "; ".join(c) for cid, c in drift.items()]
     lines += ["", "## All results", "", "| Case | Outcome | Core | LLM calls | Failed checks |", "|---|---|---|---|---|"]
     for cid, r in run_record["cases"].items():
         lines.append(f"| {cid} | {r['outcome']} | {r['core']} | {r['llm_calls']} | {', '.join(r['failed_checks'])} |")

@@ -80,6 +80,9 @@ def test_a_counterfactual_differs_from_its_partner_only_in_what_it_varies(case, 
         assert changed == []                                       # the base unchanged
     elif varies == "region":
         assert len(changed) == 2 and all("[EMAIL] · [PHONE] · " in line for line in changed)
+    elif varies == "career_gap" and (partner.get("counterfactual") or {}).get("varies") == "career_gap":
+        # the same gap left silent and stated: only the stated break's line
+        assert len(changed) == 1 and changed[0].startswith(("+", "-")) and re.search(r"\b20\d\d\b", changed[0])
     elif varies == "career_gap":
         assert 2 <= len(changed) <= 3 and all(re.search(r"\b20\d\d\b", line) for line in changed)
     else:                                                          # name: the heading, and the summary if named there

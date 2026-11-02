@@ -1,15 +1,15 @@
 {
  "accepted_on": "2026-11-02",
- "run_at": "2026-11-02T05:56:40.947682+00:00",
+ "run_at": "2026-11-02T07:12:17.328045+00:00",
  "fingerprint": "7f106ec62d2853648400d9721266b6ad92d4a4b35b9b70f0ef7fd98f2dd51ef3",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
   "output_tokens": 0,
-  "vote_cache_hits": 56,
+  "vote_cache_hits": 58,
   "dev_cache_hits": 0,
-  "new_cache_entries": 2,
-  "model": "gemini-3.1-flash-lite"
+  "new_cache_entries": 0,
+  "model": null
  },
  "cases": {
   "F1": {
@@ -19,6 +19,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -93,6 +102,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 0.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -163,6 +181,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -238,6 +265,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 0.5 years, 0.5 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.5,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 50.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -311,6 +347,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -385,6 +430,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 0.5,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 50.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 50.0
+   },
    "skills": {
     "Python": {
      "status": "NOT_FOUND",
@@ -436,6 +490,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: REST APIs, git)",
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -501,6 +564,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 0 years, 1.0 short of the 1-year minimum (within the 1-year tolerance)",
    "experience_years": 0.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 0.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -574,6 +646,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -641,6 +722,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.7,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -721,6 +811,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 4.7,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -810,6 +909,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 9.9,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "SENSE_MISMATCH",
@@ -865,6 +973,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 3.7 years, 0.3 short of the 4-year minimum (within the 1-year tolerance)",
    "experience_years": 3.7,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 92.5
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -929,6 +1046,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 7.9,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -980,6 +1106,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: Service Catalog, ServiceNow ITSM)",
    "experience_years": 6.9,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -1039,6 +1174,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 5.9,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1117,6 +1261,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 5.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 0.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1168,6 +1321,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1239,6 +1401,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 9.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 50.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1310,6 +1481,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "NOT_FOUND",
@@ -1371,6 +1551,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 7.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "REJECTED",
@@ -1434,6 +1623,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "UNCERTAIN",
@@ -1510,6 +1708,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "NOT_FOUND",
@@ -1567,6 +1774,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 0 (missing: Python)",
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "NOT_FOUND",
@@ -1636,6 +1852,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 0.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 50.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 40.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -1708,6 +1933,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "NOT_FOUND",
@@ -1757,6 +1991,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 15.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1836,6 +2079,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1904,6 +2156,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1, 1 uncertain (missing: Data Engineering, MLOps)",
    "experience_years": 14.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -1971,6 +2232,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 18.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "NOT_FOUND",
@@ -2032,6 +2302,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 14.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "UNCERTAIN",
@@ -2107,6 +2386,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 13.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "UNCERTAIN",
@@ -2175,6 +2463,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 20.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2264,6 +2561,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 13.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2315,6 +2621,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -2387,6 +2702,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -2459,6 +2783,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -2531,6 +2864,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -2605,6 +2947,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2673,6 +3024,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2741,6 +3101,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2809,6 +3178,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2877,6 +3255,15 @@
    ],
    "needs_review_reason": "Needs recruiter review: experience 11.2 years, 0.8 short of the 12-year minimum (within the 1.2-year tolerance)",
    "experience_years": 11.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 93.33
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -2943,6 +3330,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 20.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3030,6 +3426,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 19.0,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3117,6 +3522,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 19.0,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3204,6 +3618,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3271,6 +3694,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 5.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3338,6 +3770,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 5.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3407,6 +3848,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 10.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 85.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3462,7 +3912,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3475,6 +3925,15 @@
    ],
    "needs_review_reason": null,
    "experience_years": 10.2,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 12.0,
+    "experience.min_years": 12.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 85.0
+   },
    "skills": {
     "Cloud Architecture": {
      "status": "CONFIRMED",
@@ -3530,7 +3989,7 @@
      ]
     }
    },
-   "llm_calls": 3,
+   "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "6954e19c32004b18"
   },
@@ -3541,6 +4000,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3608,6 +4076,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3675,6 +4152,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3742,6 +4228,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 6.4,
+   "experience_ongoing": true,
+   "numeric_inputs": {
+    "domain.score": 25.0,
+    "education.score": 100.0,
+    "experience.effective_min_years": 4.0,
+    "experience.min_years": 4.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Change Management": {
      "status": "CONFIRMED",
@@ -3809,6 +4304,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -3882,6 +4386,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -3955,6 +4468,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
@@ -4028,6 +4550,15 @@
    "failed_checks": [],
    "needs_review_reason": null,
    "experience_years": 1.0,
+   "experience_ongoing": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 90.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
    "skills": {
     "Python": {
      "status": "CONFIRMED",
