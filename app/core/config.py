@@ -225,6 +225,17 @@ class Settings(BaseSettings):
         return [origin for origin in self.cors_origins.split(",") if origin]
 
     @property
+    def cache_namespace(self) -> str:
+        """
+        The Redis cache key prefix: cache_key_prefix plus a fingerprint of the database the app is connected
+        to (host, port, name), so two databases sharing one Redis never share cached data - a fresh
+        database's skill catalogue once served a dev run its ids (retire v1, phase E).
+        """
+        import hashlib
+        database = f"{self.db_host.strip().lower()}:{str(self.db_port).strip()}/{self.db_name.strip()}"
+        return f"{self.cache_key_prefix}:{hashlib.sha256(database.encode('utf-8')).hexdigest()[:10]}"
+
+    @property
     def database_url(self) -> str:
         return (
             f"{self.db_driver}://{self.db_user}:{self.db_password}"

@@ -4,7 +4,9 @@ from typing import Any
 
 from app.core.config import settings
 
-PREFIX = settings.cache_key_prefix
+# Namespaced by the connected database (settings.cache_namespace): two databases sharing one Redis
+# never share cached data.
+PREFIX = settings.cache_namespace
 
 
 def _hash_params(params: dict[str, Any]) -> str:

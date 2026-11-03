@@ -1,5 +1,5 @@
 {
- "0d25d04d9de7c609e684261afedc21e3e47904c846babbb7fbde3a07e5743dd4": {
+ "0345939ac3cb0c95356ae1d05ba8fcca610c141c6d524d021ecef7bf9d2e1472": {
   "results": [
    {
     "llm": {
@@ -207,21 +207,22 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "0f9f72ab61372b84a0dfb2ee428adb104620b3943935ef9b5f56d896966b3cb9": {
+ "05eb08903a6b89f76230e9191835ad9c89a9c170f4a8e618ca51cf080ccd5006": {
   "results": [
    {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
+    "name": "Incident Management",
     "jd_sense": null,
     "jd_sense_basis": null,
     "found": true,
     "found_senses": [],
     "sources": [
+     "DERIVED",
      "LLM",
      "SCAN"
     ],
-    "confirmed": false,
-    "quote": "Data Engineering",
+    "confirmed": true,
+    "quote": "Incident Management",
     "quote_verified": true,
     "method": "llm",
     "votes": [
@@ -229,14 +230,14 @@
      "yes",
      "yes"
     ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
     "vote_quotes": [
-     "Data Engineering",
-     "Data Engineering",
-     "Data Engineering"
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
     ],
-    "evidence_hash": "088f56f9e6e3d17b",
+    "evidence_hash": "4530ffeef0df6a13",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -258,69 +259,298 @@
       "model": "gemini-3.1-flash-lite",
       "used_fallback": false
      }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "d6c35741ecfb2f93",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
+    ]
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "125bfb4fcb736c8e2606bef5c56536f928ea30d7563ac2a5263b6902a46850dc": {
+ "1080b03043642549c62d8a16fe6441c4c5743c6f326562430aa861604d757478": {
+  "results": [
+   {
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
+    "name": "Incident Management",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Incident Management",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "evidence_hash": "4530ffeef0df6a13",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "1770053f30b7d8a13d0f2f57f75a7fe1e29df41dcdeca09574ced35d1cfb2a77": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "Incident Management",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "found_senses": [],
+    "evidence_hash": "4530ffeef0df6a13",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "29162da0a8588e2cea50846be4260ead1aa8deea7e81995ffa34764c2cf7d3b5": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Change Management",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "DERIVED"
+    ],
+    "jd_sense": "ITSM",
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [
+     "ITSM"
+    ],
+    "evidence_hash": "51e9ed76909588f6",
+    "jd_sense_basis": "hr",
+    "quote_verified": false,
+    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "DERIVED"
+    ],
+    "jd_sense": null,
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [],
+    "evidence_hash": "db8da9399a861d7b",
+    "jd_sense_basis": null,
+    "quote_verified": false,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "2f59f774310cd672743587f311856da0c929c0d90a98e81a1dc99374c34b5290": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "REST APIs",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [],
+    "evidence_hash": "b9177a9ab138a774",
+    "jd_sense_basis": null,
+    "quote_verified": false,
+    "canonical_skill_id": "a64eb6ca-1660-4d95-adbe-d030930b174b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "343b62801d04fdbcbf59daefe9703e84b1f87cf7932670a0b36d6ebce3004128": {
   "results": [
    {
     "llm": {
@@ -429,179 +659,21 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "196d4b2916d39a6afa0f875aed9d993f5a42207407eba6d3eebae021a86327f3": {
+ "3548576bbae96986d57fa4a922d38ac96a3d9af9900abe852b710bd97bbd6831": {
   "results": [
    {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Change Management",
-    "found": true,
-    "quote": "ITIL 4 Foundation",
-    "votes": [
-     "yes",
-     "no",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "mixed_votes",
-    "status": "UNCERTAIN",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": "ITSM",
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "ITIL 4 Foundation",
-     "",
-     "ITIL 4 Foundation"
-    ],
-    "found_senses": [
-     "ITSM"
-    ],
-    "evidence_hash": "5b42ce304c548c21",
-    "jd_sense_basis": "hr",
-    "quote_verified": false,
-    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Incident Management",
-    "found": true,
-    "quote": "ITIL 4 Foundation",
-    "votes": [
-     "yes",
-     "no",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "mixed_votes",
-    "status": "UNCERTAIN",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": null,
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "ITIL 4 Foundation",
-     "",
-     "ITIL 4 Foundation"
-    ],
-    "found_senses": [],
-    "evidence_hash": "7d40e7c2a923c556",
-    "jd_sense_basis": null,
-    "quote_verified": false,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "ServiceNow ITSM",
-    "found": true,
-    "quote": "ServiceNow Certified System Administrator (CSA)",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "ServiceNow Certified System Administrator (CSA)",
-     "ServiceNow Certified System Administrator",
-     "ServiceNow Certified System Administrator (CSA)"
-    ],
-    "found_senses": [],
-    "evidence_hash": "ac57614a922bf1af",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "1ad317910d121694459926e1298260ae3a21b3655396df4482d0c1993bd06b93": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
+    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee",
+    "name": "Python",
     "jd_sense": null,
     "jd_sense_basis": null,
     "found": true,
     "found_senses": [],
     "sources": [
+     "LLM",
      "SCAN"
     ],
     "confirmed": true,
-    "quote": "Head of Data Engineering",
+    "quote": "Python",
     "quote_verified": true,
     "method": "llm",
     "votes": [
@@ -612,11 +684,11 @@
     "status": "CONFIRMED",
     "reason": "all_votes_yes",
     "vote_quotes": [
-     "Head of Data Engineering",
-     "Head of Data Engineering",
-     "Head of Data Engineering"
+     "Python",
+     "Python",
+     "Python"
     ],
-    "evidence_hash": "5cc3474829149a33",
+    "evidence_hash": "185723a1300afadb",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -641,8 +713,8 @@
     ]
    },
    {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
     "jd_sense": null,
     "jd_sense_basis": null,
     "found": true,
@@ -651,8 +723,8 @@
      "LLM",
      "SCAN"
     ],
-    "confirmed": false,
-    "quote": "MLOps",
+    "confirmed": true,
+    "quote": "Git pull-request workflow",
     "quote_verified": true,
     "method": "llm",
     "votes": [
@@ -660,14 +732,14 @@
      "yes",
      "yes"
     ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
     "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
+     "Git pull-request workflow",
+     "Git pull-request workflow",
+     "Git pull-request workflow"
     ],
-    "evidence_hash": "9ccb43f0b48c0269",
+    "evidence_hash": "491bcae43040f840",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -689,17 +761,65 @@
       "model": "gemini-3.1-flash-lite",
       "used_fallback": false
      }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
     ],
-    "vote_reason": "listed_only",
-    "note": "listed only, not shown in work",
-    "cached": true
+    "confirmed": true,
+    "quote": "optimised SQL queries",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "optimised SQL queries",
+     "Wrote and optimised SQL queries",
+     "Wrote and optimised SQL queries"
+    ],
+    "evidence_hash": "ec9f84bf37d9748d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "20bc419d8c6e7a14beab78dafcf90f42d37c771dea28de07fbc483b1bff3783e": {
+ "38b5645d992fa916b70b4abdd3bb1c2427af9411c5e2a9b68e90235018f17a86": {
   "results": [
    {
     "llm": {
@@ -747,116 +867,7 @@
      "Wrote SQL queries"
     ],
     "found_senses": [],
-    "evidence_hash": "ffbb25b8f520fc93",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Python",
-    "found": true,
-    "quote": "Analysed sales data in Python",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Analysed sales data in Python",
-     "Analysed sales data in Python",
-     "Analysed sales data in Python"
-    ],
-    "found_senses": [],
-    "evidence_hash": "61d5809e068835b9",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "20f404b7878e8cf1b132d615ec481c2d6c7f6ebf9e6b1ddbee32ec44d50a18a6": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "sql",
-    "found": true,
-    "quote": "Wrote and optimised SQL queries",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Wrote and optimised SQL queries",
-     "Wrote and optimised SQL queries",
-     "Wrote and optimised SQL queries"
-    ],
-    "found_senses": [],
-    "evidence_hash": "ec9f84bf37d9748d",
+    "evidence_hash": "97da8aa8060ab122",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
@@ -869,7 +880,7 @@
     },
     "name": "git",
     "found": true,
-    "quote": "Followed a Git pull-request workflow",
+    "quote": "Used Git and GitHub pull requests",
     "votes": [
      "yes",
      "yes",
@@ -879,6 +890,7 @@
     "reason": "all_votes_yes",
     "status": "CONFIRMED",
     "sources": [
+     "DERIVED",
      "LLM",
      "SCAN"
     ],
@@ -902,15 +914,75 @@
      }
     ],
     "vote_quotes": [
-     "Followed a Git pull-request workflow",
-     "Followed a Git pull-request workflow",
-     "Git pull-request workflow"
+     "Used Git and GitHub pull requests",
+     "Used Git",
+     "Used Git and GitHub pull requests"
     ],
     "found_senses": [],
-    "evidence_hash": "491bcae43040f840",
+    "evidence_hash": "38aaad7c84a8e9ae",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "3e0581ab9a80e9b4f358382118186b0b55fecf5863c3947fa4cdf78ff6eaa1f4": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "Data Engineering",
+     "Data Engineering",
+     "Data Engineering"
+    ],
+    "evidence_hash": "088f56f9e6e3d17b",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    },
    {
     "llm": {
@@ -918,23 +990,23 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "Python",
+    "name": "MLOps",
     "found": true,
-    "quote": "Python Developer Intern",
+    "quote": "MLOps",
     "votes": [
      "yes",
      "yes",
      "yes"
     ],
     "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
+    "reason": "listed_only",
+    "status": "UNCERTAIN",
     "sources": [
      "LLM",
      "SCAN"
     ],
     "jd_sense": null,
-    "confirmed": true,
+    "confirmed": false,
     "llm_votes": [
      {
       "model": "gemini-3.1-flash-lite",
@@ -953,22 +1025,25 @@
      }
     ],
     "vote_quotes": [
-     "Python Developer Intern",
-     "Python Developer",
-     "Python Developer"
+     "MLOps",
+     "MLOps",
+     "MLOps"
     ],
     "found_senses": [],
-    "evidence_hash": "185723a1300afadb",
+    "evidence_hash": "d6c35741ecfb2f93",
     "jd_sense_basis": null,
     "quote_verified": true,
-    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "cached": true,
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "23d77b311b149fedd615074147351529be92b945525abc17ae2afce8695503af": {
+ "3f2e4e6752d200af3f5056130241d0910e761d04697e995332dd8b31f7ff0100": {
   "results": [
    {
     "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee",
@@ -1128,7 +1203,66 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "24037142ad463641e5d159b6aefa969cbcc3b50cb48d136637bc4ae182757b5b": {
+ "4200f4fda4d2a1627661a7b3472021fb0d600343a0087b2baf38493b3a30699e": {
+  "results": [
+   {
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
+    "name": "Incident Management",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Incident Management",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "evidence_hash": "4530ffeef0df6a13",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "458592d4b81e06d45e09a6f03541dad1b611b4d1778d4ead34afbb383559f73a": {
   "results": [
    {
     "llm": {
@@ -1138,7 +1272,7 @@
     },
     "name": "sql",
     "found": true,
-    "quote": "SQL",
+    "quote": "Wrote and optimised SQL queries",
     "votes": [
      "yes",
      "yes",
@@ -1171,12 +1305,12 @@
      }
     ],
     "vote_quotes": [
-     "SQL",
-     "SQL",
-     "SQL"
+     "Wrote and optimised SQL queries",
+     "Wrote and optimised SQL queries",
+     "Wrote and optimised SQL queries"
     ],
     "found_senses": [],
-    "evidence_hash": "4f944c1a525541a9",
+    "evidence_hash": "ec9f84bf37d9748d",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
@@ -1189,57 +1323,7 @@
     },
     "name": "git",
     "found": true,
-    "quote": "Git",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Git",
-     "Git",
-     "Git"
-    ],
-    "found_senses": [],
-    "evidence_hash": "faff937b138baf05",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Python",
-    "found": true,
-    "quote": "Python",
+    "quote": "Followed a Git pull-request workflow",
     "votes": [
      "yes",
      "yes",
@@ -1272,12 +1356,63 @@
      }
     ],
     "vote_quotes": [
-     "Python",
-     "Python",
-     "Python"
+     "Followed a Git pull-request workflow",
+     "Followed a Git pull-request workflow",
+     "Git pull-request workflow"
     ],
     "found_senses": [],
-    "evidence_hash": "13655498cdcf97cb",
+    "evidence_hash": "491bcae43040f840",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Python",
+    "found": true,
+    "quote": "Python Developer Intern",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Python Developer Intern",
+     "Python Developer",
+     "Python Developer"
+    ],
+    "found_senses": [],
+    "evidence_hash": "185723a1300afadb",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
@@ -1287,7 +1422,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "273876828ccc8a85eff22206b24d26bd0a84449e3a4290bd1f0205d1804eff32": {
+ "4a4c3a999f97b365d980bcbcee29bddff91a948654ff4d36cf3cd13b4bd3f8f2": {
   "results": [
    {
     "llm": {
@@ -1297,15 +1432,15 @@
     },
     "name": "Change Management",
     "found": true,
-    "quote": "",
+    "quote": "ITIL 4 Foundation",
     "votes": [
+     "yes",
      "no",
-     "no",
-     "no"
+     "yes"
     ],
     "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
+    "reason": "mixed_votes",
+    "status": "UNCERTAIN",
     "sources": [
      "DERIVED"
     ],
@@ -1329,12 +1464,14 @@
      }
     ],
     "vote_quotes": [
+     "ITIL 4 Foundation",
      "",
-     "",
-     ""
+     "ITIL 4 Foundation"
     ],
-    "found_senses": [],
-    "evidence_hash": "56b29ac57b1159e6",
+    "found_senses": [
+     "ITSM"
+    ],
+    "evidence_hash": "5b42ce304c548c21",
     "jd_sense_basis": "hr",
     "quote_verified": false,
     "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
@@ -1347,15 +1484,15 @@
     },
     "name": "Incident Management",
     "found": true,
-    "quote": "",
+    "quote": "ITIL 4 Foundation",
     "votes": [
+     "yes",
      "no",
-     "no",
-     "no"
+     "yes"
     ],
     "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
+    "reason": "mixed_votes",
+    "status": "UNCERTAIN",
     "sources": [
      "DERIVED"
     ],
@@ -1379,190 +1516,16 @@
      }
     ],
     "vote_quotes": [
+     "ITIL 4 Foundation",
      "",
-     "",
-     ""
+     "ITIL 4 Foundation"
     ],
     "found_senses": [],
-    "evidence_hash": "f9046ac72b37dbff",
+    "evidence_hash": "7d40e7c2a923c556",
     "jd_sense_basis": null,
     "quote_verified": false,
     "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "28ddf1d814901240ad6fa916bf8e3bb1928f42d4078c9d844693aaf461f4a876": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "REST APIs",
-    "found": true,
-    "quote": "",
-    "votes": [
-     "no",
-     "no",
-     "no"
-    ],
-    "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
-    "sources": [
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "",
-     "",
-     ""
-    ],
-    "found_senses": [],
-    "evidence_hash": "b9177a9ab138a774",
-    "jd_sense_basis": null,
-    "quote_verified": false,
-    "canonical_skill_id": "a64eb6ca-1660-4d95-adbe-d030930b174b"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "2a52fc424c6915e939c27509b726b14f09690377ac218a193aa59b78b125e1cb": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Head of Data Engineering",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Head of Data Engineering",
-     "Head of Data Engineering",
-     "Head of Data Engineering"
-    ],
-    "evidence_hash": "5cc3474829149a33",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
    },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "9ccb43f0b48c0269",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "2ebe7f57a0606d48cdd3052ded9201f51bc0a99dc0ba29212b27802b6139f577": {
-  "results": [
    {
     "llm": {
      "model": "gemini-3.1-flash-lite",
@@ -1571,20 +1534,20 @@
     },
     "name": "ServiceNow ITSM",
     "found": true,
-    "quote": "",
+    "quote": "ServiceNow Certified System Administrator (CSA)",
     "votes": [
-     "no",
-     "no",
-     "no"
+     "yes",
+     "yes",
+     "yes"
     ],
     "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
     "sources": [
      "DERIVED"
     ],
     "jd_sense": null,
-    "confirmed": false,
+    "confirmed": true,
     "llm_votes": [
      {
       "model": "gemini-3.1-flash-lite",
@@ -1603,14 +1566,14 @@
      }
     ],
     "vote_quotes": [
-     "",
-     "",
-     ""
+     "ServiceNow Certified System Administrator (CSA)",
+     "ServiceNow Certified System Administrator",
+     "ServiceNow Certified System Administrator (CSA)"
     ],
     "found_senses": [],
-    "evidence_hash": "b30b9a73b5c223da",
+    "evidence_hash": "ac57614a922bf1af",
     "jd_sense_basis": null,
-    "quote_verified": false,
+    "quote_verified": true,
     "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
    }
   ],
@@ -1618,7 +1581,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "309a1259337f218b63424f8dbf59e8019518d3be2c337fa3eabec00f654a5987": {
+ "5062318905b0e1354c0c802331f4cebb063a16940ee937fe3107bb47b458387f": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -1728,125 +1691,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "34cd95f886b038942697bf1949c4bf5a62775bbe6d15177de8cea58186b4889f": {
-  "results": [
-   {
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
-    "name": "Incident Management",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Incident Management",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "evidence_hash": "4530ffeef0df6a13",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "3ce87d8d294b3632aff8f9ad28b2537283d76edc0336b86b2dd167ebc58e4c6d": {
-  "results": [
-   {
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
-    "name": "Incident Management",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Incident Management",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "evidence_hash": "4530ffeef0df6a13",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "4275636f95ae8b2fdacf655edcec1c2eba3c1dd00e5192865a78aca816c45fcf": {
+ "5599c3c3021ace43af59e830df3d1688885dc924ad53b19a7da17418df188844": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -1957,59 +1802,119 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "46a6c24d1c2f2ecfbd4432c0047bfd51d752eda5957c96ea938a7384ff6dfb58": {
+ "5c9c86273f050f8df934321a465d4a4fda787f8dbca37ddb0834a925286758d4": {
   "results": [
    {
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
+    "name": "Incident Management",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Incident Management",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "evidence_hash": "4530ffeef0df6a13",
     "llm": {
-     "model": "gemini-3.1-flash-lite",
      "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
      "used_fallback": false
     },
-    "name": "Change Management",
-    "found": true,
-    "quote": "",
-    "votes": [
-     "no",
-     "no",
-     "no"
-    ],
-    "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": "ITSM",
-    "confirmed": false,
     "llm_votes": [
      {
-      "model": "gemini-3.1-flash-lite",
       "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
       "used_fallback": false
      },
      {
-      "model": "gemini-3.1-flash-lite",
       "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
       "used_fallback": false
      },
      {
-      "model": "gemini-3.1-flash-lite",
       "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "6b136a634ccba8425ec21f7d789307d517509cee61605b736f364fd4fa3f3036": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "Data Engineering",
+     "Data Engineering",
+     "Data Engineering"
+    ],
+    "evidence_hash": "2fae3ea08b8c68eb",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
       "used_fallback": false
      }
     ],
-    "vote_quotes": [
-     "",
-     "",
-     ""
-    ],
-    "found_senses": [
-     "ITSM"
-    ],
-    "evidence_hash": "51e9ed76909588f6",
-    "jd_sense_basis": "hr",
-    "quote_verified": false,
-    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    },
    {
     "llm": {
@@ -2017,19 +1922,20 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "Incident Management",
+    "name": "MLOps",
     "found": true,
-    "quote": "",
+    "quote": "MLOps",
     "votes": [
-     "no",
-     "no",
-     "no"
+     "yes",
+     "yes",
+     "yes"
     ],
     "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
+    "reason": "listed_only",
+    "status": "UNCERTAIN",
     "sources": [
-     "DERIVED"
+     "LLM",
+     "SCAN"
     ],
     "jd_sense": null,
     "confirmed": false,
@@ -2051,22 +1957,25 @@
      }
     ],
     "vote_quotes": [
-     "",
-     "",
-     ""
+     "MLOps",
+     "MLOps",
+     "MLOps"
     ],
     "found_senses": [],
-    "evidence_hash": "db8da9399a861d7b",
+    "evidence_hash": "1b7329d4441a9337",
     "jd_sense_basis": null,
-    "quote_verified": false,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+    "quote_verified": true,
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "cached": true,
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "4a773e82cf81b043b2c7e1217094a7a3c0c6ceda6e24d672c5ce3aed4bbc2a29": {
+ "6cfe6f84d352ad2a6717dfb5b152737164aadbbd525229a2aa4acb4e69e2de6d": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -2122,202 +2031,33 @@
     "note": "listed only, not shown in work"
    },
    {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
     "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
     "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
     "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
     "votes": [
      "yes",
      "yes",
      "yes"
     ],
-    "method": "llm",
-    "reason": "listed_only",
     "status": "UNCERTAIN",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
+    "reason": "listed_only",
     "vote_quotes": [
      "MLOps",
      "MLOps",
      "MLOps"
     ],
-    "found_senses": [],
     "evidence_hash": "d6c35741ecfb2f93",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "cached": true,
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "53b5261cc9e9b7126c6d6642cc798ef4dcbfec0506532135fbfed016b5f4cce9": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Incident Management",
-    "found": true,
-    "quote": "Incident Management",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "found_senses": [],
-    "evidence_hash": "32d7cf2e4c439656",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "56f3c6d7a99beccfbddf8abde93772ff5262c3fca1e12fa7fe5ec2cc26453ae8": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Head of Data Engineering",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Head of Data Engineering",
-     "Head of Data Engineering",
-     "Head of Data Engineering"
-    ],
-    "evidence_hash": "5cc3474829149a33",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "9ccb43f0b48c0269",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -2348,7 +2088,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "60ec5c994c71a0025c6bd7c6917352e6ce22037f7505627075b5d515f3bcb77b": {
+ "7153ad55c26096dcd3c2a202cf9fd5c51566c9cffd3ceab707e93ec101ec5b6d": {
   "results": [
    {
     "llm": {
@@ -2505,7 +2245,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "6f09584d9b5ea717354e95c592d479102817891b86645b098068f7cb336f8fdd": {
+ "75245363541220e22a814c62466c5cd8382820fff8e4f3e953d20ffff15e5d67": {
   "results": [
    {
     "llm": {
@@ -2513,9 +2253,9 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "Cloud Architecture",
+    "name": "sql",
     "found": true,
-    "quote": "cloud architecture options on AWS and Azure",
+    "quote": "Wrote SQL queries",
     "votes": [
      "yes",
      "yes",
@@ -2525,6 +2265,7 @@
     "reason": "all_votes_yes",
     "status": "CONFIRMED",
     "sources": [
+     "LLM",
      "SCAN"
     ],
     "jd_sense": null,
@@ -2547,15 +2288,15 @@
      }
     ],
     "vote_quotes": [
-     "cloud architecture options on AWS and Azure",
-     "Recommended cloud architecture options on AWS and Azure",
-     "Recommended cloud architecture options on AWS and Azure"
+     "Wrote SQL queries",
+     "Wrote SQL queries",
+     "Wrote SQL queries"
     ],
     "found_senses": [],
-    "evidence_hash": "acb6942b329b2011",
+    "evidence_hash": "205a376fc73cd27d",
     "jd_sense_basis": null,
     "quote_verified": true,
-    "canonical_skill_id": "4e0c9ce7-d9be-4344-9135-4451bf62d43b"
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
    },
    {
     "llm": {
@@ -2563,9 +2304,179 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
+    "name": "git",
+    "found": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "found_senses": [],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "7615154deb6e9aeb9ab93e537a93e397c45f50ced84b8ba8d78ac5622f28d735": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
     "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
     "found": true,
-    "quote": "Assessed clients' MLOps maturity",
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "listed_only",
+    "note": "listed only, not shown in work",
+    "cached": true
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "7a1c853b6195bcb0130a2f83aac67805ba0fe46b10ee8c115c1effefc4fc257b": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "sql",
+    "found": true,
+    "quote": "Wrote SQL queries",
     "votes": [
      "yes",
      "yes",
@@ -2575,6 +2486,7 @@
     "reason": "all_votes_yes",
     "status": "CONFIRMED",
     "sources": [
+     "LLM",
      "SCAN"
     ],
     "jd_sense": null,
@@ -2597,15 +2509,15 @@
      }
     ],
     "vote_quotes": [
-     "Assessed clients' MLOps maturity",
-     "Assessed clients' MLOps maturity",
-     "Assessed clients' MLOps maturity"
+     "Wrote SQL queries",
+     "Wrote SQL queries",
+     "Wrote SQL queries"
     ],
     "found_senses": [],
-    "evidence_hash": "6c9d2ae297ef9600",
+    "evidence_hash": "3732609a98e6111a",
     "jd_sense_basis": null,
     "quote_verified": true,
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41"
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
    },
    {
     "llm": {
@@ -2613,19 +2525,287 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "Machine Learning",
+    "name": "git",
     "found": true,
-    "quote": "ML Platform",
+    "quote": "Used Git with pull requests and code reviews",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Used Git with pull requests and code reviews",
+     "Used Git with pull requests and code reviews",
+     "Used Git with pull requests and code reviews"
+    ],
+    "found_senses": [],
+    "evidence_hash": "61744bc4806d0abd",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "8364e896cb7a34f58cf0671cc101505ddf761d405f50bfbb00124f72fd12e097": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "sql",
+    "found": true,
+    "quote": "Wrote SQL queries",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Wrote SQL queries",
+     "Wrote SQL queries",
+     "Wrote SQL queries"
+    ],
+    "found_senses": [],
+    "evidence_hash": "debbe4c07c25276e",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "git",
+    "found": true,
+    "quote": "Used Git for version control",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Used Git for version control",
+     "Used Git for version control",
+     "Used Git"
+    ],
+    "found_senses": [],
+    "evidence_hash": "f2e08ae5c99e7725",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Python",
+    "found": true,
+    "quote": "Built REST APIs in Python",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Built REST APIs in Python",
+     "Built REST APIs in Python",
+     "Built REST APIs in Python"
+    ],
+    "found_senses": [],
+    "evidence_hash": "a6b299e156400100",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "8aaa232142bd5dc169a09f031c91eb9d0c31fda2d74fcf8ac90bd0efd26bd1ea": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Change Management",
+    "found": true,
+    "quote": "",
     "votes": [
      "no",
-     "yes",
+     "no",
      "no"
     ],
     "method": "llm",
-    "reason": "mixed_votes",
-    "status": "UNCERTAIN",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
     "sources": [
-     "SCAN"
+     "DERIVED"
+    ],
+    "jd_sense": "ITSM",
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [],
+    "evidence_hash": "56b29ac57b1159e6",
+    "jd_sense_basis": "hr",
+    "quote_verified": false,
+    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "DERIVED"
     ],
     "jd_sense": null,
     "confirmed": false,
@@ -2648,21 +2828,836 @@
     ],
     "vote_quotes": [
      "",
-     "ML Platform",
+     "",
      ""
     ],
     "found_senses": [],
-    "evidence_hash": "3eea5c6e88f71577",
+    "evidence_hash": "f9046ac72b37dbff",
     "jd_sense_basis": null,
     "quote_verified": false,
-    "canonical_skill_id": "d7fbf981-a89d-4605-b4c3-0d5503cc2407"
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "763f9320690d788fa19ea175bced584f1aef08ac87da7e1549e9b5f1569b82f7": {
+ "8c3e0e9852b6f5eff9898b4e1c6560b2d4d24962c5baf6549dca523f7edc2b33": {
+  "results": [
+   {
+    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee",
+    "name": "Python",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Python",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Python",
+     "Python",
+     "Python"
+    ],
+    "evidence_hash": "185723a1300afadb",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Git pull-request workflow",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Git pull-request workflow",
+     "Git pull-request workflow",
+     "Git pull-request workflow"
+    ],
+    "evidence_hash": "491bcae43040f840",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote and optimised SQL queries",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote and optimised SQL queries",
+     "Wrote and optimised SQL queries",
+     "Wrote and optimised SQL queries"
+    ],
+    "evidence_hash": "ec9f84bf37d9748d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "8e618c340d9235c6af49f834765ae5bee12e52abfc39e0274ca60a311c29168b": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Service Catalog",
+    "found": true,
+    "quote": "Service Catalog",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Service Catalog",
+     "Service Catalog",
+     "Service Catalog"
+    ],
+    "found_senses": [],
+    "evidence_hash": "5c2e3be472be6e5d",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "0ba2efac-e3e9-472b-8e68-609aabda5c67"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Change Management",
+    "found": true,
+    "quote": "Change Management",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": "ITSM",
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Change Management",
+     "Change Management",
+     "Change Management"
+    ],
+    "found_senses": [
+     "ITSM"
+    ],
+    "evidence_hash": "931b6edb3e5cba60",
+    "jd_sense_basis": "hr",
+    "quote_verified": true,
+    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "Incident Management",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "found_senses": [],
+    "evidence_hash": "5740bfa9e1ce779c",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "ServiceNow ITSM",
+    "found": true,
+    "quote": "ServiceNow ITSM",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "ServiceNow ITSM",
+     "ServiceNow ITSM",
+     "ServiceNow ITSM"
+    ],
+    "found_senses": [],
+    "evidence_hash": "cab22de420b54aa4",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "8f362bc4c07833ee7c01e73aebf690287198c639afddd9f92e61e217ba5cc26c": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "90be7f3c51e4ac69f2671ff8c61751411c26754c81c88376960e19d8d9e4424d": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines"
+    ],
+    "evidence_hash": "4a8295c2ae6ab57f",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining"
+    ],
+    "evidence_hash": "c89c05fdb195bc76",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "96be7d62b3b0534387bd7e278cfcfdff037a7d53daaea35aa923042e3753468a": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
+     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines"
+    ],
+    "evidence_hash": "4a8295c2ae6ab57f",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.5-flash-lite",
+      "used_fallback": true
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.5-flash-lite",
+      "used_fallback": true
+     }
+    ]
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "MLOps",
+    "found": true,
+    "quote": "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+     "MLOps",
+     "MLOps"
+    ],
+    "found_senses": [],
+    "evidence_hash": "c89c05fdb195bc76",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "cached": true
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "98b7b9c2e3a48a292b5a793456df8b50c5e4e8dd99ca98d26fd4f6d2223ffe61": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "Log, prioritise and resolve incidents",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Log, prioritise and resolve incidents",
+     "Log, prioritise and resolve incidents",
+     "Log, prioritise and resolve incidents"
+    ],
+    "found_senses": [],
+    "evidence_hash": "37f57e67c4ca5eb2",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "ServiceNow ITSM",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "DERIVED"
+    ],
+    "jd_sense": null,
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [],
+    "evidence_hash": "77478e34682944c6",
+    "jd_sense_basis": null,
+    "quote_verified": false,
+    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "9a0603e30b768e62af8f94261da8534dfcb6afc0522afcfe7d1caa9886baadb5": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -2691,7 +3686,7 @@
      "Data Engineering",
      "Data Engineering"
     ],
-    "evidence_hash": "2fae3ea08b8c68eb",
+    "evidence_hash": "088f56f9e6e3d17b",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -2716,6 +3711,556 @@
     ],
     "vote_reason": "all_votes_yes",
     "note": "listed only, not shown in work"
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "d6c35741ecfb2f93",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-2|adacd9b18e877c450ff8a6fe2a012e3a2b3015bff6d799c8dd8dbb6e77b7bd79": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries and Alembic migrations",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries and Alembic migrations on PostgreSQL",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-3|35ce7633508a5beb7788544b94023b54390c59b760349ad7219775679684bf55": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries and Alembic migrations",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries and Alembic migrations",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-F1-4|bb471b10e70001b31b6f54ae282d633087e976654210418557f58ccfbafc26d6": {
+  "results": [
+   {
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
+    "name": "git",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Used Git with feature branches and pull requests",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests",
+     "Used Git with feature branches and pull requests"
+    ],
+    "evidence_hash": "9a160a6c5be1a5fe",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Wrote SQL queries",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Wrote SQL queries",
+     "Wrote SQL queries",
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "CF-NAME-S2-1|e5bef84b8cb62676c9f2e22d5fd9fc389a0d44935e52673d09552fa2d5875dd9": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   },
+   {
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
+    "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "listed_only",
+    "vote_quotes": [
+     "MLOps",
+     "MLOps",
+     "MLOps"
+    ],
+    "evidence_hash": "9ccb43f0b48c0269",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
+    "note": "listed only, not shown in work"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "S2|ca71533ea6e26ff9a3927f7a94448b765c29ab6ed0bf402059a7f3fdae23a93f": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Head of Data Engineering",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Head of Data Engineering",
+     "Head of Data Engineering",
+     "Head of Data Engineering"
+    ],
+    "evidence_hash": "5cc3474829149a33",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
    },
    {
     "llm": {
@@ -2763,12 +4308,12 @@
      "MLOps"
     ],
     "found_senses": [],
-    "evidence_hash": "1b7329d4441a9337",
+    "evidence_hash": "9ccb43f0b48c0269",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
     "cached": true,
-    "vote_reason": "all_votes_yes",
+    "vote_reason": "listed_only",
     "note": "listed only, not shown in work"
    }
   ],
@@ -2776,66 +4321,66 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "777a0015fb139fd7b2f43fb031a3a4c51db2f87a63a682c84fb6e9375bc199b0": {
+ "a17875150840455662638a0040daf4e04524651c25cba7b0cd4ec4c375ac2ab7": {
   "results": [
    {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
     "name": "Incident Management",
+    "jd_sense": null,
+    "jd_sense_basis": null,
     "found": true,
-    "quote": "Incident Management",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
+    "found_senses": [],
     "sources": [
      "DERIVED",
      "LLM",
      "SCAN"
     ],
-    "jd_sense": null,
     "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
+    "quote": "Incident Management",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
     ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
     "vote_quotes": [
      "Incident Management",
      "Incident Management",
      "Incident Management"
     ],
-    "found_senses": [],
     "evidence_hash": "4530ffeef0df6a13",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "783b982c02c2067b63d82c0f24e04aeaa339c472f06bf9b44d8f661a33d8d171": {
+ "a5d73f6027d9c1cd0538904b0fe199b1c236669ebc0951ac1edf2fb0bbf41352": {
   "results": [
    {
     "llm": {
@@ -3057,7 +4602,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "7e3abde28b4982b455aaad56a97cbdcf441b25706599eaee97a4a3f7d568cb0c": {
+ "a787a95586e6cbea8d5a3cf8e5ff44c4e65838b1de725830767af770e14ea8cd": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -3067,7 +4612,331 @@
     "found": true,
     "found_senses": [],
     "sources": [
-     "INFERRED",
+     "DERIVED",
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": true,
+    "quote": "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "status": "CONFIRMED",
+    "reason": "all_votes_yes",
+    "vote_quotes": [
+     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
+     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
+     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark"
+    ],
+    "evidence_hash": "fba0aca7035b231b",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "ab85ca93f13c478aeeb1d58034c728aaaec5d1cfab7dbc23fe83d8bf713d10e9": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "sql",
+    "found": true,
+    "quote": "SQL",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "SQL",
+     "SQL",
+     "SQL"
+    ],
+    "found_senses": [],
+    "evidence_hash": "4f944c1a525541a9",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "git",
+    "found": true,
+    "quote": "Git",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Git",
+     "Git",
+     "Git"
+    ],
+    "found_senses": [],
+    "evidence_hash": "faff937b138baf05",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Python",
+    "found": true,
+    "quote": "Python",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Python",
+     "Python",
+     "Python"
+    ],
+    "found_senses": [],
+    "evidence_hash": "13655498cdcf97cb",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "accb38f2e5ee9dddd46f0ff5a2acdd6400fd9e8d657a5606691f74990c00399b": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Service Catalog",
+    "found": true,
+    "quote": "",
+    "votes": [
+     "no",
+     "no",
+     "no"
+    ],
+    "method": "llm",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
+    "sources": [
+     "DERIVED"
+    ],
+    "jd_sense": null,
+    "confirmed": false,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "",
+     "",
+     ""
+    ],
+    "found_senses": [],
+    "evidence_hash": "4a248a90ff4dfc7e",
+    "jd_sense_basis": null,
+    "quote_verified": false,
+    "canonical_skill_id": "0ba2efac-e3e9-472b-8e68-609aabda5c67"
+   },
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "incident escalation rules",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "DERIVED"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "incident escalation rules",
+     "incident escalation rules",
+     "incident escalation rules"
+    ],
+    "found_senses": [],
+    "evidence_hash": "beda369b4977a1bb",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "b4d632c4f0a3fcb1f6707ff300c705edc28253a4592db131e13b5b68e20aba54": {
+  "results": [
+   {
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
      "SCAN"
     ],
     "confirmed": true,
@@ -3086,7 +4955,7 @@
      "Head of Data Engineering",
      "Head of Data Engineering"
     ],
-    "evidence_hash": "08a4f702944f1b30",
+    "evidence_hash": "5cc3474829149a33",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -3111,57 +4980,56 @@
     ]
    },
    {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
     "name": "MLOps",
+    "jd_sense": null,
+    "jd_sense_basis": null,
     "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
     "quote": "MLOps",
+    "quote_verified": true,
+    "method": "llm",
     "votes": [
      "yes",
      "yes",
      "yes"
     ],
-    "method": "llm",
-    "reason": "listed_only",
     "status": "UNCERTAIN",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
+    "reason": "listed_only",
     "vote_quotes": [
      "MLOps",
      "MLOps",
      "MLOps"
     ],
-    "found_senses": [],
     "evidence_hash": "9ccb43f0b48c0269",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "cached": true,
-    "vote_reason": "listed_only",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ],
+    "vote_reason": "all_votes_yes",
     "note": "listed only, not shown in work"
    }
   ],
@@ -3169,22 +5037,20 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "84c0e0ed0b31f518d9024e59e8a15badacc1de654a464d14c695ed92b545b3a1": {
+ "b91b4b930cbb030faa08f2b18f8397eca3faca4ffee006905fca005ec1e42ce0": {
   "results": [
    {
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
-    "name": "Incident Management",
+    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
+    "name": "Data Engineering",
     "jd_sense": null,
     "jd_sense_basis": null,
     "found": true,
     "found_senses": [],
     "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
+     "DERIVED"
     ],
     "confirmed": true,
-    "quote": "Incident Management",
+    "quote": "ETL jobs in SAP BW",
     "quote_verified": true,
     "method": "llm",
     "votes": [
@@ -3195,11 +5061,11 @@
     "status": "CONFIRMED",
     "reason": "all_votes_yes",
     "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
+     "ETL jobs in SAP BW",
+     "ETL jobs",
+     "Built data warehouse reports and ETL jobs"
     ],
-    "evidence_hash": "4530ffeef0df6a13",
+    "evidence_hash": "f6cf386dd28e7779",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -3228,7 +5094,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "95ac2b21da6ca08f16ed833089d312e7cd5263ada90dd807fa74c7cd5b0599fd": {
+ "c9622e17afadf573ef20b5c9aa1a775b01f2be3ee9ab97449e047613f9771683": {
   "results": [
    {
     "llm": {
@@ -3435,444 +5301,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "95d79642078a970ce06188113af5f47890a8f87f1277c7aecb2158c9be963932": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Service Catalog",
-    "found": true,
-    "quote": "",
-    "votes": [
-     "no",
-     "no",
-     "no"
-    ],
-    "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": null,
-    "confirmed": false,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "",
-     "",
-     ""
-    ],
-    "found_senses": [],
-    "evidence_hash": "4a248a90ff4dfc7e",
-    "jd_sense_basis": null,
-    "quote_verified": false,
-    "canonical_skill_id": "0ba2efac-e3e9-472b-8e68-609aabda5c67"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Incident Management",
-    "found": true,
-    "quote": "incident escalation rules",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "DERIVED"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "incident escalation rules",
-     "incident escalation rules",
-     "incident escalation rules"
-    ],
-    "found_senses": [],
-    "evidence_hash": "beda369b4977a1bb",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "CF-NAME-F1-2|30932975d1167eeb2fbe51bfea895ee5e965af1f4e6a02704358820323474720": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries and Alembic migrations",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries and Alembic migrations",
-     "Wrote SQL queries and Alembic migrations on PostgreSQL",
-     "Wrote SQL queries"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "CF-NAME-F1-3|33758b29725404b0b07733831e63563b3c798afb829b27fadcffd807490bed93": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries and Alembic migrations",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries and Alembic migrations",
-     "Wrote SQL queries and Alembic migrations",
-     "Wrote SQL queries"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "CF-NAME-F1-4|91ff8d1dc08c7ef4fe1595d7e136fc835e5b7fcd87d7e02d8e4560db9cefbe21": {
-  "results": [
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote SQL queries",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote SQL queries",
-     "Wrote SQL queries",
-     "Wrote SQL queries"
-    ],
-    "evidence_hash": "205a376fc73cd27d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "CF-NAME-S2-1|de854a67042435bd63a62e945d9f07d7955dc104c36badbce0aff4b750a330b0": {
+ "ca71533ea6e26ff9a3927f7a94448b765c29ab6ed0bf402059a7f3fdae23a93f": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -3882,6 +5311,7 @@
     "found": true,
     "found_senses": [],
     "sources": [
+     "INFERRED",
      "SCAN"
     ],
     "confirmed": true,
@@ -3900,117 +5330,7 @@
      "Head of Data Engineering",
      "Head of Data Engineering"
     ],
-    "evidence_hash": "5cc3474829149a33",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "9ccb43f0b48c0269",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "S2|7e3abde28b4982b455aaad56a97cbdcf441b25706599eaee97a4a3f7d568cb0c": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Head of Data Engineering",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Head of Data Engineering",
-     "Head of Data Engineering",
-     "Head of Data Engineering"
-    ],
-    "evidence_hash": "5cc3474829149a33",
+    "evidence_hash": "08a4f702944f1b30",
     "llm": {
      "provider": "GOOGLE",
      "model": "gemini-3.1-flash-lite",
@@ -4093,66 +5413,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "a20c38357450ce8c0d1614e254ebffba151ef9a7ce1d16cb1ab5d50a44b9db81": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
-     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark",
-     "Built a lakehouse on Databricks and AWS ingesting 4 TB a day from 60 sources, with batch and streaming pipelines in Spark"
-    ],
-    "evidence_hash": "fba0aca7035b231b",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "a7b578701677cf8e494a0d15595b3004ce24152c8df388c8f8f4c0f3f030aa4a": {
+ "ce1cd7f917264f858de1c6b84af11d8317357c8c827c1109f30899526130aad2": {
   "results": [
    {
     "llm": {
@@ -4200,7 +5461,7 @@
      "Wrote SQL queries"
     ],
     "found_senses": [],
-    "evidence_hash": "debbe4c07c25276e",
+    "evidence_hash": "ffbb25b8f520fc93",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
@@ -4211,60 +5472,9 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "git",
-    "found": true,
-    "quote": "Used Git for version control",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Used Git for version control",
-     "Used Git for version control",
-     "Used Git"
-    ],
-    "found_senses": [],
-    "evidence_hash": "f2e08ae5c99e7725",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
     "name": "Python",
     "found": true,
-    "quote": "Built REST APIs in Python",
+    "quote": "Analysed sales data in Python",
     "votes": [
      "yes",
      "yes",
@@ -4297,12 +5507,12 @@
      }
     ],
     "vote_quotes": [
-     "Built REST APIs in Python",
-     "Built REST APIs in Python",
-     "Built REST APIs in Python"
+     "Analysed sales data in Python",
+     "Analysed sales data in Python",
+     "Analysed sales data in Python"
     ],
     "found_senses": [],
-    "evidence_hash": "a6b299e156400100",
+    "evidence_hash": "61d5809e068835b9",
     "jd_sense_basis": null,
     "quote_verified": true,
     "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee"
@@ -4312,7 +5522,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "b385585728b0e596969ae8ea9d1265961a805fcb0826fcdaffee8c2b0cc3370c": {
+ "d5c71c7806a2b716b64861cc84842385df76bc0d6b4b43020ea9705bb1012afd": {
   "results": [
    {
     "llm": {
@@ -4320,9 +5530,9 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "Service Catalog",
+    "name": "Cloud Architecture",
     "found": true,
-    "quote": "Service Catalog",
+    "quote": "cloud architecture options on AWS and Azure",
     "votes": [
      "yes",
      "yes",
@@ -4332,7 +5542,6 @@
     "reason": "all_votes_yes",
     "status": "CONFIRMED",
     "sources": [
-     "LLM",
      "SCAN"
     ],
     "jd_sense": null,
@@ -4355,229 +5564,15 @@
      }
     ],
     "vote_quotes": [
-     "Service Catalog",
-     "Service Catalog",
-     "Service Catalog"
+     "cloud architecture options on AWS and Azure",
+     "Recommended cloud architecture options on AWS and Azure",
+     "Recommended cloud architecture options on AWS and Azure"
     ],
     "found_senses": [],
-    "evidence_hash": "5c2e3be472be6e5d",
+    "evidence_hash": "acb6942b329b2011",
     "jd_sense_basis": null,
     "quote_verified": true,
-    "canonical_skill_id": "0ba2efac-e3e9-472b-8e68-609aabda5c67"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Change Management",
-    "found": true,
-    "quote": "Change Management",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": "ITSM",
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Change Management",
-     "Change Management",
-     "Change Management"
-    ],
-    "found_senses": [
-     "ITSM"
-    ],
-    "evidence_hash": "931b6edb3e5cba60",
-    "jd_sense_basis": "hr",
-    "quote_verified": true,
-    "canonical_skill_id": "621ba8fe-af75-4bdb-95b6-e91425fa3afc"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Incident Management",
-    "found": true,
-    "quote": "Incident Management",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "found_senses": [],
-    "evidence_hash": "5740bfa9e1ce779c",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "ServiceNow ITSM",
-    "found": true,
-    "quote": "ServiceNow ITSM",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "ServiceNow ITSM",
-     "ServiceNow ITSM",
-     "ServiceNow ITSM"
-    ],
-    "found_senses": [],
-    "evidence_hash": "cab22de420b54aa4",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "b9a3039f0dc9b6a5587a8356108ac6a387b1421c5a305480476b6771d375e3a1": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines"
-    ],
-    "evidence_hash": "4a8295c2ae6ab57f",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.5-flash-lite",
-      "used_fallback": true
-     }
-    ]
+    "canonical_skill_id": "4e0c9ce7-d9be-4344-9135-4451bf62d43b"
    },
    {
     "llm": {
@@ -4587,7 +5582,7 @@
     },
     "name": "MLOps",
     "found": true,
-    "quote": "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
+    "quote": "Assessed clients' MLOps maturity",
     "votes": [
      "yes",
      "yes",
@@ -4597,8 +5592,6 @@
     "reason": "all_votes_yes",
     "status": "CONFIRMED",
     "sources": [
-     "DERIVED",
-     "LLM",
      "SCAN"
     ],
     "jd_sense": null,
@@ -4621,75 +5614,15 @@
      }
     ],
     "vote_quotes": [
-     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
-     "MLOps",
-     "MLOps"
+     "Assessed clients' MLOps maturity",
+     "Assessed clients' MLOps maturity",
+     "Assessed clients' MLOps maturity"
     ],
     "found_senses": [],
-    "evidence_hash": "c89c05fdb195bc76",
+    "evidence_hash": "6c9d2ae297ef9600",
     "jd_sense_basis": null,
     "quote_verified": true,
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "cached": true
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "bcb5694eb58450f8180e84ae4a3c0d539e3bb1a665ee76a41b0a05adfa472a73": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "Incident Management",
-    "found": true,
-    "quote": "Log, prioritise and resolve incidents",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Log, prioritise and resolve incidents",
-     "Log, prioritise and resolve incidents",
-     "Log, prioritise and resolve incidents"
-    ],
-    "found_senses": [],
-    "evidence_hash": "37f57e67c4ca5eb2",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
+    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41"
    },
    {
     "llm": {
@@ -4697,19 +5630,19 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "ServiceNow ITSM",
+    "name": "Machine Learning",
     "found": true,
-    "quote": "",
+    "quote": "ML Platform",
     "votes": [
      "no",
-     "no",
+     "yes",
      "no"
     ],
     "method": "llm",
-    "reason": "all_votes_no",
-    "status": "REJECTED",
+    "reason": "mixed_votes",
+    "status": "UNCERTAIN",
     "sources": [
-     "DERIVED"
+     "SCAN"
     ],
     "jd_sense": null,
     "confirmed": false,
@@ -4732,689 +5665,21 @@
     ],
     "vote_quotes": [
      "",
-     "",
+     "ML Platform",
      ""
     ],
     "found_senses": [],
-    "evidence_hash": "77478e34682944c6",
+    "evidence_hash": "3eea5c6e88f71577",
     "jd_sense_basis": null,
     "quote_verified": false,
-    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
+    "canonical_skill_id": "d7fbf981-a89d-4605-b4c3-0d5503cc2407"
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "bf5947e3b238903e23597434fb6d3a05544edc5d80e89fd9e0a89f63cd73a8e9": {
-  "results": [
-   {
-    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee",
-    "name": "Python",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Python",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Python",
-     "Python",
-     "Python"
-    ],
-    "evidence_hash": "185723a1300afadb",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Git pull-request workflow",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Git pull-request workflow",
-     "Git pull-request workflow",
-     "Git pull-request workflow"
-    ],
-    "evidence_hash": "491bcae43040f840",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Wrote and optimised SQL queries",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Wrote and optimised SQL queries",
-     "Wrote and optimised SQL queries",
-     "Wrote and optimised SQL queries"
-    ],
-    "evidence_hash": "ec9f84bf37d9748d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "c5c55e398e71ee6e85583d2cd186cfe8f9d758e75a55746813bf60585cab314e": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines",
-     "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines"
-    ],
-    "evidence_hash": "4a8295c2ae6ab57f",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
-     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining",
-     "Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining"
-    ],
-    "evidence_hash": "c89c05fdb195bc76",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "c75ecbb3a9f6013aeaa84fe2377915bf61e05233c5ce25ed653384b261ce18d9": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED"
-    ],
-    "confirmed": true,
-    "quote": "ETL jobs in SAP BW",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "ETL jobs in SAP BW",
-     "ETL jobs",
-     "Built data warehouse reports and ETL jobs"
-    ],
-    "evidence_hash": "f6cf386dd28e7779",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "c78ea1ac3f3340b8e13e35bd07cc7c852a1bc4ec38651a718c69caffa246fe9f": {
-  "results": [
-   {
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
-    "name": "Incident Management",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Incident Management",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "evidence_hash": "4530ffeef0df6a13",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "c85daad8713fce334f69a6f1b127ea3de6c5155364700c3eea4d8a70474eed24": {
-  "results": [
-   {
-    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b",
-    "name": "Incident Management",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Incident Management",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Incident Management",
-     "Incident Management",
-     "Incident Management"
-    ],
-    "evidence_hash": "4530ffeef0df6a13",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "cb9b5f7164b9e51fef078b742f6855cf45606affcb64aac2406a71347c2ae5a2": {
-  "results": [
-   {
-    "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
-    "name": "Data Engineering",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "Data Engineering",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "Data Engineering",
-     "Data Engineering",
-     "Data Engineering"
-    ],
-    "evidence_hash": "088f56f9e6e3d17b",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   },
-   {
-    "canonical_skill_id": "7c5b3a26-30cd-43c4-bf00-5630125bac41",
-    "name": "MLOps",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": false,
-    "quote": "MLOps",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "UNCERTAIN",
-    "reason": "listed_only",
-    "vote_quotes": [
-     "MLOps",
-     "MLOps",
-     "MLOps"
-    ],
-    "evidence_hash": "d6c35741ecfb2f93",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ],
-    "vote_reason": "all_votes_yes",
-    "note": "listed only, not shown in work"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "cef73fabd8a6143028e1d381477b4b18090e067127791f62c620d60ca7a81202": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "sql",
-    "found": true,
-    "quote": "Wrote SQL queries",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Wrote SQL queries",
-     "Wrote SQL queries",
-     "Wrote SQL queries"
-    ],
-    "found_senses": [],
-    "evidence_hash": "3732609a98e6111a",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "git",
-    "found": true,
-    "quote": "Used Git with pull requests and code reviews",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Used Git with pull requests and code reviews",
-     "Used Git with pull requests and code reviews",
-     "Used Git with pull requests and code reviews"
-    ],
-    "found_senses": [],
-    "evidence_hash": "61744bc4806d0abd",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "d91bcfc5daf2901efd16c47e6163538e49206a67a84813e2f5ca557f22ce8699": {
+ "e04a8bd2c57194257444d2a8152cfebe391368edf92666884a5cf71676758ab1": {
   "results": [
    {
     "llm": {
@@ -5523,7 +5788,7 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "ddeff2833552df980e1cd907264cd4a2f020a0fc2a560005d69d4e152d4b1a7f": {
+ "e1d58f7a5b3ad60d918d166d29a53fa4f239dff8ae44a0093a731a607e242492": {
   "results": [
    {
     "llm": {
@@ -5531,23 +5796,22 @@
      "provider": "GOOGLE",
      "used_fallback": false
     },
-    "name": "sql",
+    "name": "ServiceNow ITSM",
     "found": true,
-    "quote": "Wrote SQL queries",
+    "quote": "",
     "votes": [
-     "yes",
-     "yes",
-     "yes"
+     "no",
+     "no",
+     "no"
     ],
     "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
+    "reason": "all_votes_no",
+    "status": "REJECTED",
     "sources": [
-     "LLM",
-     "SCAN"
+     "DERIVED"
     ],
     "jd_sense": null,
-    "confirmed": true,
+    "confirmed": false,
     "llm_votes": [
      {
       "model": "gemini-3.1-flash-lite",
@@ -5566,344 +5830,22 @@
      }
     ],
     "vote_quotes": [
-     "Wrote SQL queries",
-     "Wrote SQL queries",
-     "Wrote SQL queries"
+     "",
+     "",
+     ""
     ],
     "found_senses": [],
-    "evidence_hash": "97da8aa8060ab122",
+    "evidence_hash": "b30b9a73b5c223da",
     "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "git",
-    "found": true,
-    "quote": "Used Git and GitHub pull requests",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Used Git and GitHub pull requests",
-     "Used Git",
-     "Used Git and GitHub pull requests"
-    ],
-    "found_senses": [],
-    "evidence_hash": "38aaad7c84a8e9ae",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
+    "quote_verified": false,
+    "canonical_skill_id": "d80d0b78-acdd-46e7-813f-73e663f6e3ee"
    }
   ],
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
- "df7300700e5ec0d4d16a5035bff27947a834919a7710d4369fcdc5db19325fdd": {
-  "results": [
-   {
-    "canonical_skill_id": "09ca1b6a-2f87-4eaa-b343-05dda3a960ee",
-    "name": "Python",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Python",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Python",
-     "Python",
-     "Python"
-    ],
-    "evidence_hash": "185723a1300afadb",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07",
-    "name": "git",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "Git pull-request workflow",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "Git pull-request workflow",
-     "Git pull-request workflow",
-     "Git pull-request workflow"
-    ],
-    "evidence_hash": "491bcae43040f840",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   },
-   {
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
-    "name": "sql",
-    "jd_sense": null,
-    "jd_sense_basis": null,
-    "found": true,
-    "found_senses": [],
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "confirmed": true,
-    "quote": "optimised SQL queries",
-    "quote_verified": true,
-    "method": "llm",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "status": "CONFIRMED",
-    "reason": "all_votes_yes",
-    "vote_quotes": [
-     "optimised SQL queries",
-     "Wrote and optimised SQL queries",
-     "Wrote and optimised SQL queries"
-    ],
-    "evidence_hash": "ec9f84bf37d9748d",
-    "llm": {
-     "provider": "GOOGLE",
-     "model": "gemini-3.1-flash-lite",
-     "used_fallback": false
-    },
-    "llm_votes": [
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     },
-     {
-      "provider": "GOOGLE",
-      "model": "gemini-3.1-flash-lite",
-      "used_fallback": false
-     }
-    ]
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "e1558c256e9d1b414128e8d829a493e16e9b9d24c79d3c7f0c685210172acdc4": {
-  "results": [
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "sql",
-    "found": true,
-    "quote": "Wrote SQL queries",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Wrote SQL queries",
-     "Wrote SQL queries",
-     "Wrote SQL queries"
-    ],
-    "found_senses": [],
-    "evidence_hash": "205a376fc73cd27d",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a"
-   },
-   {
-    "llm": {
-     "model": "gemini-3.1-flash-lite",
-     "provider": "GOOGLE",
-     "used_fallback": false
-    },
-    "name": "git",
-    "found": true,
-    "quote": "Used Git with feature branches and pull requests",
-    "votes": [
-     "yes",
-     "yes",
-     "yes"
-    ],
-    "method": "llm",
-    "reason": "all_votes_yes",
-    "status": "CONFIRMED",
-    "sources": [
-     "DERIVED",
-     "LLM",
-     "SCAN"
-    ],
-    "jd_sense": null,
-    "confirmed": true,
-    "llm_votes": [
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     },
-     {
-      "model": "gemini-3.1-flash-lite",
-      "provider": "GOOGLE",
-      "used_fallback": false
-     }
-    ],
-    "vote_quotes": [
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests",
-     "Used Git with feature branches and pull requests"
-    ],
-    "found_senses": [],
-    "evidence_hash": "9a160a6c5be1a5fe",
-    "jd_sense_basis": null,
-    "quote_verified": true,
-    "canonical_skill_id": "36072132-4bcf-4a90-907c-3ca56b863b07"
-   }
-  ],
-  "provider": "GOOGLE",
-  "model": "gemini-3.1-flash-lite",
-  "used_fallback": false
- },
- "f90998b899b43d83592f84be942cc6c6f58e0665714fd6a3c49e8c2b73324c26": {
+ "ec0cc1f6e71870115fd1d62dfa8daab8e9323c32a31795f800f7f256cbe492b8": {
   "results": [
    {
     "canonical_skill_id": "b7fb160f-8ba6-4a4c-b44c-49fa5cd30e2f",
@@ -6008,6 +5950,64 @@
     "vote_reason": "listed_only",
     "note": "listed only, not shown in work",
     "cached": true
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false
+ },
+ "f6ac2446c489581e60551f93713c930189df8eda6e88ca2317a1f5568c835458": {
+  "results": [
+   {
+    "llm": {
+     "model": "gemini-3.1-flash-lite",
+     "provider": "GOOGLE",
+     "used_fallback": false
+    },
+    "name": "Incident Management",
+    "found": true,
+    "quote": "Incident Management",
+    "votes": [
+     "yes",
+     "yes",
+     "yes"
+    ],
+    "method": "llm",
+    "reason": "all_votes_yes",
+    "status": "CONFIRMED",
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "jd_sense": null,
+    "confirmed": true,
+    "llm_votes": [
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     },
+     {
+      "model": "gemini-3.1-flash-lite",
+      "provider": "GOOGLE",
+      "used_fallback": false
+     }
+    ],
+    "vote_quotes": [
+     "Incident Management",
+     "Incident Management",
+     "Incident Management"
+    ],
+    "found_senses": [],
+    "evidence_hash": "32d7cf2e4c439656",
+    "jd_sense_basis": null,
+    "quote_verified": true,
+    "canonical_skill_id": "dc3629e5-52d7-47ab-a440-c92b9818241b"
    }
   ],
   "provider": "GOOGLE",

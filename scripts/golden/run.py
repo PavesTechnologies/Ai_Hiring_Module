@@ -19,7 +19,9 @@ scoring v2 runs with persist=False. The configuration (skill catalogue, rules, s
 database's - dev's, or a fresh one built from migrations and the seed (point DB_* at it).
 
 Votes come from tests/golden/vote_cache.json, keyed like the confirmation cache (resume text, core skills,
-prompt, detection and model versions; per skill, the evidence the voters saw). Only a miss calls the model.
+prompt, detection and model versions; per skill, the evidence the voters saw) but by natural keys - skills by
+canonical name, not id (natural_keys.py) - so the same frozen votes answer on dev, a fresh database or
+production. Only a miss calls the model.
 
 Reports: tests/golden/runs/<timestamp>.md and .json (not committed). Exit code 1 when an expectation or a
 counterfactual pair fails, or (with --cache-only) a vote was missing; changes from the accepted run alone
@@ -41,6 +43,7 @@ from unittest.mock import patch
 
 from scripts.golden.fingerprint import scoring_fingerprint
 from scripts.golden.golden_format import GOLDEN_DIR, counterfactual_pairs, load, load_json
+from scripts.golden.natural_keys import SkillNames, natural_cache_keys
 
 ACCEPTED = GOLDEN_DIR / "accepted_run.json"
 # The no-LLM fallback's own accepted run (--no-llm): scan, auto-confirm and rules only.
@@ -196,10 +199,15 @@ class GoldenVotes:
     from tests/golden/vote_cache.json (and, with dev_cache, from dev's own cache on a golden miss).
     """
 
-    def __init__(self, repo, cache: dict, *, dev_cache: bool):
+    def __init__(self, repo, cache: dict, *, dev_cache: bool, names=None, legacy: dict | None = None):
         self._repo, self.cache, self.dev_cache = repo, cache, dev_cache
         self.new: dict[str, dict] = {}
         self.hits = self.dev_hits = 0
+        # Natural keys (natural_keys.py): names maps cached results to this database's skill ids; legacy maps
+        # a natural key to its older id-based forms, under which entries cached before natural keys are stored -
+        # such an entry is moved to its natural key (in new) and its old key retired when the run is accepted.
+        self.names, self.legacy = names, legacy if legacy is not None else {}
+        self.retired: list[str] = []
         # Two cases can share a confirmation cache key (same resume text and core skills) while
         # their evidence differs (e.g. S2 and its refrozen control) - one shared entry would hold
         # one case's answers and the other would miss on every alternate run. New answers are
@@ -216,10 +224,26 @@ class GoldenVotes:
     def _scoped(self, cache_key: str) -> str:
         return f"{self.case_id}|{cache_key}" if self.case_id else cache_key
 
+    def _lookup(self, cache_key: str):
+        """(entry, the key it was stored under): this case's own entry first, then the shared one."""
+        scoped = self._scoped(cache_key)
+        for key in (scoped, cache_key):
+            entry = self.cache.get(key) or self.new.get(key)
+            if entry is not None:
+                return entry, key
+        return None, None
+
     def get_confirmation(self, cache_key: str):
         scoped = self._scoped(cache_key)
-        entry = (self.cache.get(scoped) or self.new.get(scoped)
-                 or self.cache.get(cache_key) or self.new.get(cache_key))
+        entry, _ = self._lookup(cache_key)
+        for older in self.legacy.get(cache_key, []) if entry is None else []:
+            entry, old_key = self._lookup(older)
+            if entry is not None:                    # cached before natural keys: move it to its natural key
+                self.new[scoped if old_key.startswith(f"{self.case_id}|") else cache_key] = entry
+                self.retired.append(old_key)
+                break
+        if entry is not None and self.names is not None:
+            entry = self.names.with_local_ids(entry)
         if entry is not None:
             self.hits += 1
             if self.main_model and entry.get("model") != self.main_model:
@@ -507,6 +531,7 @@ def run(args) -> int:
     from app.services.llm.factory import resolve_active_provider
     from app.services.llm.model_selection import LLMPurpose
     from app.services.skills import core_skill_confirmation_service as confirmation
+    from app.services.campaign import scoring_v2_service
 
     golden = load()
     cases = [c for c in golden["cases"] if not args.only or c["id"] in args.only]
@@ -526,7 +551,8 @@ def run(args) -> int:
         config_repo = ConfigRepository(db)
         v2 = ScoringV2Service(db, SkillRepository(db), config_repo, cache_service=CacheService(get_redis_client()),
                               provider_resolver=lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION))
-        votes = GoldenVotes(v2.detection_repository, cache, dev_cache=args.dev_cache)
+        names, legacy_keys = SkillNames(db), {}
+        votes = GoldenVotes(v2.detection_repository, cache, dev_cache=args.dev_cache, names=names, legacy=legacy_keys)
         votes.main_model = getattr(v2.provider_resolver(), "model", None)
         v2.detection_repository = votes
         world = World(db, golden)
@@ -540,7 +566,8 @@ def run(args) -> int:
         def no_llm(*_args, **_kwargs):
             raise LLMError("golden vote cache miss (--cache-only)", reason="CACHE_MISS")
 
-        patches = [patch.object(confirmation.CoreSkillConfirmationService, "confirm", confirm)]
+        patches = [patch.object(confirmation.CoreSkillConfirmationService, "confirm", confirm),
+                   natural_cache_keys(confirmation, scoring_v2_service, names, legacy_keys)]
         if args.cache_only:
             patches.append(patch.object(confirmation, "structured_call", no_llm))
         # Every LLM call is logged in llm_call_log - but the case's resume and campaign rows live only
@@ -607,6 +634,8 @@ def run(args) -> int:
                 "model": model, "main_model": votes.main_model,
                 "cached_votes_from_other_models": votes.other_model_hits,
                 "new_votes_from_other_models": new_other_model},
+        # id-keyed entries moved to their natural keys in this run (removed from the cache on accept)
+        "retired_vote_cache_keys": sorted(set(votes.retired)),
     }
     failed_pairs = [p for p in pairs if p["differences"] and p["varies"] != "control"]
     failed = {cid: p for cid, p in problems.items() if p}
@@ -636,6 +665,8 @@ def accept(run_record: dict) -> None:
     """Accepted: the run's results and fingerprint (a --no-llm run in its own file), and its new vote-cache entries."""
     cache = json.loads(VOTE_CACHE.read_text(encoding="utf-8")) if VOTE_CACHE.exists() else {}
     new = run_record.get("new_vote_cache_entries") or {}
+    for old_key in run_record.get("retired_vote_cache_keys") or []:   # moved to their natural keys
+        cache.pop(old_key, None)
     cache.update(new)
     VOTE_CACHE.write_text(json.dumps(dict(sorted(cache.items())), indent=1, ensure_ascii=False) + "\n",
                           encoding="utf-8")
