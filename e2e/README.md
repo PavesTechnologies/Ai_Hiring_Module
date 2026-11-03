@@ -85,6 +85,20 @@ B3. a recruiter moves the candidate first: the full result is recorded only, the
 Report: `/data/storage/e2e_fallback_report.json` (stages, result rows, audit entries, task logs, dead
 letters and LLM calls per step).
 
+Then `scripts/e2e/run_scoring_versions_e2e.py` (retire v1, phase D: shadow mode as the current vs a
+candidate scoring version). The candidate version changes a weight only, never a model (a version's own
+model is called on the real provider, which this stack must never reach):
+
+D1. the seed's current version exists; HR creates a candidate version (a recruiter gets 403)
+D2. trying it on a campaign with backfill: a candidate-version result per candidate, never acted on;
+    the decision untouched
+D3. a new upload: the current version decides (its result tagged with it), the candidate version shadows it
+D4. the shadow report compares the two by label
+D5. promotion (audited): candidate -> current, the old one retired, the campaign stops shadowing; the
+    next decision is tagged with the promoted version (the driver then puts the seed's version back)
+
+Report: `/data/storage/e2e_scoring_versions_report.json`.
+
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
 

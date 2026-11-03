@@ -94,12 +94,15 @@ def test_daily_cap_is_not_run_without_a_score():
 def _run_task(outcome, *, retries):
     import app.tasks.scoring_v2_tasks as tasks
     task = tasks.calculate_scoring_v2_task
-    campaign = SimpleNamespace(id=uuid4(), jd_id=uuid4(), scoring_v2_enabled=False, scoring_v2_shadow=True)
+    version = SimpleNamespace(id=uuid4(), status="candidate", label="weights 0.6", model=None)
+    campaign = SimpleNamespace(id=uuid4(), jd_id=uuid4(), candidate_scoring_version_id=version.id)
     cc = SimpleNamespace(id=uuid4(), campaign_id=campaign.id, resume_id=uuid4())
     dlq = MagicMock()
+    db = MagicMock()
+    db.get.return_value = version
     service = MagicMock()
     service.return_value.score.return_value = {"outcome": outcome, "outcome_reason": "DAILY_LIMIT", "confirmation": {}}
-    with patch.object(tasks, "SessionLocal", return_value=MagicMock()), \
+    with patch.object(tasks, "SessionLocal", return_value=db), \
             patch.object(tasks, "CeleryTaskLogService") as log_service, \
             patch.object(tasks, "CampaignCandidateRepository") as cc_repo, \
             patch.object(tasks, "CampaignRepository") as campaign_repo, \
@@ -120,7 +123,36 @@ def _run_task(outcome, *, retries):
                 pass
         finally:
             task.pop_request()
+    assert service.return_value.score.call_args.kwargs["scoring_version"] is version
+    assert service.return_value.score.call_args.kwargs["acted_on"] is False
     return retry, dlq, log_service
+
+
+def test_the_shadow_task_skips_a_campaign_not_trying_a_candidate_version():
+    import app.tasks.scoring_v2_tasks as tasks
+    task = tasks.calculate_scoring_v2_task
+    for campaign, version in (
+            (SimpleNamespace(id=uuid4(), candidate_scoring_version_id=None), None),
+            (SimpleNamespace(id=uuid4(), candidate_scoring_version_id=uuid4()),
+             SimpleNamespace(status="retired"))):                     # promoted or retired since it was queued
+        db = MagicMock()
+        db.get.return_value = version
+        service = MagicMock()
+        with patch.object(tasks, "SessionLocal", return_value=db), \
+                patch.object(tasks, "CeleryTaskLogService") as log_service, \
+                patch.object(tasks, "CampaignCandidateRepository") as cc_repo, \
+                patch.object(tasks, "CampaignRepository") as campaign_repo, \
+                patch.object(tasks, "ScoringV2Service", service):
+            log_service.return_value.repository.get_by_task_id.return_value = None
+            cc_repo.return_value.get_by_id.return_value = SimpleNamespace(id=uuid4(), campaign_id=campaign.id)
+            campaign_repo.return_value.get_by_id.return_value = campaign
+            task.push_request(id="t1", retries=0)
+            try:
+                task.run(campaign_candidate_id=str(uuid4()))
+            finally:
+                task.pop_request()
+        service.return_value.score.assert_not_called()
+        assert "skipped" in log_service.return_value.mark_success.call_args.kwargs["summary"]
 
 
 def test_pending_is_retried():

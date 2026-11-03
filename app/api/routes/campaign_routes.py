@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.campaign_candidate import get_encryption_service
 from app.schemas.campaign.scoring_shadow_schema import (
-    RecruiterRankingRequest, ShadowReportResponse, ShadowSwitchRequest, ShadowSwitchResponse,
+    CandidateScoringVersionRequest, CandidateScoringVersionResponse, RecruiterRankingRequest, ShadowReportResponse,
 )
 from app.services.campaign.scoring_shadow_report_service import ScoringShadowReportService
 from app.schemas.campaign.campaign_response import CampaignResponse, CampaignScoringConfigurationResponse, CampaignScoringDefaultsResponse, CampaignWeightHistoryResponse, CampaignMinimalResponse, CampaignPageResponse
@@ -680,13 +680,13 @@ def update_campaign(campaign_id: UUID,
     return APIResponse.ok(data=campaign, message="Campaign updated successfully.")   
     
 
-# --- Scoring v2 (Phase 1, Step 4): shadow report - HR_ADMIN only -------------
+# --- Shadow mode: the current vs a candidate scoring version - HR_ADMIN only ---
 
 @router.get(
     "/{campaign_id}/scoring-shadow-report",
     response_model=APIResponse[ShadowReportResponse],
-    summary="Scoring v2 shadow report: v1 vs v2 (and a recruiter ranking) per candidate",
-    description="Read-only comparison. v2 is never used for decisions here. HR_ADMIN only.",
+    summary="Shadow report: the current vs the campaign's candidate scoring version (and a recruiter ranking)",
+    description="Read-only comparison. The candidate version is never used for decisions. HR_ADMIN only.",
 )
 def get_scoring_shadow_report(
     campaign_id: UUID,
@@ -701,7 +701,7 @@ def get_scoring_shadow_report(
 @router.put(
     "/{campaign_id}/scoring-shadow-report/recruiter-ranking",
     response_model=APIResponse[ShadowReportResponse],
-    summary="Enter a recruiter's own ranking to compare with v1 and v2",
+    summary="Enter a recruiter's own ranking to compare with the current and the candidate version",
 )
 def save_scoring_shadow_recruiter_ranking(
     campaign_id: UUID,
@@ -717,19 +717,24 @@ def save_scoring_shadow_recruiter_ranking(
     return APIResponse.ok(data=ShadowReportResponse(**report), message="Recruiter ranking saved.")
 
 
-@router.post(
-    "/{campaign_id}/scoring-v2-shadow",
-    response_model=APIResponse[ShadowSwitchResponse],
-    summary="Turn scoring v2 shadow on/off for this campaign (never affects decisions)",
+@router.put(
+    "/{campaign_id}/candidate-scoring-version",
+    response_model=APIResponse[CandidateScoringVersionResponse],
+    summary="Try a candidate scoring version on this campaign (shadow - never affects decisions)",
+    description=("version_id null stops shadow scoring. backfill scores the campaign's already-scored "
+                 "candidates with it now (LLM calls; the daily cap applies). Audited. HR_ADMIN only."),
 )
-def set_scoring_v2_shadow(
+def set_candidate_scoring_version(
     campaign_id: UUID,
-    request: ShadowSwitchRequest,
+    request: CandidateScoringVersionRequest,
     db: Session = Depends(get_db),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    result = ScoringShadowReportService(db).set_shadow(
-        campaign_id, enabled=request.enabled, backfill=request.backfill,
+    from app.repositories.audit_repository import AuditRepository
+    from app.services.audit_service import AuditService
+    from app.services.campaign.scoring_versions import ScoringVersionService
+    result = ScoringVersionService(db, AuditService(AuditRepository(db))).set_campaign_candidate(
+        campaign_id, version_id=UUID(request.version_id) if request.version_id else None, backfill=request.backfill,
         actor_id=user.user_id, actor_role=authorising_role(user),
     )
-    return APIResponse.ok(data=ShadowSwitchResponse(**result), message="Scoring v2 shadow updated.")
+    return APIResponse.ok(data=CandidateScoringVersionResponse(**result), message="Candidate scoring version updated.")

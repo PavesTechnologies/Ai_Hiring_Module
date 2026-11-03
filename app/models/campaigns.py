@@ -73,6 +73,13 @@ class HiringCampaign(Base):
     scoring_v2_shadow: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Shadow mode since retire v1, phase D: when set, each candidate is also scored with this
+    # (candidate) scoring version, stored and never acted on. Replaces scoring_v2_shadow, which
+    # nothing reads any more (dropped later, with approval).
+    candidate_scoring_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scoring_versions.id", name="fk_hiring_campaigns_candidate_scoring_version"),
+        nullable=True,
+    )
     # Campaigns that existed before JD calibration may stay active/resume with
     # a "JD not calibrated" warning; cleared once their JD is calibrated. New
     # campaigns are never exempt.

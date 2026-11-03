@@ -427,6 +427,16 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             campaign_candidate.id, breakdown["deterministic_passed"],
         )
 
+        # Shadow mode (retire v1, phase D): a campaign trying a candidate scoring version has it scored
+        # too, after the decision is committed - stored, never acted on.
+        if getattr(campaign, "candidate_scoring_version_id", None) is not None:
+            try:
+                from app.tasks.scoring_v2_tasks import enqueue_scoring_v2
+                enqueue_scoring_v2(campaign_candidate, task_log_service)
+            except Exception:
+                logger.exception("Failed to enqueue the candidate scoring version for campaign_candidate_id=%s",
+                                 campaign_candidate.id)
+
 
         # A system rejection never emails the candidate - a recruiter sends
         # the rejection email manually (POST .../send-rejection-email).

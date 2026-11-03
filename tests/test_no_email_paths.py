@@ -48,6 +48,11 @@ V2_MODULES = [
     "scripts/e2e/export_fixtures.py",
     "scripts/e2e/run_reparse_e2e.py",
     "scripts/e2e/run_phase2_e2e.py",
+    "scripts/e2e/run_fallback_e2e.py",
+    "scripts/e2e/run_scoring_versions_e2e.py",
+    # Retire v1, phase D: scoring versions (shadow mode as current vs candidate).
+    "app/services/campaign/scoring_versions.py",
+    "app/api/routes/scoring_version_routes.py",
     "scripts/e2e/setup_e2e.py",
     "scripts/e2e/stub_llm.py",
     "scripts/e2e/worker.py",
@@ -196,11 +201,14 @@ def test_core_confirmation_sends_no_email(email_guard):
 def test_shadow_task_sends_no_email(email_guard, outcome):
     import app.tasks.scoring_v2_tasks as tasks
     task = tasks.calculate_scoring_v2_task
-    campaign = SimpleNamespace(id=uuid4(), jd_id=uuid4(), scoring_v2_enabled=False, scoring_v2_shadow=True)
+    version = SimpleNamespace(id=uuid4(), status="candidate", label="weights 0.6", model=None)
+    campaign = SimpleNamespace(id=uuid4(), jd_id=uuid4(), candidate_scoring_version_id=version.id)
     cc = SimpleNamespace(id=uuid4(), campaign_id=campaign.id, resume_id=uuid4())
+    db = MagicMock()
+    db.get.return_value = version
     service = MagicMock()
     service.return_value.score.return_value = {"outcome": outcome, "confirmation": {}}
-    with patch.object(tasks, "SessionLocal", return_value=MagicMock()), \
+    with patch.object(tasks, "SessionLocal", return_value=db), \
             patch.object(tasks, "CeleryTaskLogService") as logs, \
             patch.object(tasks, "CampaignCandidateRepository") as cc_repo, \
             patch.object(tasks, "CampaignRepository") as campaign_repo, \
@@ -220,15 +228,20 @@ def test_shadow_task_sends_no_email(email_guard, outcome):
                 pass
             finally:
                 task.pop_request()
+        assert service.return_value.score.called          # the scoring itself ran, not a skip
 
 
-def test_shadow_switch_and_backfill_send_no_email(email_guard):
-    from app.services.campaign.scoring_shadow_report_service import ScoringShadowReportService
-    service = ScoringShadowReportService.__new__(ScoringShadowReportService)
-    service.db = MagicMock()
-    service.db.execute.return_value.scalars.return_value.all.return_value = [SimpleNamespace(id=uuid4())]
-    service.campaign_repo = MagicMock(get_by_id=MagicMock(return_value=SimpleNamespace(id=uuid4(), scoring_v2_shadow=False)))
-    service.audit_service = MagicMock()
-    with patch("app.tasks.scoring_v2_tasks.enqueue_scoring_v2", return_value=True):
-        result = service.set_shadow(uuid4(), enabled=True, backfill=True, actor_id=None, actor_role="SYSTEM")
+def test_trying_a_scoring_version_with_backfill_sends_no_email(email_guard):
+    from app.services.campaign.scoring_versions import ScoringVersionService
+    version = SimpleNamespace(id=uuid4(), status="candidate", label="weights 0.6", model=None, configuration={},
+                              note=None, created_at=None, activated_at=None, retired_at=None)
+    db = MagicMock()
+    db.get.return_value = version
+    db.execute.return_value.scalars.return_value.all.return_value = [SimpleNamespace(id=uuid4())]
+    service = ScoringVersionService(db, MagicMock())
+    with patch("app.repositories.CampaignRepository.CampaignRepository") as repo, \
+            patch("app.tasks.scoring_v2_tasks.enqueue_scoring_v2", return_value=True):
+        repo.return_value.get_by_id.return_value = SimpleNamespace(id=uuid4(), candidate_scoring_version_id=None)
+        result = service.set_campaign_candidate(uuid4(), version_id=version.id, backfill=True, actor_id=None,
+                                                actor_role="SYSTEM")
     assert result["queued"] == 1

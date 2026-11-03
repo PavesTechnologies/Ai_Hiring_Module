@@ -1,8 +1,9 @@
 """
-Scoring v2 shadow task (Phase 1): computes and stores v2 for one campaign
-candidate on a scoring_v2_shadow / scoring_v2_enabled campaign, AFTER v1 has
-decided and committed. Never touches campaign_candidates - v1 is unaffected
-by anything that happens here, including failures.
+Shadow scoring task (retire v1, phase D): scores one campaign candidate with the
+campaign's candidate scoring version (hiring_campaigns.candidate_scoring_version_id),
+AFTER the current version has decided and committed. Stored with acted_on = false;
+never touches campaign_candidates - the decision is unaffected by anything that
+happens here, including failures.
 
 PENDING (the core confirmation couldn't run: quota, provider down, backup
 failing too) is retried with backoff; when retries run out the task is
@@ -26,7 +27,8 @@ from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.campaign.scoring_v2 import OUTCOME_PENDING
-from app.services.campaign.scoring_v2_service import ScoringV2Service, v2_should_run
+from app.services.campaign.scoring_v2_service import ScoringV2Service
+from app.services.campaign.scoring_versions import STATUS_CANDIDATE
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 
@@ -82,8 +84,12 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
 
         campaign_candidate = CampaignCandidateRepository(db).get_by_id(UUID(campaign_candidate_id))
         campaign = CampaignRepository(db).get_by_id(campaign_candidate.campaign_id) if campaign_candidate else None
-        if campaign_candidate is None or campaign is None or not v2_should_run(campaign):
-            task_log_service.mark_success(task_log, summary=json.dumps({"skipped": True, "reason": "v2 not enabled"}))
+        from app.models.scoring_v2 import ScoringVersion
+        version_id = getattr(campaign, "candidate_scoring_version_id", None) if campaign is not None else None
+        version = db.get(ScoringVersion, version_id) if version_id is not None else None
+        if campaign_candidate is None or version is None or version.status != STATUS_CANDIDATE:
+            task_log_service.mark_success(task_log, summary=json.dumps(
+                {"skipped": True, "reason": "the campaign is not trying a candidate scoring version"}))
             return
         resume = ResumeRepository(db).get_by_id(campaign_candidate.resume_id)
         job_description = JDRepository(db).get_by_id(campaign.jd_id)
@@ -101,13 +107,14 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
         ).score(
             campaign=campaign, campaign_candidate=campaign_candidate, job_description=job_description,
             resume=resume, experience_result=experience, education_result=education, domain_result=domain,
-            acted_on=False,
+            acted_on=False, scoring_version=version,
         )
-        db.commit()  # the stored v2 row (PENDING too) - the shadow report shows the latest
+        db.commit()  # the stored row (PENDING too) - the shadow report shows the latest
 
         if breakdown["outcome"] == OUTCOME_PENDING:
             raise ScoringV2Pending(breakdown.get("outcome_reason") or "core confirmation unavailable")
         task_log_service.mark_success(task_log, summary=json.dumps({
+            "scoring_version": version.label,
             "outcome": breakdown["outcome"], "score": breakdown.get("deterministic_score"),
             "llm_calls": (breakdown.get("confirmation") or {}).get("llm_calls"),
         }))

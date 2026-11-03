@@ -1412,7 +1412,7 @@ class CampaignCandidateService:
         """Latest v2 result, summarised for the read-only shadow panel. Never used for decisions."""
         try:
             from app.repositories.scoring_result_repository import ScoringResultRepository
-            from app.services.campaign.scoring_shadow_report_service import v2_label
+            from app.services.campaign.scoring_shadow_report_service import outcome_label
             row = ScoringResultRepository(self.campaign_candidate_repo.db).latest(campaign_candidate.id, "v2")
             if row is None:
                 return None
@@ -1431,7 +1431,7 @@ class CampaignCandidateService:
                     "quote": result.get("quote"), "votes": result.get("votes") or [], "method": result.get("method"),
                 })
             return {
-                "outcome": v2_label(row), "outcome_reason": b.get("outcome_reason"),
+                "outcome": outcome_label(row), "outcome_reason": b.get("outcome_reason"),
                 "score": float(row.score) if row.score is not None else None,
                 "provisional_score": b.get("provisional_score"),
                 "core_confirmed_count": b.get("core_confirmed_count"), "core_skill_count": b.get("core_skill_count"),

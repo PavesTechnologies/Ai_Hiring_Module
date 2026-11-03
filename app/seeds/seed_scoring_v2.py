@@ -20,6 +20,7 @@ is missing, never overwrites an edited row.
 - platform_config FAIRNESS_MIN_GROUP_SIZE: the fairness report's smallest shown group
 """
 import json
+from datetime import datetime, timezone
 import uuid
 
 from app.repositories.skill_detection_repository import MATCH_BLOCKLIST_KEY
@@ -180,6 +181,24 @@ def seed(db) -> None:
         if db.query(PlatformConfig).filter(PlatformConfig.key == key).first() is None:
             db.add(PlatformConfig(id=uuid.uuid4(), key=key, value=value, description=description))
             print(f"Added config: {key}")
+
+    # The current scoring version (retire v1, phase D): scoring reads its configuration from here. A fresh
+    # database gets it from SCORING_V2_CONFIG as seeded above; one migrated from dev got it in e1a3c5e7f9b2.
+    from app.models.scoring_v2 import ScoringVersion
+    if db.query(ScoringVersion).filter(ScoringVersion.status == "current").first() is None:
+        db.flush()
+        raw = db.query(PlatformConfig).filter(PlatformConfig.key == SCORING_V2_CONFIG_KEY).first()
+        try:
+            configuration = json.loads(raw.value) if raw is not None and raw.value else {}
+        except ValueError:
+            configuration = {}
+        db.add(ScoringVersion(
+            id=uuid.uuid4(), label="v2 baseline", status="current",
+            configuration=configuration if isinstance(configuration, dict) else {},
+            note="Created by the scoring seed from platform_config SCORING_V2_CONFIG.",
+            activated_at=datetime.now(timezone.utc),
+        ))
+        print("Added scoring version: v2 baseline (current)")
 
     # Superseded by the per-campaign hiring_campaigns.scoring_v2_shadow switch;
     # removed only if it still holds the value this seed put there.

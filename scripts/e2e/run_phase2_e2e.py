@@ -143,7 +143,6 @@ def run() -> None:
 
     # P4 - K scored with provisional credit for the supporting skill (v2 decides; v1 no longer runs)
     campaign_id = uuid.UUID(campaign_id)
-    shadow = client.post(f"/campaigns/{campaign_id}/scoring-v2-shadow", json={"enabled": True}, headers=hr)
     info = manifest["K"]
     upload = client.post("/resumes", headers=recruiter, data={
         "campaign_id": str(campaign_id), "candidate_full_name": info["full_name"], "candidate_email": info["email"],
@@ -179,7 +178,7 @@ def run() -> None:
     db.expire_all()
     jd_core = sum(1 for s in calibration()["skills"] if s["tier"] == "CORE")
     report.check(4, "K gets provisional credit 0.8 for the supporting skill, flagged provisional, outside every gate",
-                 shadow.status_code == 200 and v2.acted_on is True
+                 v2.acted_on is True
                  and stored.get("scoring_version") == "v2" and "v2" not in stored and stored_prov == v2_prov
                  and v2_prov.get("provisional") is True and v2_prov.get("quality") == PROVISIONAL_CREDIT
                  and v2_prov.get("counts_for_core_gate") is False and supporting_unknown["raw_text"] not in v2_names

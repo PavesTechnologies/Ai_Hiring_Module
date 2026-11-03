@@ -5,9 +5,9 @@ and stores the result in candidate_scoring_results with the exact config
 used. Never writes campaign_candidates - acting on the result is the
 caller's decision (deterministic_scoring_tasks, by campaign flag).
 
-Which campaigns compute v2 at all:
-  - scoring_v2_enabled campaigns (v2 decides),
-  - scoring_v2_shadow campaigns (opt-in per campaign: stored, never acted on).
+Which scoring version: the current one (scoring_versions) decides every campaign since retire v1,
+phase C/D; a campaign trying a candidate version also has it scored - stored, never acted on
+(scoring_v2_tasks). The version's configuration and model are used, and recorded on the result.
 
 LLM budget: platform_config SCORING_V2_DAILY_LLM_CALL_CAP caps the core
 confirmation calls per day (counted from today's stored v2 results). When
@@ -69,12 +69,6 @@ logger = logging.getLogger(__name__)
 
 DAILY_LLM_CALL_CAP_KEY = "SCORING_V2_DAILY_LLM_CALL_CAP"
 DEFAULT_DAILY_LLM_CALL_CAP = 300
-
-
-def v2_should_run(campaign, config_repository=None) -> bool:
-    """v2 runs only on campaigns that opted in: scoring_v2_enabled or the scoring_v2_shadow switch."""
-    return (getattr(campaign, "scoring_v2_enabled", False) is True
-            or getattr(campaign, "scoring_v2_shadow", False) is True)
 
 
 def _cap_value(value) -> int | None:
@@ -280,6 +274,7 @@ class ScoringV2Service:
         evidence_records: list | None = None,
         use_confirmation_cache: bool = True,
         llm_fallback: str = FALLBACK_NEVER,
+        scoring_version=None,
     ) -> dict:
         """
         llm_fallback: when the core-skill votes can't be had, score without the LLM (the scan,
@@ -293,18 +288,32 @@ class ScoringV2Service:
         afresh instead of reusing a cached confirmation. Pass persist=False.
         The LLM calls made while scoring are logged against this resume and
         campaign (llm_call_subject).
+
+        scoring_version: the version to score with (scoring_versions); None = the current one. Its
+        configuration replaces SCORING_V2_CONFIG and its model (when set) runs the core confirmation;
+        the result records it (scoring_version_id). With no version at all (a fresh database before
+        its seed), SCORING_V2_CONFIG and the platform's model.
         """
+        from app.services.campaign.scoring_versions import current_version, provider_resolver_for
+        version = scoring_version if scoring_version is not None else current_version(self.db)
+        default_resolver = self.provider_resolver
+        self.provider_resolver = provider_resolver_for(self.db, version, default_resolver)
         with llm_call_subject(resume_id=getattr(resume, "id", None), campaign_id=getattr(campaign, "id", None)):
-            return self._score(campaign=campaign, campaign_candidate=campaign_candidate,
-                               job_description=job_description, resume=resume, experience_result=experience_result,
-                               education_result=education_result, domain_result=domain_result, acted_on=acted_on,
-                               use_llm=use_llm, persist=persist, evidence_records=evidence_records,
-                               use_confirmation_cache=use_confirmation_cache, llm_fallback=llm_fallback)
+            try:
+                return self._score(campaign=campaign, campaign_candidate=campaign_candidate,
+                                   job_description=job_description, resume=resume,
+                                   experience_result=experience_result, education_result=education_result,
+                                   domain_result=domain_result, acted_on=acted_on, use_llm=use_llm, persist=persist,
+                                   evidence_records=evidence_records, use_confirmation_cache=use_confirmation_cache,
+                                   llm_fallback=llm_fallback, version=version)
+            finally:
+                self.provider_resolver = default_resolver
 
     def _score(self, *, campaign, campaign_candidate, job_description, resume, experience_result, education_result,
                domain_result, acted_on, use_llm, persist, evidence_records, use_confirmation_cache,
-               llm_fallback=FALLBACK_NEVER) -> dict:
-        config = self.load_config()
+               llm_fallback=FALLBACK_NEVER, version=None) -> dict:
+        from app.services.campaign.scoring_versions import version_config
+        config = version_config(version) if version is not None else self.load_config()
         tools = self.evidence_service.load_tools()
 
         rows = self.db.query(JDSkill).filter(JDSkill.jd_id == job_description.id).all()
@@ -451,7 +460,7 @@ class ScoringV2Service:
             "detection_version": current_version,
             "confirmation_prompt_version": PROMPT_VERSION,
         }
-        version = config_version(snapshot)
+        config_version_hash = config_version(snapshot)
 
         hierarchy = CandidateScoringService(
             self.skill_repository, SkillOntologyRepository(self.db),
@@ -464,7 +473,9 @@ class ScoringV2Service:
             required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
             allowed_missing_core=allowed,
             score_threshold_rejects=snapshot["score_threshold_rejects_config"],
-            extra={"scoring_config_version": version, "confirmation": confirmation,
+            extra={"scoring_config_version": config_version_hash, "confirmation": confirmation,
+                   "scoring_version_id": str(version.id) if version is not None else None,
+                   "scoring_version_label": version.label if version is not None else None,
                    # the functional (domain capability) check's detail, for the Deterministic tab
                    "domain_capability_validation": domain_result,
                    "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on,
@@ -487,9 +498,10 @@ class ScoringV2Service:
             ScoringResultRepository(self.db).add(CandidateScoringResult(
                 campaign_candidate_id=campaign_candidate.id, scoring_version=SCORING_VERSION,
                 score=breakdown["deterministic_score"], passed=breakdown["deterministic_passed"],
-                outcome=breakdown["outcome"], breakdown=breakdown, scoring_config_version=version,
+                outcome=breakdown["outcome"], breakdown=breakdown, scoring_config_version=config_version_hash,
                 config_snapshot=snapshot, acted_on=acted_on, scoring_mode=breakdown["scoring_mode"],
                 awaiting_full_scoring=bool(breakdown.get("awaiting_full_scoring")),
+                scoring_version_id=version.id if version is not None else None,
             ))
         return breakdown
 

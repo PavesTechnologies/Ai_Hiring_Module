@@ -1,12 +1,14 @@
 """
-Scoring v2 Step 4: the shadow report - v1 next to v2 for every candidate of a
-campaign, plus an optional recruiter ranking to compare both against. Read
-only, except the recruiter ranking and the campaign's shadow switch (HR admin).
+The shadow report (retire v1, phase D): the current scoring version next to the
+campaign's candidate version for every candidate, plus an optional recruiter
+ranking to compare both against. Read only, except the recruiter ranking (HR
+admin). Trying a version on a campaign is scoring_versions.ScoringVersionService.
 
-Per candidate: the latest v1 and v2 results (candidate_scoring_results), the
-rank each version gives, the recruiter's rank, and whether v1 and v2 disagree.
-v2's outcome is PASS / REVIEW (would_be_review) / REJECT, or PENDING (core
-confirmation couldn't run yet) / NOT_RUN (daily LLM cap) / NOT_SCORED.
+Per candidate: the result acted on (the current version's decision) and the
+latest result of the candidate version (candidate_scoring_results), the rank
+each gives, the recruiter's rank, and whether they disagree. An outcome is PASS
+/ REVIEW (would_be_review) / REJECT, or PENDING (core confirmation couldn't run
+yet) / NOT_RUN (daily LLM cap) / NOT_SCORED.
 """
 import logging
 from datetime import datetime, timezone
@@ -17,37 +19,31 @@ from sqlalchemy import select
 from app.services.llm.call_log import calls_in_quota_day
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.candidates import Candidate, ParseStatus, Resume
+from app.models.candidates import Candidate, Resume
 from app.models.pipeline import CampaignCandidate
-from app.models.scoring_v2 import CandidateScoringResult, ScoringShadowRanking
+from app.models.scoring_v2 import CandidateScoringResult, ScoringShadowRanking, ScoringVersion
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.config_repository import ConfigRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.scoring_v2_service import cap_for_model, daily_llm_call_cap, daily_llm_call_caps
+from app.services.campaign.scoring_versions import current_version
 
 logger = logging.getLogger(__name__)
 
 NOT_SCORED = "NOT_SCORED"
-# A rank gap this large between v1 and v2 is flagged as a disagreement.
+# A rank gap this large between the current and the candidate version is flagged as a disagreement.
 RANK_GAP_FLAG = 3
+VERSIONS = ("current", "candidate")
 
 
-def v2_label(row: CandidateScoringResult | None) -> str:
+def outcome_label(row: CandidateScoringResult | None) -> str:
     if row is None:
         return NOT_SCORED
     breakdown = row.breakdown or {}
     if breakdown.get("would_be_review"):
         return "REVIEW"
     return row.outcome or NOT_SCORED
-
-
-def v1_label(row: CandidateScoringResult | None, cc) -> str:
-    if row is not None:
-        return row.outcome or NOT_SCORED
-    if getattr(cc, "deterministic_passed", None) is None:
-        return NOT_SCORED
-    return "PASS" if cc.deterministic_passed else "REJECT"
 
 
 def rank_by(rows: list[dict], score_key: str) -> dict:
@@ -62,27 +58,40 @@ def rank_by(rows: list[dict], score_key: str) -> dict:
 
 
 def annotate(rows: list[dict]) -> list[dict]:
-    """Adds v1/v2 ranks and disagreement flags (pure - unit tested)."""
-    v1_ranks, v2_ranks = rank_by(rows, "v1_score"), rank_by(rows, "v2_score")
+    """Adds current/candidate ranks and disagreement flags (pure - unit tested)."""
+    ranks = {version: rank_by(rows, f"{version}_score") for version in VERSIONS}
+    decided = ("PASS", "REVIEW", "REJECT")
     for row in rows:
-        row["v1_rank"] = v1_ranks.get(row["campaign_candidate_id"])
-        row["v2_rank"] = v2_ranks.get(row["campaign_candidate_id"])
+        for version in VERSIONS:
+            row[f"{version}_rank"] = ranks[version].get(row["campaign_candidate_id"])
         flags = []
-        v1, v2 = row["v1_outcome"], row["v2_outcome"]
-        if v2 in ("PASS", "REVIEW", "REJECT") and v1 in ("PASS", "REJECT"):
-            if v1 == "REJECT" and v2 in ("PASS", "REVIEW"):
-                flags.append(f"v1 rejects, v2 {v2.lower()}")
-            elif v1 == "PASS" and v2 == "REJECT":
-                flags.append("v1 passes, v2 rejects")
-        if row["v1_rank"] is not None and row["v2_rank"] is not None and abs(row["v1_rank"] - row["v2_rank"]) >= RANK_GAP_FLAG:
-            flags.append(f"rank {row['v1_rank']} -> {row['v2_rank']}")
+        current, candidate = row["current_outcome"], row["candidate_outcome"]
+        if current in decided and candidate in decided and current != candidate:
+            flags.append(f"current {current.lower()}, candidate {candidate.lower()}")
+        if (row["current_rank"] is not None and row["candidate_rank"] is not None
+                and abs(row["current_rank"] - row["candidate_rank"]) >= RANK_GAP_FLAG):
+            flags.append(f"rank {row['current_rank']} -> {row['candidate_rank']}")
         if row.get("recruiter_rank") is not None:
-            for version in ("v1", "v2"):
+            for version in VERSIONS:
                 rank = row.get(f"{version}_rank")
                 if rank is not None and abs(rank - row["recruiter_rank"]) >= RANK_GAP_FLAG:
                     flags.append(f"{version} rank {rank} vs recruiter {row['recruiter_rank']}")
         row["disagreements"] = flags
     return rows
+
+
+def _core_detail(prefix: str, row: CandidateScoringResult | None) -> dict:
+    b = (row.breakdown or {}) if row else {}
+    return {
+        f"{prefix}_score": float(row.score) if row and row.score is not None else None,
+        f"{prefix}_outcome": outcome_label(row),
+        f"{prefix}_outcome_reason": b.get("outcome_reason"),
+        f"{prefix}_core_confirmed": f"{b.get('core_confirmed_count', 0)}/{b.get('core_skill_count', 0)}" if row else None,
+        f"{prefix}_failed_checks": b.get("failed_checks") or [],
+        f"{prefix}_scoring_mode": getattr(row, "scoring_mode", None) if row else None,
+        f"{prefix}_scored_at": row.created_at if row else None,
+        f"{prefix}_config_version": row.scoring_config_version if row else None,
+    }
 
 
 class ScoringShadowReportService:
@@ -106,15 +115,20 @@ class ScoringShadowReportService:
                 logger.warning("Could not decrypt candidate name | candidate_id=%s", candidate.id)
         return (getattr(resume, "original_filename", None) or "Candidate")[:80]
 
-    def _latest(self, cc_ids: list[UUID]) -> dict:
+    def _latest(self, cc_ids: list[UUID], candidate_version_id: UUID | None) -> tuple[dict, dict]:
+        """Per candidate: the latest result acted on (current), and the candidate version's latest."""
         rows = self.db.execute(
             select(CandidateScoringResult).where(CandidateScoringResult.campaign_candidate_id.in_(cc_ids))
             .order_by(CandidateScoringResult.created_at.desc())
         ).scalars().all() if cc_ids else []
-        latest: dict = {}
+        current: dict = {}
+        candidate: dict = {}
         for row in rows:
-            latest.setdefault((row.campaign_candidate_id, row.scoring_version), row)
-        return latest
+            if row.acted_on:
+                current.setdefault(row.campaign_candidate_id, row)
+            elif candidate_version_id is not None and row.scoring_version_id == candidate_version_id:
+                candidate.setdefault(row.campaign_candidate_id, row)
+        return current, candidate
 
     def report(self, campaign_id: UUID) -> dict:
         campaign = self._campaign(campaign_id)
@@ -124,61 +138,63 @@ class ScoringShadowReportService:
             .join(Resume, Resume.id == CampaignCandidate.resume_id)
             .where(CampaignCandidate.campaign_id == campaign_id)
         ).all()
-        latest = self._latest([cc.id for cc, _, _ in pairs])
+        candidate_version = (self.db.get(ScoringVersion, campaign.candidate_scoring_version_id)
+                             if getattr(campaign, "candidate_scoring_version_id", None) else None)
+        current_row_version = current_version(self.db)
+        current, candidate = self._latest([cc.id for cc, _, _ in pairs],
+                                          candidate_version.id if candidate_version else None)
         rankings = {r.campaign_candidate_id: r for r in self.db.execute(
             select(ScoringShadowRanking).where(ScoringShadowRanking.campaign_id == campaign_id)).scalars()}
 
         rows, assumed_senses = [], set()
-        for cc, candidate, resume in pairs:
-            v1 = latest.get((cc.id, "v1"))
-            v2 = latest.get((cc.id, "v2"))
-            b2 = (v2.breakdown or {}) if v2 else {}
-            for entry in b2.get("mandatory_skills") or []:
+        for cc, person, resume in pairs:
+            now_row, tried_row = current.get(cc.id), candidate.get(cc.id)
+            shown = (tried_row or now_row)
+            b = (shown.breakdown or {}) if shown else {}
+            for entry in b.get("mandatory_skills") or []:
                 if entry.get("jd_sense_basis") == "assumed" and entry.get("jd_sense"):
                     assumed_senses.add(f"{entry['canonical_name']} ({entry['jd_sense']})")
             ranking = rankings.get(cc.id)
-            v1_score = float(v1.score) if v1 and v1.score is not None else (
-                float(cc.deterministic_score) if cc.deterministic_score is not None else None)
-            rows.append({
+            row = {
                 "campaign_candidate_id": str(cc.id),
-                "candidate_name": self._name(candidate, resume),
+                "candidate_name": self._name(person, resume),
                 "stage": cc.pipeline_stage.value,
                 "parse_status": resume.parse_status.value if resume.parse_status else None,
-                "v1_score": v1_score,
-                "v1_outcome": v1_label(v1, cc),
-                "v2_score": float(v2.score) if v2 and v2.score is not None else None,
-                "v2_outcome": v2_label(v2),
-                "v2_outcome_reason": b2.get("outcome_reason"),
-                "v2_core_confirmed": f"{b2.get('core_confirmed_count', 0)}/{b2.get('core_skill_count', 0)}" if v2 else None,
-                "v2_core_confirmed_names": b2.get("core_confirmed") or [],
-                "v2_core_uncertain": b2.get("core_uncertain") or [],
-                "v2_core_found_not_confirmed": b2.get("core_found_not_confirmed") or [],
-                "v2_core_rejected_by_llm": b2.get("core_rejected_by_llm") or [],
-                "v2_core_sense_mismatch": b2.get("core_sense_mismatch") or [],
-                "v2_failed_checks": b2.get("failed_checks") or [],
-                "v2_scored_at": v2.created_at if v2 else None,
-                "v2_config_version": v2.scoring_config_version if v2 else None,
+                **_core_detail("current", now_row),
+                **_core_detail("candidate", tried_row),
+                # The core-skill detail of the candidate version's result (else the current one's).
+                "core_confirmed_names": b.get("core_confirmed") or [],
+                "core_uncertain": b.get("core_uncertain") or [],
+                "core_found_not_confirmed": b.get("core_found_not_confirmed") or [],
+                "core_rejected_by_llm": b.get("core_rejected_by_llm") or [],
+                "core_sense_mismatch": b.get("core_sense_mismatch") or [],
                 "recruiter_rank": ranking.recruiter_rank if ranking else None,
                 "recruiter_ranked_by": ranking.ranked_by_name if ranking else None,
                 "recruiter_note": ranking.note if ranking else None,
-            })
+            }
+            if row["current_score"] is None and cc.deterministic_score is not None:
+                row["current_score"] = float(cc.deterministic_score)
+            rows.append(row)
         rows = annotate(rows)
-        rows.sort(key=lambda r: (r["v2_rank"] is None, r["v2_rank"] or 0, r["v1_rank"] or 0))
+        rows.sort(key=lambda r: (r["current_rank"] is None, r["current_rank"] or 0, r["candidate_rank"] or 0))
 
-        counts: dict = {}
+        counts: dict = {version: {} for version in VERSIONS}
         for row in rows:
-            counts[row["v2_outcome"]] = counts.get(row["v2_outcome"], 0) + 1
+            for version in VERSIONS:
+                outcome = row[f"{version}_outcome"]
+                counts[version][outcome] = counts[version].get(outcome, 0) + 1
+        label = lambda v: {"id": str(v.id), "label": v.label, "model": v.model} if v else None  # noqa: E731
         return {
             "campaign_id": str(campaign.id),
             "campaign_name": campaign.name,
-            "scoring_v2_shadow": bool(getattr(campaign, "scoring_v2_shadow", False)),
-            "scoring_v2_enabled": bool(getattr(campaign, "scoring_v2_enabled", False)),
+            "current_version": label(current_row_version),
+            "candidate_version": label(candidate_version),
             # Every LLM request in the provider's quota day (llm_call_log), as the cap counts it.
             "daily_llm_calls_used": calls_in_quota_day(self.db),
             "daily_llm_call_cap": daily_llm_call_cap(ConfigRepository(self.db)),
             "daily_llm_usage_by_model": self._usage_by_model(),
             "assumed_jd_senses": sorted(assumed_senses),
-            "v2_outcome_counts": counts,
+            "outcome_counts": counts,
             "disagreement_count": sum(1 for r in rows if r["disagreements"]),
             "rows": rows,
         }
@@ -217,34 +233,7 @@ class ScoringShadowReportService:
         self.audit_service.log(
             actor_id=actor_id, actor_role=actor_role, action_type=ActionType.CAMPAIGN_UPDATED,
             entity_type=EntityType.CAMPAIGN, entity_id=campaign_id, campaign_id=campaign_id,
-            details={"scoring_v2_shadow_recruiter_ranking": len(rankings), "ranked_by_name_provided": bool(ranked_by_name)},
+            details={"shadow_recruiter_ranking": len(rankings), "ranked_by_name_provided": bool(ranked_by_name)},
         )
         self.db.commit()
         return self.report(campaign_id)
-
-    def set_shadow(self, campaign_id: UUID, *, enabled: bool, backfill: bool, actor_id: str,
-                   actor_role: str | None) -> dict:
-        """Opt a campaign in/out of v2 shadow; backfill queues v2 for its already-scored candidates."""
-        campaign = self._campaign(campaign_id)
-        campaign.scoring_v2_shadow = enabled
-        self.audit_service.log(
-            actor_id=actor_id, actor_role=actor_role, action_type=ActionType.CAMPAIGN_UPDATED,
-            entity_type=EntityType.CAMPAIGN, entity_id=campaign_id, campaign_id=campaign_id,
-            details={"scoring_v2_shadow": enabled, "backfill": backfill},
-        )
-        self.db.commit()
-        queued = 0
-        if enabled and backfill:
-            from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
-            from app.services.celery_task_log_service import CeleryTaskLogService
-            from app.tasks.scoring_v2_tasks import enqueue_scoring_v2
-            log_service = CeleryTaskLogService(CeleryTaskLogRepository(self.db))
-            candidates = self.db.execute(
-                select(CampaignCandidate).join(Resume, Resume.id == CampaignCandidate.resume_id)
-                .where(CampaignCandidate.campaign_id == campaign_id, Resume.parse_status == ParseStatus.PARSED,
-                       CampaignCandidate.deterministic_score.isnot(None))
-            ).scalars().all()
-            for cc in candidates:
-                queued += int(bool(enqueue_scoring_v2(cc, log_service)))
-            self.db.commit()
-        return {"scoring_v2_shadow": enabled, "queued": queued}

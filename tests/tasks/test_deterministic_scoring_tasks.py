@@ -821,3 +821,27 @@ def test_score_only_pass_queues_nothing_downstream():
         h.enqueue_semantic_scoring_mock.assert_not_called()
         h.queue_rejection_email_mock.assert_not_called()
         h.email_apply_async_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("trying", [True, False])
+def test_a_campaign_trying_a_candidate_scoring_version_has_it_scored_after_the_decision(trying):
+    """Retire v1, phase D: shadow scoring is queued only for a campaign with a candidate version."""
+    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
+
+    with _Harness() as h, patch("app.tasks.scoring_v2_tasks.enqueue_scoring_v2") as enqueue:
+        campaign = _make_campaign()
+        campaign.candidate_scoring_version_id = uuid4() if trying else None
+        cc = _make_campaign_candidate(campaign.id, uuid4())
+        h.campaign_candidate_repo.get_by_id.return_value = cc
+        h.campaign_repo.get_by_id.return_value = campaign
+        h.resume_repo.get_by_id.return_value = _make_resume()
+        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = _breakdown(
+            [_skill_entry(uuid4(), "EXACT")], coverage_pct=100.0, passed=True,
+        )
+
+        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
+
+        h.run_scoring_v2.assert_called_once()                        # the current version decides either way
+        assert enqueue.call_count == (1 if trying else 0)
+        if trying:
+            assert enqueue.call_args.args[0] is cc

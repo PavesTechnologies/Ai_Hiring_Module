@@ -185,13 +185,10 @@ def test_one_near_miss_is_review_and_goes_on_capped_at_hold():
 
 # --- task wiring ----------------------------------------------------------
 
-def test_v2_runs_only_on_opted_in_campaigns():
-    from app.services.campaign.scoring_v2_service import v2_should_run
-    assert v2_should_run(SimpleNamespace(scoring_v2_enabled=False, scoring_v2_shadow=False)) is False
-    assert v2_should_run(SimpleNamespace(scoring_v2_enabled=False, scoring_v2_shadow=True)) is True
-    assert v2_should_run(SimpleNamespace(scoring_v2_enabled=True, scoring_v2_shadow=False)) is True
-    assert v2_should_run(MagicMock()) is False            # truthy mocks never opt a campaign in
-    assert v2_should_run(SimpleNamespace()) is False
+def test_shadow_runs_only_for_a_campaigns_candidate_scoring_version():
+    """Retire v1, phase D: the scoring_v2_shadow / scoring_v2_enabled switches no longer decide anything."""
+    import app.services.campaign.scoring_v2_service as service
+    assert not hasattr(service, "v2_should_run")
 
 
 def test_v2_failure_returns_none_and_never_raises(monkeypatch):

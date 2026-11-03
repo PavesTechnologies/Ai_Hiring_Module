@@ -192,7 +192,41 @@ class CandidateScoringResult(Base):
     # A no_llm result that held the candidate for review, until the full scoring has run.
     awaiting_full_scoring: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
                                                         server_default=false())
+    # The scoring version that produced a v2 result (e1a3c5e7f9b2); NULL on results from before.
+    scoring_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scoring_versions.id"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ScoringVersion(Base):
+    """
+    A scoring configuration (retire v1, phase D): the current one scores every campaign; a
+    candidate one is also scored, never acted on, on the campaigns that try it (shadow mode,
+    hiring_campaigns.candidate_scoring_version_id). A version differs only in configuration - the
+    SCORING_V2_CONFIG shape and optionally the core-confirmation model; code changes (the prompt
+    included) are proved by the golden set before merge. At most one is current.
+    """
+
+    __tablename__ = "scoring_versions"
+    __table_args__ = (
+        Index("uq_scoring_versions_one_current", "status", unique=True, postgresql_where=text("status = 'current'")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    label: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    configuration: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict,
+                                                server_default=text("'{}'::jsonb"))
+    # Core-confirmation model; None = the platform's configured model.
+    model: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="candidate",
+                                        server_default=text("'candidate'"))
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    activated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ResumeParseVersion(Base):

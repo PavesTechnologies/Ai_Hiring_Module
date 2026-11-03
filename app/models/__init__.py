@@ -70,6 +70,7 @@ from .scoring_v2 import (
     ResumeProvisionalSkillScan,
     SkillPatternRule,
     ScoringShadowRanking,
+    ScoringVersion,
 )
 
 from .email import (
