@@ -37,6 +37,7 @@ max(1 year, 10%)) gives outcome REVIEW; the candidate goes on to semantic/AI
 and is capped at HOLD there. would_be_review mirrors it.
 """
 import copy
+import math
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -186,6 +187,19 @@ def parse_config(raw: str | None) -> dict:
     except ValueError:
         return merge_config(None)
     return merge_config(value if isinstance(value, dict) else None)
+
+
+def allowed_missing_core(core_skill_count: int, max_missing_core_skills: int, max_missing_core_pct: float | None) -> int:
+    """
+    How many CORE skills a candidate may miss and still pass: the campaign's
+    percentage of the JD's core skills (rounded down), never more than the
+    fixed max_missing_core_skills ceiling. With no percentage configured the
+    fixed count applies on its own (pre-percentage behavior).
+    """
+    if max_missing_core_pct is None:
+        return int(max_missing_core_skills)
+    by_pct = math.floor(core_skill_count * float(max_missing_core_pct) / 100 + 1e-9)
+    return max(0, min(by_pct, int(max_missing_core_skills)))
 
 
 def required_core_allowance(allowed: int, missing_core: int, required_missing: int) -> int:

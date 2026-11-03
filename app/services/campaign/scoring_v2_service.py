@@ -28,12 +28,9 @@ from app.repositories.provisional_skill_repository import ProvisionalSkillReposi
 from app.repositories.scoring_result_repository import ScoringResultRepository
 from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
-from app.services.campaign.candidate_scoring_service import (
-    CandidateScoringService, allowed_missing_core, score_threshold_rejects,
-)
 from app.services.campaign.scoring_v2 import (
     OUTCOME_NOT_RUN, OUTCOME_PENDING, REASON_AWAITING_FULL_SCORING, SCORING_MODE_LLM, SCORING_VERSION,
-    EvidenceInput, JDSkillInput, ProvisionalSkillInput, ScoringInputs, apply_no_llm_outcome,
+    EvidenceInput, JDSkillInput, ProvisionalSkillInput, ScoringInputs, allowed_missing_core, apply_no_llm_outcome,
     apply_unavailable_outcome, config_version, merge_config, score_v2,
 )
 
@@ -70,6 +67,49 @@ logger = logging.getLogger(__name__)
 DAILY_LLM_CALL_CAP_KEY = "SCORING_V2_DAILY_LLM_CALL_CAP"
 DEFAULT_DAILY_LLM_CALL_CAP = 300
 
+
+
+# Whether a deterministic score below campaign.deterministic_threshold
+# rejects on its own for a JD that HAS core skills (a JD without any keeps
+# the score gate - it's the only skill gate it has). Off by default: the
+# score is built mostly from
+# supporting skills/competencies ("Change Management", "Responsible AI"...)
+# that strong senior candidates rarely list by name, so on its own it
+# filtered out good candidates before semantic/AI evaluation ever saw them.
+# Hard requirements still reject: too many missing CORE skills, required-
+# skill coverage, experience and education. The score still ranks and feeds
+# the composite. Set platform_config DETERMINISTIC_SCORE_REJECTS=true to
+# restore score-threshold rejection.
+DETERMINISTIC_SCORE_REJECTS_KEY = "DETERMINISTIC_SCORE_REJECTS"
+
+
+def score_threshold_rejects(config_repository) -> bool:
+    if config_repository is None:
+        return False
+    value = config_repository.get_configs_by_keys([DETERMINISTIC_SCORE_REJECTS_KEY]).get(DETERMINISTIC_SCORE_REJECTS_KEY)
+    return isinstance(value, str) and value.strip().lower() in ("true", "1", "yes")
+
+def load_mandatory_skill_hierarchy(skill_ontology_repository, mandatory_skill_ids: list) -> dict:
+    """
+    Everything the CHILD/GRANDCHILD/SIBLING hierarchy tiers need for a fixed set of mandatory skill ids,
+    in 3 queries (the skills, their children/siblings, their grandchildren). Depends only on the JD's
+    mandatory skills, never on the resume.
+    """
+    skills_by_id = skill_ontology_repository.get_skills_by_ids(mandatory_skill_ids)
+    parent_ids = {skill.parent_skill_id for skill in skills_by_id.values() if skill.parent_skill_id is not None}
+    children_by_parent = skill_ontology_repository.get_children_batch(list(set(mandatory_skill_ids) | parent_ids))
+    child_ids = {
+        child.id
+        for skill_id in mandatory_skill_ids
+        for child in children_by_parent.get(skill_id, [])
+        if child.is_active
+    }
+    grandchildren_by_parent = skill_ontology_repository.get_children_batch(list(child_ids))
+    return {
+        "skills_by_id": skills_by_id,
+        "children_by_parent": children_by_parent,
+        "grandchildren_by_parent": grandchildren_by_parent,
+    }
 
 def _cap_value(value) -> int | None:
     try:
@@ -469,9 +509,8 @@ class ScoringV2Service:
         }
         config_version_hash = config_version(snapshot)
 
-        hierarchy = CandidateScoringService(
-            self.skill_repository, SkillOntologyRepository(self.db),
-        ).load_mandatory_skill_hierarchy([s.canonical_skill_id for s in jd_skills if s.mandatory])
+        hierarchy = load_mandatory_skill_hierarchy(
+            SkillOntologyRepository(self.db), [s.canonical_skill_id for s in jd_skills if s.mandatory])
 
         breakdown = score_v2(ScoringInputs(
             jd_skills=jd_skills, evidence=evidence, confirmations=confirmations, hierarchy=hierarchy,

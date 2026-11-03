@@ -40,7 +40,7 @@ from app.repositories.skill_repository import SkillRepository  # noqa: E402
 from app.services.campaign.scoring_v2_service import ScoringV2Service  # noqa: E402
 from app.services.llm.factory import resolve_active_provider  # noqa: E402
 from app.services.llm.model_selection import LLMPurpose  # noqa: E402
-from app.tasks.deterministic_scoring_tasks import build_validation_inputs  # noqa: E402
+from app.services.campaign.validation_inputs import build_validation_inputs  # noqa: E402
 
 def _require_descriptions(db) -> str:
     exists = db.execute(text("select 1 from information_schema.columns where table_name = 'skill_ontology' "

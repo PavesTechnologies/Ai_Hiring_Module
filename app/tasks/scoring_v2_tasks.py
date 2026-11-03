@@ -95,7 +95,7 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
         job_description = JDRepository(db).get_by_id(campaign.jd_id)
 
         # Local import - deterministic_scoring_tasks imports this module.
-        from app.tasks.deterministic_scoring_tasks import build_validation_inputs
+        from app.services.campaign.validation_inputs import build_validation_inputs
         from app.services.llm.factory import resolve_active_provider
         from app.services.llm.model_selection import LLMPurpose
 

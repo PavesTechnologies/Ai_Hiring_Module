@@ -106,7 +106,7 @@ class _World:
                 patch(f"{MODULE}.human_acted_since", return_value=self.acted_by_person), \
                 patch(f"{MODULE}.apply_full_outcome", self.apply), \
                 patch(f"{MODULE}.StageTransitionService"), patch(f"{MODULE}.AuditService", return_value=self.audit), \
-                patch("app.tasks.deterministic_scoring_tasks.build_validation_inputs",
+                patch("app.services.campaign.validation_inputs.build_validation_inputs",
                       return_value=({}, {}, {}, {})):
             complete_full_scoring_task.run(campaign_candidate_id=str(self.cc.id),
                                            fallback_result_id=str(self.fallback.id))

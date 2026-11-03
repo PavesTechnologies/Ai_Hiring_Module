@@ -105,7 +105,7 @@ def test_v2_a_fresher_with_every_core_skill_is_a_near_miss_hold():
 
 def test_the_scoring_inputs_use_counted_experience(monkeypatch):
     """build_validation_inputs (v1 task and v2) reads the counted years, not the raw total."""
-    from app.tasks import deterministic_scoring_tasks as tasks
+    from app.services.campaign import validation_inputs as tasks
     config = MagicMock()
     config.get_configs_by_keys.return_value = {}
     jd = SimpleNamespace(min_experience_years=1, extracted_json={}, education_criteria={},

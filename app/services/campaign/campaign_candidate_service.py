@@ -1704,7 +1704,7 @@ class CampaignCandidateService:
         experience_min_years = experience.get("min_years") if experience else None
         core_total = breakdown.get("core_skill_count")
 
-        from app.services.campaign.candidate_scoring_service import _degree_level_display
+        from app.services.campaign.score_display import _degree_level_display
 
         passed = breakdown.get("deterministic_passed")
         failure_reason = None if passed else v2_rejection_reason(breakdown)
@@ -1810,7 +1810,7 @@ class CampaignCandidateService:
         """Field-of-study half of EducationValidationDetail - empty for pre-field-matching breakdowns."""
         if not education or "field_match" not in education:
             return {}
-        from app.services.campaign.candidate_scoring_service import _field_display
+        from app.services.campaign.score_display import _field_display
         return {
             "required_field": (
                 _field_display(education.get("required_field"), education.get("required_field_text"))
@@ -2171,7 +2171,7 @@ class CampaignCandidateService:
 
     @staticmethod
     def _education_gap_display(breakdown: dict) -> str:
-        from app.services.campaign.candidate_scoring_service import describe_education_gap
+        from app.services.campaign.score_display import describe_education_gap
         level_gap, field_gap = describe_education_gap(as_v2(breakdown).get("education_validation"))
         if field_gap:
             field_gap = f"field of study: {field_gap}"

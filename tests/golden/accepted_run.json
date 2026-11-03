@@ -1,8 +1,8 @@
 {
  "accepted_on": "2026-11-03",
- "run_at": "2026-11-03T11:30:33.015595+00:00",
+ "run_at": "2026-11-03T13:20:43.309351+00:00",
  "mode": "llm",
- "fingerprint": "8af9833495d015d3cb0a8bd461b901a05ef25591c6e654517494a2ec96ef2768",
+ "fingerprint": "527c6cef09a860cc0e6fbef6d3633165c3f9eeaf3074912b633241f1fedbd8ee",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
@@ -11,8 +11,8 @@
   "log_write_failures": 0,
   "vote_cache_hits": 58,
   "dev_cache_hits": 0,
-  "new_cache_entries": 11,
-  "model": "gemini-3.1-flash-lite",
+  "new_cache_entries": 0,
+  "model": null,
   "main_model": "gemini-3.1-flash-lite",
   "cached_votes_from_other_models": [],
   "new_votes_from_other_models": {}

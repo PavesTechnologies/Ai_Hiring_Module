@@ -278,7 +278,7 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, n
     from app.services.campaign import scoring_v2_service
     from app.services.skills.evidence_rules import roles_of
     from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
-    from app.tasks.deterministic_scoring_tasks import build_validation_inputs
+    from app.services.campaign.validation_inputs import build_validation_inputs
 
     frozen = load_json(case["resume"])
     jd, campaign = world.jd(case["jd"])

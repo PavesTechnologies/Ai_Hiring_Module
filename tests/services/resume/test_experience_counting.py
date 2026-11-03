@@ -138,7 +138,7 @@ def test_the_calibrated_setting_wins():
 
 def test_scoring_inputs_count_a_fresher_jds_internships():
     """build_validation_inputs passes the JD's credit: Phase 3 F1 on JD-F (1-year minimum) meets the minimum."""
-    from app.tasks import deterministic_scoring_tasks as tasks
+    from app.services.campaign import validation_inputs as tasks
     config = MagicMock()
     config.get_configs_by_keys.return_value = {}
     jd = SimpleNamespace(min_experience_years=1, extracted_json={}, education_criteria={},

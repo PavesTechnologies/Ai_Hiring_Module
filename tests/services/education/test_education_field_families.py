@@ -114,7 +114,7 @@ def test_no_families_without_a_role_domain_or_when_education_is_preferred(repo):
 
 
 def test_the_scoring_inputs_pass_the_jds_families():
-    from app.tasks import deterministic_scoring_tasks as tasks
+    from app.services.campaign import validation_inputs as tasks
     config = MagicMock()
     config.get_configs_by_keys.return_value = {}
     jd = SimpleNamespace(min_experience_years=None, extracted_json={"education": CS_BACHELOR}, education_criteria={},

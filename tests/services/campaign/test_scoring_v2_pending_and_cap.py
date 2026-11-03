@@ -110,7 +110,7 @@ def _run_task(outcome, *, retries):
             patch.object(tasks, "ConfigRepository"), patch.object(tasks, "SkillRepository"), \
             patch.object(tasks, "ScoringV2Service", service), \
             patch.object(tasks, "DeadLetterQueueRepository", return_value=dlq), \
-            patch("app.tasks.deterministic_scoring_tasks.build_validation_inputs", return_value=({}, {}, {}, {})), \
+            patch("app.services.campaign.validation_inputs.build_validation_inputs", return_value=({}, {}, {}, {})), \
             patch.object(task, "retry", side_effect=RuntimeError("retry")) as retry:
         log_service.return_value.repository.get_by_task_id.return_value = None
         cc_repo.return_value.get_by_id.return_value = cc

@@ -43,7 +43,7 @@ from app.services.skills.skill_evidence_service import (  # noqa: E402
     LLMSkillMatch, SkillEvidenceService, build_evidence, job_titles_of,
 )
 from app.services.skills.skill_normalization_service import SkillNormalizationService  # noqa: E402
-from app.tasks.deterministic_scoring_tasks import build_validation_inputs  # noqa: E402
+from app.services.campaign.validation_inputs import build_validation_inputs  # noqa: E402
 
 # USD per 1M tokens (standard paid tier; thinking tokens bill as output), as
 # published on ai.google.dev/gemini-api/docs/pricing on 2026-10-13.

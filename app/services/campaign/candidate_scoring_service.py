@@ -1,5 +1,4 @@
 import logging
-import math
 from enum import Enum
 from uuid import UUID
 
@@ -12,7 +11,13 @@ from app.repositories.skill_detection_repository import SkillDetectionRepository
 from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.campaign.near_miss import OUTCOME_PASS as NEAR_MISS_PASS, NearMissDecision, evaluate_near_miss
-from app.services.campaign.scoring_v2 import required_core_allowance
+from app.services.campaign.score_display import (  # noqa: F401 - moved; v1 still uses them
+    _degree_level_display, _field_display, _format_years, _optional_float, describe_education_gap,
+)
+from app.services.campaign.scoring_v2 import allowed_missing_core, required_core_allowance
+from app.services.campaign.scoring_v2_service import (  # noqa: F401
+    DETERMINISTIC_SCORE_REJECTS_KEY, load_mandatory_skill_hierarchy, score_threshold_rejects,
+)
 from app.services.jd.jd_skill_importance import unknown_skill_tier
 from app.services.skills.provisional_skill_match import (
     PROVISIONAL_CREDIT, ProvisionalTerm, parsed_json_text, scan_provisional,
@@ -58,113 +63,10 @@ GATE_SCOPE_ALL_MANDATORY = "ALL_MANDATORY"
 DEFAULT_MAX_MISSING_CORE_SKILLS = 3
 
 
-def _optional_float(value) -> float | None:
-    """float(value), or None when unset - campaign rows always have it; older callers/fixtures may not."""
-    return None if value is None else float(value)
-
-
-def allowed_missing_core(core_skill_count: int, max_missing_core_skills: int, max_missing_core_pct: float | None) -> int:
-    """
-    How many CORE skills a candidate may miss and still pass: the campaign's
-    percentage of the JD's core skills (rounded down), never more than the
-    fixed max_missing_core_skills ceiling. With no percentage configured the
-    fixed count applies on its own (pre-percentage behavior).
-    """
-    if max_missing_core_pct is None:
-        return int(max_missing_core_skills)
-    by_pct = math.floor(core_skill_count * float(max_missing_core_pct) / 100 + 1e-9)
-    return max(0, min(by_pct, int(max_missing_core_skills)))
-
-
 # No prior concept of a coverage gate exists - 0.0 (always satisfied)
 # keeps every caller that doesn't pass this explicitly behaving exactly as
 # it did before this feature existed.
 DEFAULT_REQUIRED_SKILL_COVERAGE_THRESHOLD = 0.0
-
-# Whether a deterministic score below campaign.deterministic_threshold
-# rejects on its own for a JD that HAS core skills (a JD without any keeps
-# the score gate - it's the only skill gate it has). Off by default: the
-# score is built mostly from
-# supporting skills/competencies ("Change Management", "Responsible AI"...)
-# that strong senior candidates rarely list by name, so on its own it
-# filtered out good candidates before semantic/AI evaluation ever saw them.
-# Hard requirements still reject: too many missing CORE skills, required-
-# skill coverage, experience and education. The score still ranks and feeds
-# the composite. Set platform_config DETERMINISTIC_SCORE_REJECTS=true to
-# restore score-threshold rejection.
-DETERMINISTIC_SCORE_REJECTS_KEY = "DETERMINISTIC_SCORE_REJECTS"
-
-
-def score_threshold_rejects(config_repository) -> bool:
-    if config_repository is None:
-        return False
-    value = config_repository.get_configs_by_keys([DETERMINISTIC_SCORE_REJECTS_KEY]).get(DETERMINISTIC_SCORE_REJECTS_KEY)
-    return isinstance(value, str) and value.strip().lower() in ("true", "1", "yes")
-
-# M07-E03 S01 T02: human-readable display names for
-# ExperienceEducationValidationService's internal degree-level names -
-# rejection_reason must never surface an internal level code verbatim.
-# Matches app.enums.education.DEGREE_LEVEL_RANK's keys (the only levels
-# ExperienceEducationValidationService can ever produce, now that it
-# sources degree_level from DegreeLevel/DEGREE_LEVEL_RANK - PROFESSIONAL/
-# OTHER/UNKNOWN are deliberately unranked there and never reach here).
-_DEGREE_LEVEL_DISPLAY_NAMES = {
-    "CERTIFICATE": "Certificate",
-    "DIPLOMA": "Diploma",
-    "ASSOCIATE": "Associate's",
-    "BACHELOR": "Bachelor's",
-    "POSTGRADUATE_DIPLOMA": "Postgraduate Diploma",
-    "MASTER": "Master's",
-    "DOCTORATE": "Doctorate",
-}
-
-
-def _degree_level_display(level_name: str | None) -> str:
-    if level_name is None:
-        return "no qualifying degree"
-    return _DEGREE_LEVEL_DISPLAY_NAMES.get(level_name, level_name.replace("_", " ").title())
-
-
-def _field_display(code: str | None, text: str | None) -> str:
-    """The raw field text when there is one, else the readable enum name ('COMPUTER_SCIENCE' -> 'Computer Science')."""
-    if text:
-        return text
-    if code:
-        return code.replace("_", " ").title()
-    return "no matching field"
-
-
-def describe_education_gap(education_result: dict | None) -> tuple[str | None, str | None]:
-    """
-    (degree-level gap, field-of-study gap) for a failed education result,
-    each "X required, Y found" or None when that half passed. A breakdown
-    stored before field-of-study matching has no level_passed/field_passed -
-    its failure was always the degree level.
-    """
-    if not education_result or education_result.get("passed"):
-        return None, None
-    level_gap = None
-    if education_result.get("level_passed") is not True:
-        level_gap = (
-            f"{_degree_level_display(education_result.get('required_level'))} required, "
-            f"{_degree_level_display(education_result.get('candidate_level'))} found"
-        )
-    field_gap = None
-    if education_result.get("field_passed") is False:
-        field_gap = (
-            f"{_field_display(education_result.get('required_field'), education_result.get('required_field_text'))}"
-            f" required, "
-            f"{_field_display(education_result.get('candidate_field'), education_result.get('candidate_field_text'))}"
-            f" found"
-        )
-    return level_gap, field_gap
-
-
-def _format_years(value: float) -> str:
-    """4.0 -> '4', 2.5 -> '2.5' - matches the ticket's example wording."""
-    rounded = round(value, 1)
-    return str(int(rounded)) if rounded == int(rounded) else str(rounded)
-
 
 class MandatorySkillMatchType(str, Enum):
     """Match-type vocabulary for the mandatory-skill coverage breakdown (M07-E01 S02 T02)."""
@@ -250,40 +152,7 @@ class CandidateScoringService:
         )
 
     def load_mandatory_skill_hierarchy(self, mandatory_skill_ids: list[UUID]) -> dict:
-        """
-        Batch-loads everything the CHILD/GRANDCHILD/SIBLING hierarchy tiers
-        need for a fixed set of mandatory skill ids, in 3 queries total
-        (skills-themselves, their children/siblings, their grandchildren)
-        instead of one get_skill_by_id + one-or-more get_children call per
-        skill. This data depends only on the JD's mandatory skills, never
-        on which resume/candidate is being scored - callers comparing
-        multiple resume versions against the same JD (e.g.
-        ResumeSelectionService._compare_and_select) should call this once
-        and pass the result to every build_mandatory_skill_breakdown call
-        for that JD, instead of letting each one reload it.
-        """
-        skills_by_id = self.skill_ontology_repository.get_skills_by_ids(mandatory_skill_ids)
-
-        parent_ids = {
-            skill.parent_skill_id for skill in skills_by_id.values() if skill.parent_skill_id is not None
-        }
-        children_by_parent = self.skill_ontology_repository.get_children_batch(
-            list(set(mandatory_skill_ids) | parent_ids)
-        )
-
-        child_ids = {
-            child.id
-            for skill_id in mandatory_skill_ids
-            for child in children_by_parent.get(skill_id, [])
-            if child.is_active
-        }
-        grandchildren_by_parent = self.skill_ontology_repository.get_children_batch(list(child_ids))
-
-        return {
-            "skills_by_id": skills_by_id,
-            "children_by_parent": children_by_parent,
-            "grandchildren_by_parent": grandchildren_by_parent,
-        }
+        return load_mandatory_skill_hierarchy(self.skill_ontology_repository, mandatory_skill_ids)
 
     def build_mandatory_skill_breakdown(
         self,

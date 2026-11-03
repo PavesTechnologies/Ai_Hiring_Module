@@ -38,7 +38,7 @@ from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.config_repository import ConfigRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.prompt_template_repository import PromptTemplateRepository
-from app.services.campaign.candidate_scoring_service import _optional_float
+from app.services.campaign.score_display import _optional_float
 from app.services.campaign.dlq_error_summary import summarize_dlq_error
 from app.services.prompt_template_validation import validate_prompt_template_selection
 from app.schemas.campaign.campaign_filter_schema import CampaignFilterRequest
