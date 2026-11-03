@@ -28,8 +28,7 @@ class _Harness:
         self.campaign_id = uuid4()
         self.job = SimpleNamespace(id=uuid4(), campaign_id=self.campaign_id, uploaded_by="uploader-1",
                                    jurisdiction="GLOBAL", ip_address=None, user_agent=None)
-        self.campaign = SimpleNamespace(id=self.campaign_id, name="Backend Engineer", prompt_template_id=uuid4(),
-                                        scoring_v2_enabled=False)
+        self.campaign = SimpleNamespace(id=self.campaign_id, name="Backend Engineer", prompt_template_id=uuid4())
         self.job_file = SimpleNamespace(id=uuid4(), bulk_upload_job_id=self.job.id, storage_path="campaign/bulk/f.pdf",
                                         original_filename="f.pdf")
 

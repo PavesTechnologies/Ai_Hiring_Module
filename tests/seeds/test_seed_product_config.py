@@ -105,13 +105,15 @@ def test_build_splits_dev_added_skills_and_their_rules_into_the_pending_review_f
     assert list(rules["skill_senses"]["add"]) == ['["Python", "x"]']             # names an approved skill
 
 
-def test_build_seeds_the_dev_weights_drops_format_only_edits_and_never_the_call_cap():
+def test_build_seeds_the_dev_weights_drops_format_only_edits_and_never_the_call_cap_or_scoring_config():
     diff = _diff()
     diff["platform_config"]["change"]['["SCORING_V2_DAILY_LLM_CALL_CAP"]'] = {"value": {"from": "300", "to": "{}"}}
     files = _script("build_seed_data").build(diff)
     approved = files["platform.json"]["sections"][0]
     assert approved["approved"]
-    assert sorted(approved["change"]) == ['["CAMPAIGN_WEIGHT_SEMANTIC"]', '["SCORING_V2_CONFIG"]']   # dev weights seeded
+    assert sorted(approved["change"]) == ['["CAMPAIGN_WEIGHT_SEMANTIC"]']        # dev weights seeded
+    # SCORING_V2_CONFIG isn't read any more (retire v1, phase E): the scoring seed creates the current version
+    assert "SCORING_V2_CONFIG" in approved["note"]
     assert "AI_PASS_THRESHOLD" in approved["note"]                               # 50.00 -> 50 is the same number
     assert "platform_pending_decision.json" not in files
     assert not any('"SCORING_V2_DAILY_LLM_CALL_CAP"' in key for f in files.values()

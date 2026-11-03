@@ -62,18 +62,15 @@ class SkillDetectionRepository:
                 for c in certifications if c.skills]
 
     def load_evidence_rules_config(self) -> dict | None:
-        """SCORING_V2_CONFIG["evidence"] (qualifiers, work verbs) - None = the defaults."""
-        import json
-        from app.models.config import PlatformConfig
-        from app.services.campaign.scoring_v2 import SCORING_V2_CONFIG_KEY
-        row = self.db.execute(
-            select(PlatformConfig).where(PlatformConfig.key == SCORING_V2_CONFIG_KEY)
-        ).scalar_one_or_none()
-        try:
-            value = json.loads(row.value) if row is not None and row.value else {}
-        except ValueError:
-            return None
-        evidence = value.get("evidence") if isinstance(value, dict) else None
+        """
+        The current scoring version's "evidence" (qualifiers, work verbs) - None = the defaults. Detection
+        is shared by every scoring version (one set of evidence rows per resume), so only the current
+        version's rules apply; a candidate version can't change them (scoring_versions).
+        """
+        from app.services.campaign.scoring_versions import current_version
+        version = current_version(self.db)
+        configuration = version.configuration if version is not None else None
+        evidence = configuration.get("evidence") if isinstance(configuration, dict) else None
         return evidence if isinstance(evidence, dict) else None
 
     def load_match_blocklist(self) -> list[dict]:

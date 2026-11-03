@@ -141,3 +141,43 @@ def test_scoring_uses_the_current_version_unless_given_one_and_restores_the_reso
     assert seen[0] == (current, platform)                            # no model: the platform's resolver
     assert seen[1][0] is tried and seen[1][1] is not platform         # its own model's resolver
     assert service.provider_resolver is platform                      # restored after each call
+
+
+def test_a_candidate_version_cant_carry_its_own_evidence_rules():
+    """Detection is shared by every version (one set of evidence rows per resume)."""
+    with pytest.raises(CampaignException) as exc:
+        sv.validate_configuration({"evidence": {"qualifiers": ["learning"]}})
+    assert exc.value.data["shared_keys"] == ["evidence"]
+
+
+def test_evidence_rules_and_scoring_config_come_from_the_current_version_only():
+    """Retire v1, phase E: platform_config SCORING_V2_CONFIG is no longer read."""
+    from app.repositories.skill_detection_repository import SkillDetectionRepository
+    from app.services.campaign.scoring_v2_service import ScoringV2Service
+    rules = {"qualifiers": ["learning"], "work_verbs": [], "non_work_verbs": []}
+    service = ScoringV2Service.__new__(ScoringV2Service)
+    service.db, service.config_repository = MagicMock(), MagicMock()
+    repo = SkillDetectionRepository.__new__(SkillDetectionRepository)
+    repo.db = service.db
+    with patch.object(sv, "current_version", return_value=_version(sv.STATUS_CURRENT, configuration={
+            "evidence": rules, "preferred_share": 0.2})):
+        assert repo.load_evidence_rules_config() == rules
+        assert service.load_config()["preferred_share"] == 0.2
+    with patch.object(sv, "current_version", return_value=None):
+        assert repo.load_evidence_rules_config() is None              # the code's default rules
+        assert service.load_config() == sv.merge_config(None)
+    service.config_repository.get_configs_by_keys.assert_not_called()
+
+
+def test_the_scoring_seed_creates_the_current_version_with_todays_configuration_not_the_setting():
+    from app.seeds import seed_scoring_v2
+    added = []
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None   # nothing exists yet
+    db.query.return_value.all.return_value = []
+    db.add.side_effect = added.append
+    seed_scoring_v2.seed(db)
+    versions = [row for row in added if isinstance(row, ScoringVersion)]
+    assert [(v.label, v.status) for v in versions] == [("v2 baseline", sv.STATUS_CURRENT)]
+    assert versions[0].configuration == DEFAULT_CONFIG
+    assert not [row for row in added if getattr(row, "key", None) == "SCORING_V2_CONFIG"]

@@ -188,7 +188,7 @@ def main() -> None:
             "prompt": args.prompt if args.live else "stored parse", "runs_per_resume": args.runs if args.live else 1,
         }
         report.update(header)
-        print(f"Campaign: {campaign.name}  |  JD: {jd.title}  |  scoring_v2_enabled={campaign.scoring_v2_enabled}")
+        print(f"Campaign: {campaign.name}  |  JD: {jd.title}")
         print("Core skills: " + ", ".join(
             f"{s.name}" + (f" [{s.sense} - {s.sense_basis}]" if s.sense else "") for s in specs))
         if provider is not None:

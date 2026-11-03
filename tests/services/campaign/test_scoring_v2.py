@@ -186,7 +186,7 @@ def test_one_near_miss_is_review_and_goes_on_capped_at_hold():
 # --- task wiring ----------------------------------------------------------
 
 def test_shadow_runs_only_for_a_campaigns_candidate_scoring_version():
-    """Retire v1, phase D: the scoring_v2_shadow / scoring_v2_enabled switches no longer decide anything."""
+    """Retire v1, phases D/E: the old per-campaign v2 switches are gone; versions decide what is scored."""
     import app.services.campaign.scoring_v2_service as service
     assert not hasattr(service, "v2_should_run")
 

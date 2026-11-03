@@ -240,8 +240,6 @@ def run() -> None:  # noqa: C901 - one linear scenario
     campaign_c = clone_campaign(campaign_a, "[E2E] fallback - apply")
     campaign_d = clone_campaign(campaign_a, "[E2E] fallback - recruiter moves")
     campaign_e = clone_campaign(campaign_a, "[E2E] fallback - outage")
-    for target in (campaign_a, campaign_b, campaign_c, campaign_d, campaign_e):
-        target.scoring_v2_enabled = True
     db.commit()
     set_config(CAP_KEY, 1000)
     set_mode(confirm="ok", last_attempt_fallback=True)

@@ -9,7 +9,7 @@ is missing, never overwrites an edited row.
 - skill_scan_terms: ambiguous/short terms the text scan must skip or only
   match next to a cue word
 - skill_senses: Change Management - ITSM vs Organisational
-- platform_config SCORING_V2_CONFIG (weights/multipliers) and
+- the current scoring version (scoring_versions: weights, multipliers, rules) and
   SCORING_V2_DAILY_LLM_CALL_CAP (v2 confirmation calls per day)
 - skill_pattern_rules: wording patterns -> DERIVED evidence (AI near governance),
   and implied-skill rules (GitHub / GitLab / Bitbucket -> Git)
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 import uuid
 
 from app.repositories.skill_detection_repository import MATCH_BLOCKLIST_KEY
-from app.services.campaign.scoring_v2 import DEFAULT_CONFIG as SCORING_V2_DEFAULT_CONFIG, SCORING_V2_CONFIG_KEY
+from app.services.campaign.scoring_v2 import DEFAULT_CONFIG as SCORING_V2_DEFAULT_CONFIG
 from app.services.campaign.scoring_v2_service import DAILY_LLM_CALL_CAP_KEY, DEFAULT_DAILY_LLM_CALL_CAP
 from app.services.monitoring.llm_prices import DEFAULT_LLM_MODEL_PRICES, LLM_MODEL_PRICES_KEY
 from app.services.monitoring.fairness_report import DEFAULT_MIN_GROUP_SIZE, MIN_GROUP_SIZE_KEY
@@ -163,10 +163,6 @@ def seed(db) -> None:
         print(f"Added config: {MATCH_BLOCKLIST_KEY}")
 
     for key, value, description in (
-        (SCORING_V2_CONFIG_KEY, json.dumps(SCORING_V2_DEFAULT_CONFIG, indent=1),
-         "Scoring v2 weights and multipliers: importance weights (core x2), hierarchy multipliers, evidence "
-         "recognition, preferred share, component weights (skills/functional - experience and education are "
-         "gates only), near-miss margins for the informational would_be_review flag. Stored with every v2 result."),
         (DAILY_LLM_CALL_CAP_KEY, str(DEFAULT_DAILY_LLM_CALL_CAP),
          "Scoring v2: maximum core-confirmation LLM calls per day (UTC), across all shadow / v2 campaigns. "
          "When reached, v2 is skipped for further candidates that day and shown as 'not run'; v1 is never "
@@ -182,30 +178,28 @@ def seed(db) -> None:
             db.add(PlatformConfig(id=uuid.uuid4(), key=key, value=value, description=description))
             print(f"Added config: {key}")
 
-    # The current scoring version (retire v1, phase D): scoring reads its configuration from here. A fresh
-    # database gets it from SCORING_V2_CONFIG as seeded above; one migrated from dev got it in e1a3c5e7f9b2.
+    # The current scoring version (retire v1, phases D/E): the only source of scoring configuration -
+    # weights, multipliers, recognition, component weights, near-miss margins, paraphrase and evidence
+    # rules. Today's configuration (the code's defaults, which dev's matches exactly); a database
+    # migrated from dev got its own in e1a3c5e7f9b2. platform_config SCORING_V2_CONFIG is no longer read.
     from app.models.scoring_v2 import ScoringVersion
     if db.query(ScoringVersion).filter(ScoringVersion.status == "current").first() is None:
-        db.flush()
-        raw = db.query(PlatformConfig).filter(PlatformConfig.key == SCORING_V2_CONFIG_KEY).first()
-        try:
-            configuration = json.loads(raw.value) if raw is not None and raw.value else {}
-        except ValueError:
-            configuration = {}
         db.add(ScoringVersion(
             id=uuid.uuid4(), label="v2 baseline", status="current",
-            configuration=configuration if isinstance(configuration, dict) else {},
-            note="Created by the scoring seed from platform_config SCORING_V2_CONFIG.",
+            configuration=json.loads(json.dumps(SCORING_V2_DEFAULT_CONFIG)),
+            note="Created by the scoring seed: today's scoring configuration.",
             activated_at=datetime.now(timezone.utc),
         ))
         print("Added scoring version: v2 baseline (current)")
+    else:
+        print("Scoring version already exists: the current one")
 
-    # Superseded by the per-campaign hiring_campaigns.scoring_v2_shadow switch;
+    # Superseded long ago by a per-campaign switch (itself replaced by scoring versions);
     # removed only if it still holds the value this seed put there.
     legacy_shadow = db.query(PlatformConfig).filter(PlatformConfig.key == "SCORING_V2_SHADOW").first()
     if legacy_shadow is not None and (legacy_shadow.value or "").strip().lower() == "none":
         db.delete(legacy_shadow)
-        print("Removed config: SCORING_V2_SHADOW (replaced by hiring_campaigns.scoring_v2_shadow)")
+        print("Removed config: SCORING_V2_SHADOW (no longer used)")
 
     if capabilities is None:
         db.add(PlatformConfig(

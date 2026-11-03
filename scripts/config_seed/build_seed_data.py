@@ -28,7 +28,9 @@ from decimal import Decimal, InvalidOperation
 
 DEV_ADDED_SOURCES = {"manual entry", "HR_CALIBRATION"}
 # Never seeded: environment-specific (dev runs on the free tier). Production sets it after enabling billing.
-EXCLUDED_SETTINGS = {"SCORING_V2_DAILY_LLM_CALL_CAP"}
+# SCORING_V2_CONFIG: no longer read (retire v1, phase E) - the scoring seed creates the current scoring
+# version with today's configuration instead.
+EXCLUDED_SETTINGS = {"SCORING_V2_DAILY_LLM_CALL_CAP", "SCORING_V2_CONFIG"}
 # Renamed in dev; applied to a fresh database only while the old row is untouched.
 RENAMES = {"skill_ontology": {"REST API": "REST APIs"}}
 

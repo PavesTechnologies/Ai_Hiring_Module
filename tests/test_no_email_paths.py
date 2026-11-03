@@ -56,7 +56,6 @@ V2_MODULES = [
     "scripts/e2e/setup_e2e.py",
     "scripts/e2e/stub_llm.py",
     "scripts/e2e/worker.py",
-    "scripts/scoring_v2_shadow_run.py",
     # Duplicate-file upload fix (separate change) - also email-free.
     "app/services/resume/resume_intake_service.py",
     "app/services/resume/resume_upload_service.py",

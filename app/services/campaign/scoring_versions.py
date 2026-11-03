@@ -55,6 +55,11 @@ def provider_resolver_for(db, version: ScoringVersion | None, default_resolver):
     return resolve
 
 
+# Evidence detection is shared by every version (one set of evidence rows per resume): only the
+# current version's rules apply, so a candidate version can't carry its own.
+SHARED_KEYS = ("evidence",)
+
+
 def validate_configuration(configuration) -> dict:
     if not isinstance(configuration, dict):
         raise CampaignException("A scoring version's configuration must be a JSON object.", 422)
@@ -62,6 +67,11 @@ def validate_configuration(configuration) -> dict:
     if unknown:
         raise CampaignException(f"Unknown scoring configuration keys: {', '.join(unknown)}.", 422,
                                 data={"unknown_keys": unknown, "known_keys": sorted(DEFAULT_CONFIG)})
+    shared = sorted(set(configuration) & set(SHARED_KEYS))
+    if shared:
+        raise CampaignException(
+            f"{', '.join(shared)} can't differ between scoring versions: evidence detection is shared by all "
+            "of them (change it in code, proved by the golden set).", 422, data={"shared_keys": shared})
     return configuration
 
 

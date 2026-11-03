@@ -32,9 +32,9 @@ from app.services.campaign.candidate_scoring_service import (
     CandidateScoringService, allowed_missing_core, score_threshold_rejects,
 )
 from app.services.campaign.scoring_v2 import (
-    OUTCOME_NOT_RUN, OUTCOME_PENDING, REASON_AWAITING_FULL_SCORING, SCORING_MODE_LLM, SCORING_V2_CONFIG_KEY,
-    SCORING_VERSION, EvidenceInput, JDSkillInput, ProvisionalSkillInput,
-    ScoringInputs, apply_no_llm_outcome, apply_unavailable_outcome, config_version, parse_config, score_v2,
+    OUTCOME_NOT_RUN, OUTCOME_PENDING, REASON_AWAITING_FULL_SCORING, SCORING_MODE_LLM, SCORING_VERSION,
+    EvidenceInput, JDSkillInput, ProvisionalSkillInput, ScoringInputs, apply_no_llm_outcome,
+    apply_unavailable_outcome, config_version, merge_config, score_v2,
 )
 
 # ScoringV2Service.score(llm_fallback=...): when the core-skill votes can't be had.
@@ -256,7 +256,14 @@ class ScoringV2Service:
         return info, extra
 
     def load_config(self) -> dict:
-        return parse_config(self.config_repository.get_configs_by_keys([SCORING_V2_CONFIG_KEY]).get(SCORING_V2_CONFIG_KEY))
+        """The current scoring version's configuration; the code's defaults before one exists (logged)."""
+        from app.services.campaign.scoring_versions import current_version, version_config
+        version = current_version(self.db)
+        if version is None:
+            logger.warning("No current scoring version - scoring with the code's default configuration "
+                           "(run the scoring seed).")
+            return merge_config(None)
+        return version_config(version)
 
     def score(
         self,
@@ -290,9 +297,9 @@ class ScoringV2Service:
         campaign (llm_call_subject).
 
         scoring_version: the version to score with (scoring_versions); None = the current one. Its
-        configuration replaces SCORING_V2_CONFIG and its model (when set) runs the core confirmation;
-        the result records it (scoring_version_id). With no version at all (a fresh database before
-        its seed), SCORING_V2_CONFIG and the platform's model.
+        configuration and its model (when set) run the core confirmation; the result records it
+        (scoring_version_id). With no version at all (a fresh database before its seed), the code's
+        default configuration and the platform's model.
         """
         from app.services.campaign.scoring_versions import current_version, provider_resolver_for
         version = scoring_version if scoring_version is not None else current_version(self.db)

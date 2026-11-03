@@ -60,22 +60,9 @@ class HiringCampaign(Base):
     max_missing_core_pct: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=25.00, server_default=text("25.00")
     )
-    # Scoring v2 (Phase 1): when false (default) v2 is computed and stored
-    # alongside v1 for comparison but only v1 acts; when true, v2 decides.
-    # Switched on per campaign by an admin after reviewing the shadow
-    # report - not part of the campaign create/update API.
-    scoring_v2_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
-    )
-    # Scoring v2 shadow (opt-in per campaign): v2 is computed and stored
-    # next to v1 for the shadow report, never acted on. Costs LLM calls
-    # (core confirmation), capped daily by SCORING_V2_DAILY_LLM_CALL_CAP.
-    scoring_v2_shadow: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("false")
-    )
-    # Shadow mode since retire v1, phase D: when set, each candidate is also scored with this
-    # (candidate) scoring version, stored and never acted on. Replaces scoring_v2_shadow, which
-    # nothing reads any more (dropped later, with approval).
+    # Shadow mode (retire v1, phase D): when set, each candidate is also scored with this (candidate)
+    # scoring version, stored and never acted on. It replaced the scoring_v2_enabled / scoring_v2_shadow
+    # switches (dropped in phase E).
     candidate_scoring_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("scoring_versions.id", name="fk_hiring_campaigns_candidate_scoring_version"),
         nullable=True,

@@ -35,7 +35,6 @@ class _Retry(Exception):
 def _run(h, v2_result, *, retries=0):
     from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
     campaign = _make_campaign()
-    campaign.scoring_v2_enabled = True
     cc = _make_campaign_candidate(campaign.id, uuid4())
     h.campaign_candidate_repo.get_by_id.return_value = cc
     h.campaign_repo.get_by_id.return_value = campaign

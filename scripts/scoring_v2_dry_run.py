@@ -82,8 +82,7 @@ def main() -> None:
             provider_resolver=None if args.no_llm else (lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION)),
         )
         service.detection_repository = _NoCacheRepo(service.detection_repository)
-        print(f"Campaign: {campaign.name} | threshold {campaign.deterministic_threshold} | "
-              f"scoring_v2_enabled={campaign.scoring_v2_enabled}\n")
+        print(f"Campaign: {campaign.name} | threshold {campaign.deterministic_threshold}\n")
         v1_service = CandidateScoringService(SkillRepository(db), SkillOntologyRepository(db), config_repo,
                                              CampaignCandidateRepository(db))
         print(f"{'candidate':24} {'v1 stored':>9} | {'v1 now':>6} {'':>6} {'core':>4} | {'v2':>6} {'':>6} {'core':>4}"
