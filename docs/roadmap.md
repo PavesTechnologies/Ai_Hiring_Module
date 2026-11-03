@@ -119,7 +119,8 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
   - every core skill auto-confirmed: the full outcome.
 
   Fallback HOLDs are re-scored hourly once quota is back. The full outcome is applied only if no person has acted on the candidate since; otherwise it's recorded and the stage is left alone. The golden set has a no-LLM accepted run, checked against each case's `expected_no_llm`.
-- [ ] **C.** Scoring v2 everywhere; v1 stops running; readers move to the v2 breakdown.
+- [x] **C. v2 decides every campaign** (2026-11-03). v1 no longer runs; the candidate holds v2's own breakdown, and the scorecard, analytics and exports read it. The resume used is the latest parsed version. Migration `d8f0a2c4e6b9` moved the stored breakdowns; the old ones are kept in `campaign_candidate_breakdown_backup` until phase E is done (dropping it needs approval).
+  - A re-parse of a rejected candidate is not an override: the corrected input is re-scored and the new score decides. Monitoring counts these re-parses separately, per campaign and per requester.
 - [ ] **D.** Shadow mode generalised to "current vs candidate scoring version".
 - [ ] **E.** The v1 code, tests and settings removed.
 
