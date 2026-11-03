@@ -1,10 +1,12 @@
 {
  "id": "F4",
  "jd": "JD-F",
+ "source_docx": "tests/fixtures/phase3/F4.docx",
  "original_filename": "F4.docx",
  "redacted_text": "Meera Iyer\n[EMAIL] · [PHONE] · Coimbatore\nSummary\nElectronics and Communication graduate who moved into software through internships and projects.\nEducation\nB.E., Electronics and Communication Engineering — Southern Valley Engineering College, 2026 (CGPA 8.0)\nExperience\nSoftware Intern — Pixelforge Technologies · Jan 2026 – Jun 2026\nBuilt REST APIs in Python (FastAPI) for an IoT device dashboard\nWrote SQL queries for device telemetry reports\nUsed Git for version control\nProjects\nSensor Data Logger: Python service storing sensor readings in PostgreSQL, with pytest tests\nSkills\nPython, SQL, REST APIs, Git, FastAPI, pytest, Embedded C",
  "text_sha256": "215563dd0c690535f6982a3ce7b8ab559daada1ef43cc9901324ad6a063c58cf",
  "parsed_json": {
+  "full_name": "Meera Iyer",
   "skills": [
    "Python",
    "SQL",
@@ -15,48 +17,47 @@
    "Embedded C",
    "PostgreSQL"
   ],
-  "summary": "Electronics and Communication graduate who moved into software through internships and projects.",
-  "location": "Coimbatore",
-  "metadata": {},
-  "projects": [
-   {
-    "name": "Sensor Data Logger",
-    "tech": [
-     "Python",
-     "PostgreSQL",
-     "pytest"
-    ],
-    "description": "Python service storing sensor readings in PostgreSQL, with pytest tests"
-   }
-  ],
-  "education": [
-   {
-    "field": "Electronics and Communication Engineering",
-    "degree": "B.E.",
-    "institution": "Southern Valley Engineering College",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2026,
-    "field_normalized": "ELECTRONICS_ENGINEERING"
-   }
-  ],
-  "full_name": "Meera Iyer",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "Software Intern",
     "company": "Pixelforge Technologies",
+    "start_date": "Jan 2026",
     "end_date": "Jun 2026",
     "is_current": false,
-    "start_date": "Jan 2026",
-    "description": "Built REST APIs in Python (FastAPI) for an IoT device dashboard. Wrote SQL queries for device telemetry reports. Used Git for version control",
+    "is_internship": true,
     "is_volunteer": false,
-    "is_internship": true
+    "description": "Built REST APIs in Python (FastAPI) for an IoT device dashboard Wrote SQL queries for device telemetry reports Used Git for version control"
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.E.",
+    "institution": "Southern Valley Engineering College",
+    "field": "Electronics and Communication Engineering",
+    "graduation_year": 2026,
+    "degree_level": "BACHELOR",
+    "field_normalized": "ELECTRONICS_ENGINEERING"
+   }
+  ],
+  "projects": [
+   {
+    "name": "Sensor Data Logger",
+    "description": "Python service storing sensor readings in PostgreSQL, with pytest tests",
+    "tech": [
+     "Python",
+     "PostgreSQL",
+     "pytest"
+    ]
+   }
+  ],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Coimbatore",
+  "summary": "Electronics and Communication graduate who moved into software through internships and projects.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -64,85 +65,81 @@
    "raw_extracted_text": "Embedded C",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "FastAPI",
    "raw_extracted_text": "FastAPI",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "PostgreSQL",
    "raw_extracted_text": "PostgreSQL",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "REST APIs",
    "raw_extracted_text": "REST APIs",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "git",
    "raw_extracted_text": "Git",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "pytest",
    "raw_extracted_text": "pytest",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "sql",
    "raw_extracted_text": "SQL",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37151,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/phase3/F4.docx"
+ }
 }

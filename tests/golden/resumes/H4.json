@@ -1,36 +1,22 @@
 {
  "id": "H4",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/hard_negatives/H4.docx",
  "original_filename": "H4.docx",
  "redacted_text": "Pooja Venkatesh\n[EMAIL] · [PHONE] · Chennai\nSummary\nBusiness analyst with 6 years in retail banking technology projects.\nEducation\nMBA, Finance — Coromandel School of Management, 2020\nExperience\nSenior Business Analyst — Bayline Bank · Jul 2020 – present\nRaised service requests and access requests through the ServiceNow portal for the project team\nAttended the weekly CAB as the business approver for release changes affecting the loans platform\nWrote user stories and acceptance criteria for the mobile banking app\nRan user acceptance testing with branch staff\nSkills\nRequirements Analysis, User Stories, UAT, JIRA, SQL, Stakeholder Management",
  "text_sha256": "93957b1787b00693847b9602c39c77b216062de7d6e9da64bd7aaff9ed0e8086",
  "parsed_json": {
+  "full_name": "Pooja Venkatesh",
   "skills": [
    "Requirements Analysis",
    "User Stories",
    "UAT",
    "JIRA",
    "SQL",
-   "Stakeholder Management"
+   "Stakeholder Management",
+   "ServiceNow"
   ],
-  "summary": "Business analyst with 6 years in retail banking technology projects.",
-  "location": "Chennai",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Finance",
-    "degree": "MBA",
-    "institution": "Coromandel School of Management",
-    "degree_level": "MASTER",
-    "graduation_year": 2020,
-    "field_normalized": "BUSINESS_ADMINISTRATION"
-   }
-  ],
-  "full_name": "Pooja Venkatesh",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [
    {
     "skill": "Business Analysis",
@@ -41,15 +27,31 @@
    {
     "title": "Senior Business Analyst",
     "company": "Bayline Bank",
+    "start_date": "Jul 2020",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Jul 2020",
-    "description": "Raised service requests and access requests through the ServiceNow portal for the project team. Attended the weekly CAB as the business approver for release changes affecting the loans platform. Wrote user stories and acceptance criteria for the mobile banking app. Ran user acceptance testing with branch staff.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Raised service requests and access requests through the ServiceNow portal for the project team. Attended the weekly CAB as the business approver for release changes affecting the loans platform. Wrote user stories and acceptance criteria for the mobile banking app. Ran user acceptance testing with branch staff."
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "MBA",
+    "institution": "Coromandel School of Management",
+    "field": "Finance",
+    "graduation_year": 2020,
+    "degree_level": "MASTER",
+    "field_normalized": "BUSINESS_ADMINISTRATION"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": 6.0,
+  "department": null,
+  "location": "Chennai",
+  "summary": "Business analyst with 6 years in retail banking technology projects.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -57,69 +59,73 @@
    "raw_extracted_text": "JIRA",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Requirements Analysis",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "ServiceNow",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "UAT",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "User Stories",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "Stakeholder Management",
    "raw_extracted_text": "Stakeholder Management",
    "confidence": 1.0,
-   "match_tier": "MANUAL_HR",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "sql",
    "raw_extracted_text": "SQL",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37157,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/hard_negatives/H4.docx"
+ }
 }

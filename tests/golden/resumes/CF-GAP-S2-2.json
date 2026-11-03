@@ -18,7 +18,7 @@
   "soft_skills": [],
   "inferred_skills": [
    {
-    "skill": "Team Leadership",
+    "skill": "Team Management",
     "evidence": "Lead a team of 22 engineers"
    }
   ],
@@ -31,11 +31,11 @@
     "is_current": true,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics. Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining. Designed the Azure cloud architecture for the data and ML platform. Lead a team of 22 engineers"
+    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics; Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining; Designed the Azure cloud architecture for the data and ML platform; Lead a team of 22 engineers"
    },
    {
-    "title": null,
-    "company": "Parental leave",
+    "title": "Parental leave",
+    "company": null,
     "start_date": "Oct 2020",
     "end_date": "Sep 2021",
     "is_current": false,
@@ -51,7 +51,7 @@
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Developed Spark jobs and a Delta Lake warehouse. Built the first ML feature pipelines with the data science team"
+    "description": "Developed Spark jobs and a Delta Lake warehouse; Built the first ML feature pipelines with the data science team"
    }
   ],
   "education": [
@@ -127,7 +127,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-11-02"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

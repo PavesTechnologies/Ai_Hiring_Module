@@ -1,10 +1,12 @@
 {
  "id": "F5",
  "jd": "JD-F",
+ "source_docx": "tests/fixtures/phase3/F5.docx",
  "original_filename": "F5.docx",
  "redacted_text": "Rohan Das\n[EMAIL] · [PHONE] · Kolkata\nSummary\nComputer Science graduate interested in backend engineering and API design.\nEducation\nB.Tech, Computer Science — Eastern Institute of Technology, 2026 (CGPA 7.9)\nExperience\nProgramme Intern, Platform Engineering — Harbourline Tech · Jul 2025 – Jun 2026\nDeveloped RESTful API endpoints for the organisation's customer portal\nWrote database queries and optimised slow reports\nWorked in a version-controlled codebase with code reviews\nKey Skills\nLanguages: Python & SQL\nRESTful API Design & Development\nVersion Control (Git) & Code Review\nUnit Testing (pytest) & Debugging\nContainerisation (Docker) & Linux",
  "text_sha256": "9ee8733e8047a42378b74d631d5550ed1d9d0fe141e9ba147d614ca092f6ac9d",
  "parsed_json": {
+  "full_name": "Rohan Das",
   "skills": [
    "Python",
    "SQL",
@@ -17,38 +19,37 @@
    "Docker",
    "Linux"
   ],
-  "summary": "Computer Science graduate interested in backend engineering and API design.",
-  "location": "Kolkata",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Science",
-    "degree": "B.Tech",
-    "institution": "Eastern Institute of Technology",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2026,
-    "field_normalized": "COMPUTER_SCIENCE"
-   }
-  ],
-  "full_name": "Rohan Das",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "Programme Intern, Platform Engineering",
     "company": "Harbourline Tech",
+    "start_date": "Jul 2025",
     "end_date": "Jun 2026",
     "is_current": false,
-    "start_date": "Jul 2025",
-    "description": "Developed RESTful API endpoints for the organisation's customer portal. Wrote database queries and optimised slow reports. Worked in a version-controlled codebase with code reviews",
+    "is_internship": true,
     "is_volunteer": false,
-    "is_internship": true
+    "description": "Developed RESTful API endpoints for the organisation's customer portal. Wrote database queries and optimised slow reports. Worked in a version-controlled codebase with code reviews"
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Eastern Institute of Technology",
+    "field": "Computer Science",
+    "graduation_year": 2026,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Kolkata",
+  "summary": "Computer Science graduate interested in backend engineering and API design.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -56,101 +57,97 @@
    "raw_extracted_text": "Code Review",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Debugging",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "RESTful API Design",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "Docker",
    "raw_extracted_text": "Docker",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Linux",
    "raw_extracted_text": "Linux",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
-  },
-  {
-   "skill": "REST APIs",
-   "raw_extracted_text": "RESTful API Design",
-   "confidence": 1.0,
-   "match_tier": "MANUAL_HR",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Unit Testing",
    "raw_extracted_text": "Unit Testing",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "git",
    "raw_extracted_text": "Git",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "pytest",
    "raw_extracted_text": "pytest",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "sql",
    "raw_extracted_text": "SQL",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37189,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/phase3/F5.docx"
+ }
 }

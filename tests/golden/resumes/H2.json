@@ -1,10 +1,12 @@
 {
  "id": "H2",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/hard_negatives/H2.docx",
  "original_filename": "H2.docx",
  "redacted_text": "Siddharth Bose\n[EMAIL] · [PHONE] · Pune\nSummary\nSalesforce Service Cloud consultant with 6 years of CRM implementation experience.\nEducation\nB.E., Computer Engineering — Deccan Plateau College of Engineering, 2020\nExperience\nSenior Salesforce Consultant — Cloudharbor Partners · Jan 2023 – present\nConfigured case management and incident escalation rules in Salesforce Service Cloud\nDeployed changes to production using change sets and Copado release pipelines\nBuilt a self-service request catalog in Experience Cloud for customer support\nSalesforce Developer — Cloudharbor Partners · Jul 2020 – Dec 2022\nWrote Apex triggers and Lightning components\nSet up entitlements and milestones for support SLAs\nCertifications\nSalesforce Certified Service Cloud Consultant; Salesforce Certified Administrator\nSkills\nSalesforce Service Cloud, Apex, Lightning Web Components, Copado, SLA management",
  "text_sha256": "1d0dbbba59cc80ce48aa76ad3bcd79e900287b4de332e21d4a5223dbb3aadc17",
  "parsed_json": {
+  "full_name": "Siddharth Bose",
   "skills": [
    "Salesforce Service Cloud",
    "Apex",
@@ -12,51 +14,50 @@
    "Copado",
    "SLA management"
   ],
-  "summary": "Salesforce Service Cloud consultant with 6 years of CRM implementation experience.",
-  "location": "Pune",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Engineering",
-    "degree": "B.E.",
-    "institution": "Deccan Plateau College of Engineering",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2020,
-    "field_normalized": "COMPUTER_SCIENCE"
-   }
-  ],
-  "full_name": "Siddharth Bose",
-  "department": null,
   "soft_skills": [],
-  "certifications": [
-   "Salesforce Certified Service Cloud Consultant",
-   "Salesforce Certified Administrator"
-  ],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "Senior Salesforce Consultant",
     "company": "Cloudharbor Partners",
+    "start_date": "Jan 2023",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Jan 2023",
-    "description": "Configured case management and incident escalation rules in Salesforce Service Cloud, Deployed changes to production using change sets and Copado release pipelines, Built a self-service request catalog in Experience Cloud for customer support",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Configured case management and incident escalation rules in Salesforce Service Cloud. Deployed changes to production using change sets and Copado release pipelines. Built a self-service request catalog in Experience Cloud for customer support."
    },
    {
     "title": "Salesforce Developer",
     "company": "Cloudharbor Partners",
+    "start_date": "Jul 2020",
     "end_date": "Dec 2022",
     "is_current": false,
-    "start_date": "Jul 2020",
-    "description": "Wrote Apex triggers and Lightning components, Set up entitlements and milestones for support SLAs",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Wrote Apex triggers and Lightning components. Set up entitlements and milestones for support SLAs."
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.E.",
+    "institution": "Deccan Plateau College of Engineering",
+    "field": "Computer Engineering",
+    "graduation_year": 2020,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [
+   "Salesforce Certified Service Cloud Consultant",
+   "Salesforce Certified Administrator"
+  ],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Pune",
+  "summary": "Salesforce Service Cloud consultant with 6 years of CRM implementation experience.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -64,61 +65,57 @@
    "raw_extracted_text": "Apex",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Copado",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Lightning Web Components",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Salesforce Service Cloud",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "SLA management",
    "raw_extracted_text": "SLA management",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37235,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/hard_negatives/H2.docx"
+ }
 }

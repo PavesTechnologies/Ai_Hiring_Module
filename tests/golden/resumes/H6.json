@@ -1,10 +1,12 @@
 {
  "id": "H6",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/hard_negatives/H6.docx",
  "original_filename": "H6.docx",
  "redacted_text": "Tarun Mehta\n[EMAIL] · [PHONE] · Mumbai\nSummary\nInside sales professional with 6 years selling IT services.\nEducation\nB.Com — Harbour City College of Commerce, 2020\nExperience\nInside Sales Executive — Nimbus IT Services · Jul 2020 – present\nSold ServiceNow ITSM implementation services to mid-market clients\nRan product demos of incident and change modules with the presales team\nManaged a pipeline of 60+ accounts in Salesforce CRM\nSkills\nServiceNow ITSM, Incident Management, Change Management, Service Catalog, CMDB, ITIL, Salesforce CRM, Negotiation",
  "text_sha256": "21a81a3271fd823c90eb4d291c4dd12b1192d58a3bc89c5d10faace9600bf953",
  "parsed_json": {
+  "full_name": "Tarun Mehta",
   "skills": [
    "ServiceNow ITSM",
    "Incident Management",
@@ -15,24 +17,7 @@
    "Salesforce CRM",
    "Negotiation"
   ],
-  "summary": "Inside sales professional with 6 years selling IT services.",
-  "location": "Mumbai",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Commerce",
-    "degree": "B.Com",
-    "institution": "Harbour City College of Commerce",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2020,
-    "field_normalized": "COMMERCE"
-   }
-  ],
-  "full_name": "Tarun Mehta",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [
    {
     "skill": "IT Service Management",
@@ -43,15 +28,31 @@
    {
     "title": "Inside Sales Executive",
     "company": "Nimbus IT Services",
+    "start_date": "Jul 2020",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Jul 2020",
-    "description": "Sold ServiceNow ITSM implementation services to mid-market clients. Ran product demos of incident and change modules with the presales team. Managed a pipeline of 60+ accounts in Salesforce CRM.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Sold ServiceNow ITSM implementation services to mid-market clients. Ran product demos of incident and change modules with the presales team. Managed a pipeline of 60+ accounts in Salesforce CRM"
    }
   ],
-  "total_experience_years": 6.0
+  "education": [
+   {
+    "degree": "B.Com",
+    "institution": "Harbour City College of Commerce",
+    "field": "Commerce",
+    "graduation_year": 2020,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMMERCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": 6.0,
+  "department": null,
+  "location": "Mumbai",
+  "summary": "Inside sales professional with 6 years selling IT services.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -59,85 +60,81 @@
    "raw_extracted_text": "ITIL",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Negotiation",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Salesforce CRM",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "CMDB",
    "raw_extracted_text": "CMDB",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Change Management",
    "raw_extracted_text": "Change Management",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Incident Management",
    "raw_extracted_text": "Incident Management",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Service Catalog",
    "raw_extracted_text": "Service Catalog",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "ServiceNow ITSM",
    "raw_extracted_text": "ServiceNow ITSM",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37089,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/hard_negatives/H6.docx"
+ }
 }

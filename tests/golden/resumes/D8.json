@@ -1,105 +1,102 @@
 {
  "id": "D8",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/phase3/D8.docx",
  "original_filename": "D8.docx",
  "redacted_text": "Farhan Qureshi\n[EMAIL] · [PHONE] · Hyderabad\nSummary\nService desk analyst with 5 years of L1/L2 support experience.\nEducation\nB.Sc., Computer Science — Old City Degree College, 2021\nExperience\nService Desk Analyst (L2) — Nexgen Outsourcing · 2023 – present\nLog, prioritise and resolve incidents in ServiceNow\nEscalate tickets to resolver groups and track SLAs\nService Desk Analyst (L1) — Nexgen Outsourcing · 2021 – 2023\nAnswered user calls and raised tickets in ServiceNow\nSkills\nIncident Management, ServiceNow (end user), customer support, Windows troubleshooting",
  "text_sha256": "a5a5641618057d5935fe30e0b4ca37931506c30d7b5c2daad563518a015b5f0f",
  "parsed_json": {
+  "full_name": "Farhan Qureshi",
   "skills": [
    "Incident Management",
    "ServiceNow",
    "Windows troubleshooting"
   ],
-  "summary": "Service desk analyst with 5 years of L1/L2 support experience.",
-  "location": "Hyderabad",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Science",
-    "degree": "B.Sc.",
-    "institution": "Old City Degree College",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2021,
-    "field_normalized": "COMPUTER_SCIENCE"
-   }
-  ],
-  "full_name": "Farhan Qureshi",
-  "department": null,
   "soft_skills": [
    "customer support"
   ],
-  "certifications": [],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "Service Desk Analyst (L2)",
     "company": "Nexgen Outsourcing",
+    "start_date": "2023",
     "end_date": "present",
     "is_current": true,
-    "start_date": "2023",
-    "description": "Log, prioritise and resolve incidents in ServiceNow. Escalate tickets to resolver groups and track SLAs",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Log, prioritise and resolve incidents in ServiceNow. Escalate tickets to resolver groups and track SLAs"
    },
    {
     "title": "Service Desk Analyst (L1)",
     "company": "Nexgen Outsourcing",
+    "start_date": "2021",
     "end_date": "2023",
     "is_current": false,
-    "start_date": "2021",
-    "description": "Answered user calls and raised tickets in ServiceNow",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Answered user calls and raised tickets in ServiceNow"
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.Sc.",
+    "institution": "Old City Degree College",
+    "field": "Computer Science",
+    "graduation_year": 2021,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Hyderabad",
+  "summary": "Service desk analyst with 5 years of L1/L2 support experience.",
+  "metadata": {}
  },
  "candidate_skills": [
+  {
+   "skill": null,
+   "raw_extracted_text": "ServiceNow",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
+  },
   {
    "skill": null,
    "raw_extracted_text": "Windows troubleshooting",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "Incident Management",
    "raw_extracted_text": "Incident Management",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
-  },
-  {
-   "skill": "ServiceNow development",
-   "raw_extracted_text": "ServiceNow",
-   "confidence": 1.0,
-   "match_tier": "ALIAS",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37087,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/phase3/D8.docx"
+ }
 }

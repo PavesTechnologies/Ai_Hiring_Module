@@ -1,10 +1,12 @@
 {
  "id": "S2",
  "jd": "JD-S",
+ "source_docx": "tests/fixtures/senior/S2.docx",
  "original_filename": "S2.docx",
  "redacted_text": "Arvind Kulkarni\n[EMAIL] · [PHONE] · Pune\nSummary\nData platform leader with 11 years of experience, the last 5 leading teams.\nEducation\nB.E., Information Technology — Sahyadri College of Engineering, 2015\nExperience\nHead of Data Engineering — Orbit Payments · Oct 2021 – present\nBuilt streaming and batch data pipelines on Azure Databricks for payments analytics\nDeployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining\nDesigned the Azure cloud architecture for the data and ML platform\nLead a team of 22 engineers\nSenior Data Engineer — Orbit Payments · Oct 2015 – Sep 2021\nDeveloped Spark jobs and a Delta Lake warehouse\nBuilt the first ML feature pipelines with the data science team\nSkills\nAzure, Databricks, Spark, Python, MLOps, Data Governance",
  "text_sha256": "4cfe1e7f3f94c10bea02ed2ec93f46b78f9a9f8228153b57fe47ea0f68344b5c",
  "parsed_json": {
+  "full_name": "Arvind Kulkarni",
   "skills": [
    "Azure",
    "Databricks",
@@ -13,27 +15,10 @@
    "MLOps",
    "Data Governance"
   ],
-  "summary": "Data platform leader with 11 years of experience, the last 5 leading teams.",
-  "location": "Pune",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Information Technology",
-    "degree": "B.E.",
-    "institution": "Sahyadri College of Engineering",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2015,
-    "field_normalized": "INFORMATION_TECHNOLOGY"
-   }
-  ],
-  "full_name": "Arvind Kulkarni",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [
    {
-    "skill": "Team Management",
+    "skill": "Team Leadership",
     "evidence": "Lead a team of 22 engineers"
    }
   ],
@@ -41,25 +26,41 @@
    {
     "title": "Head of Data Engineering",
     "company": "Orbit Payments",
+    "start_date": "Oct 2021",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Oct 2021",
-    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics. Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining. Designed the Azure cloud architecture for the data and ML platform. Lead a team of 22 engineers.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Built streaming and batch data pipelines on Azure Databricks for payments analytics. Deployed fraud-detection models to production with Azure ML, with monitoring and scheduled retraining. Designed the Azure cloud architecture for the data and ML platform. Lead a team of 22 engineers"
    },
    {
     "title": "Senior Data Engineer",
     "company": "Orbit Payments",
+    "start_date": "Oct 2015",
     "end_date": "Sep 2021",
     "is_current": false,
-    "start_date": "Oct 2015",
-    "description": "Developed Spark jobs and a Delta Lake warehouse. Built the first ML feature pipelines with the data science team.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Developed Spark jobs and a Delta Lake warehouse. Built the first ML feature pipelines with the data science team"
    }
   ],
-  "total_experience_years": 11.0
+  "education": [
+   {
+    "degree": "B.E.",
+    "institution": "Sahyadri College of Engineering",
+    "field": "Information Technology",
+    "graduation_year": 2015,
+    "degree_level": "BACHELOR",
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": 11.0,
+  "department": null,
+  "location": "Pune",
+  "summary": "Data platform leader with 11 years of experience, the last 5 leading teams.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -67,69 +68,65 @@
    "raw_extracted_text": "Spark",
    "confidence": 1.0,
    "match_tier": "ALIAS",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Azure",
    "raw_extracted_text": "Azure",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Data Governance",
    "raw_extracted_text": "Data Governance",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Databricks",
    "raw_extracted_text": "Databricks",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "MLOps",
    "raw_extracted_text": "MLOps",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37230,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/senior/S2.docx"
+ }
 }

@@ -1,10 +1,12 @@
 {
  "id": "H1",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/hard_negatives/H1.docx",
  "original_filename": "H1.docx",
  "redacted_text": "Lavanya Krishnan\n[EMAIL] · [PHONE] · Bengaluru\nSummary\nServiceNow developer with 5 years on HR Service Delivery.\nEducation\nB.Tech, Information Technology — Silver Oak Institute of Engineering, 2021\nExperience\nServiceNow HRSD Developer — Peoplefirst Solutions · Sep 2021 – present\nConfigured HR case management and HR service lifecycle flows on ServiceNow HR Service Delivery\nBuilt HR catalog items in Employee Center for onboarding, leave and payroll queries\nDesigned lifecycle events for joiners, movers and leavers\nWrote Glide scripts and business rules for HR case assignment\nCertifications\nServiceNow Certified Implementation Specialist – HR Service Delivery\nSkills\nServiceNow HRSD, Employee Center, Flow Designer, JavaScript, HR case management",
  "text_sha256": "e76276933a6accd05386283eb868dc3ddd1023ea1da83815ca016dcd274eab77",
  "parsed_json": {
+  "full_name": "Lavanya Krishnan",
   "skills": [
    "ServiceNow HRSD",
    "Employee Center",
@@ -12,40 +14,39 @@
    "JavaScript",
    "HR case management"
   ],
-  "summary": "ServiceNow developer with 5 years on HR Service Delivery.",
-  "location": "Bengaluru",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Information Technology",
-    "degree": "B.Tech",
-    "institution": "Silver Oak Institute of Engineering",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2021,
-    "field_normalized": "INFORMATION_TECHNOLOGY"
-   }
-  ],
-  "full_name": "Lavanya Krishnan",
-  "department": null,
   "soft_skills": [],
-  "certifications": [
-   "ServiceNow Certified Implementation Specialist – HR Service Delivery"
-  ],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "ServiceNow HRSD Developer",
     "company": "Peoplefirst Solutions",
+    "start_date": "Sep 2021",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Sep 2021",
-    "description": "Configured HR case management and HR service lifecycle flows on ServiceNow HR Service Delivery. Built HR catalog items in Employee Center for onboarding, leave and payroll queries. Designed lifecycle events for joiners, movers and leavers. Wrote Glide scripts and business rules for HR case assignment",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Configured HR case management and HR service lifecycle flows on ServiceNow HR Service Delivery Built HR catalog items in Employee Center for onboarding, leave and payroll queries Designed lifecycle events for joiners, movers and leavers Wrote Glide scripts and business rules for HR case assignment"
    }
   ],
-  "total_experience_years": 5.0
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Silver Oak Institute of Engineering",
+    "field": "Information Technology",
+    "graduation_year": 2021,
+    "degree_level": "BACHELOR",
+    "field_normalized": "INFORMATION_TECHNOLOGY"
+   }
+  ],
+  "projects": [],
+  "certifications": [
+   "ServiceNow Certified Implementation Specialist – HR Service Delivery"
+  ],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Bengaluru",
+  "summary": "ServiceNow developer with 5 years on HR Service Delivery.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -53,61 +54,57 @@
    "raw_extracted_text": "Employee Center",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "HR case management",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "ServiceNow HRSD",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "Flow Designer",
    "raw_extracted_text": "Flow Designer",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "JavaScript",
    "raw_extracted_text": "JavaScript",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37185,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/hard_negatives/H1.docx"
+ }
 }

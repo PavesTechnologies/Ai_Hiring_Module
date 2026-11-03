@@ -28,7 +28,7 @@
     "is_current": false,
     "is_internship": true,
     "is_volunteer": false,
-    "description": "Developed REST APIs in Django REST Framework Wrote and optimised SQL queries on MySQL Wrote pytest unit tests for new endpoints Followed a Git pull-request workflow with code reviews"
+    "description": "Developed REST APIs in Django REST Framework. Wrote and optimised SQL queries on MySQL. Wrote pytest unit tests for new endpoints. Followed a Git pull-request workflow with code reviews."
    }
   ],
   "education": [
@@ -120,7 +120,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

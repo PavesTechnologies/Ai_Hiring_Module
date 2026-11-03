@@ -38,13 +38,13 @@
    },
    {
     "title": "Career break",
-    "company": "family care",
+    "company": null,
     "start_date": "May 2021",
     "end_date": "Jun 2022",
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": null
+    "description": "family care"
    },
    {
     "title": "ServiceNow Developer",
@@ -158,7 +158,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

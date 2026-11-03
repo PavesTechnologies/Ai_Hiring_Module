@@ -1,36 +1,20 @@
 {
  "id": "D4",
  "jd": "JD-D",
+ "source_docx": "tests/fixtures/phase3/D4.docx",
  "original_filename": "D4.docx",
  "redacted_text": "Rahul Kapoor\n[EMAIL] · [PHONE] · Mumbai\nSummary\nOrganisational change management consultant with 8 years leading people through business transformations.\nEducation\nMBA, Human Resources — Western Business School, 2017\nExperience\nChange Management Lead — Harbourstone Consulting · 2020 – present\nLed change management for an ERP rollout affecting 6,000 employees\nRan stakeholder analysis, communication plans and training programmes\nMeasured adoption and resistance using the Prosci ADKAR model\nHR Business Partner — Silverline Retail · 2017 – 2020\nSupported restructuring and change communication across four business units\nCertifications\nProsci Certified Change Practitioner\nSkills\nChange Management, Stakeholder Management, Communication Planning, Training Design",
  "text_sha256": "d72e6f893e5360a32e6600382e8bdddf3b06e74f6f655086aff0d9855a28f114",
  "parsed_json": {
+  "full_name": "Rahul Kapoor",
   "skills": [
    "Change Management",
    "Stakeholder Management",
    "Communication Planning",
-   "Training Design"
+   "Training Design",
+   "Prosci ADKAR model"
   ],
-  "summary": "Organisational change management consultant with 8 years leading people through business transformations.",
-  "location": "Mumbai",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Human Resources",
-    "degree": "MBA",
-    "institution": "Western Business School",
-    "degree_level": "MASTER",
-    "graduation_year": 2017,
-    "field_normalized": "BUSINESS_ADMINISTRATION"
-   }
-  ],
-  "full_name": "Rahul Kapoor",
-  "department": null,
   "soft_skills": [],
-  "certifications": [
-   "Prosci Certified Change Practitioner"
-  ],
   "inferred_skills": [
    {
     "skill": "Change Management",
@@ -41,25 +25,43 @@
    {
     "title": "Change Management Lead",
     "company": "Harbourstone Consulting",
+    "start_date": "2020",
     "end_date": "present",
     "is_current": true,
-    "start_date": "2020",
-    "description": "Led change management for an ERP rollout affecting 6,000 employees. Ran stakeholder analysis, communication plans and training programmes. Measured adoption and resistance using the Prosci ADKAR model",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Led change management for an ERP rollout affecting 6,000 employees. Ran stakeholder analysis, communication plans and training programmes. Measured adoption and resistance using the Prosci ADKAR model"
    },
    {
     "title": "HR Business Partner",
     "company": "Silverline Retail",
+    "start_date": "2017",
     "end_date": "2020",
     "is_current": false,
-    "start_date": "2017",
-    "description": "Supported restructuring and change communication across four business units",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Supported restructuring and change communication across four business units"
    }
   ],
-  "total_experience_years": 8.0
+  "education": [
+   {
+    "degree": "MBA",
+    "institution": "Western Business School",
+    "field": "Human Resources",
+    "graduation_year": 2017,
+    "degree_level": "MASTER",
+    "field_normalized": "BUSINESS_ADMINISTRATION"
+   }
+  ],
+  "projects": [],
+  "certifications": [
+   "Prosci Certified Change Practitioner"
+  ],
+  "total_experience_years": 8.0,
+  "department": null,
+  "location": "Mumbai",
+  "summary": "Organisational change management consultant with 8 years leading people through business transformations.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -67,53 +69,57 @@
    "raw_extracted_text": "Communication Planning",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
+  },
+  {
+   "skill": null,
+   "raw_extracted_text": "Prosci ADKAR model",
+   "confidence": null,
+   "match_tier": "UNKNOWN",
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": null,
    "raw_extracted_text": "Training Design",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "Change Management",
    "raw_extracted_text": "Change Management",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Stakeholder Management",
    "raw_extracted_text": "Stakeholder Management",
    "confidence": 1.0,
-   "match_tier": "MANUAL_HR",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "match_tier": "EXACT",
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37204,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/phase3/D4.docx"
+ }
 }

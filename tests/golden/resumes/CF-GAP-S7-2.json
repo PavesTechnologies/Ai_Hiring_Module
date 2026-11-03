@@ -22,7 +22,7 @@
   "inferred_skills": [
    {
     "skill": "Engineering Management",
-    "evidence": "VP, Data & ML Engineering"
+    "evidence": "Engineering Manager, Data"
    }
   ],
   "work_experience": [
@@ -34,11 +34,11 @@
     "is_current": true,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines. Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining. Designed the AWS cloud architecture for data and ML workloads. Lead a team of 38 engineers."
+    "description": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines. Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining. Designed the AWS cloud architecture for data and ML workloads. Lead a team of 38 engineers"
    },
    {
-    "title": "Career break (family care)",
-    "company": null,
+    "title": "Career break",
+    "company": "family care",
     "start_date": "Aug 2017",
     "end_date": "Sep 2018",
     "is_current": false,
@@ -54,7 +54,7 @@
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Developed ETL pipelines and the first ML models in Python."
+    "description": "Developed ETL pipelines and the first ML models in Python"
    },
    {
     "title": "Software Engineer",
@@ -64,12 +64,12 @@
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Built backend services in Java and Python."
+    "description": "Built backend services in Java and Python"
    }
   ],
   "education": [
    {
-    "degree": "Diploma in Computer Applications",
+    "degree": "Diploma",
     "institution": "Malabar Polytechnic",
     "field": "Computer Applications",
     "graduation_year": 2006,
@@ -164,7 +164,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

@@ -1,10 +1,12 @@
 {
  "id": "F7",
  "jd": "JD-F",
+ "source_docx": "tests/fixtures/phase3/F7.docx",
  "original_filename": "F7.docx",
  "redacted_text": "Arjun Nair\n[EMAIL] · [PHONE] · Kochi\nSummary\nComputer Science graduate with a year of data analytics internships.\nEducation\nB.Tech, Computer Science — Coastal Institute of Technology, 2026 (CGPA 8.3)\nExperience\nData Analyst Intern — Bluefin Analytics · Jul 2025 – Jun 2026\nAnalysed sales data in Python with pandas and Jupyter notebooks\nWrote SQL queries to build weekly reports\nBuilt dashboards in Power BI\nSkills\nPython, SQL, pandas, NumPy, Power BI, Excel",
  "text_sha256": "9c29e275c3f9d11caf0a4b78e2f4ab163a539927075a06ebdff0916f8318e660",
  "parsed_json": {
+  "full_name": "Arjun Nair",
   "skills": [
    "Python",
    "SQL",
@@ -13,38 +15,37 @@
    "Power BI",
    "Excel"
   ],
-  "summary": "Computer Science graduate with a year of data analytics internships.",
-  "location": "Kochi",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Science",
-    "degree": "B.Tech",
-    "institution": "Coastal Institute of Technology",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2026,
-    "field_normalized": "COMPUTER_SCIENCE"
-   }
-  ],
-  "full_name": "Arjun Nair",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [],
   "work_experience": [
    {
     "title": "Data Analyst Intern",
     "company": "Bluefin Analytics",
+    "start_date": "Jul 2025",
     "end_date": "Jun 2026",
     "is_current": false,
-    "start_date": "Jul 2025",
-    "description": "Analysed sales data in Python with pandas and Jupyter notebooks Wrote SQL queries to build weekly reports Built dashboards in Power BI",
+    "is_internship": true,
     "is_volunteer": false,
-    "is_internship": true
+    "description": "Analysed sales data in Python with pandas and Jupyter notebooks; Wrote SQL queries to build weekly reports; Built dashboards in Power BI"
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Coastal Institute of Technology",
+    "field": "Computer Science",
+    "graduation_year": 2026,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Kochi",
+  "summary": "Computer Science graduate with a year of data analytics internships.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -52,69 +53,65 @@
    "raw_extracted_text": "Excel",
    "confidence": null,
    "match_tier": "UNKNOWN",
-   "scoring_weight": "0.000",
-   "status": "PENDING_REVIEW"
+   "status": "PENDING_REVIEW",
+   "scoring_weight": 0.0
   },
   {
    "skill": "NumPy",
    "raw_extracted_text": "NumPy",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Pandas",
    "raw_extracted_text": "pandas",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Power BI",
    "raw_extracted_text": "Power BI",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "sql",
    "raw_extracted_text": "SQL",
    "confidence": 1.0,
    "match_tier": "CASE_INSENSITIVE",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37052,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/phase3/F7.docx"
+ }
 }

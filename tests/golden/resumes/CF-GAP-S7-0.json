@@ -21,7 +21,7 @@
   "soft_skills": [],
   "inferred_skills": [
    {
-    "skill": "Program Management",
+    "skill": "Team Leadership",
     "evidence": "Lead a team of 38 engineers"
    }
   ],
@@ -59,7 +59,7 @@
   ],
   "education": [
    {
-    "degree": "Diploma",
+    "degree": "Diploma in Computer Applications",
     "institution": "Malabar Polytechnic",
     "field": "Computer Applications",
     "graduation_year": 2006,
@@ -141,14 +141,6 @@
    "scoring_weight": 1.0
   },
   {
-   "skill": "Program Management",
-   "raw_extracted_text": "Program Management (inferred: Lead a team of 38 engineers)",
-   "confidence": 1.0,
-   "match_tier": "EXACT",
-   "status": "AUTO_VERIFIED",
-   "scoring_weight": 1.0
-  },
-  {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
@@ -162,7 +154,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

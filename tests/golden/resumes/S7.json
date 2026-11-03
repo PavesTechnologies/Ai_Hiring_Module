@@ -1,10 +1,12 @@
 {
  "id": "S7",
  "jd": "JD-S",
+ "source_docx": "tests/fixtures/senior/S7.docx",
  "original_filename": "S7.docx",
  "redacted_text": "Raghav Menon\n[EMAIL] · [PHONE] · Kochi\nSummary\nHands-on data and ML platform leader with 20 years of experience, self-taught.\nEducation\nDiploma in Computer Applications — Malabar Polytechnic, 2006\nExperience\nVP, Data & ML Engineering — Backwater Logistics · Oct 2018 – present\nBuilt the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines\nDeployed route-optimisation and demand models to production with MLflow, monitoring and retraining\nDesigned the AWS cloud architecture for data and ML workloads\nLead a team of 38 engineers\nEngineering Manager, Data — Backwater Logistics · Oct 2012 – Sep 2018\nDeveloped ETL pipelines and the first ML models in Python\nSoftware Engineer — Spice Coast Software · Oct 2006 – Sep 2012\nBuilt backend services in Java and Python\nSkills\nData Engineering, Machine Learning, MLOps, AWS, Databricks, Spark, Kafka, Python",
  "text_sha256": "6947c7c4c99287df6f6eb60dc5744fecd00adccea106ba63f84a8261c10e66fe",
  "parsed_json": {
+  "full_name": "Raghav Menon",
   "skills": [
    "Data Engineering",
    "Machine Learning",
@@ -16,63 +18,62 @@
    "Python",
    "Java"
   ],
-  "summary": "Hands-on data and ML platform leader with 20 years of experience, self-taught.",
-  "location": "Kochi",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Applications",
-    "degree": "Diploma in Computer Applications",
-    "institution": "Malabar Polytechnic",
-    "degree_level": "DIPLOMA",
-    "graduation_year": 2006,
-    "field_normalized": "INFORMATION_TECHNOLOGY"
-   }
-  ],
-  "full_name": "Raghav Menon",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [
    {
-    "skill": "Program Management",
-    "evidence": "Lead a team of 38 engineers"
+    "skill": "Engineering Management",
+    "evidence": "Engineering Manager, Data"
    }
   ],
   "work_experience": [
    {
     "title": "VP, Data & ML Engineering",
     "company": "Backwater Logistics",
+    "start_date": "Oct 2018",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Oct 2018",
-    "description": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines. Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining. Designed the AWS cloud architecture for data and ML workloads. Lead a team of 38 engineers",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Built the company's lakehouse on AWS and Databricks, with Spark batch and Kafka streaming pipelines. Deployed route-optimisation and demand models to production with MLflow, monitoring and retraining. Designed the AWS cloud architecture for data and ML workloads. Lead a team of 38 engineers"
    },
    {
     "title": "Engineering Manager, Data",
     "company": "Backwater Logistics",
+    "start_date": "Oct 2012",
     "end_date": "Sep 2018",
     "is_current": false,
-    "start_date": "Oct 2012",
-    "description": "Developed ETL pipelines and the first ML models in Python",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Developed ETL pipelines and the first ML models in Python"
    },
    {
     "title": "Software Engineer",
     "company": "Spice Coast Software",
+    "start_date": "Oct 2006",
     "end_date": "Sep 2012",
     "is_current": false,
-    "start_date": "Oct 2006",
-    "description": "Built backend services in Java and Python",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Built backend services in Java and Python"
    }
   ],
-  "total_experience_years": 20.0
+  "education": [
+   {
+    "degree": "Diploma",
+    "institution": "Malabar Polytechnic",
+    "field": "Computer Applications",
+    "graduation_year": 2006,
+    "degree_level": "DIPLOMA",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": 20.0,
+  "department": null,
+  "location": "Kochi",
+  "summary": "Hands-on data and ML platform leader with 20 years of experience, self-taught.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -80,101 +81,89 @@
    "raw_extracted_text": "AWS",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Apache Kafka",
    "raw_extracted_text": "Kafka",
    "confidence": 1.0,
    "match_tier": "ALIAS",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Apache Spark",
    "raw_extracted_text": "Spark",
    "confidence": 1.0,
    "match_tier": "ALIAS",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Data Engineering",
    "raw_extracted_text": "Data Engineering",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Databricks",
    "raw_extracted_text": "Databricks",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Java",
    "raw_extracted_text": "Java",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "MLOps",
    "raw_extracted_text": "MLOps",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Machine Learning",
    "raw_extracted_text": "Machine Learning",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
-  },
-  {
-   "skill": "Program Management",
-   "raw_extracted_text": "Program Management (inferred: Lead a team of 38 engineers)",
-   "confidence": 1.0,
-   "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Python",
    "raw_extracted_text": "Python",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37288,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/senior/S7.docx"
+ }
 }

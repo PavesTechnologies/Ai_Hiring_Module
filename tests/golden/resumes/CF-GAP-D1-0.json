@@ -63,7 +63,7 @@
    "ServiceNow CIS-ITSM",
    "ITIL 4 Foundation"
   ],
-  "total_experience_years": null,
+  "total_experience_years": 6.0,
   "department": null,
   "location": "Hyderabad",
   "summary": "ServiceNow ITSM consultant with 6 years of implementation experience.",
@@ -148,7 +148,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",

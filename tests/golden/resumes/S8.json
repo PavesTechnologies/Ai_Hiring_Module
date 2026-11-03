@@ -1,10 +1,12 @@
 {
  "id": "S8",
  "jd": "JD-S",
+ "source_docx": "tests/fixtures/senior/S8.docx",
  "original_filename": "S8.docx",
  "redacted_text": "Deepak Chauhan\n[EMAIL] · [PHONE] · Noida\nSummary\nBackend engineering leader with 13 years building high-scale services.\nEducation\nB.Tech, Computer Science — Yamuna Institute of Technology, 2013\nExperience\nEngineering Manager, Platform — Quickcart · Oct 2020 – present\nLed a team of 18 backend engineers building order and payment services in Java\nDesigned event-driven services with Kafka and microservices on AWS\nDesigned the AWS cloud architecture for the checkout platform\nSenior Software Engineer — Quickcart · Oct 2013 – Sep 2020\nBuilt REST APIs and backend services in Java and Spring Boot\nSkills\nJava, Spring Boot, Kafka, Microservices, AWS, Kubernetes",
  "text_sha256": "b8025bd96292ccd687830433ae00b7ec14efe6845456cb962c55316438effc00",
  "parsed_json": {
+  "full_name": "Deepak Chauhan",
   "skills": [
    "Java",
    "Spring Boot",
@@ -13,53 +15,52 @@
    "AWS",
    "Kubernetes"
   ],
-  "summary": "Backend engineering leader with 13 years building high-scale services.",
-  "location": "Noida",
-  "metadata": {},
-  "projects": [],
-  "education": [
-   {
-    "field": "Computer Science",
-    "degree": "B.Tech",
-    "institution": "Yamuna Institute of Technology",
-    "degree_level": "BACHELOR",
-    "graduation_year": 2013,
-    "field_normalized": "COMPUTER_SCIENCE"
-   }
-  ],
-  "full_name": "Deepak Chauhan",
-  "department": null,
   "soft_skills": [],
-  "certifications": [],
   "inferred_skills": [
    {
     "skill": "Engineering Management",
-    "evidence": "Engineering Manager"
+    "evidence": "Engineering Manager, Platform"
    }
   ],
   "work_experience": [
    {
     "title": "Engineering Manager, Platform",
     "company": "Quickcart",
+    "start_date": "Oct 2020",
     "end_date": "present",
     "is_current": true,
-    "start_date": "Oct 2020",
-    "description": "Led a team of 18 backend engineers building order and payment services in Java. Designed event-driven services with Kafka and microservices on AWS. Designed the AWS cloud architecture for the checkout platform.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Led a team of 18 backend engineers building order and payment services in Java. Designed event-driven services with Kafka and microservices on AWS. Designed the AWS cloud architecture for the checkout platform."
    },
    {
     "title": "Senior Software Engineer",
     "company": "Quickcart",
+    "start_date": "Oct 2013",
     "end_date": "Sep 2020",
     "is_current": false,
-    "start_date": "Oct 2013",
-    "description": "Built REST APIs and backend services in Java and Spring Boot.",
+    "is_internship": false,
     "is_volunteer": false,
-    "is_internship": false
+    "description": "Built REST APIs and backend services in Java and Spring Boot."
    }
   ],
-  "total_experience_years": null
+  "education": [
+   {
+    "degree": "B.Tech",
+    "institution": "Yamuna Institute of Technology",
+    "field": "Computer Science",
+    "graduation_year": 2013,
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE"
+   }
+  ],
+  "projects": [],
+  "certifications": [],
+  "total_experience_years": null,
+  "department": null,
+  "location": "Noida",
+  "summary": "Backend engineering leader with 13 years building high-scale services.",
+  "metadata": {}
  },
  "candidate_skills": [
   {
@@ -67,69 +68,65 @@
    "raw_extracted_text": "AWS",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Apache Kafka",
    "raw_extracted_text": "Kafka",
    "confidence": 1.0,
    "match_tier": "ALIAS",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Java",
    "raw_extracted_text": "Java",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Kubernetes",
    "raw_extracted_text": "Kubernetes",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Microservices",
    "raw_extracted_text": "Microservices",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   },
   {
    "skill": "Spring Boot",
    "raw_extracted_text": "Spring Boot",
    "confidence": 1.0,
    "match_tier": "EXACT",
-   "scoring_weight": "1.000",
-   "status": "AUTO_VERIFIED"
+   "status": "AUTO_VERIFIED",
+   "scoring_weight": 1.0
   }
  ],
+ "parse": {
+  "source": "refreeze",
+  "prompt_template": "Resume Parsing - Standard",
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "frozen_on": "2026-11-03"
+ },
  "resume": {
   "file_format": "DOCX",
-  "file_size_bytes": 37142,
   "version_number": 1,
   "is_active_version": true,
   "parse_status": "PARSED",
-  "parse_confidence_score": null,
-  "parser_version": "gemini-resume-extraction-v1",
-  "page_count": null,
-  "parse_duration_ms": null,
-  "ocr_used": false
+  "page_count": null
  },
  "candidate": {
   "jurisdiction": "GLOBAL"
- },
- "parse": {
-  "source": "dev",
-  "prompt_template": "Resume Parsing - Standard",
-  "frozen_on": "2026-10-30"
- },
- "source_docx": "tests/fixtures/senior/S8.docx"
+ }
 }

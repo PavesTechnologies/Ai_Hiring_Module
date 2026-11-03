@@ -34,7 +34,7 @@
     "is_current": true,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Implemented ServiceNow ITSM for three enterprise clients; Configured Incident, Problem and Change Management workflows; Designed Service Catalog items and request fulfilment flows in Flow Designer; Ran CAB approval configuration and change risk assessment"
+    "description": "Implemented ServiceNow ITSM for three enterprise clients. Configured Incident, Problem and Change Management workflows. Designed Service Catalog items and request fulfilment flows in Flow Designer. Ran CAB approval configuration and change risk assessment"
    },
    {
     "title": "ServiceNow Developer",
@@ -44,7 +44,7 @@
     "is_current": false,
     "is_internship": false,
     "is_volunteer": false,
-    "description": "Built CMDB discovery integrations and REST integrations with monitoring tools; Wrote Glide scripts (JavaScript) for business rules and client scripts; Configured SLA definitions for incident priorities"
+    "description": "Built CMDB discovery integrations and REST integrations with monitoring tools. Wrote Glide scripts (JavaScript) for business rules and client scripts. Configured SLA definitions for incident priorities"
    }
   ],
   "education": [
@@ -148,7 +148,7 @@
   "prompt_template": "Resume Parsing - Standard",
   "provider": "GOOGLE",
   "model": "gemini-3.1-flash-lite",
-  "frozen_on": "2026-10-30"
+  "frozen_on": "2026-11-03"
  },
  "resume": {
   "file_format": "DOCX",
