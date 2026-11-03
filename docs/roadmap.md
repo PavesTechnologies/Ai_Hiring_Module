@@ -121,7 +121,7 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
   Fallback HOLDs are re-scored hourly once quota is back. The full outcome is applied only if no person has acted on the candidate since; otherwise it's recorded and the stage is left alone. The golden set has a no-LLM accepted run, checked against each case's `expected_no_llm`.
 - [x] **C. v2 decides every campaign** (2026-11-03). v1 no longer runs; the candidate holds v2's own breakdown, and the scorecard, analytics and exports read it. The resume used is the latest parsed version. Migration `d8f0a2c4e6b9` moved the stored breakdowns; the old ones are kept in `campaign_candidate_breakdown_backup` until phase E is done (dropping it needs approval).
   - A re-parse of a rejected candidate is not an override: the corrected input is re-scored and the new score decides. Monitoring counts these re-parses separately, per campaign and per requester.
-- [ ] **D.** Shadow mode generalised to "current vs candidate scoring version".
+- [x] **D. Shadow mode is "current vs candidate scoring version"** (2026-11-03). A version is a configuration (the `SCORING_V2_CONFIG` shape) and optionally its own confirmation model. The current one decides every campaign. A campaign can try a candidate version: its candidates are scored with it too, never acted on, and the shadow report compares the two by label. An HR admin promotes a candidate version to current (audited). Code and prompt changes still go through the golden set. Migration `e1a3c5e7f9b2` added `scoring_versions` and created the current version from today's settings.
 - [ ] **E.** The v1 code, tests and settings removed.
 
 ## 6. Go to production
@@ -135,7 +135,7 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
    - [ ] **Backup model:** configure a backup model and test that scoring falls back to it.
    - [ ] **Real email tested deliberately:** a planned, explicit test of real delivery. Until then `EMAIL_DELIVERY=log` everywhere.
    - [ ] **One email path only:** every email is an `email_notifications` row sent by `notifications.send_candidate_email`; nothing else calls SES (`tests/tasks/test_one_email_path.py` guards it). Check it still holds before go-live.
-   - [ ] **No other deployment shares the production database:** confirm that only the production API and workers connect to it (check `pg_stat_activity` client addresses). A second worker on the dev database ran its own scheduled jobs, including an HR alert email, for weeks unnoticed.
+   - [ ] **No other deployment shares the production database:** confirm that only the production API and workers connect to it (check `pg_stat_activity` client addresses). A second worker on the dev database ran its own scheduled jobs, including an HR alert email, for weeks unnoticed. On 2026-11-03 it was still connecting from 13.207.112.154 after the instance was reported stopped and the backend, Celery worker and beat were scaled to 0, so check the database's own connection list, not the deployment's status.
    - [ ] **No personal data in logs:** worker logs, task logs and dead-letter rows. See [known issues](known_issues.md).
    - [ ] **Retention policies:** `retention_policies` is empty. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them.
 
