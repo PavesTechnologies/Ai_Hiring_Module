@@ -57,3 +57,33 @@ def test_the_summary_counts_outcomes_votes_and_usage_for_one_campaign(db, scored
     assert usage["by_context"]["golden_run"] >= 1                     # counted apart from app usage
     assert any(q["model"] == "gemini-3.1-flash-lite" and q["cap"] == 400 for q in summary["quota"]["today"])
     assert isinstance(summary["tasks"]["by_task_type"], list)
+
+
+def test_rejected_reparses_are_counted_per_campaign_and_recruiter_not_as_overrides(db, scored):  # noqa: F811
+    from sqlalchemy import text
+    from app.enums.constants import ActionType, EntityType
+    from app.models.compliance import AuditLog
+    cc, campaign = scored["cc"], scored["campaign"]
+    user_id, user_name = db.execute(text("select id, full_name from users order by created_at limit 1")).one()
+
+    def reparse(detail, actor=user_id):
+        return AuditLog(actor_id=actor, actor_role="RECRUITER", action_type=ActionType.RESUME_REPARSE_REQUESTED,
+                        entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=campaign.id,
+                        detail={"version_no": 1, "reason_provided": True, **detail})
+    db.add_all([
+        reparse({"move_to_screening": True, "was_rejected": True}),
+        reparse({"move_to_screening": False, "was_rejected": True}),      # HR_ADMIN: stays rejected
+        reparse({"move_to_screening": True}),                             # before was_rejected was recorded
+        reparse({"move_to_screening": False, "was_rejected": False}),     # not a rejected candidate
+        reparse({"move_to_screening": False, "was_rejected": True}, actor=None),
+    ])
+    db.flush()
+
+    section = monitoring_summary(db, _config(), days=7, campaign_id=campaign.id,
+                                 now=datetime.now(timezone.utc))["rejected_reparses"]
+
+    assert section["total"] == 4
+    assert section["by_campaign"] == [{"campaign_id": str(campaign.id), "campaign": campaign.name,
+                                       "count": 4, "moved_to_screening": 2}]
+    assert {r["actor_id"]: (r["recruiter"], r["count"]) for r in section["by_recruiter"]} == {
+        str(user_id): (user_name, 3), None: (None, 1)}

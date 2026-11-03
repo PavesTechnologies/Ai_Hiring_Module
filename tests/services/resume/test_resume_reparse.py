@@ -88,6 +88,8 @@ def test_hr_admin_reparse_of_rejected_candidate_keeps_the_stage():
     result, task = _request(service, cc, "HR_ADMIN", None)
     assert result["moves_to_screening"] is False and result["stays_rejected"] is True
     assert task.apply_async.call_args.kwargs["kwargs"]["reparse"]["move_to_screening"] is False
+    # counted in monitoring's rejected_reparses even though it stays rejected
+    assert service.audit_service.log.call_args.kwargs["details"]["was_rejected"] is True
 
 
 def test_previous_parse_is_kept_as_a_version():
@@ -143,6 +145,7 @@ def test_rescore_moves_a_rejected_candidate_as_the_recruiter():
     kwargs = move.return_value.move_one.call_args.kwargs
     assert (kwargs["target_stage"], kwargs["actor_role"]) == ("SCREENING", "RECRUITER")
     assert "missed section" in kwargs["reason"] and outcome == "moved to SCREENING and re-scored"
+    assert kwargs["outcome_override_check"] is False      # a re-parse is not an override (counted on its own)
 
 
 def test_rescore_without_a_move_uses_the_manual_rescore():

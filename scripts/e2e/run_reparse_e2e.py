@@ -10,14 +10,14 @@ Refuses to run unless the stack is isolated. Any attempt to create an SES
 client in this process fails the run.
 
 Checks (each PASS / FAIL, report at /data/storage/e2e_report.json):
-  1  fixtures uploaded as the recruiter; candidate V rejected by v1
+  1  fixtures uploaded as the recruiter; candidate V rejected (v2 decides since phase C)
   2  candidate V's resume shared into campaign B (same resume), candidate set to SHORTLISTED there
   3  re-parse of a REJECTED candidate without a reason -> 422
   4  re-parse with a reason -> accepted; previous parse kept as a version
   5  new parse: skills replaced (no duplicates), v2 evidence replaced
   6  re-embedded (new resume embedding after the re-parse)
   7  re-scored (deterministic task after the re-parse)
-  8  moved REJECTED -> SCREENING by the recruiter, with the reason
+  8  moved REJECTED -> SCREENING by the recruiter, with the reason - not recorded as an override
   9  parse-changes endpoint (the Parse changes panel's data) shows the completed diff
  10  campaign B candidate marked "score out of date", visible on its scorecard data
  11  recruiter re-score of the SHORTLISTED campaign-B candidate is score-only: scores updated,
@@ -150,7 +150,7 @@ def run() -> None:
         cc = fresh(CampaignCandidate, cc_id)
         return cc if cc and cc.deterministic_passed is not None else None
 
-    # 1 - upload both fixtures; V is expected to be rejected by v1.
+    # 1 - upload both fixtures; V is expected to be rejected.
     v = upload(campaign_a, "V")
     k = upload(campaign_a, "K")
     v_resume_id = uuid.UUID(str(v["resume_id"]))
@@ -158,7 +158,7 @@ def run() -> None:
     wait_for(lambda: scored(v_cc.id), "V's first deterministic score")
     wait_for(lambda: scored(cc_for(campaign_a, uuid.UUID(str(k["resume_id"]))).id), "K's first deterministic score")
     v_cc = fresh(CampaignCandidate, v_cc.id)
-    report.check(1, "fixtures uploaded by the recruiter; V rejected by v1", v_cc.pipeline_stage == PipelineStage.REJECTED,
+    report.check(1, "fixtures uploaded by the recruiter; V rejected", v_cc.pipeline_stage == PipelineStage.REJECTED,
                  f"V stage {v_cc.pipeline_stage.value}, score {v_cc.deterministic_score}")
 
     # 2 - share V's resume into campaign B and make that candidate SHORTLISTED (precondition).
@@ -240,9 +240,15 @@ def run() -> None:
         CampaignCandidateStageHistory.from_stage == PipelineStage.REJECTED,
         CampaignCandidateStageHistory.to_stage == PipelineStage.SCREENING,
         CampaignCandidateStageHistory.changed_at >= t0)).scalars().first()
-    report.check(8, "moved REJECTED -> SCREENING by the recruiter with the reason",
-                 move is not None and move.changed_by == "e2e-recruiter" and REASON in (move.change_reason or ""),
-                 f"now {fresh(CampaignCandidate, v_cc.id).pipeline_stage.value} (a re-score may reject again)")
+    # A re-parse is not an override (the user's decision, 2026-11-03): no override row is recorded.
+    from app.models.outcome_overrides import CandidateOutcomeOverride
+    overrides = db.execute(select(CandidateOutcomeOverride).where(
+        CandidateOutcomeOverride.campaign_candidate_id == v_cc.id)).scalars().all()
+    report.check(8, "moved REJECTED -> SCREENING by the recruiter with the reason, not as an override",
+                 move is not None and move.changed_by == "e2e-recruiter" and REASON in (move.change_reason or "")
+                 and not overrides,
+                 f"now {fresh(CampaignCandidate, v_cc.id).pipeline_stage.value} (a re-score may reject again); "
+                 f"override rows {len(overrides)}")
 
     # 9 - parse-changes (Parse changes panel data).
     changes = client.get(f"/campaign-candidates/{v_cc.id}/parse-changes", headers=recruiter).json()["data"]

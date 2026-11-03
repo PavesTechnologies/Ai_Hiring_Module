@@ -239,7 +239,7 @@ class ResumeReparseService:
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.RESUME_REPARSE_REQUESTED,
                 entity_type=EntityType.CAMPAIGN_CANDIDATE, entity_id=cc.id, campaign_id=campaign.id,
                 details={"resume_id": str(resume.id), "version_no": version_no, "reason_provided": bool(reason),
-                         "move_to_screening": move_to_screening},
+                         "move_to_screening": move_to_screening, "was_rejected": rejected},
             )
             self.db.commit()
         except Exception:
@@ -340,6 +340,10 @@ class ResumeReparseService:
                     campaign_id=campaign.id, campaign_candidate_id=cc.id, target_stage=PipelineStage.SCREENING.value,
                     reason=f"Re-parsed resume: {reparse.get('reason')}", actor_id=reparse.get("actor_id"),
                     actor_role=reparse.get("actor_role"),
+                    # Not an override (the user's decision, 2026-11-03): the input changed and the new
+                    # score decides. Re-parses of rejected candidates are counted on their own instead
+                    # (monitoring: rejected_reparses), so they never inflate override rates.
+                    outcome_override_check=False,
                 )
                 return "moved to SCREENING and re-scored"
             except Exception as exc:

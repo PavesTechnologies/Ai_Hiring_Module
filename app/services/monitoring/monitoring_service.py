@@ -8,7 +8,9 @@ The HR_ADMIN monitoring view (Phase 4): how scoring is running, from data the ap
   (calls logged against a resume, llm_call_subject); app calls only - dry runs and golden runs apart;
 - quota: today's calls per model against its daily cap (the provider's day, midnight Pacific), and
   the last 7 days;
-- tasks: task statuses by type, stuck tasks, PENDING scoring results, open dead letters.
+- tasks: task statuses by type, stuck tasks, PENDING scoring results, open dead letters;
+- rejected re-parses: re-parses requested for a REJECTED candidate, per campaign and per recruiter -
+  not overrides (the new score decides), so counted here on their own to show a pattern.
 
 No candidate details: counts, rates and campaign names only.
 """
@@ -222,6 +224,34 @@ def task_health(db, *, since: datetime, campaign_id: UUID | None, now: datetime 
     }
 
 
+def rejected_reparses(db, *, since: datetime, campaign_id: UUID | None) -> dict:
+    # was_rejected is recorded since 2026-11-03; before that, only a rejected candidate moved to screening.
+    rows = db.execute(text(f"""
+        select a.campaign_id, a.actor_id, u.full_name, count(*) as n,
+               count(*) filter (where a.detail ->> 'move_to_screening' = 'true') as moved
+        from audit_log a left join users u on u.id = a.actor_id
+        where a.action_type = 'RESUME_REPARSE_REQUESTED' and a.created_at >= :since
+          and (a.detail ->> 'was_rejected' = 'true' or a.detail ->> 'move_to_screening' = 'true')
+          {_campaign_filter('a', campaign_id)}
+        group by 1, 2, 3"""), {"since": since, "campaign_id": campaign_id}).all()
+    by_campaign: dict = defaultdict(lambda: {"count": 0, "moved_to_screening": 0})
+    by_recruiter: dict = {}
+    for row in rows:
+        c = by_campaign[row.campaign_id]
+        c["count"] += row.n
+        c["moved_to_screening"] += row.moved
+        r = by_recruiter.setdefault(row.actor_id, {"recruiter": row.full_name, "count": 0})
+        r["count"] += row.n
+    names = _campaign_names(db, by_campaign)
+    return {
+        "total": sum(c["count"] for c in by_campaign.values()),
+        "by_campaign": [{"campaign_id": str(cid), "campaign": names.get(cid), **c}
+                        for cid, c in sorted(by_campaign.items(), key=lambda kv: -kv[1]["count"])],
+        "by_recruiter": [{"actor_id": str(aid) if aid else None, **r}
+                         for aid, r in sorted(by_recruiter.items(), key=lambda kv: -kv[1]["count"])],
+    }
+
+
 def monitoring_summary(db, config_repository, *, days: int = 30, campaign_id: UUID | None = None,
                        now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
@@ -236,4 +266,5 @@ def monitoring_summary(db, config_repository, *, days: int = 30, campaign_id: UU
         "llm_usage": llm_usage(db, since=since, campaign_id=campaign_id, prices=prices),
         "quota": quota(db, caps=daily_llm_call_caps(config_repository), now=now),
         "tasks": task_health(db, since=since, campaign_id=campaign_id, now=now),
+        "rejected_reparses": rejected_reparses(db, since=since, campaign_id=campaign_id),
     }

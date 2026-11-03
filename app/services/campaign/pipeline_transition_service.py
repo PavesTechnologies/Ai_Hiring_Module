@@ -111,6 +111,7 @@ class PipelineTransitionService:
         decision_details: dict | None = None,
         override_reason_code: str | None = None,
         candidates_in_batch: int = 1,
+        outcome_override_check: bool = True,
     ) -> CampaignCandidate:
         """
         Does NOT commit — the caller commits, same convention as every
@@ -166,7 +167,9 @@ class PipelineTransitionService:
 
         # A person moving a candidate against the system's screening outcome (or resolving a HOLD)
         # needs a reason code and is recorded (outcome_overrides) - checked before anything is written.
-        human = source in (TransitionSource.MANUAL, TransitionSource.OVERRIDE)
+        # outcome_override_check=False: a move that isn't a judgement on the outcome (a re-parse sends a
+        # rejected candidate back to be re-scored on the corrected input - the new score decides).
+        human = outcome_override_check and source in (TransitionSource.MANUAL, TransitionSource.OVERRIDE)
         override = check_move(self.campaign_candidate_repo.db, campaign_candidate, from_stage, to_stage,
                               actor_id=changed_by if human else None, actor_role=effective_role,
                               reason_code=override_reason_code, candidates_in_batch=candidates_in_batch)

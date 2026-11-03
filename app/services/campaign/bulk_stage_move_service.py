@@ -176,11 +176,15 @@ class BulkStageMoveService:
         actor_role: str | None,
         actor_roles: list[str] | None = None,
         override_reason_code: str | None = None,
+        outcome_override_check: bool = True,
     ) -> SingleStageMoveResultResponse:
         """
         actor_roles: every role the caller holds that the route allows; the
         move is made if the transition permits any of them, and that role is
         what the history and audit record (actor_role is then ignored).
+
+        outcome_override_check=False: the move isn't a judgement on the
+        system's outcome (a re-parse), so it is never an override.
 
         M11-E04-S03-T01. Deliberately not implemented as bulk_move([one]) —
         a single move audits the candidate as the entity, which is what the
@@ -210,6 +214,7 @@ class BulkStageMoveService:
                 decision_type=_STAGE_TO_DECISION.get(to_stage),
                 decision_source=DecisionSource.HR_ADMIN,
                 override_reason_code=override_reason_code,
+                outcome_override_check=outcome_override_check,
             )
             self.audit_service.log(
                 actor_id=actor_id,

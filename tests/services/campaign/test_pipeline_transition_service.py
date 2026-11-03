@@ -253,3 +253,16 @@ def test_transition_stage_to_screening_from_uploaded_never_cascades():
     service.transition_stage(candidate, to_stage=PipelineStage.SCREENING, source=TransitionSource.SYSTEM)
 
     interview_schedule_repo.cancel_active_rounds.assert_not_called()
+
+
+@pytest.mark.parametrize("check, expected_actor", [(True, "u1"), (False, None)])
+def test_a_move_that_is_not_a_judgement_on_the_outcome_skips_the_override_guard(monkeypatch, check, expected_actor):
+    """A re-parse's REJECTED -> SCREENING move (outcome_override_check=False) is never an override."""
+    import app.services.campaign.pipeline_transition_service as module
+    calls = []
+    monkeypatch.setattr(module, "check_move", lambda db, cc, f, t, **kw: calls.append(kw["actor_id"]))
+    service, *_ = _make_env(_allowed_row(["RECRUITER"]))
+    service.transition_stage(_make_candidate(PipelineStage.REJECTED), PipelineStage.SCREENING, changed_by="u1",
+                             actor_role="RECRUITER", reason="Re-parsed resume: x", source=TransitionSource.MANUAL,
+                             outcome_override_check=check)
+    assert calls == [expected_actor]
