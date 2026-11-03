@@ -108,7 +108,7 @@ Built in dev on synthetic data. Plan approved 2026-10-30; built in this order:
 - [x] The pipeline board's drag-and-drop goes through the stage-move endpoint and the reason-code picker (2026-11-02). That endpoint allows recruiters and hiring managers, so an HR_ADMIN's drag is refused (403) with the server's message.
 - Monitoring stays a dashboard panel for now.
 
-## 5. Retire v1 - in progress
+## 5. Retire v1 - done (backup tables pending)
 
 Plan approved 2026-11-02, built in order, each phase with a golden run before merge:
 
@@ -122,7 +122,9 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
 - [x] **C. v2 decides every campaign** (2026-11-03). v1 no longer runs; the candidate holds v2's own breakdown, and the scorecard, analytics and exports read it. The resume used is the latest parsed version. Migration `d8f0a2c4e6b9` moved the stored breakdowns; the old ones are kept in `campaign_candidate_breakdown_backup` until phase E is done (dropping it needs approval).
   - A re-parse of a rejected candidate is not an override: the corrected input is re-scored and the new score decides. Monitoring counts these re-parses separately, per campaign and per requester.
 - [x] **D. Shadow mode is "current vs candidate scoring version"** (2026-11-03). A version is a configuration (the `SCORING_V2_CONFIG` shape) and optionally its own confirmation model. The current one decides every campaign. A campaign can try a candidate version: its candidates are scored with it too, never acted on, and the shadow report compares the two by label. An HR admin promotes a candidate version to current (audited). Code and prompt changes still go through the golden set. Migration `e1a3c5e7f9b2` added `scoring_versions` and created the current version from today's settings.
-- [ ] **E.** The v1 code, tests and settings removed.
+- [x] **E. v1 removed** (2026-11-03). The v1 scoring code and its tests are gone; the shared helpers moved first (`validation_inputs.py`, `score_display.py`, v2's own modules). The current scoring version is the only scoring configuration, and the seed creates it with today's configuration. Migration `f2b4d6e8a0c1` dropped the campaign switches `scoring_v2_enabled` / `scoring_v2_shadow`; `a3c5e7f9b2d4` deleted the v1-only settings (kept in `platform_config_backup`). No campaign column was v1-only, so there is no migration 5. Dev was not re-scored: the `d8f0a2c4e6b9` rewrite left no decision gap.
+  - The golden vote cache is keyed by skill name, not id, so the frozen votes answer on a fresh or production database (full golden set verified on one: 59 cases, 0 failures, 0 LLM calls). The Redis cache prefix follows the connected database.
+  - Open: drop the two backup tables (`campaign_candidate_breakdown_backup`, `platform_config_backup`) - needs approval.
 
 ## 6. Go to production
 
