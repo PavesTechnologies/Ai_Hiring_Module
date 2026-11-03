@@ -12,7 +12,6 @@ from uuid import uuid4
 import pytest
 
 from app.models.pipeline import DecisionSource, DecisionType, PipelineStage
-from app.services.campaign.candidate_scoring_service import CandidateScoringService
 from app.services.campaign.near_miss import (
     OUTCOME_HOLD, OUTCOME_PASS, OUTCOME_REJECT, evaluate_near_miss, experience_near_miss_tolerance,
     needs_recruiter_review,
@@ -114,71 +113,8 @@ def test_experience_short_within_tolerance_is_hold_beyond_it_rejects(years, min_
 
 # --- v1 (live decision): through calculate_and_store_score_breakdown ------------
 
-def _v1(core_names, missing_names, *, experience=None, education=None, max_missing=3, pct=25.0):
-    service = CandidateScoringService.__new__(CandidateScoringService)
-    service.config_repository = None
-    service.campaign_candidate_repository = MagicMock()
-    cc = SimpleNamespace(id=uuid4(), deterministic_breakdown=None, deterministic_score=None, deterministic_passed=None)
-    service.campaign_candidate_repository.get_by_id.return_value = cc
-    skills = [{"canonical_skill_id": str(uuid4()), "canonical_name": name, "importance": "core",
-               "match_type": "MISSING" if name in missing_names else "EXACT"} for name in core_names]
-    matched = len(core_names) - len(missing_names)
-    coverage = round(matched / len(core_names) * 100, 2)
-    service.build_mandatory_skill_breakdown = lambda *_: {
-        "mandatory_skills": skills, "deterministic_score": 50.0,
-        "mandatory_coverage_pct": coverage, "core_coverage_pct": coverage}
-    service.build_preferred_skill_breakdown = lambda *_: {"preferred_skills": [], "preferred_skill_bonus": 0.0}
-    service.compute_technical_score = lambda *_: 50.0
-    breakdown = service.calculate_and_store_score_breakdown(
-        uuid4(), uuid4(), uuid4(), 40.0, experience_result=experience, education_result=education,
-        max_missing_core_skills=max_missing, max_missing_core_pct=pct)
-    return breakdown, cc
-
 
 FOUR_CORE = ["AI Transformation", "Program Management", "AI Governance", "Change Management"]
-
-
-def test_v1_one_core_over_the_limit_is_let_through_flagged_for_review():
-    breakdown, cc = _v1(FOUR_CORE, ["AI Transformation", "Change Management"])   # 2 missing, 1 allowed
-    assert breakdown["deterministic_passed"] is True and cc.deterministic_passed is True
-    assert breakdown["needs_review"] is True and breakdown["near_miss_outcome"] == OUTCOME_HOLD
-    assert "missing: AI Transformation, Change Management" in breakdown["needs_review_reason"]
-    assert needs_recruiter_review(cc) is True
-
-
-def test_v1_two_over_the_limit_still_rejects():
-    breakdown, cc = _v1(FOUR_CORE, FOUR_CORE[:3])
-    assert breakdown["deterministic_passed"] is False and breakdown["needs_review"] is False
-    assert needs_recruiter_review(cc) is False
-
-
-def test_v1_clean_pass_has_no_review_flag():
-    breakdown, _ = _v1(FOUR_CORE, ["Change Management"])
-    assert breakdown["deterministic_passed"] is True and breakdown["needs_review"] is False
-
-
-def test_v1_experience_within_tolerance_is_review_beyond_it_rejects():
-    within = {"applicable": True, "passed": False, "score": 90.0, "candidate_years": 9.0, "min_years": 10.0}
-    beyond = {"applicable": True, "passed": False, "score": 87.0, "candidate_years": 8.7, "min_years": 10.0}
-    assert _v1(FOUR_CORE, [], experience=within)[0]["needs_review"] is True
-    breakdown, _ = _v1(FOUR_CORE, [], experience=beyond)
-    assert breakdown["deterministic_passed"] is False and breakdown["needs_review"] is False
-
-
-def test_v1_one_core_jd_missing_it_rejects():
-    breakdown, _ = _v1(["Python"], ["Python"])
-    assert breakdown["deterministic_passed"] is False
-
-
-def test_v1_two_core_jd_one_missing_is_review():
-    breakdown, _ = _v1(["Python", "AWS"], ["AWS"])                # 25% of 2 rounds down: 0 allowed
-    assert breakdown["deterministic_passed"] is True and breakdown["needs_review"] is True
-
-
-def test_v1_failed_education_rejects_a_near_miss():
-    education = {"applicable": True, "passed": False, "score": 0.0}
-    breakdown, _ = _v1(FOUR_CORE, ["AI Transformation", "Change Management"], education=education)
-    assert breakdown["deterministic_passed"] is False
 
 
 # --- v2 ------------------------------------------------------------------------
@@ -190,15 +126,6 @@ def test_v2_review_flags_are_carried_when_v2_decides():
                                 "needs_review_reason": "Needs recruiter review: x", "near_misses": ["x"],
                                 "near_miss_outcome": OUTCOME_HOLD, "near_miss_reject_reasons": []})
     assert cc.deterministic_passed is True and needs_recruiter_review(cc) is True
-
-
-def test_v1_result_row_records_hold():
-    from app.services.campaign.scoring_v2_service import v1_result_row
-    campaign = SimpleNamespace(deterministic_threshold=40, required_skill_coverage_threshold=0)
-    row = v1_result_row(campaign, SimpleNamespace(id=uuid4()),
-                        {"deterministic_score": 30.0, "deterministic_passed": True, "needs_review": True},
-                        acted_on=True, score_weights=None)
-    assert row.outcome == "HOLD"
 
 
 # --- AI step: capped at HOLD; an AI rejection still rejects --------------------
@@ -252,9 +179,3 @@ def test_capped_hold_records_the_given_decision_source():
     assert cc.pipeline_stage == PipelineStage.HOLD and cc.decision_source == DecisionSource.DETERMINISTIC
     snapshot = service.campaign_candidate_repo.create_stage_history.call_args.kwargs["scores_snapshot"]
     assert snapshot["decision_source"] == "DETERMINISTIC"
-
-
-def test_nothing_in_the_review_path_emails(no_email):
-    _ai("SHORTLIST", needs_review=True)
-    _v1(FOUR_CORE, ["AI Transformation", "Change Management"])
-    no_email.assert_not_called()

@@ -51,7 +51,6 @@ from app.services.skills.provisional_skill_match import PROVISIONAL_CREDIT
 
 SCORING_VERSION = "v2"
 
-SCORING_V2_CONFIG_KEY = "SCORING_V2_CONFIG"
 
 DEFAULT_CONFIG: dict = {
     # A: core skills weigh double in the skill score.
@@ -264,7 +263,7 @@ class ScoringInputs:
     confirmations: dict[str, dict]
     # skill id -> object with .id / .canonical_name / .parent_skill_id / .is_active
     # and children_by_parent / grandchildren_by_parent as in
-    # CandidateScoringService.load_mandatory_skill_hierarchy
+    # scoring_v2_service.load_mandatory_skill_hierarchy
     hierarchy: dict
     experience_result: dict | None = None
     education_result: dict | None = None

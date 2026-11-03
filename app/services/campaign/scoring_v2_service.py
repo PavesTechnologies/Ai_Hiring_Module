@@ -615,28 +615,6 @@ def _paraphrase_targets_for(specs, confirmations: dict, skills_by_id: dict,
     return targets
 
 
-def v1_result_row(campaign, campaign_candidate, breakdown: dict, *, acted_on: bool, score_weights: dict | None):
-    """candidate_scoring_results row for the v1 scoring that just ran, with its config snapshot."""
-    snapshot = {
-        "scoring_version": "v1",
-        "score_weights": score_weights,
-        "deterministic_threshold": float(campaign.deterministic_threshold),
-        "required_skill_coverage_threshold": float(campaign.required_skill_coverage_threshold),
-        "max_missing_core_skills": breakdown.get("max_missing_core_skills"),
-        "max_missing_core_pct": breakdown.get("max_missing_core_pct"),
-        "allowed_missing_core_skills": breakdown.get("allowed_missing_core_skills"),
-        "score_threshold_rejects": breakdown.get("score_threshold_rejects"),
-    }
-    return CandidateScoringResult(
-        campaign_candidate_id=campaign_candidate.id, scoring_version="v1",
-        score=breakdown.get("deterministic_score"), passed=breakdown.get("deterministic_passed"),
-        outcome=("HOLD" if breakdown.get("needs_review") else "PASS") if breakdown.get("deterministic_passed")
-        else "REJECT",
-        breakdown=breakdown, scoring_config_version=config_version(snapshot), config_snapshot=snapshot,
-        acted_on=acted_on,
-    )
-
-
 def v2_rejection_reason(breakdown: dict) -> str:
     """Plain-language reason when v2 rejects (used only when v2 decides)."""
     parts = []

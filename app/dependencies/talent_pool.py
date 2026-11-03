@@ -18,7 +18,6 @@ from app.dependencies.resume import (
 )
 from app.dependencies.skill_ontology import (
     get_config_repository,
-    get_skill_ontology_repository,
     get_skill_repository,
 )
 from app.dependencies.unknown_skill_suggestion import get_embedding_service
@@ -29,42 +28,20 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
-from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.ai.embedding_service import EmbeddingService
 from app.services.audit_service import AuditService
-from app.services.campaign.candidate_scoring_service import CandidateScoringService
 from app.services.campaign.resume_selection_service import ResumeSelectionService
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.talent_pool.talent_pool_service import TalentPoolService
-
-
-# No pre-existing DI factory for CandidateScoringService anywhere in this
-# codebase - it's only ever constructed inline inside Celery tasks (see
-# deterministic_scoring_tasks.py). Added here, reusing the same three
-# repositories that construction already relies on, so
-# ResumeSelectionService can be resolved through the normal FastAPI
-# dependency graph.
-def get_candidate_scoring_service(
-    skill_repo: SkillRepository = Depends(get_skill_repository),
-    skill_ontology_repo: SkillOntologyRepository = Depends(get_skill_ontology_repository),
-    config_repo: ConfigRepository = Depends(get_config_repository),
-) -> CandidateScoringService:
-    return CandidateScoringService(skill_repo, skill_ontology_repo, config_repo)
 
 
 def get_resume_selection_service(
     resume_repo: ResumeRepository = Depends(get_resume_repository),
     jd_repo: JDRepository = Depends(get_jd_repository),
     config_repo: ConfigRepository = Depends(get_config_repository),
-    candidate_scoring_service: CandidateScoringService = Depends(get_candidate_scoring_service),
 ) -> ResumeSelectionService:
-    return ResumeSelectionService(
-        resume_repo=resume_repo,
-        jd_repo=jd_repo,
-        config_repo=config_repo,
-        candidate_scoring_service=candidate_scoring_service,
-    )
+    return ResumeSelectionService(resume_repo=resume_repo, jd_repo=jd_repo, config_repo=config_repo)
 
 
 def get_talent_pool_service(

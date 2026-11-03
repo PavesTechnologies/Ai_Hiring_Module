@@ -111,7 +111,7 @@ def _parse(db, provider, skill_repo, text, template, resume_id, max_waits):
 
 
 def _score(service, *, campaign, cc, jd, resume, parsed, records, config_repo):
-    experience, education, _weights, domain = build_validation_inputs(config_repo, jd, SimpleNamespace(parsed_json=parsed))
+    experience, education, domain = build_validation_inputs(config_repo, jd, SimpleNamespace(parsed_json=parsed))
     for attempt in range(PENDING_RETRIES + 1):
         breakdown = service.score(
             campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,

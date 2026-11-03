@@ -200,25 +200,6 @@ _DEFAULT_SKILL_MISMATCH_RATE_THRESHOLD = 60.0
 _EXPERIENCE_ONLY_RATE_THRESHOLD_KEY = "EXPERIENCE_ONLY_RATE_THRESHOLD"
 _DEFAULT_EXPERIENCE_ONLY_RATE_THRESHOLD = 40.0
 
-# Deterministic Score API response contract: display-only config keys for
-# DeterministicScoreBreakdownResponse.configuration - reuses the exact same
-# platform_config keys deterministic_scoring_tasks.py/candidate_scoring_service.py
-# already read for scoring, never a second/duplicated key. Read-only lookups
-# for display; never written here, never used to recompute anything.
-_DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
-_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
-_DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
-_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
-_HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY = "HIERARCHY_SEMANTIC_ONLY_THRESHOLD"
-_HIERARCHY_GRANDCHILD_MULTIPLIER_KEY = "HIERARCHY_GRANDCHILD_MULTIPLIER"
-# Not seeded/present in PlatformConfig today (CHILD=0.7/SIBLING=0.4/
-# SEMANTIC=0.2 are hardcoded literals in CandidateScoringService) - reading
-# these keys anyway is forward-compatible and always resolves to None
-# under the current system, never a DB/seed change made here.
-_HIERARCHY_CHILD_MULTIPLIER_KEY = "HIERARCHY_CHILD_MULTIPLIER"
-_HIERARCHY_SIBLING_MULTIPLIER_KEY = "HIERARCHY_SIBLING_MULTIPLIER"
-_SEMANTIC_MULTIPLIER_KEY = "SEMANTIC_MULTIPLIER"
-
 # Match-type values that count as a hierarchy fallback (not EXACT, not MISSING).
 _HIERARCHY_RELATIONSHIP_MATCH_TYPES = {"CHILD", "GRANDCHILD", "SIBLING", "SEMANTIC"}
 

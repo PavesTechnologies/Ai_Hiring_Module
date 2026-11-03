@@ -15,7 +15,7 @@ import pytest
 
 from app.models.async_tasks import TaskStatus
 from app.models.pipeline import PipelineStage
-from app.services.campaign.candidate_scoring_service import MandatorySkillMatchType
+
 from app.services.document_processing.retry_policy import RetryPolicy
 from tests.tasks.test_deterministic_scoring_tasks import (
     TASKS_MODULE, _breakdown, _Harness, _make_campaign, _make_campaign_candidate, _make_resume, _skill_entry,
@@ -40,7 +40,7 @@ def _run(h, outcome, *, last_attempt=False):
     h.resume_repo.get_by_id.return_value = _make_resume()
     # v1 would reject this candidate - irrelevant: v2 decides and couldn't.
     h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = _breakdown(
-        [_skill_entry(uuid4(), MandatorySkillMatchType.MISSING.value)], 0.0, False)
+        [_skill_entry(uuid4(), "MISSING")], 0.0, False)
     retry = MagicMock(side_effect=_Retry())
     dead_letters = MagicMock()
     policy = RetryPolicy(max_attempts=1 if last_attempt else 4, base_delay_seconds=120, max_delay_seconds=1800)

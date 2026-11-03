@@ -168,7 +168,7 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
         resume = ResumeRepository(db).get_by_id(campaign_candidate.resume_id)
         job_description = JDRepository(db).get_by_id(campaign.jd_id)
         config_repo = ConfigRepository(db)
-        experience, education, _, domain = build_validation_inputs(config_repo, job_description, resume)
+        experience, education, domain = build_validation_inputs(config_repo, job_description, resume)
 
         full = _v2_service(db).score(
             campaign=campaign, campaign_candidate=campaign_candidate, job_description=job_description,

@@ -214,7 +214,7 @@ def test_shadow_task_sends_no_email(email_guard, outcome):
             patch.object(tasks, "ResumeRepository"), patch.object(tasks, "JDRepository"), \
             patch.object(tasks, "ConfigRepository"), patch.object(tasks, "SkillRepository"), \
             patch.object(tasks, "ScoringV2Service", service), patch.object(tasks, "DeadLetterQueueRepository"), \
-            patch("app.services.campaign.validation_inputs.build_validation_inputs", return_value=({}, {}, {}, {})), \
+            patch("app.services.campaign.validation_inputs.build_validation_inputs", return_value=({}, {}, {})), \
             patch.object(task, "retry", side_effect=RuntimeError("retry")):
         logs.return_value.repository.get_by_task_id.return_value = None
         cc_repo.return_value.get_by_id.return_value = cc

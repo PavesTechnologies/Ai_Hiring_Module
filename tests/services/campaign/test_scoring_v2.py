@@ -3,8 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-import pytest
-
 from app.services.campaign.scoring_v2 import (
     DEFAULT_CONFIG, EvidenceInput, JDSkillInput, ScoringInputs, config_version, merge_config, parse_config,
     score_v2,
@@ -207,17 +205,6 @@ def test_v2s_decision_is_stored_as_v2s_own_breakdown():
     assert (cc.deterministic_score, cc.deterministic_passed) == (41.8, False)
     assert cc.deterministic_breakdown == stored == v2 and stored is not v2
     assert "v2" not in stored and "acted_on_version" not in stored
-
-
-@pytest.mark.parametrize("passed", [True, False])
-def test_v1_result_row_records_snapshot(passed):
-    from app.services.campaign.scoring_v2_service import v1_result_row
-    campaign = SimpleNamespace(deterministic_threshold=40, required_skill_coverage_threshold=0)
-    row = v1_result_row(campaign, SimpleNamespace(id=uuid4()),
-                        {"deterministic_score": 30.0, "deterministic_passed": passed, "allowed_missing_core_skills": 1},
-                        acted_on=True, score_weights={"skills": 0.7})
-    assert row.scoring_version == "v1" and row.acted_on is True and row.outcome == ("PASS" if passed else "REJECT")
-    assert row.config_snapshot["score_weights"] == {"skills": 0.7} and len(row.scoring_config_version) == 16
 
 
 def test_uncertain_core_is_supporting_at_0_8_and_flags_review():

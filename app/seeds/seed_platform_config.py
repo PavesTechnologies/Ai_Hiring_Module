@@ -156,36 +156,6 @@ try:
         ),
         PlatformConfig(
             id=uuid.uuid4(),
-            key="DETERMINISTIC_WEIGHT_SKILLS",
-            value="0.70",
-            description="Weight of the skill-based sub-score in the combined deterministic_score blend (with experience/education)",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="DETERMINISTIC_WEIGHT_EXPERIENCE",
-            value="0.15",
-            description="Weight of the experience validation sub-score in the combined deterministic_score blend",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="DETERMINISTIC_WEIGHT_EDUCATION",
-            value="0.15",
-            description="Weight of the education validation sub-score in the combined deterministic_score blend",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="CORE_IMPORTANCE_WEIGHT_MULTIPLIER",
-            value="1.0",
-            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'core'. 1.0 (neutral, no differentiation from supporting) until deliberately changed.",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="SUPPORTING_IMPORTANCE_WEIGHT_MULTIPLIER",
-            value="1.0",
-            description="Multiplier applied to a required JD skill's effective weight when AI-classified as 'supporting'. 1.0 (neutral, no differentiation from core) until deliberately changed.",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
             value="20",
             description="Override rate (%: candidates overridden against the system's outcome / candidates with a decided outcome) above which a campaign is flagged in the recruiter-overrides report and the dashboard alert",

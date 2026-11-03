@@ -1,5 +1,5 @@
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
-from app.services.campaign.candidate_scoring_service import describe_education_gap
+from app.services.campaign.score_display import describe_education_gap
 
 """
 Field-of-study wording in the rejection reason / education gap and in the

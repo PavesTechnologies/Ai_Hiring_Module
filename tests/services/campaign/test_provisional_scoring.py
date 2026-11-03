@@ -3,18 +3,16 @@ Unresolved JD unknown skills are scored provisionally in v1 and v2: tier
 weight x 0.8 when found in the resume, 0 when not - in the skill score only,
 never in a gate (core gate, coverage, missing-core count).
 """
-from unittest.mock import MagicMock, patch
+
 from uuid import uuid4
 
 import pytest
 
-from app.services.campaign.candidate_scoring_service import CandidateScoringService
 from app.services.campaign.scoring_v2 import (
     EvidenceInput, JDSkillInput, ProvisionalSkillInput, ScoringInputs, merge_config, score_v2,
 )
 
 CORE, SUP = uuid4(), uuid4()
-V1 = "app.services.campaign.candidate_scoring_service"
 NO_HIERARCHY = {"skills_by_id": {}, "children_by_parent": {}, "grandchildren_by_parent": {}}
 JD = [JDSkillInput(CORE, "Program Management", True, 1.0, "core"),
       JDSkillInput(SUP, "Stakeholder Management", True, 1.0, "supporting")]
@@ -89,59 +87,3 @@ def _v1_provisional(tier, found, weight=1.0):
             "importance": tier.lower() if tier in ("CORE", "SUPPORTING") else None,
             "effective_jd_weight": weight, "skill_contribution": round(weight * 0.8, 4) if found else 0.0,
             "match_type": "PROVISIONAL_TEXT" if found else "MISSING"}
-
-
-def _service():
-    config = MagicMock()
-    config.get_configs_by_keys.return_value = {}
-    return CandidateScoringService(MagicMock(), MagicMock(), config)
-
-
-def test_v1_technical_score_counts_provisional_skills_at_0_8():
-    breakdown = {"mandatory_skills": [_v1_entry("core", 1.0, 1.0), _v1_entry("supporting", 1.0, 1.0)],
-                 "provisional_skills": [_v1_provisional("SUPPORTING", True)]}
-    # scored (non-core): supporting 1.0/1.0 + provisional 0.8/1.0 -> 90
-    assert _service().compute_technical_score(breakdown, None) == pytest.approx(90.0)
-
-
-def test_v1_unmatched_provisional_counts_zero_and_preferred_goes_to_preferred():
-    breakdown = {"mandatory_skills": [_v1_entry("supporting", 1.0, 1.0)],
-                 "provisional_skills": [_v1_provisional("CORE", False), _v1_provisional("PREFERRED", True)]}
-    # required: (1 + 0) / 2 = 50; preferred: 0.8 -> 80; 0.9 * 50 + 0.1 * 80 = 53
-    assert _service().compute_technical_score(breakdown, {"preferred_skills": []}) == pytest.approx(53.0)
-
-
-def test_v1_gates_ignore_provisional_skills():
-    service = _service()
-    entries = [_v1_entry("core", 1.0, 1.0), _v1_entry("supporting", 1.0, 1.0)]
-    breakdown = {"mandatory_skills": entries, "core_coverage_pct": 100.0, "mandatory_coverage_pct": 100.0,
-                 "provisional_skills": [_v1_provisional("CORE", False)] * 3}
-    qualification = service.evaluate_skill_qualification(breakdown, 90.0, 40.0)
-    assert qualification["core_gap_passed"] is True and qualification["coverage_passed"] is True
-
-
-def test_v1_nothing_provisional_without_a_database():
-    service = CandidateScoringService(MagicMock(spec=[]))
-    assert service.build_provisional_skill_entries(uuid4(), uuid4()) == []
-
-
-def test_v1_a_skill_that_could_not_be_scanned_is_excluded_not_counted_as_not_found():
-    not_scanned = {**_v1_provisional("CORE", False), "match_type": "NOT_SCANNED", "scanned": False}
-    base = {"mandatory_skills": [_v1_entry("supporting", 1.0, 1.0)], "provisional_skills": []}
-    with_not_scanned = {**base, "provisional_skills": [not_scanned]}
-    service = _service()
-    assert service.compute_technical_score(with_not_scanned, None) == service.compute_technical_score(base, None) == 100.0
-
-
-def test_v1_a_failed_scan_flags_every_provisional_skill_not_scanned():
-    db = MagicMock()
-    link, unknown = MagicMock(mandatory=True), MagicMock(raw_text="Agentic Workflows", normalized_key=None)
-    repo = MagicMock()
-    repo.pending_for_jd.return_value = [(link, unknown)]
-    service = CandidateScoringService(MagicMock(db=db))
-    with patch(f"{V1}.ProvisionalSkillRepository", return_value=repo),             patch(f"{V1}.scan_provisional", side_effect=RuntimeError("scan error")):
-        entries = service.build_provisional_skill_entries(uuid4(), uuid4())
-
-    assert len(entries) == 1
-    assert entries[0]["scanned"] is False and entries[0]["match_type"] == "NOT_SCANNED"
-    assert entries[0]["skill_contribution"] == 0.0

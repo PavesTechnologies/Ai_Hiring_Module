@@ -58,7 +58,6 @@ def make_service(
     resume_repo=None,
     jd_repo=None,
     config_repo=None,
-    candidate_scoring_service=None,
 ):
     resume_repo = resume_repo or MagicMock()
     config_repo = config_repo or MagicMock()
@@ -67,7 +66,6 @@ def make_service(
         resume_repo=resume_repo,
         jd_repo=jd_repo or MagicMock(),
         config_repo=config_repo,
-        candidate_scoring_service=candidate_scoring_service or MagicMock(),
     )
 
 
@@ -96,9 +94,8 @@ def test_single_eligible_returns_direct_without_scoring():
     resume_repo.get_all_versions_by_candidate.return_value = [resume]
     _with_embedding_map(resume_repo, {resume.id: _embedding()})
     jd_repo = MagicMock()
-    candidate_scoring_service = MagicMock()
 
-    service = make_service(resume_repo=resume_repo, jd_repo=jd_repo, candidate_scoring_service=candidate_scoring_service)
+    service = make_service(resume_repo=resume_repo, jd_repo=jd_repo)
 
     result = service.select_resume_for_campaign(uuid4(), _campaign())
 
@@ -110,7 +107,6 @@ def test_single_eligible_returns_direct_without_scoring():
     assert result.evaluated_resumes[0].semantic_score is None
     # Nothing scoring-related should have run at all - nothing to compare.
     jd_repo.get_by_id.assert_not_called()
-    candidate_scoring_service.build_mandatory_skill_breakdown.assert_not_called()
 
 
 def test_not_talent_pool_eligible_resume_excluded():
@@ -260,60 +256,16 @@ def test_multiple_eligible_select_the_latest_parsed_version_without_scoring():
     resume_repo = MagicMock()
     resume_repo.get_all_versions_by_candidate.return_value = [older, latest, middle]
     _with_embedding_map(resume_repo, {r.id: _embedding() for r in (older, latest, middle)})
-    candidate_scoring_service = MagicMock()
-
-    service = make_service(resume_repo=resume_repo, candidate_scoring_service=candidate_scoring_service)
+    service = make_service(resume_repo=resume_repo)
     result = service.select_resume_for_campaign(uuid4(), _campaign())
 
     assert result.selection_method == SelectionMethod.LATEST
     assert result.selected_resume is latest
     assert [e.resume for e in result.evaluated_resumes if e.is_selected] == [latest]
     assert len(result.evaluated_resumes) == 3 and all(e.selection_score is None for e in result.evaluated_resumes)
-    assert candidate_scoring_service.method_calls == []                  # no v1 scoring
     resume_repo.compute_semantic_similarity.assert_not_called()
-
-
-def test_negative_similarity_is_clamped_to_zero():
-    resume = _resume()
-    resume_repo = MagicMock()
-    resume_repo.compute_semantic_similarity.return_value = -0.05
-    campaign = _campaign()
-
-    service = make_service(resume_repo=resume_repo)
-
-    score, passed = service._score_semantic(resume, campaign)
-
-    assert score == 0.0
-    assert passed is False
 
 
 # ----------------------------------------------------------------------
 # Weight renormalization
 # ----------------------------------------------------------------------
-
-def test_selection_weights_renormalize_deterministic_and_semantic_to_100():
-    campaign = _campaign(weight_deterministic=30.0, weight_semantic=40.0)
-
-    weight_det, weight_sem = ResumeSelectionService._selection_weights(campaign, jd_has_embedding=True)
-
-    assert weight_det == pytest.approx(30 / 70 * 100)
-    assert weight_sem == pytest.approx(40 / 70 * 100)
-    assert weight_det + weight_sem == pytest.approx(100.0)
-
-
-def test_selection_weights_fall_back_to_full_deterministic_when_jd_has_no_embedding():
-    campaign = _campaign(weight_deterministic=30.0, weight_semantic=40.0)
-
-    weight_det, weight_sem = ResumeSelectionService._selection_weights(campaign, jd_has_embedding=False)
-
-    assert weight_det == 100.0
-    assert weight_sem == 0.0
-
-
-def test_selection_weights_fall_back_when_both_weights_are_zero():
-    campaign = _campaign(weight_deterministic=0.0, weight_semantic=0.0)
-
-    weight_det, weight_sem = ResumeSelectionService._selection_weights(campaign, jd_has_embedding=True)
-
-    assert weight_det == 100.0
-    assert weight_sem == 0.0

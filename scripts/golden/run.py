@@ -285,7 +285,7 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, n
     cc, resume, skills = world.candidate(case, frozen, campaign)
     parsed = frozen["parsed_json"] or {}
     with contextlib.redirect_stdout(io.StringIO()):
-        experience, education, _weights, domain = build_validation_inputs(config_repo, jd, resume)
+        experience, education, domain = build_validation_inputs(config_repo, jd, resume)
     parse = frozen.get("parse") or {}
     records = evidence_service.detect(
         resume.id, text=frozen["redacted_text"], persist=False,

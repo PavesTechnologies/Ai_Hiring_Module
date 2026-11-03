@@ -107,7 +107,7 @@ class _World:
                 patch(f"{MODULE}.apply_full_outcome", self.apply), \
                 patch(f"{MODULE}.StageTransitionService"), patch(f"{MODULE}.AuditService", return_value=self.audit), \
                 patch("app.services.campaign.validation_inputs.build_validation_inputs",
-                      return_value=({}, {}, {}, {})):
+                      return_value=({}, {}, {})):
             complete_full_scoring_task.run(campaign_candidate_id=str(self.cc.id),
                                            fallback_result_id=str(self.fallback.id))
         return db

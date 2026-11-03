@@ -40,8 +40,7 @@ class HiringCampaign(Base):
     deterministic_threshold: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=70.00, server_default=text("70.00")
     )
-    # Skill-stage qualification (core/supporting importance) - see
-    # CandidateScoringService.evaluate_skill_qualification. 0.00 default
+    # Required-skill coverage gate (scoring v2's "Required skill coverage" check). 0.00 default
     # means "no coverage gate" (always satisfied) until a campaign
     # explicitly configures one - existing campaigns keep scoring exactly
     # as before this feature existed.
@@ -53,7 +52,7 @@ class HiringCampaign(Base):
     # min(floor(core skill count x max_missing_core_pct / 100),
     #     max_missing_core_skills). The percentage scales with the JD, the
     # count is the hard ceiling. Both are system defaults (25% / 3), not
-    # exposed in the campaign API. See CandidateScoringService.allowed_missing_core.
+    # exposed in the campaign API. See scoring_v2.allowed_missing_core.
     max_missing_core_skills: Mapped[int] = mapped_column(
         Integer, nullable=False, default=3, server_default=text("3")
     )

@@ -1,10 +1,8 @@
-"""Required core skills (hard negatives H8): never covered by the missing-core allowance, v1 and v2."""
-from unittest.mock import MagicMock
+"""Required core skills (hard negatives H8): never covered by the missing-core allowance."""
 from uuid import uuid4
 
 import pytest
 
-from app.services.campaign.candidate_scoring_service import CandidateScoringService
 from app.services.campaign.scoring_v2 import (
     EvidenceInput, JDSkillInput, ScoringInputs, merge_config, required_core_allowance, score_v2,
 )
@@ -68,29 +66,3 @@ def test_v2_required_missing_plus_another_near_miss_rejects():
 def _v1_entry(name, match_type, required=False):
     return {"canonical_name": name, "canonical_skill_id": str(uuid4()), "importance": "core",
             "match_type": match_type, "required": required}
-
-
-def test_v1_required_missing_core_skill_is_over_the_limit_and_held():
-    service = CandidateScoringService(MagicMock(), MagicMock(), MagicMock(), MagicMock())
-    breakdown = {"core_coverage_pct": 75.0, "mandatory_coverage_pct": 75.0, "mandatory_skills": [
-        _v1_entry("Python", "MISSING", required=True), _v1_entry("sql", "EXACT"),
-        _v1_entry("REST APIs", "EXACT"), _v1_entry("git", "EXACT")]}
-    qualification = service.evaluate_skill_qualification(breakdown, 80.0, 40.0, max_missing_core_skills=1)
-    assert qualification["core_gap_passed"] is False and qualification["required_core_missing"] == ["Python"]
-    assert qualification["allowed_missing_core_skills"] == 0
-    assert qualification["configured_allowed_missing_core_skills"] == 1
-    breakdown.update(qualification)
-    decision = CandidateScoringService.evaluate_near_miss(breakdown, qualification, None, None, False, 80.0, 40.0, False)
-    assert decision.outcome == "HOLD"
-    explained = next(c for c in CandidateScoringService.explain_decision({**breakdown, "gate_skill_scope": "CORE"})
-                     if c["check"] == "Core skills")
-    assert "up to 1 may be missing" in explained["detail"] and "Required, never allowed missing: Python" in explained["detail"]
-
-
-def test_v1_without_the_flag_unchanged():
-    service = CandidateScoringService(MagicMock(), MagicMock(), MagicMock(), MagicMock())
-    breakdown = {"core_coverage_pct": 75.0, "mandatory_coverage_pct": 75.0, "mandatory_skills": [
-        _v1_entry("Python", "MISSING"), _v1_entry("sql", "EXACT"), _v1_entry("REST APIs", "EXACT"),
-        _v1_entry("git", "EXACT")]}
-    qualification = service.evaluate_skill_qualification(breakdown, 80.0, 40.0, max_missing_core_skills=1)
-    assert qualification["core_gap_passed"] is True and qualification["required_core_missing"] == []

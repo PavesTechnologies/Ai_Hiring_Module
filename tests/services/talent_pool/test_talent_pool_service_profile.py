@@ -105,7 +105,6 @@ def _real_resume_selection_service(resume_repo, max_age_days=None):
     )
     return ResumeSelectionService(
         resume_repo=resume_repo, jd_repo=MagicMock(), config_repo=config_repo,
-        candidate_scoring_service=MagicMock(),
     )
 
 

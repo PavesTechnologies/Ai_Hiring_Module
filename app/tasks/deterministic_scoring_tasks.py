@@ -240,7 +240,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             )
 
 
-        experience_result, education_result, _score_weights, domain_result = build_validation_inputs(
+        experience_result, education_result, domain_result = build_validation_inputs(
             config_repo, job_description, resume,
         )
         previous_score = getattr(campaign_candidate, "deterministic_score", None)

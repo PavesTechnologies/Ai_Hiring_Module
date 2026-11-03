@@ -13,15 +13,11 @@ from app.services.resume.work_experience_duration import experience_years_for_sc
 
 _EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
 _EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
-_DETERMINISTIC_WEIGHT_SKILLS_KEY = "DETERMINISTIC_WEIGHT_SKILLS"
-_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY = "DETERMINISTIC_WEIGHT_EXPERIENCE"
-_DETERMINISTIC_WEIGHT_EDUCATION_KEY = "DETERMINISTIC_WEIGHT_EDUCATION"
-_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY = "DETERMINISTIC_WEIGHT_FUNCTIONAL"
 
 
 def build_validation_inputs(config_repo, job_description, resume):
     """
-    (experience_result, education_result, score_weights, domain_result) for a
+    (experience_result, education_result, domain_result) for a
     resume against a JD - the deterministic layer's non-skill inputs, shared
     by the scoring tasks, the golden runner and the comparison scripts.
     """
@@ -45,10 +41,6 @@ def build_validation_inputs(config_repo, job_description, resume):
     weight_configs = config_repo.get_configs_by_keys([
         _EXPERIENCE_TOLERANCE_YEARS_KEY,
         _EQUIVALENT_EXPERIENCE_YEARS_KEY,
-        _DETERMINISTIC_WEIGHT_SKILLS_KEY,
-        _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
-        _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
-        _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
     ])
     validation_service = ExperienceEducationValidationService(
         experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
@@ -76,11 +68,5 @@ def build_validation_inputs(config_repo, job_description, resume):
     # JD calibration: the near-miss tolerance and education mandatory/preferred.
     experience_result = apply_experience_tolerance(experience_result, job_description)
     education_result = apply_education_requirement(education_result, job_description)
-    score_weights = {
-        "skills": float(weight_configs.get(_DETERMINISTIC_WEIGHT_SKILLS_KEY, 0.70)),
-        "experience": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EXPERIENCE_KEY, 0.15)),
-        "education": float(weight_configs.get(_DETERMINISTIC_WEIGHT_EDUCATION_KEY, 0.15)),
-        "functional": float(weight_configs.get(_DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY, 0.15)),
-    }
     domain_result = DomainCapabilityMatchingService().evaluate(job_description.extracted_json, parsed_json)
-    return experience_result, education_result, score_weights, domain_result
+    return experience_result, education_result, domain_result

@@ -24,7 +24,7 @@ SCORING_PATHS = (
     "app/services/campaign/near_miss.py",
     "app/services/campaign/scoring_versions.py",
     "app/services/campaign/validation_inputs.py",
-    "app/services/campaign/candidate_scoring_service.py",
+    "app/services/campaign/score_display.py",
     "app/services/campaign/experience_education_validation_service.py",
     "app/services/campaign/domain_capability_matching_service.py",
     "app/services/education/*.py",

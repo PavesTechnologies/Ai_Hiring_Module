@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.models.pipeline import PipelineStage
-from app.services.campaign.candidate_scoring_service import MandatorySkillMatchType
+
 from app.services.document_processing.retry_policy import RetryPolicy
 from tests.tasks.test_deterministic_scoring_tasks import (
     TASKS_MODULE, _breakdown, _Harness, _make_campaign, _make_campaign_candidate, _make_resume, _skill_entry,
@@ -40,7 +40,7 @@ def _run(h, v2_result, *, retries=0):
     h.campaign_repo.get_by_id.return_value = campaign
     h.resume_repo.get_by_id.return_value = _make_resume()
     h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = _breakdown(
-        [_skill_entry(uuid4(), MandatorySkillMatchType.MISSING.value)], 0.0, False)
+        [_skill_entry(uuid4(), "MISSING")], 0.0, False)
     run_v2 = MagicMock(return_value=v2_result)
     retry = MagicMock(side_effect=_Retry())
     request = MagicMock(retries=retries, id=str(uuid4()))

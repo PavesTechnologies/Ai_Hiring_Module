@@ -87,7 +87,7 @@ def main() -> None:
             stored = db.execute(text("select outcome from candidate_scoring_results where campaign_candidate_id = :c "
                                      "and scoring_version = 'v2' order by created_at desc limit 1"),
                                 {"c": cc.id}).scalar()
-            experience, education, _, domain = build_validation_inputs(config_repo, jd, resume)
+            experience, education, domain = build_validation_inputs(config_repo, jd, resume)
             attempts = 0
             while True:
                 b = service.score(campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,

@@ -100,7 +100,7 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
         from app.services.llm.model_selection import LLMPurpose
 
         config_repo = ConfigRepository(db)
-        experience, education, _, domain = build_validation_inputs(config_repo, job_description, resume)
+        experience, education, domain = build_validation_inputs(config_repo, job_description, resume)
         breakdown = ScoringV2Service(
             db, SkillRepository(db), config_repo,
             provider_resolver=lambda: resolve_active_provider(db, LLMPurpose.EXTRACTION),
