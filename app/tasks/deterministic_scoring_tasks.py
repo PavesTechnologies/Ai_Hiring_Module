@@ -20,22 +20,14 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
 from app.repositories.resume_repository import ResumeRepository
-from app.repositories.skill_ontology_repository import SkillOntologyRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
-from app.services.campaign.candidate_scoring_service import (
-    _optional_float,
-    CandidateScoringService,
-    MandatorySkillMatchType,
-)
 from app.services.campaign.domain_capability_matching_service import DomainCapabilityMatchingService
-from app.repositories.scoring_result_repository import ScoringResultRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.services.campaign.scoring_v2 import OUTCOME_NOT_RUN, OUTCOME_PENDING
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
 from app.services.campaign.scoring_v2_service import (
-    FALLBACK_NEVER, FALLBACK_ON_CAP, FALLBACK_ON_UNAVAILABLE, ScoringV2Service, v1_result_row, v2_rejection_reason,
-    v2_should_run,
+    FALLBACK_NEVER, FALLBACK_ON_CAP, FALLBACK_ON_UNAVAILABLE, ScoringV2Service, v2_rejection_reason,
 )
 from app.services.campaign.experience_education_validation_service import (
     ExperienceEducationValidationService,
@@ -168,49 +160,16 @@ def _run_scoring_v2(db, skill_repo, config_repo, campaign, campaign_candidate, j
         return None
 
 
-def _record_v1_result(db, campaign, campaign_candidate, breakdown, *, acted_on: bool, score_weights) -> None:
-    try:
-        ScoringResultRepository(db).add(
-            v1_result_row(campaign, campaign_candidate, breakdown, acted_on=acted_on, score_weights=score_weights)
-        )
-    except Exception:
-        logger.exception("Could not store the v1 scoring result row | campaign_candidate_id=%s", campaign_candidate.id)
-
-
-def _v2_decides(campaign) -> bool:
-    """v2 makes the decision only on campaigns with scoring_v2_enabled (an
-    explicit True - a mocked or unset attribute never opts a campaign in)."""
-    return getattr(campaign, "scoring_v2_enabled", False) is True
-
-
-NEAR_MISS_BREAKDOWN_KEYS = (
-    "near_miss_outcome", "needs_review", "needs_review_reason", "near_misses", "near_miss_reject_reasons",
-    # The no-LLM fallback (phase B): how it was scored, and a HOLD awaiting full scoring.
-    "scoring_mode", "fallback_reason", "awaiting_full_scoring",
-)
-
-
-def _act_on_v2(campaign_candidate, breakdown: dict, v2_breakdown: dict) -> dict:
+def store_v2_decision(campaign_candidate, v2_breakdown: dict) -> dict:
     """
-    scoring_v2_enabled: v2's score and decision drive the pipeline. The v1
-    breakdown stays (the Deterministic tab reads its shape) with v1's own
-    numbers kept beside v2's.
+    v2's decision on the candidate: its own breakdown, score and pass flag, stored as they are
+    (retire v1, phase C - before, they were copied into v1's breakdown, v2's nested under "v2").
     """
-    acted = dict(breakdown)
-    acted.update(
-        v1_deterministic_score=breakdown.get("deterministic_score"),
-        v1_deterministic_passed=breakdown.get("deterministic_passed"),
-        deterministic_score=v2_breakdown["deterministic_score"],
-        deterministic_passed=v2_breakdown["deterministic_passed"],
-        acted_on_version="v2",
-        v2=v2_breakdown,
-        # v2's REVIEW decision is the one the AI step's HOLD cap reads.
-        **{key: v2_breakdown.get(key) for key in NEAR_MISS_BREAKDOWN_KEYS},
-    )
-    campaign_candidate.deterministic_breakdown = acted
-    campaign_candidate.deterministic_score = v2_breakdown["deterministic_score"]
-    campaign_candidate.deterministic_passed = v2_breakdown["deterministic_passed"]
-    return acted
+    breakdown = dict(v2_breakdown)
+    campaign_candidate.deterministic_breakdown = breakdown
+    campaign_candidate.deterministic_score = breakdown["deterministic_score"]
+    campaign_candidate.deterministic_passed = breakdown["deterministic_passed"]
+    return breakdown
 
 
 AI_EVALUATE_TASK_TYPE = "AI_EVALUATE"
@@ -271,7 +230,6 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
         resume_repo = ResumeRepository(db)
         jd_repo = JDRepository(db)
         skill_repo = SkillRepository(db)
-        skill_ontology_repo = SkillOntologyRepository(db)
         config_repo = ConfigRepository(db)
         ai_evaluation_repo = CampaignCandidateAIEvaluationRepository(db)
         allowed_transition_repo = AllowedTransitionRepository(db)
@@ -365,56 +323,33 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             )
 
 
-        experience_result, education_result, score_weights, domain_result = build_validation_inputs(
+        experience_result, education_result, _score_weights, domain_result = build_validation_inputs(
             config_repo, job_description, resume,
-        )
-
-        scoring_service = CandidateScoringService(
-            skill_repo, skill_ontology_repo, config_repo, campaign_candidate_repo,
         )
         previous_score = getattr(campaign_candidate, "deterministic_score", None)
         previous_score = float(previous_score) if previous_score is not None else None
         previous_passed = getattr(campaign_candidate, "deterministic_passed", None)
-        breakdown = scoring_service.calculate_and_store_score_breakdown(
-            campaign_candidate.id, campaign.jd_id, campaign_candidate.resume_id,
-            float(campaign.deterministic_threshold),
-            experience_result=experience_result,
-            education_result=education_result,
-            score_weights=score_weights,
-            required_skill_coverage_threshold=float(campaign.required_skill_coverage_threshold),
-            max_missing_core_skills=int(campaign.max_missing_core_skills),
-            max_missing_core_pct=_optional_float(getattr(campaign, "max_missing_core_pct", None)),
-            domain_result=domain_result,
-        )
 
-        # Scoring v2 decides on scoring_v2_enabled campaigns - it runs inline
-        # here. On shadow-only campaigns it runs afterwards in its own task
-        # (SCORING_V2), queued after v1 commits: v1 is never slowed or changed.
-        v2_decides = _v2_decides(campaign)
-        v2_breakdown = None
-        if v2_decides:
-            # The daily cap falls back to no-LLM scoring at once (it won't lift for hours); a
-            # provider failure is retried, and falls back only on the last attempt.
-            last_attempt = self.request.retries + 1 >= _DECISION_PENDING_RETRY_POLICY.max_attempts
-            v2_breakdown = _run_scoring_v2(
-                db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
-                experience_result, education_result, domain_result, acted_on=True,
-                llm_fallback=FALLBACK_ON_UNAVAILABLE if last_attempt else FALLBACK_ON_CAP,
+        # Scoring v2 decides every campaign (retire v1, phase C - v1 no longer runs). The daily cap
+        # falls back to no-LLM scoring at once (it won't lift for hours); a provider failure is
+        # retried, and falls back only on the last attempt. v2 failing outright is retried too, and
+        # dead-lettered after the last attempt - never decided on partial information.
+        last_attempt = self.request.retries + 1 >= _DECISION_PENDING_RETRY_POLICY.max_attempts
+        breakdown = _run_scoring_v2(
+            db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
+            experience_result, education_result, domain_result, acted_on=True,
+            llm_fallback=FALLBACK_ON_UNAVAILABLE if last_attempt else FALLBACK_ON_CAP,
+        )
+        if breakdown is None:
+            raise ScoringV2DecisionPending("v2 scoring failed (see the worker log)")
+        if breakdown.get("outcome") in _UNDECIDED_OUTCOMES:
+            # A provider failure (PENDING) or the daily cap (NOT_RUN) must never decide (and
+            # never reject - NOT_RUN carries deterministic_passed=None): roll back and retry
+            # the whole scoring later.
+            raise ScoringV2DecisionPending(
+                f"{breakdown.get('outcome')}: {breakdown.get('outcome_reason') or 'v2 confirmation unavailable'}"
             )
-            if v2_breakdown is not None and v2_breakdown.get("outcome") in _UNDECIDED_OUTCOMES:
-                # A provider failure (PENDING) or the daily cap (NOT_RUN) must never decide (and
-                # never reject - NOT_RUN carries deterministic_passed=None): roll back and retry
-                # the whole scoring later.
-                raise ScoringV2DecisionPending(
-                    f"{v2_breakdown.get('outcome')}: {v2_breakdown.get('outcome_reason') or 'v2 confirmation unavailable'}"
-                )
-        acting_on_v2 = v2_decides and v2_breakdown is not None
-        _record_v1_result(db, campaign, campaign_candidate, breakdown,
-                          acted_on=not acting_on_v2, score_weights=score_weights)
-        if acting_on_v2:
-            breakdown = _act_on_v2(campaign_candidate, breakdown, v2_breakdown)
-        elif v2_decides:
-            breakdown["v2_failed"] = True  # v2 errored: v1 decided this time (logged)
+        store_v2_decision(campaign_candidate, breakdown)
 
         now = datetime.now(timezone.utc)
         # Scored now with the resume's current skills - no longer out of date.
@@ -424,20 +359,14 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
         campaign_candidate.updated_at = now
         campaign_candidate_repo.update(campaign_candidate)
 
-        missing_entries = [
-            skill for skill in breakdown["mandatory_skills"]
-            if skill["match_type"] == MandatorySkillMatchType.MISSING.value
-        ]
+        missing_entries = [skill for skill in breakdown["mandatory_skills"] if skill["match_type"] == "MISSING"]
 
         
         rejection_reason = None
         stage_transition_succeeded = False
         if not breakdown["deterministic_passed"] and not score_only:
 
-            rejection_reason = (
-                v2_rejection_reason(v2_breakdown) if acting_on_v2
-                else CandidateScoringService.build_rejection_reason(breakdown, experience_result, education_result)
-            )
+            rejection_reason = v2_rejection_reason(breakdown)
 
             stage_transition_succeeded = stage_transition_service.transition_to_rejected(
                 campaign_candidate,
@@ -457,11 +386,13 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
             "mandatory_skills_checked": len(breakdown["mandatory_skills"]),
             "matched": matched_count,
             "missing": len(missing_entries),
-            "mandatory_coverage_pct": breakdown["mandatory_coverage_pct"],
+            "core_skill_count": breakdown.get("core_skill_count"),
+            "core_confirmed_count": breakdown.get("core_confirmed_count"),
+            "core_coverage_pct": breakdown.get("core_coverage_pct"),
             "missing_core_skill_count": breakdown.get("missing_core_skill_count"),
-            "max_missing_core_skills": breakdown.get("max_missing_core_skills"),
             "allowed_missing_core_skills": breakdown.get("allowed_missing_core_skills"),
-            "skill_qualification_passed": breakdown.get("skill_qualification_passed"),
+            "outcome": breakdown.get("outcome"),
+            "scoring_mode": breakdown.get("scoring_mode"),
             "deterministic_score": breakdown["deterministic_score"],
             "deterministic_passed": breakdown["deterministic_passed"],
             "rejection_reason": rejection_reason,
@@ -488,13 +419,6 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
         campaign_candidate_repo.commit()
 
         CandidateChangeNotifier().updated(campaign.id, campaign_candidate.id, campaign_candidate.resume_id)
-
-        if not acting_on_v2 and v2_should_run(campaign):
-            try:
-                from app.tasks.scoring_v2_tasks import enqueue_scoring_v2
-                enqueue_scoring_v2(campaign_candidate, task_log_service)
-            except Exception:
-                logger.exception("Failed to queue shadow scoring v2 | campaign_candidate_id=%s", campaign_candidate.id)
 
         task_log_service.mark_success(task_log, summary=json.dumps(summary_payload))
 

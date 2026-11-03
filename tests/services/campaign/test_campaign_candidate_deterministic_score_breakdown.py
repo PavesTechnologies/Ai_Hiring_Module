@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from app.schemas.campaign.campaign_candidate_schema import DeterministicScoreBreakdownResponse
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 """
 Deterministic Score API response contract - deterministic_score_breakdown
@@ -29,18 +30,19 @@ def _skill_entry(
     hierarchy_score_multiplier=1.0, contribution=50.0, confidence=1.0,
     matched_candidate_skill_canonical_name=None, mandatory=True,
 ):
+    # v2's entry shape (retire v1, phase C); recognition is the old candidate_scoring_weight
     return {
         "canonical_skill_id": str(uuid4()),
         "canonical_name": canonical_name,
         "mandatory": mandatory,
+        "importance": "core" if mandatory else None,
         "configured_weight": configured_weight,
+        "effective_weight": configured_weight,
         "match_type": match_type,
-        "matched_candidate_skill_canonical_name": matched_candidate_skill_canonical_name,
-        "hierarchy_score_multiplier": hierarchy_score_multiplier,
-        "candidate_scoring_weight": candidate_scoring_weight,
-        "match_tier": "EXACT",
-        "confidence": confidence,
-        "skill_contribution": contribution,
+        "matched_skill_name": matched_candidate_skill_canonical_name,
+        "hierarchy_multiplier": hierarchy_score_multiplier,
+        "recognition": candidate_scoring_weight,
+        "contribution": contribution,
     }
 
 
@@ -74,7 +76,9 @@ def test_full_breakdown_maps_every_section_from_stored_values():
         "deterministic_passed": True,
         "deterministic_threshold": 70.0,
         "mandatory_coverage_pct": 83.33,
-        "skill_deterministic_score": 82.0,
+        "skill_score": 82.0,
+        "components": [{"name": "skills", "score": 82.0, "weight": 0.7},
+                       {"name": "education_preferred", "score": 100.0, "weight": 0.15}],
         "mandatory_skills": [
             _skill_entry("Python", "EXACT", matched_candidate_skill_canonical_name="Python"),
             _skill_entry(
@@ -93,7 +97,7 @@ def test_full_breakdown_maps_every_section_from_stored_values():
         ],
         "experience_validation": {
             "applicable": True, "skipped": False, "data_missing": False, "passed": False,
-            "score": 90.0, "candidate_years": 4.5, "min_years": 5.0, "effective_min_years": 5.0,
+            "score": 90.0, "candidate_years": 4.5, "min_years": 5.0, "near_miss_tolerance_years": 0.0,
         },
         "education_validation": {
             "applicable": True, "skipped": False, "data_missing": False, "passed": True,
@@ -101,7 +105,7 @@ def test_full_breakdown_maps_every_section_from_stored_values():
             "equivalent_experience_applied": False,
         },
     }
-    candidate = _make_campaign_candidate(score_breakdown=breakdown, screened_at=screened_at)
+    candidate = _make_campaign_candidate(score_breakdown=with_v2_checks(breakdown), screened_at=screened_at)
 
     config_repo = MagicMock()
     config_repo.get_configs_by_keys.return_value = {
@@ -123,7 +127,8 @@ def test_full_breakdown_maps_every_section_from_stored_values():
     assert result.summary.overall_score == 78.5
     assert result.summary.status == "PASSED"
     assert result.summary.threshold == 70.0
-    assert result.summary.mandatory_coverage_pct == 83.33
+    # Computed from the entries (v2 stores no coverage figure): 2 of 3 found.
+    assert result.summary.mandatory_coverage_pct == 66.67
     assert result.summary.mandatory_skills_matched == 2  # EXACT + CHILD, not MISSING
     assert result.summary.mandatory_skills_total == 3
     assert result.summary.preferred_skills_matched == 1
@@ -193,7 +198,7 @@ def test_full_breakdown_maps_every_section_from_stored_values():
     # experience_validation
     assert result.experience_validation.required_years == 5.0
     assert result.experience_validation.candidate_years == 4.5
-    assert result.experience_validation.tolerance == 0.0  # min_years - effective_min_years
+    assert result.experience_validation.tolerance == 0.0  # v2's near_miss_tolerance_years
     assert result.experience_validation.passed is False
     assert result.experience_validation.status == "FAILED"
 
@@ -209,15 +214,15 @@ def test_full_breakdown_maps_every_section_from_stored_values():
     assert result.score_calculation.education_score == 100.0
     assert result.score_calculation.final_score == 78.5
 
-    # configuration - read from PlatformConfig, not hardcoded
+    # configuration - the weights this score used (v2's components), not today's PlatformConfig.
+    # Experience is a check in v2, not a weighted component; v1's hierarchy/semantic settings
+    # aren't part of a v2 score - null, never fabricated.
     assert result.configuration.skills_weight == 0.70
-    assert result.configuration.experience_weight == 0.15
+    assert result.configuration.experience_weight is None
     assert result.configuration.education_weight == 0.15
     assert result.configuration.deterministic_threshold == 70.0
-    assert result.configuration.semantic_threshold == 0.75
-    assert result.configuration.hierarchy_grandchild_multiplier == 0.5
-    # Not seeded in PlatformConfig (hardcoded literals in the scoring
-    # service) - null, never fabricated.
+    assert result.configuration.semantic_threshold is None
+    assert result.configuration.hierarchy_grandchild_multiplier is None
     assert result.configuration.hierarchy_child_multiplier is None
     assert result.configuration.hierarchy_sibling_multiplier is None
     assert result.configuration.semantic_multiplier is None
@@ -316,18 +321,19 @@ def test_validation_status_reflects_skipped_and_data_missing_states():
 
 def test_failing_breakdown_shows_reasons_rebuilt_from_its_own_checks():
     """A FAILED breakdown's reasons come from the breakdown, never from stale stored text."""
-    breakdown = {
+    breakdown = with_v2_checks({
         "deterministic_score": 60.0, "deterministic_passed": False, "deterministic_threshold": 70.0,
-        "mandatory_coverage_pct": 100.0, "mandatory_skills": [], "preferred_skills": [],
+        "mandatory_skills": [], "preferred_skills": [],
         "experience_validation": {
             "applicable": True, "skipped": False, "data_missing": False, "passed": False,
             "score": 90.0, "candidate_years": 4.5, "min_years": 5.0, "effective_min_years": 5.0,
         },
-    }
+    })
     candidate = _make_campaign_candidate(score_breakdown=breakdown)
 
     result = make_service()._build_deterministic_score_breakdown(candidate, rejection_reason="stale text from an old rule")
 
     assert result.summary.status == "FAILED"
     assert result.summary.failure_reason is not None and "stale text" not in result.summary.failure_reason
-    assert any(reason.startswith("Insufficient experience") for reason in result.summary.failure_reasons)
+    # v2's own failed check
+    assert [r.split(":")[0] for r in result.summary.failure_reasons] == ["Experience"]

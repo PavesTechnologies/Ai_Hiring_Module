@@ -12,6 +12,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateScorecardResponse,
 )
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 """
 M07-E03 S03 - Display Rejection Reason on Candidate Scorecard.
@@ -31,7 +32,8 @@ def _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED, score_breakd
         candidate_id=uuid4(),
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
-        deterministic_breakdown=score_breakdown or {},
+        # v2's stored shape (retire v1, phase C): the checks and core-gate credit filled in.
+        deterministic_breakdown=with_v2_checks(score_breakdown, passed=False) if score_breakdown else {},
         semantic_breakdown=None, semantic_passed=None, previous_stage=None,
         decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
         decision_by_user_id=None, decision_at=None,
@@ -191,7 +193,7 @@ def test_scorecard_score_breakdown_read_from_campaign_candidate_not_rejection_sn
 
     scorecard = service.get_campaign_candidate_scorecard(candidate.id)
 
-    assert scorecard.score_breakdown == breakdown
+    assert scorecard.score_breakdown == candidate.deterministic_breakdown
 
 
 # ----------------------------------------------------------------------
@@ -325,15 +327,33 @@ def test_export_rejected_candidates_writes_rows_and_logs_audit(monkeypatch):
 
 
 def test_missing_mandatory_skills_display_lists_only_missing_skills():
-    breakdown = {
+    breakdown = with_v2_checks({
         "mandatory_skills": [
             {"canonical_name": "Python", "match_type": "MISSING"},
             {"canonical_name": "AWS", "match_type": "EXACT"},
             {"canonical_name": "Docker", "match_type": "MISSING"},
         ]
-    }
+    })
     result = CampaignCandidateService._missing_mandatory_skills_display(breakdown)
     assert result == "Python, Docker"
+
+
+def test_a_core_skill_found_but_not_confirmed_is_listed_as_missing_too():
+    """v2: the gate counts confirmed core skills - one found but voted against or uncertain didn't count."""
+    breakdown = with_v2_checks({"mandatory_skills": [
+        {"canonical_name": "Python", "match_type": "EXACT", "counts_for_core_gate": False,
+         "confirmation_status": "REJECTED"},
+        {"canonical_name": "AWS", "match_type": "EXACT"},
+        {"canonical_name": "Excel", "match_type": "MISSING", "importance": "supporting", "counts_for_core_gate": False},
+    ]})
+    assert CampaignCandidateService._missing_mandatory_skills_display(breakdown) == "Python"
+
+
+def test_a_pre_phase_c_snapshot_is_read_through_its_nested_v2_breakdown():
+    nested = with_v2_checks({"mandatory_skills": [{"canonical_name": "SQL", "match_type": "MISSING"}]})
+    legacy = {"acted_on_version": "v2", "v2": nested,
+              "mandatory_skills": [{"canonical_name": "SQL", "match_type": "EXACT"}]}   # v1's own view
+    assert CampaignCandidateService._missing_mandatory_skills_display(legacy) == "SQL"
 
 
 def test_experience_gap_display_blank_when_passed():

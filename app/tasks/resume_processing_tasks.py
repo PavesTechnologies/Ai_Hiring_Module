@@ -91,16 +91,11 @@ def _notify_resume_changed(db, resume_id) -> None:
 
 
 def _v2_enabled_for_resume(db, resume_id) -> bool:
-    """True when any campaign holding this resume has scoring_v2_enabled (gates the parse cache)."""
-    try:
-        campaign_repo = CampaignRepository(db)
-        for campaign_candidate in CampaignCandidateRepository(db).get_by_resume_id(resume_id):
-            campaign = campaign_repo.get_by_id(campaign_candidate.campaign_id)
-            if campaign is not None and getattr(campaign, "scoring_v2_enabled", False) is True:
-                return True
-    except Exception:
-        logger.exception("Could not read scoring_v2_enabled for resume %s - parse cache off.", resume_id)
-    return False
+    """
+    The parse cache is on for every resume: scoring v2 decides every campaign since retire v1,
+    phase C (it was gated on a campaign's scoring_v2_enabled while v2 was rolled out).
+    """
+    return True
 
 
 def replay_payload(resume_id, prompt_template_id, reparse: dict | None, new_version: dict | None = None) -> dict:

@@ -465,6 +465,8 @@ class ScoringV2Service:
             allowed_missing_core=allowed,
             score_threshold_rejects=snapshot["score_threshold_rejects_config"],
             extra={"scoring_config_version": version, "confirmation": confirmation,
+                   # the functional (domain capability) check's detail, for the Deterministic tab
+                   "domain_capability_validation": domain_result,
                    "paraphrase": paraphrase, "evidence_source": evidence_source, "acted_on": acted_on,
                    "profile_template": {"key": getattr(jd_profile(job_description), "key", None),
                                         "evidence_sections": sorted(evidence_sections),

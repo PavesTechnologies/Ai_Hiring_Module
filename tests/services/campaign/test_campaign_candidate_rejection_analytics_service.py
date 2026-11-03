@@ -11,6 +11,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     OverrideReportRow,
 )
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 """
 M07-E03 S05 - Report Deterministic Rejection Analytics.
@@ -28,8 +29,9 @@ def _make_rejection(mandatory_skills=None, experience_validation=None, education
         "education_validation": education_validation,
     }
     # Rejection analytics reads decision_details snapshots (campaign_repo.
-    # get_deterministic_rejection_details) - the dict itself, no wrapper record.
-    return detail
+    # get_deterministic_rejection_details) - the dict itself, no wrapper record -
+    # in v2's shape since retire v1, phase C (the checks and core-gate credit filled in).
+    return with_v2_checks(detail, passed=False)
 
 
 def _missing_skill(canonical_name, canonical_skill_id=None):

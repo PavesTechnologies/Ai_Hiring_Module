@@ -143,7 +143,7 @@ def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate
 
 @celery_app.task(name="scoring.complete_full_scoring", bind=True)
 def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result_id: str) -> None:
-    from app.tasks.deterministic_scoring_tasks import _act_on_v2, build_validation_inputs
+    from app.tasks.deterministic_scoring_tasks import build_validation_inputs, store_v2_decision
 
     db = SessionLocal()
     task_log_service = CeleryTaskLogService(CeleryTaskLogRepository(db))
@@ -193,9 +193,7 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
             candidate_repo.update(campaign_candidate)
         else:
             full_row.acted_on, fallback.acted_on = True, False
-            _act_on_v2(campaign_candidate, dict(campaign_candidate.deterministic_breakdown or {}), full)
-            campaign_candidate.deterministic_breakdown = {**campaign_candidate.deterministic_breakdown,
-                                                          "awaiting_full_scoring": False}
+            store_v2_decision(campaign_candidate, {**full, "awaiting_full_scoring": False})
             stage_service = StageTransitionService(
                 AllowedTransitionRepository(db), candidate_repo, AuditService(AuditRepository(db)),
                 InterviewScheduleRepository(db))

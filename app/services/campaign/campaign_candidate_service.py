@@ -50,8 +50,13 @@ from app.repositories.email_template_repository import EmailTemplateRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
+from app.services.campaign.scoring_v2_service import v2_rejection_reason
+from app.services.campaign.v2_breakdown import (
+    as_v2, skills_check_failed, unconfirmed_core_entries, unconfirmed_core_skills,
+)
 from app.schemas.campaign.campaign_candidate_schema import (
     AiSummaryDetail,
+    DeterministicDecisionCheck,
     CampaignCandidateCreateRequest,
     CampaignBoardColumn,
     CampaignBoardResponse,
@@ -222,6 +227,17 @@ _SKILL_MATCH_TIER_LABELS = {
     "GRANDCHILD": "a related grandchild skill",
     "SIBLING": "a related sibling skill",
     "SEMANTIC": "a semantically similar skill",
+}
+
+
+# Why a core skill that was found still didn't count toward the core gate (v2 confirmation).
+_UNCONFIRMED_CORE_REASONS = {
+    "REJECTED": "Found, but the review found it isn't shown in the candidate's work.",
+    "UNCERTAIN": "Found, but not confirmed as core (listed only, or the votes split).",
+    "UNCONFIRMED": "Found, but not confirmed as core.",
+    "NOT_RUN": "Found, not confirmed yet - confirmation didn't run.",
+    "SENSE_MISMATCH": "Found in a different sense than the JD means.",
+    None: "Found, but not confirmed as core.",
 }
 
 
@@ -1598,171 +1614,134 @@ class CampaignCandidateService:
     def _build_deterministic_score_breakdown(
         self, campaign_candidate: CampaignCandidate, rejection_reason: str | None = None,
     ) -> DeterministicScoreBreakdownResponse | None:
-        breakdown = campaign_candidate.deterministic_breakdown
+        """
+        The Deterministic tab, from v2's stored breakdown (retire v1, phase C - as_v2 also reads a
+        pre-phase-C v1-shaped one). Pure read/transform of what scoring stored; nothing recalculated.
+        """
+        breakdown = as_v2(campaign_candidate.deterministic_breakdown)
         if not breakdown:
             return None
 
-        mandatory_skills_raw = breakdown.get("mandatory_skills") or []
-        preferred_skills_raw = breakdown.get("preferred_skills") or []
+        mandatory_raw = breakdown.get("mandatory_skills") or []
+        preferred_raw = breakdown.get("preferred_skills") or []
         experience = breakdown.get("experience_validation")
         education = breakdown.get("education_validation")
         domain = breakdown.get("domain_capability_validation")
 
+        def found(entry):
+            return entry.get("match_type") != "MISSING"
+
+        def counts(entry):
+            # A core skill counts only when confirmed (the core gate); any other one when found.
+            return bool(entry.get("counts_for_core_gate")) if entry.get("importance") == "core" else found(entry)
+
+        def percentage(entry):
+            weight = entry.get("effective_weight")
+            return round(entry["contribution"] / weight * 100, 2) if weight and entry.get("contribution") is not None else None
+
         mandatory_skills = [
             MandatorySkillBreakdownItem(
                 jd_skill=entry.get("canonical_name"),
-                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                candidate_skill=entry.get("matched_skill_name") if found(entry) else None,
                 mandatory=entry.get("mandatory"),
                 importance=entry.get("importance"),
                 match_type=entry.get("match_type"),
-                matched_via_alias=bool(entry.get("matched_via_alias")),
+                matched_via_alias=False,
                 configured_weight=entry.get("configured_weight"),
-                normalization_discount=entry.get("candidate_scoring_weight"),
-                hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
-                contribution=entry.get("skill_contribution"),
-                confidence=entry.get("confidence"),
-                passed=entry.get("match_type") != "MISSING",
-                matched=entry.get("match_type") != "MISSING",
-                match_reason=self._skill_match_reason(
-                    entry.get("match_type"), entry.get("matched_candidate_skill_canonical_name"),
-                ),
-                contribution_percentage=self._contribution_percentage(
-                    entry.get("skill_contribution"), entry.get("configured_weight"),
-                ),
+                normalization_discount=entry.get("recognition"),
+                hierarchy_multiplier=entry.get("hierarchy_multiplier"),
+                contribution=entry.get("contribution"),
+                confidence=entry.get("recognition"),
+                passed=counts(entry),
+                matched=found(entry),
+                match_reason=self._skill_match_reason(entry.get("match_type"), entry.get("matched_skill_name")),
+                contribution_percentage=percentage(entry),
+                confirmation_status=entry.get("confirmation_status"),
+                counts_for_core_gate=entry.get("counts_for_core_gate"),
             )
-            for entry in mandatory_skills_raw
+            for entry in mandatory_raw
         ]
-
         preferred_skills = [
             PreferredSkillBreakdownItem(
                 jd_skill=entry.get("canonical_name"),
-                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                candidate_skill=entry.get("matched_skill_name") if found(entry) else None,
                 match_type=entry.get("match_type"),
                 configured_weight=entry.get("configured_weight"),
-                bonus=entry.get("skill_contribution"),
-                confidence=entry.get("confidence"),
-                matched=entry.get("match_type") != "MISSING",
-                match_reason=self._skill_match_reason(
-                    entry.get("match_type"), entry.get("matched_candidate_skill_canonical_name"),
-                ),
-                contribution_percentage=self._contribution_percentage(
-                    entry.get("skill_contribution"), entry.get("configured_weight"),
-                ),
+                bonus=entry.get("contribution"),
+                confidence=entry.get("recognition"),
+                matched=found(entry),
+                match_reason=self._skill_match_reason(entry.get("match_type"), entry.get("matched_skill_name")),
+                contribution_percentage=percentage(entry),
             )
-            for entry in preferred_skills_raw
+            for entry in preferred_raw
         ]
-
         missing_mandatory_skills = [
             MissingMandatorySkillItem(
                 skill=entry.get("canonical_name"),
                 configured_weight=entry.get("configured_weight"),
                 importance=entry.get("importance"),
-                reason=self._missing_skill_reason(entry.get("importance")),
+                reason=(self._missing_skill_reason(entry.get("importance")) if not found(entry)
+                        else _UNCONFIRMED_CORE_REASONS.get(entry.get("confirmation_status"),
+                                                           _UNCONFIRMED_CORE_REASONS[None])),
             )
-            for entry in mandatory_skills_raw
-            if entry.get("match_type") == "MISSING"
+            for entry in mandatory_raw if not counts(entry)
         ]
-        core_entries = [entry for entry in mandatory_skills_raw if entry.get("importance") == "core"]
-
-        # Populated from both mandatory and preferred mappings, per this
-        # contract - preferred skills never actually carry a hierarchy
-        # match_type today (EXACT-only), so this is a no-op extension in
-        # practice, not a new query or new matching behavior.
         hierarchy_matches = [
             HierarchyMatchItem(
                 jd_skill=entry.get("canonical_name"),
-                candidate_skill=entry.get("matched_candidate_skill_canonical_name"),
+                candidate_skill=entry.get("matched_skill_name"),
                 relationship=entry.get("match_type"),
-                multiplier=entry.get("hierarchy_score_multiplier"),
+                multiplier=entry.get("hierarchy_multiplier"),
                 match_type=entry.get("match_type"),
-                hierarchy_multiplier=entry.get("hierarchy_score_multiplier"),
+                hierarchy_multiplier=entry.get("hierarchy_multiplier"),
             )
-            for entry in (mandatory_skills_raw + preferred_skills_raw)
+            for entry in (mandatory_raw + preferred_raw)
             if entry.get("match_type") in _HIERARCHY_RELATIONSHIP_MATCH_TYPES
         ]
 
-        mandatory_matched = sum(
-            1 for entry in mandatory_skills_raw if entry.get("match_type") != "MISSING"
-        )
-        preferred_matched = sum(
-            1 for entry in preferred_skills_raw if entry.get("match_type") != "MISSING"
-        )
-
-        config_values = (
-            self.config_repo.get_configs_by_keys([
-                _DETERMINISTIC_WEIGHT_SKILLS_KEY,
-                _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY,
-                _DETERMINISTIC_WEIGHT_EDUCATION_KEY,
-                _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY,
-                _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY,
-                _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
-                _HIERARCHY_CHILD_MULTIPLIER_KEY,
-                _HIERARCHY_SIBLING_MULTIPLIER_KEY,
-                _SEMANTIC_MULTIPLIER_KEY,
-            ])
-            if self.config_repo is not None else {}
-        )
-
+        mandatory_matched = sum(1 for entry in mandatory_raw if found(entry))
+        weights = {c.get("name"): c.get("weight") for c in breakdown.get("components") or []}
         experience_min_years = experience.get("min_years") if experience else None
-        experience_effective_min_years = experience.get("effective_min_years") if experience else None
-        experience_tolerance = (
-            round(experience_min_years - experience_effective_min_years, 2)
-            if experience_min_years is not None and experience_effective_min_years is not None
-            else None
-        )
+        core_total = breakdown.get("core_skill_count")
 
         from app.services.campaign.candidate_scoring_service import _degree_level_display
 
-        if "technical_score" in breakdown:
-            # Current breakdowns: None when the JD had no scorable skills,
-            # which the UI shows as "-" rather than the final score.
-            skills_score = breakdown["technical_score"]
-        else:
-            skills_score = breakdown.get("skill_deterministic_score")
-            if skills_score is None:
-                skills_score = breakdown.get("deterministic_score")
-
-        # Reuses candidate_rejections.rejection_reason exactly as already
-        # resolved by _build_rejection_banner (passed in by the caller) -
-        # never a second, independent lookup. Split on " | ", the same
-        # delimiter CandidateScoringService.build_rejection_reason already
-        # concatenates multiple failure clauses with.
-        from app.services.campaign.candidate_scoring_service import CandidateScoringService
-
-        # Deterministic-layer reasons only, rebuilt from this breakdown so
-        # they always agree with decision_checks (the stored rejection text
-        # can predate a rule change, or belong to a later layer).
-        if breakdown.get("deterministic_passed"):
-            rejection_reason = None
-        elif breakdown.get("mandatory_skills") is not None:
-            rejection_reason = CandidateScoringService.build_rejection_reason(breakdown, experience, education)
-        failure_reasons = rejection_reason.split(" | ") if rejection_reason else []
+        passed = breakdown.get("deterministic_passed")
+        failure_reason = None if passed else v2_rejection_reason(breakdown)
+        failure_reasons = failure_reason.split(" | ") if failure_reason else []
 
         return DeterministicScoreBreakdownResponse(
             summary=DeterministicScoreSummary(
                 overall_score=breakdown.get("deterministic_score"),
-                status="PASSED" if breakdown.get("deterministic_passed") else "FAILED",
+                status="PASSED" if passed else "FAILED",
                 threshold=breakdown.get("deterministic_threshold"),
-                mandatory_coverage_pct=breakdown.get("mandatory_coverage_pct"),
+                mandatory_coverage_pct=(round(mandatory_matched / len(mandatory_raw) * 100, 2)
+                                        if mandatory_raw else None),
                 core_coverage_pct=breakdown.get("core_coverage_pct"),
-                gate_skill_scope=breakdown.get("gate_skill_scope"),
+                gate_skill_scope="core" if core_total else "mandatory",
                 missing_core_skill_count=breakdown.get("missing_core_skill_count"),
                 mandatory_skills_matched=mandatory_matched,
-                mandatory_skills_total=len(mandatory_skills_raw),
-                core_skills_matched=(
-                    sum(1 for entry in core_entries if entry.get("match_type") != "MISSING") if core_entries else None
-                ),
-                core_skills_total=len(core_entries) if core_entries else None,
-                preferred_skills_matched=preferred_matched,
-                preferred_skills_total=len(preferred_skills_raw),
+                mandatory_skills_total=len(mandatory_raw),
+                core_skills_matched=breakdown.get("core_confirmed_count") if core_total else None,
+                core_skills_total=core_total or None,
+                preferred_skills_matched=sum(1 for entry in preferred_raw if found(entry)),
+                preferred_skills_total=len(preferred_raw),
                 additional_skills_count=None,
                 experience_status=self._validation_status(experience),
                 education_status=self._validation_status(education),
                 screened_at=getattr(campaign_candidate, "screened_at", None),
-                decision_checks=CandidateScoringService.explain_decision(breakdown),
-                failure_reason=rejection_reason,
+                decision_checks=[
+                    DeterministicDecisionCheck(check=c["check"], passed=bool(c.get("passed")),
+                                               can_reject=bool(c.get("applies")), detail=c.get("detail") or "")
+                    for c in breakdown.get("checks") or []
+                ],
+                failure_reason=failure_reason,
                 failure_reasons=failure_reasons,
                 screening_completed_at=getattr(campaign_candidate, "screened_at", None),
+                outcome=breakdown.get("outcome"),
+                scoring_mode=breakdown.get("scoring_mode"),
+                awaiting_full_scoring=bool(breakdown.get("awaiting_full_scoring")),
+                needs_review_reason=breakdown.get("needs_review_reason") if breakdown.get("needs_review") else None,
             ),
             missing_mandatory_skills=missing_mandatory_skills,
             mandatory_skills=mandatory_skills,
@@ -1772,17 +1751,11 @@ class CampaignCandidateService:
             experience_validation=ExperienceValidationDetail(
                 required_years=experience_min_years,
                 candidate_years=experience.get("candidate_years") if experience else None,
-                tolerance=experience_tolerance,
+                tolerance=experience.get("near_miss_tolerance_years") if experience else None,
                 passed=experience.get("passed") if experience else None,
                 status=self._detailed_validation_status(experience),
             ),
             education_validation=EducationValidationDetail(
-                # Prefers the raw JD/resume-extracted degree text (populated
-                # for any breakdown scored after the education-matching
-                # wiring) over the abstract level-name placeholder - a
-                # breakdown persisted before that change simply won't have
-                # required_degree_text/candidate_degree_text, so this falls
-                # back to the old level-display behavior unchanged.
                 required_degree=(
                     (education.get("required_degree_text") or (
                         _degree_level_display(education.get("required_level"))
@@ -1794,40 +1767,32 @@ class CampaignCandidateService:
                     (education.get("candidate_degree_text") or _degree_level_display(education.get("candidate_level")))
                     if education else None
                 ),
-                equivalent_experience_applied=(
-                    education.get("equivalent_experience_applied") if education else None
-                ),
+                equivalent_experience_applied=education.get("equivalent_experience_applied") if education else None,
                 passed=education.get("passed") if education else None,
                 status=self._validation_status(education),
                 **self._education_field_detail(education),
             ),
             score_calculation=ScoreCalculationDetail(
-                skills_score=skills_score,
-                functional_score=(domain.get("score") if domain and domain.get("applicable") else None),
+                skills_score=breakdown.get("skill_score"),
+                functional_score=breakdown.get("functional_score"),
                 experience_score=experience.get("score") if experience else None,
                 education_score=education.get("score") if education else None,
                 final_score=breakdown.get("deterministic_score"),
-                functional_applicable=bool(domain.get("applicable")) if domain else None,
+                functional_applicable=breakdown.get("functional_score") is not None,
                 experience_applicable=bool(experience.get("applicable")) if experience else None,
                 education_applicable=bool(education.get("applicable")) if education else None,
                 required_domain_capabilities=(domain or {}).get("required") or [],
                 preferred_domain_capabilities=(domain or {}).get("preferred") or [],
             ),
             configuration=ScoreConfigurationDetail(
-                skills_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_SKILLS_KEY),
-                functional_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_FUNCTIONAL_KEY),
-                experience_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EXPERIENCE_KEY),
-                education_weight=self._config_float(config_values, _DETERMINISTIC_WEIGHT_EDUCATION_KEY),
+                # v2's component weights, as this score used them (experience and education
+                # are checks in v2, not weighted components).
+                skills_weight=weights.get("skills"),
+                functional_weight=weights.get("functional"),
+                experience_weight=None,
+                education_weight=weights.get("education_preferred"),
                 deterministic_threshold=breakdown.get("deterministic_threshold"),
-                semantic_threshold=self._config_float(config_values, _HIERARCHY_SEMANTIC_ONLY_THRESHOLD_KEY),
-                hierarchy_grandchild_multiplier=self._config_float(
-                    config_values, _HIERARCHY_GRANDCHILD_MULTIPLIER_KEY,
-                ),
-                hierarchy_child_multiplier=self._config_float(config_values, _HIERARCHY_CHILD_MULTIPLIER_KEY),
-                hierarchy_sibling_multiplier=self._config_float(config_values, _HIERARCHY_SIBLING_MULTIPLIER_KEY),
-                semantic_multiplier=self._config_float(config_values, _SEMANTIC_MULTIPLIER_KEY),
-                max_missing_core_pct=breakdown.get("max_missing_core_pct"),
-                max_missing_core_skills=breakdown.get("max_missing_core_skills"),
+                max_missing_core_skills=breakdown.get("configured_allowed_missing_core_skills"),
                 allowed_missing_core_skills=breakdown.get("allowed_missing_core_skills"),
             ),
         )
@@ -2189,16 +2154,12 @@ class CampaignCandidateService:
 
     @staticmethod
     def _missing_mandatory_skills_display(breakdown: dict) -> str:
-        missing = [
-            skill.get("canonical_name") or skill.get("canonical_skill_id")
-            for skill in breakdown.get("mandatory_skills", [])
-            if skill.get("match_type") == "MISSING"
-        ]
-        return ", ".join(missing)
+        # v2 (phase C): every core skill that didn't count toward the core gate.
+        return ", ".join(unconfirmed_core_skills(breakdown))
 
     @staticmethod
     def _experience_gap_display(breakdown: dict) -> str:
-        experience_result = breakdown.get("experience_validation")
+        experience_result = as_v2(breakdown).get("experience_validation")
         if not experience_result or experience_result.get("passed"):
             return ""
         candidate_years = experience_result.get("candidate_years")
@@ -2211,7 +2172,7 @@ class CampaignCandidateService:
     @staticmethod
     def _education_gap_display(breakdown: dict) -> str:
         from app.services.campaign.candidate_scoring_service import describe_education_gap
-        level_gap, field_gap = describe_education_gap(breakdown.get("education_validation"))
+        level_gap, field_gap = describe_education_gap(as_v2(breakdown).get("education_validation"))
         if field_gap:
             field_gap = f"field of study: {field_gap}"
         return "; ".join(gap for gap in (level_gap, field_gap) if gap)
@@ -2790,8 +2751,9 @@ class CampaignCandidateService:
         breakdown), read straight from campaign_candidate_stage_history's
         scores_snapshot now rather than a CandidateRejection.rejection_detail.
         """
-        breakdown = rejection or {}
-        skills_failed = bool(self._missing_mandatory_skills_display(breakdown))
+        breakdown = as_v2(rejection)
+        # v2: a skills gap is a failed core-skill check (a found-but-unconfirmed skill too)
+        skills_failed = skills_check_failed(breakdown)
         experience_failed = bool(self._experience_gap_display(breakdown))
         education_failed = bool(self._education_gap_display(breakdown))
 
@@ -2836,8 +2798,9 @@ class CampaignCandidateService:
     @staticmethod
     def _aggregate_missing_skills(rejections: list[dict]) -> list[dict]:
         """
-        One entry per distinct canonical skill that appeared as a MISSING
-        mandatory skill across `rejections`, keyed by canonical_skill_id
+        One entry per distinct canonical skill that didn't count toward the
+        core gate (v2: missing, unconfirmed or voted against) across
+        `rejections`, keyed by canonical_skill_id
         (falling back to canonical_name if the id is ever absent) so a
         platform-wide caller can join against JDSkill.canonical_skill_id.
         Sorted by occurrence count, descending.
@@ -2846,10 +2809,7 @@ class CampaignCandidateService:
         """
         counts: dict = {}
         for rejection in rejections:
-            detail = rejection or {}
-            for skill in detail.get("mandatory_skills", []):
-                if skill.get("match_type") != "MISSING":
-                    continue
+            for skill in unconfirmed_core_entries(rejection):
                 canonical_name = skill.get("canonical_name") or "Unknown skill"
                 key = skill.get("canonical_skill_id") or canonical_name
                 if key not in counts:

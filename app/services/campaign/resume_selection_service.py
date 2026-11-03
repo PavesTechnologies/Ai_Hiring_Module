@@ -56,8 +56,11 @@ class SelectionMethod(str, Enum):
     # deterministic/semantic comparison was run (nothing to compare).
     DIRECT = "DIRECT"
     # More than one eligible resume existed - every one was scored and the
-    # highest selection_score won.
+    # highest selection_score won (v1 scoring; not used since retire v1, phase C).
     COMPARED = "COMPARED"
+    # More than one eligible resume existed - the latest parsed version was used
+    # (retire v1, phase C: the user's choice, 2026-11-02; no scoring involved).
+    LATEST = "LATEST"
 
 
 @dataclass(frozen=True)
@@ -145,7 +148,17 @@ class ResumeSelectionService:
                 )],
             )
 
-        return self._compare_and_select(eligible_resumes, campaign)
+        # The latest parsed version (highest version number, then newest) - scoring each version
+        # with v1 to pick one ended with retire v1, phase C.
+        latest = max(eligible_resumes, key=lambda r: (r.version_number or 0, r.created_at))
+        return ResumeSelectionResult(
+            selected_resume=latest,
+            selection_method=SelectionMethod.LATEST,
+            evaluated_resumes=[EvaluatedResume(
+                resume=resume, deterministic_score=None, deterministic_passed=None, semantic_score=None,
+                semantic_passed=None, selection_score=None, is_selected=resume is latest,
+            ) for resume in eligible_resumes],
+        )
 
     def _is_eligible(self, resume: Resume) -> bool:
         if resume.parse_status != ParseStatus.PARSED:

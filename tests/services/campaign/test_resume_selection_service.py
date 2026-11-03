@@ -253,110 +253,24 @@ def test_freshness_is_independent_of_is_talent_pool_eligible():
 # Multi-resume comparison
 # ----------------------------------------------------------------------
 
-def test_multiple_eligible_selects_highest_selection_score():
-    weak_resume = _resume()
-    strong_resume = _resume()
+def test_multiple_eligible_select_the_latest_parsed_version_without_scoring():
+    """Retire v1, phase C (the user's choice): the latest version wins; nothing is scored to pick it."""
+    older, latest, middle = _resume(), _resume(), _resume()
+    older.version_number, latest.version_number, middle.version_number = 1, 3, 2
     resume_repo = MagicMock()
-    resume_repo.get_all_versions_by_candidate.return_value = [weak_resume, strong_resume]
-    _with_embedding_map(resume_repo, {weak_resume.id: _embedding(), strong_resume.id: _embedding()})
-    resume_repo.compute_semantic_similarity.side_effect = lambda resume_id, jd_id: (
-        0.50 if resume_id == weak_resume.id else 0.90
-    )
-
-    jd_repo = MagicMock()
-    job_description = _job_description()
-    jd_repo.get_by_id.return_value = job_description
-    jd_repo.get_embedding_by_jd_id.return_value = SimpleNamespace(id=uuid4())  # JD has an embedding
-
+    resume_repo.get_all_versions_by_candidate.return_value = [older, latest, middle]
+    _with_embedding_map(resume_repo, {r.id: _embedding() for r in (older, latest, middle)})
     candidate_scoring_service = MagicMock()
-    candidate_scoring_service.build_mandatory_skill_breakdown.return_value = {
-        "deterministic_score": 50.0, "mandatory_skills": [],
-    }
-    # eligible_resumes preserves [weak_resume, strong_resume] order, so
-    # _evaluate_one (and therefore _combine_deterministic_score) runs for
-    # weak_resume first, strong_resume second - a plain ordered list is
-    # sufficient and far less fragile than branching on call args.
-    candidate_scoring_service._combine_deterministic_score.side_effect = [(40.0, False), (85.0, True)]
 
-    service = make_service(
-        resume_repo=resume_repo, jd_repo=jd_repo, candidate_scoring_service=candidate_scoring_service,
-    )
-
+    service = make_service(resume_repo=resume_repo, candidate_scoring_service=candidate_scoring_service)
     result = service.select_resume_for_campaign(uuid4(), _campaign())
 
-    assert result.selection_method == SelectionMethod.COMPARED
-    assert result.selected_resume is strong_resume
-    assert len(result.evaluated_resumes) == 2
-    selected_entries = [e for e in result.evaluated_resumes if e.is_selected]
-    assert len(selected_entries) == 1
-    assert selected_entries[0].resume is strong_resume
-
-
-def test_falls_back_to_deterministic_only_when_jd_has_no_embedding():
-    resume_a = _resume()
-    resume_b = _resume()
-    resume_repo = MagicMock()
-    resume_repo.get_all_versions_by_candidate.return_value = [resume_a, resume_b]
-    _with_embedding_map(resume_repo, {resume_a.id: _embedding(), resume_b.id: _embedding()})
-
-    jd_repo = MagicMock()
-    jd_repo.get_by_id.return_value = _job_description()
-    jd_repo.get_embedding_by_jd_id.return_value = None  # No JD embedding at all.
-
-    candidate_scoring_service = MagicMock()
-    candidate_scoring_service.build_mandatory_skill_breakdown.return_value = {
-        "deterministic_score": 60.0, "mandatory_skills": [],
-    }
-    candidate_scoring_service._combine_deterministic_score.side_effect = [(60.0, False), (90.0, True)]
-
-    service = make_service(
-        resume_repo=resume_repo, jd_repo=jd_repo, candidate_scoring_service=candidate_scoring_service,
-    )
-
-    result = service.select_resume_for_campaign(uuid4(), _campaign())
-
+    assert result.selection_method == SelectionMethod.LATEST
+    assert result.selected_resume is latest
+    assert [e.resume for e in result.evaluated_resumes if e.is_selected] == [latest]
+    assert len(result.evaluated_resumes) == 3 and all(e.selection_score is None for e in result.evaluated_resumes)
+    assert candidate_scoring_service.method_calls == []                  # no v1 scoring
     resume_repo.compute_semantic_similarity.assert_not_called()
-    for entry in result.evaluated_resumes:
-        assert entry.semantic_score is None
-        assert entry.semantic_passed is None
-        # weight_semantic collapses to 0 -> selection_score == deterministic_score.
-        assert entry.selection_score == entry.deterministic_score
-    assert result.selected_resume is resume_b
-
-
-def test_resume_specific_semantic_mismatch_contributes_zero_not_a_failure():
-    """A per-resume embedding_model_version_id mismatch (compute_semantic_similarity
-    returns None for just this one resume) must not fail the whole comparison."""
-    resume_a = _resume()
-    resume_b = _resume()
-    resume_repo = MagicMock()
-    resume_repo.get_all_versions_by_candidate.return_value = [resume_a, resume_b]
-    _with_embedding_map(resume_repo, {resume_a.id: _embedding(), resume_b.id: _embedding()})
-    resume_repo.compute_semantic_similarity.side_effect = lambda resume_id, jd_id: (
-        None if resume_id == resume_a.id else 0.80
-    )
-
-    jd_repo = MagicMock()
-    jd_repo.get_by_id.return_value = _job_description()
-    jd_repo.get_embedding_by_jd_id.return_value = SimpleNamespace(id=uuid4())
-
-    candidate_scoring_service = MagicMock()
-    candidate_scoring_service.build_mandatory_skill_breakdown.return_value = {
-        "deterministic_score": 70.0, "mandatory_skills": [],
-    }
-    candidate_scoring_service._combine_deterministic_score.return_value = (70.0, True)
-
-    service = make_service(
-        resume_repo=resume_repo, jd_repo=jd_repo, candidate_scoring_service=candidate_scoring_service,
-    )
-
-    result = service.select_resume_for_campaign(uuid4(), _campaign())
-
-    entry_a = next(e for e in result.evaluated_resumes if e.resume is resume_a)
-    assert entry_a.semantic_score is None
-    assert entry_a.semantic_passed is None
-    # Same deterministic score but resume_b has a real semantic bonus -> resume_b wins.
-    assert result.selected_resume is resume_b
 
 
 def test_negative_similarity_is_clamped_to_zero():

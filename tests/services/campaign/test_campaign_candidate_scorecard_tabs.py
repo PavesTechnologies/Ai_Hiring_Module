@@ -12,6 +12,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSummaryResponse,
 )
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 """
 Candidate Scorecard tab endpoints - get_candidate_summary /
@@ -196,16 +197,15 @@ def test_deterministic_maps_full_breakdown_and_excludes_summary_fields():
 
 def test_deterministic_reuses_rejection_banner_for_failure_reason():
     """
-    Confirms get_candidate_deterministic threads the SAME rejection_reason
-    the full scorecard endpoint uses into deterministic_score_breakdown -
-    not a second/independent lookup.
+    The deterministic tab's failure reason is the breakdown's own failed v2 check (retire v1, phase C),
+    not the stored decision text.
     """
-    breakdown = {
+    breakdown = with_v2_checks({
         "deterministic_score": 40.0, "deterministic_passed": False, "deterministic_threshold": 70.0,
-        "mandatory_coverage_pct": 50.0, "preferred_skills": [],
+        "preferred_skills": [],
         "mandatory_skills": [{"canonical_skill_id": str(uuid4()), "canonical_name": "Python",
                               "mandatory": True, "match_type": "MISSING"}],
-    }
+    })
     candidate = _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED, score_breakdown=breakdown)
     # The rejection is recorded on the candidate by the deterministic layer.
     candidate.decision_type = DecisionType.REJECTED
@@ -219,8 +219,9 @@ def test_deterministic_reuses_rejection_banner_for_failure_reason():
 
     result = service.get_candidate_deterministic(candidate.id)
 
-    assert result.deterministic_score_breakdown.summary.failure_reason == "Missing required skills: Python."
-    assert result.deterministic_score_breakdown.summary.failure_reasons == ["Missing required skills: Python."]
+    summary = result.deterministic_score_breakdown.summary
+    assert summary.failure_reasons == [summary.failure_reason]
+    assert summary.failure_reason.startswith("Core skills:") and "Python" in summary.failure_reason
 
 
 def test_full_scorecard_endpoint_still_returns_the_complete_aggregate_response():

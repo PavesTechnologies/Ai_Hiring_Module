@@ -21,7 +21,11 @@ def _fallback_hold():
             "needs_review": True, "needs_review_reason": "Awaiting full scoring (daily LLM call cap reached): ...",
             "near_miss_outcome": "HOLD", "near_misses": ["1 core skill not confirmed without the LLM (Python)"],
             "near_miss_reject_reasons": [], "scoring_mode": "no_llm", "awaiting_full_scoring": True,
-            "fallback_reason": "daily LLM call cap reached"}
+            "fallback_reason": "daily LLM call cap reached",
+            "mandatory_skills": [{"canonical_name": "Python", "importance": "core", "match_type": "EXACT",
+                                  "counts_for_core_gate": False, "confirmation_status": "UNCERTAIN"}],
+            "checks": [{"check": "Core skills", "passed": False, "applies": True, "detail": "1 of 1 unconfirmed"}],
+            "core_skill_count": 1, "core_confirmed_count": 0}
 
 
 class _Retry(Exception):

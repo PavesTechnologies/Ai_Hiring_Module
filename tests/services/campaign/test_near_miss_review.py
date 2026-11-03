@@ -186,10 +186,9 @@ def test_v1_failed_education_rejects_a_near_miss():
 def test_v2_review_flags_are_carried_when_v2_decides():
     import app.tasks.deterministic_scoring_tasks as task
     cc = SimpleNamespace(deterministic_breakdown=None, deterministic_score=None, deterministic_passed=None)
-    task._act_on_v2(cc, {"deterministic_score": 20.0, "deterministic_passed": False, "mandatory_skills": []},
-                    {"deterministic_score": 42.0, "deterministic_passed": True, "needs_review": True,
-                     "needs_review_reason": "Needs recruiter review: x", "near_misses": ["x"],
-                     "near_miss_outcome": OUTCOME_HOLD, "near_miss_reject_reasons": []})
+    task.store_v2_decision(cc, {"deterministic_score": 42.0, "deterministic_passed": True, "needs_review": True,
+                                "needs_review_reason": "Needs recruiter review: x", "near_misses": ["x"],
+                                "near_miss_outcome": OUTCOME_HOLD, "near_miss_reject_reasons": []})
     assert cc.deterministic_passed is True and needs_recruiter_review(cc) is True
 
 

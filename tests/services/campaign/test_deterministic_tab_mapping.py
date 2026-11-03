@@ -13,9 +13,13 @@ from a later layer.
 
 
 def _skill(name, importance, missing):
+    # v2's entry shape (retire v1, phase C)
     return {
         "canonical_name": name, "canonical_skill_id": name, "importance": importance,
-        "match_type": "MISSING" if missing else "EXACT", "configured_weight": 1.0, "skill_contribution": 0.0 if missing else 1.0,
+        "match_type": "MISSING" if missing else "EXACT", "configured_weight": 1.0, "effective_weight": 1.0,
+        "contribution": 0.0 if missing else 1.0, "recognition": 0.0 if missing else 1.0,
+        "matched_skill_name": None if missing else name, "counts_for_core_gate": not missing,
+        "confirmation_status": "NOT_FOUND" if missing else "CONFIRMED",
     }
 
 
@@ -26,11 +30,18 @@ def _breakdown(**overrides):
             _skill("Risk Management", "supporting", True),
         ],
         "preferred_skills": [],
-        "gate_skill_scope": "CORE", "core_gap_passed": True, "missing_core_skill_count": 1,
-        "max_missing_core_skills": 3, "max_missing_core_pct": 25.0, "allowed_missing_core_skills": 0,
-        "coverage_passed": True, "required_skill_coverage_threshold": 0.0, "core_coverage_pct": 50.0,
-        "mandatory_coverage_pct": 33.3, "deterministic_score": 21.0, "deterministic_threshold": 40.0,
-        "score_threshold_rejects": False, "technical_score": 0.0, "deterministic_passed": False,
+        "scoring_version": "v2", "scoring_mode": "llm", "outcome": "REJECT",
+        "core_skill_count": 2, "core_confirmed_count": 1, "missing_core_skill_count": 1,
+        "configured_allowed_missing_core_skills": 3, "allowed_missing_core_skills": 0, "core_coverage_pct": 50.0,
+        "deterministic_score": 21.0, "deterministic_threshold": 40.0, "score_threshold_rejects": False,
+        "skill_score": 0.0, "functional_score": 54.0, "deterministic_passed": False,
+        "checks": [
+            {"check": "Core skills", "passed": True, "applies": True, "detail": "1 of 2 core skills confirmed"},
+            {"check": "Experience", "passed": False, "applies": True, "detail": "8.6 years; minimum 10.0 required."},
+            {"check": "Education", "passed": True, "applies": False},
+        ],
+        "components": [{"name": "skills", "score": 0.0, "weight": 0.7}, {"name": "functional", "score": 54.0,
+                                                                         "weight": 0.3}],
         "experience_validation": {"applicable": True, "skipped": False, "data_missing": False, "passed": False,
                                   "score": 86.0, "candidate_years": 8.6, "min_years": 10.0, "effective_min_years": 10.0},
         "education_validation": {"applicable": False, "skipped": True, "data_missing": False, "passed": True,
@@ -67,7 +78,8 @@ def test_parts_left_out_of_the_final_score_are_flagged():
 def test_failure_reasons_are_rebuilt_from_the_breakdown_not_the_stored_text():
     summary = _build(_breakdown()).summary
 
-    assert summary.failure_reasons == ["Insufficient experience: 8.6 years provided, minimum 10 years required (gap: 1.4 years)."]
+    # v2's own failed check, never the stored (possibly stale, or later-layer) text
+    assert summary.failure_reasons == ["Experience: 8.6 years; minimum 10.0 required."]
 
 
 def test_a_deterministic_pass_shows_no_failure_reason_even_if_a_later_layer_rejected():
@@ -91,5 +103,6 @@ def test_core_counts_and_rule_are_exposed():
     response = _build(_breakdown())
 
     assert (response.summary.core_skills_matched, response.summary.core_skills_total) == (1, 2)
-    assert (response.configuration.max_missing_core_pct, response.configuration.max_missing_core_skills,
-            response.configuration.allowed_missing_core_skills) == (25.0, 3, 0)
+    assert (response.configuration.max_missing_core_skills, response.configuration.allowed_missing_core_skills) == (3, 0)
+    assert (response.configuration.skills_weight, response.configuration.functional_weight) == (0.7, 0.3)
+    assert [c.check for c in response.summary.decision_checks] == ["Core skills", "Experience", "Education"]

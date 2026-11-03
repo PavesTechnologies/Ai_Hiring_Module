@@ -196,19 +196,20 @@ def test_v2_runs_only_on_opted_in_campaigns():
 
 def test_v2_failure_returns_none_and_never_raises(monkeypatch):
     import app.tasks.deterministic_scoring_tasks as task
-    monkeypatch.setattr(task, "v2_should_run", lambda *a: True)
     monkeypatch.setattr(task, "ScoringV2Service", MagicMock(side_effect=RuntimeError("boom")))
     assert task._run_scoring_v2(MagicMock(), MagicMock(), MagicMock(), SimpleNamespace(), SimpleNamespace(id=uuid4()),
                                 None, None, None, None, None, acted_on=False) is None
 
 
-def test_acting_on_v2_keeps_v1_numbers_beside_it():
+def test_v2s_decision_is_stored_as_v2s_own_breakdown():
+    """Retire v1, phase C: no v1 wrapper - the candidate holds v2's breakdown, score and pass flag."""
     import app.tasks.deterministic_scoring_tasks as task
     cc = SimpleNamespace(deterministic_breakdown=None, deterministic_score=None, deterministic_passed=None)
-    acted = task._act_on_v2(cc, {"deterministic_score": 22.5, "deterministic_passed": True, "mandatory_skills": []},
-                            {"deterministic_score": 41.8, "deterministic_passed": False})
+    v2 = {"deterministic_score": 41.8, "deterministic_passed": False, "outcome": "REJECT", "mandatory_skills": []}
+    stored = task.store_v2_decision(cc, v2)
     assert (cc.deterministic_score, cc.deterministic_passed) == (41.8, False)
-    assert (acted["v1_deterministic_score"], acted["v1_deterministic_passed"], acted["acted_on_version"]) == (22.5, True, "v2")
+    assert cc.deterministic_breakdown == stored == v2 and stored is not v2
+    assert "v2" not in stored and "acted_on_version" not in stored
 
 
 @pytest.mark.parametrize("passed", [True, False])
@@ -230,9 +231,7 @@ def test_uncertain_core_is_supporting_at_0_8_and_flags_review():
     assert result["outcome"] == "REVIEW" and result["would_be_review"] is True
 
 
-def test_v2_decides_only_on_enabled_campaigns():
-    from app.tasks.deterministic_scoring_tasks import _v2_decides
-    assert _v2_decides(SimpleNamespace(scoring_v2_enabled=True, scoring_v2_shadow=True)) is True
-    assert _v2_decides(SimpleNamespace(scoring_v2_enabled=False, scoring_v2_shadow=True)) is False   # shadow only
-    assert _v2_decides(SimpleNamespace()) is False
-    assert _v2_decides(MagicMock()) is False             # a truthy mock never opts a campaign in
+def test_v1_no_longer_decides_anything():
+    import app.tasks.deterministic_scoring_tasks as task
+    assert not hasattr(task, "_v2_decides") and not hasattr(task, "_record_v1_result")
+    assert not hasattr(task, "CandidateScoringService")

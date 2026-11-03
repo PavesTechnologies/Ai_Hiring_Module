@@ -18,15 +18,17 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 
 def _make_rejection(mandatory_skills=None, experience_validation=None, education_validation=None):
-    # decision_details snapshot, as campaign_repo.get_deterministic_rejection_details returns it.
-    return {
+    # decision_details snapshot, as campaign_repo.get_deterministic_rejection_details returns it
+    # (v2's shape since retire v1, phase C).
+    return with_v2_checks({
         "mandatory_skills": mandatory_skills or [],
         "experience_validation": experience_validation,
         "education_validation": education_validation,
-    }
+    }, passed=False)
 
 
 def test_breakdown_classification_matches_export_top_rejection_reason_for_the_same_campaign():

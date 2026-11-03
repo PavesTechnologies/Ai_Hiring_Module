@@ -18,7 +18,7 @@ Checks (PASS / FAIL, report at /data/storage/e2e_phase2_report.json):
   P3  the core unknown skill is mapped (top-3 suggestions offered), the supporting one left
       unresolved; calibration succeeds; the campaign is created
   P4  candidate K (text has the supporting skill) scored: provisional credit 0.8 of its tier
-      weight, flagged provisional, outside every gate - v1 and v2 (shadow)
+      weight, flagged provisional, outside every gate - v2, the stored decision (v1 retired, phase C)
   P5  resolving the supporting skill marks K "score out of date" and saves a calibration version
   P6  scoring used the calibrated minimum experience; the JD's extraction is unchanged
   P7  no email: no SES client created; the worker logged none (checked by e2e.ps1)
@@ -141,7 +141,7 @@ def run() -> None:
                  f"{core_unknown['map_to']} tier {mapped_row and mapped_row['tier']}; still pending {pending}; "
                  f"calibrate HTTP {calibrated.status_code}; create HTTP {created.status_code}")
 
-    # P4 - K scored with provisional credit for the supporting skill (v1 + v2 shadow)
+    # P4 - K scored with provisional credit for the supporting skill (v2 decides; v1 no longer runs)
     campaign_id = uuid.UUID(campaign_id)
     shadow = client.post(f"/campaigns/{campaign_id}/scoring-v2-shadow", json={"enabled": True}, headers=hr)
     info = manifest["K"]
@@ -168,25 +168,23 @@ def run() -> None:
             CandidateScoringResult.campaign_candidate_id == cc.id, CandidateScoringResult.scoring_version == "v2")
             .order_by(CandidateScoringResult.created_at.desc())).scalars().first()
 
-    cc = wait_for(k_cc, "K's v1 score in the Phase 2 campaign")
-    v2 = wait_for(k_v2, "K's v2 (shadow) score")
-    v1 = cc.deterministic_breakdown
-    v1_prov = next((p for p in v1.get("provisional_skills") or [] if p["canonical_name"] == supporting_unknown["raw_text"]), {})
+    cc = wait_for(k_cc, "K's score in the Phase 2 campaign")
+    v2 = wait_for(k_v2, "K's v2 result")
+    stored = cc.deterministic_breakdown                 # v2's own breakdown since phase C
     v2_prov = next((p for p in v2.breakdown.get("provisional_skills") or []
                     if p["canonical_name"] == supporting_unknown["raw_text"]), {})
-    v1_ratio = (v1_prov.get("skill_contribution") or 0) / v1_prov["effective_jd_weight"] if v1_prov.get("effective_jd_weight") else 0
-    v1_names = {e["canonical_name"] for e in v1["mandatory_skills"]}
+    stored_prov = next((p for p in stored.get("provisional_skills") or []
+                        if p["canonical_name"] == supporting_unknown["raw_text"]), {})
     v2_names = {e["canonical_name"] for e in v2.breakdown["mandatory_skills"]}
     db.expire_all()
     jd_core = sum(1 for s in calibration()["skills"] if s["tier"] == "CORE")
     report.check(4, "K gets provisional credit 0.8 for the supporting skill, flagged provisional, outside every gate",
-                 shadow.status_code == 200
-                 and v1_prov.get("provisional") is True and v1_prov.get("match_type") == "PROVISIONAL_TEXT"
-                 and abs(v1_ratio - PROVISIONAL_CREDIT) < 1e-6 and supporting_unknown["raw_text"] not in v1_names
+                 shadow.status_code == 200 and v2.acted_on is True
+                 and stored.get("scoring_version") == "v2" and "v2" not in stored and stored_prov == v2_prov
                  and v2_prov.get("provisional") is True and v2_prov.get("quality") == PROVISIONAL_CREDIT
                  and v2_prov.get("counts_for_core_gate") is False and supporting_unknown["raw_text"] not in v2_names
                  and v2.breakdown["core_skill_count"] == jd_core,
-                 f"v1 {v1_prov.get('match_type')} {v1_prov.get('skill_contribution')}/{v1_prov.get('effective_jd_weight')}; "
+                 f"stored breakdown {stored.get('scoring_version')} (acted on {v2.acted_on}); "
                  f"v2 {v2_prov.get('match_type')} quality {v2_prov.get('quality')}, gate {v2_prov.get('counts_for_core_gate')}; "
                  f"v2 core count {v2.breakdown['core_skill_count']} = JD core {jd_core}")
 
@@ -209,7 +207,7 @@ def run() -> None:
     # P6 - calibrated minimum used; extraction unchanged
     db.expire_all()
     jd_after = db.get(JobDescription, jd.id)
-    experience = v1.get("experience_validation") or {}
+    experience = stored.get("experience_validation") or {}
     v2_min = (v2.breakdown.get("checks") and next((c for c in v2.breakdown["checks"] if c["check"] == "Experience"), {})) or {}
     calibrated_min = float(phase2["calibrated_min_experience_years"])
     report.check(6, "scoring used the calibrated minimum; the extraction is unchanged",
@@ -217,7 +215,7 @@ def run() -> None:
                  and jd_after.extracted_json == extraction_before
                  and (float(jd_after.min_experience_years) if jd_after.min_experience_years is not None else None) == min_before
                  and float(jd_after.calibrated_min_experience_years) == calibrated_min,
-                 f"v1 min_years {experience.get('min_years')}; v2 '{v2_min.get('detail')}'; extraction unchanged "
+                 f"stored min_years {experience.get('min_years')}; v2 '{v2_min.get('detail')}'; extraction unchanged "
                  f"{jd_after.extracted_json == extraction_before}; column {jd_after.min_experience_years} (was {min_before})")
 
     # P7 - no SES client in this process (the boto3 guard would have raised)

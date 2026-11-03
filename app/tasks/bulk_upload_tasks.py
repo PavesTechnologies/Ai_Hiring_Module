@@ -564,9 +564,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             lambda: pipeline._run_pii_redaction(context),
             attempt_number=attempt_number,
         )
-        # Scoring v2: reuse a cached extraction of identical input only on
-        # a campaign that has v2 switched on.
-        context.parse_cache_enabled = getattr(campaign, "scoring_v2_enabled", False) is True
+        # Reuse a cached extraction of identical input - always on, since scoring v2
+        # decides every campaign (retire v1, phase C).
+        context.parse_cache_enabled = True
         stage_tracker.run_stage(
             task_id, DocumentType.RESUME, ProcessingStage.AI_EXTRACTION,
             lambda: pipeline._run_ai_extraction(context),

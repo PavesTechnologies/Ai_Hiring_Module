@@ -311,6 +311,12 @@ class DeterministicScoreSummary(BaseModel):
     # Same underlying value as screened_at above (kept for backward
     # compatibility) under the name this contract asks for.
     screening_completed_at: datetime | None = None
+    # v2 (retire v1, phase C): PASS / REVIEW / REJECT, how it was scored (llm / no_llm), the
+    # fallback's marker, and the review reason when the candidate is held for review.
+    outcome: str | None = None
+    scoring_mode: str | None = None
+    awaiting_full_scoring: bool = False
+    needs_review_reason: str | None = None
 
 
 class MissingMandatorySkillItem(BaseModel):
@@ -343,8 +349,11 @@ class MandatorySkillBreakdownItem(BaseModel):
     # passed, to preserve it unchanged for existing consumers.
     matched: bool | None = None
     match_reason: str | None = None
-    # (contribution / configured_weight) x 100 - null if weight is missing/zero.
+    # (contribution / effective weight) x 100 - null if the weight is missing/zero.
     contribution_percentage: float | None = None
+    # v2: a core skill's confirmation (CONFIRMED / UNCERTAIN / REJECTED / ...) and whether it counted.
+    confirmation_status: str | None = None
+    counts_for_core_gate: bool | None = None
 
 
 class PreferredSkillBreakdownItem(BaseModel):

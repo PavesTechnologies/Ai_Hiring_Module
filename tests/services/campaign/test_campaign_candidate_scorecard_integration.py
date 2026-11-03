@@ -25,6 +25,7 @@ import openpyxl
 from app.enums.constants import ActionType, EntityType
 from app.models.pipeline import DecisionSource, DecisionType, PipelineStage
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
+from tests.v2_breakdowns import with_v2_checks
 
 
 def _drain_streaming_response_body(response) -> bytes:
@@ -49,7 +50,8 @@ def _make_campaign_candidate(pipeline_stage=PipelineStage.REJECTED, score_breakd
         resume_id=uuid4(),
         pipeline_stage=pipeline_stage,
         # Model fields since the decision_* redesign (98d721e).
-        deterministic_breakdown=score_breakdown or {},
+        # v2's stored shape (retire v1, phase C): the checks and core-gate credit filled in.
+        deterministic_breakdown=with_v2_checks(score_breakdown, passed=False) if score_breakdown else {},
         semantic_breakdown=None, semantic_passed=None, previous_stage=None,
         decision_type=None, decision_source=None, decision_reason=None, decision_details=None,
         decision_by_user_id=None, decision_at=None,

@@ -9,10 +9,6 @@ from app.models.async_tasks import TaskStatus
 from app.models.campaigns import CampaignStatus
 from app.models.candidates import ParseStatus
 from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
-from app.services.campaign.candidate_scoring_service import (
-    CandidateScoringService,
-    MandatorySkillMatchType,
-)
 
 TASKS_MODULE = "app.tasks.deterministic_scoring_tasks"
 
@@ -52,6 +48,40 @@ def _skill_entry(canonical_skill_id, match_type, canonical_name=None):
         "confidence": 1.0 if match_type == "EXACT" else None,
         "contribution": 50.0 if match_type == "EXACT" else 0.0,
     }
+
+
+def v2_result(breakdown, experience_result=None, education_result=None) -> dict:
+    """A test's breakdown in v2's shape, decided as v2 decides it (checks, outcome, core gate)."""
+    b = dict(breakdown or {})
+    skills = [dict(e, importance=e.get("importance") or "core",
+                   counts_for_core_gate=e.get("match_type") != "MISSING",
+                   confirmation_status="CONFIRMED" if e.get("match_type") != "MISSING" else "NOT_FOUND")
+              for e in b.get("mandatory_skills") or []]
+    missing = [e["canonical_name"] or e["canonical_skill_id"] for e in skills if not e["counts_for_core_gate"]]
+    experience = experience_result or {}
+    education = education_result or {}
+    checks = [
+        {"check": "Core skills", "passed": not missing, "applies": bool(skills),
+         "detail": f"missing: {', '.join(missing)}" if missing else "all confirmed"},
+        {"check": "Experience", "passed": experience.get("passed", True) is not False,
+         "applies": bool(experience.get("applicable")), "detail": "experience"},
+        {"check": "Education", "passed": education.get("passed", True) is not False,
+         "applies": bool(education.get("applicable")), "detail": "education"},
+    ]
+    passed = bool(b.get("deterministic_passed"))
+    return {**b, "mandatory_skills": skills, "checks": checks,
+            "failed_checks": [c["check"] for c in checks if not c["passed"]],
+            "outcome": "PASS" if passed else "REJECT", "deterministic_passed": passed,
+            "core_skill_count": len(skills), "core_confirmed_count": len(skills) - len(missing),
+            "missing_core_skill_count": len(missing), "scoring_mode": "llm",
+            "experience_validation": experience_result, "education_validation": education_result}
+
+
+def _v2_call(h) -> dict:
+    """What the task passed to v2 scoring, by name."""
+    names = ("db", "skill_repo", "config_repo", "campaign", "campaign_candidate", "job_description", "resume",
+             "experience_result", "education_result", "domain_result")
+    return {**dict(zip(names, h.run_scoring_v2.call_args.args)), **h.run_scoring_v2.call_args.kwargs}
 
 
 class _Harness:
@@ -98,7 +128,10 @@ class _Harness:
         self.enqueue_semantic_scoring_mock = MagicMock()
 
     def __enter__(self):
-        scoring_service_patch = patch(f"{TASKS_MODULE}.CandidateScoringService", return_value=self.scoring_service_instance)
+        # Retire v1, phase C: the task scores with v2 only. A test still describes the result as
+        # a breakdown (scoring_service_instance.calculate_and_store_score_breakdown.return_value,
+        # the old v1 stub); v2_result() turns it into the v2 breakdown _run_scoring_v2 returns.
+        self.run_scoring_v2 = MagicMock(side_effect=self._v2)
         self._patches = [
             patch(f"{TASKS_MODULE}.SessionLocal", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.CampaignCandidateRepository", return_value=self.campaign_candidate_repo),
@@ -106,13 +139,12 @@ class _Harness:
             patch(f"{TASKS_MODULE}.ResumeRepository", return_value=self.resume_repo),
             patch(f"{TASKS_MODULE}.JDRepository", return_value=self.jd_repo),
             patch(f"{TASKS_MODULE}.SkillRepository", return_value=MagicMock()),
-            patch(f"{TASKS_MODULE}.SkillOntologyRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.ConfigRepository", return_value=self.config_repo),
             patch(f"{TASKS_MODULE}.AllowedTransitionRepository", return_value=self.allowed_transition_repo),
             patch(f"{TASKS_MODULE}.AuditRepository", return_value=MagicMock()),
             patch(f"{TASKS_MODULE}.CeleryTaskLogRepository", return_value=self.task_log_repo),
             patch(f"{TASKS_MODULE}.AuditService", return_value=self.audit_service_instance),
-            scoring_service_patch,
+            patch(f"{TASKS_MODULE}._run_scoring_v2", self.run_scoring_v2),
             # System rejections must never email: watch the real email entry
             # points wherever they'd be called from.
             patch(
@@ -126,22 +158,16 @@ class _Harness:
                 self.enqueue_semantic_scoring_mock,
             ),
         ]
-        mocked_scoring_service_class = None
         for p in self._patches:
-            started = p.start()
-            if p is scoring_service_patch:
-                mocked_scoring_service_class = started
-
-        # The patched CandidateScoringService class mock must still expose
-        # the real build_rejection_reason staticmethod (M07-E03 S01 T02) -
-        # it's a pure formatting function these task-level tests exercise
-        # for real, unlike calculate_and_store_score_breakdown (which stays
-        # mocked via scoring_service_instance). Referenced by the specific
-        # patch object, not list position, so adding later patches can
-        # never silently break this again.
-        mocked_scoring_service_class.build_rejection_reason = CandidateScoringService.build_rejection_reason
-
+            p.start()
         return self
+
+    def _v2(self, db, skill_repo, config_repo, campaign, campaign_candidate, job_description, resume,
+            experience_result, education_result, domain_result, *, acted_on, llm_fallback):
+        stub = self.scoring_service_instance.calculate_and_store_score_breakdown
+        if stub.side_effect is not None:
+            stub()                              # a test's exception, raised where scoring runs
+        return v2_result(stub.return_value, experience_result, education_result)
 
     def __exit__(self, *exc):
         for p in self._patches:
@@ -292,7 +318,7 @@ def test_scores_normally_when_transition_to_screening_succeeds_from_uploaded():
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
         assert cc.pipeline_stage == PipelineStage.SCREENING
-        h.scoring_service_instance.calculate_and_store_score_breakdown.assert_called_once()
+        h.run_scoring_v2.assert_called_once()
 
 
 def test_skips_gracefully_when_campaign_candidate_no_longer_exists():
@@ -348,10 +374,10 @@ def test_creates_rejection_when_mandatory_skill_missing():
         # StageTransitionService.transition_to_rejected - no separate rejection table.
         assert cc.decision_type == DecisionType.REJECTED
         assert cc.decision_source == DecisionSource.DETERMINISTIC
-        assert cc.decision_reason == "Missing required skills: Kubernetes."
+        assert cc.decision_reason == "Core skills: missing: Kubernetes"        # v2's reason
         # T01: rejection_detail is the complete score_breakdown snapshot,
         # not a curated per-branch subset.
-        assert cc.decision_details == breakdown
+        assert cc.decision_details == cc.deterministic_breakdown and cc.decision_details["scoring_mode"] == "llm"
 
         h.audit_service_instance.log.assert_called_once()
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
@@ -400,11 +426,11 @@ def test_rejection_transitions_pipeline_stage_to_rejected():
             transition_source=TransitionSource.SYSTEM,
             # The history snapshot is the breakdown plus the decision it led to.
             scores_snapshot={
-                **breakdown,
+                **cc.deterministic_breakdown,
                 "decision_type": DecisionType.REJECTED.value,
                 "decision_source": DecisionSource.DETERMINISTIC.value,
                 "decision_reason": cc.decision_reason,
-                "decision_details": breakdown,
+                "decision_details": cc.deterministic_breakdown,
             },
         )
 
@@ -493,48 +519,13 @@ def test_creates_rejection_when_score_below_threshold_with_no_missing_skills():
         # StageTransitionService.transition_to_rejected - no separate rejection table.
         assert cc.decision_type == DecisionType.REJECTED
         assert cc.decision_source == DecisionSource.DETERMINISTIC
-        assert cc.decision_reason == "Deterministic score below threshold."
-        assert cc.decision_details == breakdown
+        assert cc.decision_reason == "Did not meet the deterministic requirements."   # v2, no failed check
+        assert cc.decision_details == cc.deterministic_breakdown and cc.decision_details["scoring_mode"] == "llm"
 
         audit_kwargs = h.audit_service_instance.log.call_args.kwargs
         assert audit_kwargs["details"]["missing"] == 0
         assert audit_kwargs["details"]["deterministic_passed"] is False
         assert "score_breakdown" not in audit_kwargs["details"]       # it quotes the resume; stored on the candidate
-
-
-def test_creates_no_verified_skills_rejection_distinct_from_missing_skills():
-    """
-    S04-T01: zero verified candidate skills gets its own specific rejection
-    reason ("No verifiable skills extracted from resume.") even though every
-    mandatory skill also comes back MISSING in this scenario - it must NOT
-    be reported as the generic "Missing mandatory skills" reason, and must
-    be distinguishable from a resume parse failure (which never reaches
-    this task at all - that raises ValueError earlier).
-    """
-    from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task
-
-    with _Harness() as h:
-        campaign = _make_campaign()
-        cc = _make_campaign_candidate(campaign.id, uuid4())
-        h.campaign_candidate_repo.get_by_id.return_value = cc
-        h.campaign_repo.get_by_id.return_value = campaign
-        h.resume_repo.get_by_id.return_value = _make_resume()
-
-        breakdown = _breakdown(
-            [_skill_entry(uuid4(), "MISSING"), _skill_entry(uuid4(), "MISSING")],
-            coverage_pct=0.0, passed=False, deterministic_score=0.0,
-            no_verified_skills=True,
-        )
-        h.scoring_service_instance.calculate_and_store_score_breakdown.return_value = breakdown
-
-        calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
-
-        # The rejection is recorded on the candidate (decision_* fields) by
-        # StageTransitionService.transition_to_rejected - no separate rejection table.
-        assert cc.decision_type == DecisionType.REJECTED
-        assert cc.decision_source == DecisionSource.DETERMINISTIC
-        assert cc.decision_reason == "No verifiable skills extracted from resume."
-        assert cc.decision_details == breakdown
 
 
 def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
@@ -563,10 +554,8 @@ def test_creates_experience_rejection_when_skills_pass_but_experience_fails():
         # StageTransitionService.transition_to_rejected - no separate rejection table.
         assert cc.decision_type == DecisionType.REJECTED
         assert cc.decision_source == DecisionSource.DETERMINISTIC
-        assert cc.decision_reason == (
-            "Insufficient experience: 2 years provided, minimum 5 years required (gap: 3 years)."
-        )
-        assert cc.decision_details == breakdown
+        assert cc.decision_reason.startswith("Experience:")                    # v2's failed check
+        assert cc.decision_details == cc.deterministic_breakdown and cc.decision_details["scoring_mode"] == "llm"
 
 
 def test_handles_decimal_min_experience_years_without_crashing():
@@ -597,7 +586,7 @@ def test_handles_decimal_min_experience_years_without_crashing():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        call_kwargs = h.scoring_service_instance.calculate_and_store_score_breakdown.call_args.kwargs
+        call_kwargs = _v2_call(h)
         assert call_kwargs["experience_result"]["passed"] is True
         h.task_log_repo.commit.assert_called()
 
@@ -627,13 +616,11 @@ def test_creates_education_rejection_when_skills_and_experience_pass_but_educati
         # StageTransitionService.transition_to_rejected - no separate rejection table.
         assert cc.decision_type == DecisionType.REJECTED
         assert cc.decision_source == DecisionSource.DETERMINISTIC
-        assert cc.decision_reason == (
-            "Education requirement not met: Master's required, Bachelor's found."
-        )
-        assert cc.decision_details == breakdown
+        assert cc.decision_reason.startswith("Education:")                     # v2's failed check
+        assert cc.decision_details == cc.deterministic_breakdown and cc.decision_details["scoring_mode"] == "llm"
 
 
-def test_experience_education_wiring_is_passed_through_to_scoring_service():
+def test_experience_education_wiring_is_passed_through_to_v2_scoring():
     """
     Verifies the task actually threads its own experience_result/
     education_result/score_weights into calculate_and_store_score_breakdown,
@@ -654,11 +641,10 @@ def test_experience_education_wiring_is_passed_through_to_scoring_service():
 
         calculate_deterministic_score_task(campaign_candidate_id=str(cc.id))
 
-        call_kwargs = h.scoring_service_instance.calculate_and_store_score_breakdown.call_args.kwargs
+        call_kwargs = _v2_call(h)
         assert call_kwargs["experience_result"]["passed"] is True
         assert call_kwargs["experience_result"]["candidate_years"] == 6.0
         assert call_kwargs["education_result"]["skipped"] is True
-        assert call_kwargs["score_weights"] == {"skills": 0.70, "experience": 0.15, "education": 0.15, "functional": 0.15}
 
 
 def test_no_rejection_when_nothing_missing():
