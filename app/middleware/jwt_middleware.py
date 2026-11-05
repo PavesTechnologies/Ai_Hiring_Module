@@ -109,7 +109,6 @@ class JWTMiddleware(BaseHTTPMiddleware):
 
         token = auth.removeprefix("Bearer ")
         try:
-            print("token received in middleware", token[:10])
             request.state.token_payload = decode_token(token)
         except ValueError as exc:
             logger.warning("JWT rejected | path=%s | reason=%s", request.url.path, exc)

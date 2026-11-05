@@ -12,7 +12,6 @@ from app.repositories.embedding_model_version_repository import EmbeddingModelVe
 from app.api.routes import candidate_actions_routes
 from app.api.routes import export_routes
 from app.api.routes import dashboard_routes
-from app.api.routes import test_routes
 from app.api.routes.jd_routes import router
 from app.api.routes import jd_calibration_routes
 from app.api.routes import education_field_routes
@@ -161,7 +160,6 @@ def custom_openapi():
 
 app.openapi = custom_openapi  # type: ignore[method-assign]
 
-app.include_router(test_routes.router)
 
 
 @app.on_event("startup")
