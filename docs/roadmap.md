@@ -171,6 +171,12 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
 
 ### Fresh database procedure
 
+0. **New key material, never dev's.** Generate fresh values and store them only in the production secret store (never in a file in the image, a ticket or chat):
+   - the three encryption keys, one Fernet key each, `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`:
+     `ENCRYPTION_KEY_CANDIDATE_PII_V1`, `ENCRYPTION_KEY_AI_PROVIDER_V1`, `ENCRYPTION_KEY_OAUTH_TOKEN_V1`;
+   - the two signing keys, `python -c "import secrets; print(secrets.token_urlsafe(48))"`: `OAUTH_STATE_SIGNING_KEY`, `FEEDBACK_TOKEN_SIGNING_KEY`.
+
+   The key seeds below create only the alias rows; the material comes from these variables. Dev's keys sit on developer machines, so reusing one would encrypt production candidate data, provider keys and OAuth tokens with a key outside production's control. Back the encryption keys up with the database backups: losing one makes its data unreadable.
 1. `alembic upgrade head`
 2. The base seeds:
    - `seed_system_organization` (the organisation every campaign and JD is created under; without it the first campaign fails);
