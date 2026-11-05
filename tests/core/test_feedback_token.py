@@ -70,3 +70,21 @@ def test_two_interviewers_on_the_same_round_get_distinct_tokens():
     assert token_a != token_b
     assert feedback_token.verify_feedback_token(token_a) == (interview_schedule_id, interviewer_a)
     assert feedback_token.verify_feedback_token(token_b) == (interview_schedule_id, interviewer_b)
+
+
+@pytest.mark.parametrize("empty", ["", "   "])
+def test_an_empty_signing_key_refuses_to_sign(monkeypatch, empty):
+    monkeypatch.setattr(settings, "feedback_token_signing_key", empty)
+    with pytest.raises(RuntimeError, match="FEEDBACK_TOKEN_SIGNING_KEY is not set"):
+        feedback_token.sign_feedback_token(uuid4(), uuid4())
+
+
+def test_an_empty_signing_key_refuses_a_token_forged_with_an_empty_key(monkeypatch):
+    monkeypatch.setattr(settings, "feedback_token_signing_key", "")
+    import base64, hashlib, hmac, json
+    payload = base64.urlsafe_b64encode(json.dumps({
+        "interview_schedule_id": str(uuid4()), "interviewer_id": str(uuid4()),
+        "issued_at": int(time.time())}).encode()).decode().rstrip("=")
+    signature = base64.urlsafe_b64encode(hmac.new(b"", payload.encode(), hashlib.sha256).digest()).decode().rstrip("=")
+    with pytest.raises(RuntimeError):
+        feedback_token.verify_feedback_token(f"{payload}.{signature}")

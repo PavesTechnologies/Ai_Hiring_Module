@@ -82,3 +82,20 @@ def test_same_user_different_provider_still_verifies_correctly_for_each():
         oauth_state.verify_state(microsoft_state, "GOOGLE")
     with pytest.raises(ValueError):
         oauth_state.verify_state(google_state, "MICROSOFT")
+
+
+@pytest.mark.parametrize("empty", ["", "   "])
+def test_an_empty_signing_key_refuses_to_sign(monkeypatch, empty):
+    monkeypatch.setattr(settings, "oauth_state_signing_key", empty)
+    with pytest.raises(RuntimeError, match="OAUTH_STATE_SIGNING_KEY is not set"):
+        oauth_state.sign_state("user-1", "MICROSOFT")
+
+
+def test_an_empty_signing_key_refuses_a_state_forged_with_an_empty_key(monkeypatch):
+    monkeypatch.setattr(settings, "oauth_state_signing_key", "")
+    import base64, hashlib, hmac, json
+    payload = base64.urlsafe_b64encode(json.dumps({
+        "user_id": "attacker", "provider": "MICROSOFT", "issued_at": int(time.time())}).encode()).decode().rstrip("=")
+    signature = base64.urlsafe_b64encode(hmac.new(b"", payload.encode(), hashlib.sha256).digest()).decode().rstrip("=")
+    with pytest.raises(RuntimeError):
+        oauth_state.verify_state(f"{payload}.{signature}", "MICROSOFT")
