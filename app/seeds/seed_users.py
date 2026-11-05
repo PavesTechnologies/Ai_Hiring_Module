@@ -3,6 +3,10 @@ import uuid
 from app.db.session import SessionLocal
 from app.models.identity import Organization, User, UserRole
 
+from app.seeds.seed_data_guard import refuse_unless_seed_data_allowed
+
+refuse_unless_seed_data_allowed("seed_users")
+
 db = SessionLocal()
 
 try:

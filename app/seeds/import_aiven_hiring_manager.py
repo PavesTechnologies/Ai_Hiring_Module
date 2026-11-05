@@ -17,6 +17,10 @@ from datetime import datetime, timezone
 from app.db.session import SessionLocal
 from app.models.identity import User, UserRole
 
+from app.seeds.seed_data_guard import refuse_unless_seed_data_allowed
+
+refuse_unless_seed_data_allowed("import_aiven_hiring_manager")
+
 db = SessionLocal()
 
 try:

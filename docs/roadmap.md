@@ -183,7 +183,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
    - `seed_platform_config`, `seed_prompt_templates`, `seed_allowed_transitions`, `seed_email_templates`, `seed_skill_ontology_stopgap`, `seed_scoring_v2`;
    - the encryption-key seeds.
 
-   Don't run the test-data seeds (`seed_m12_test_campaign`, `seed_users`, `import_aiven_hiring_manager`).
+   Don't run the test-data seeds (`seed_m12_test_campaign`, `seed_users`, `import_aiven_hiring_manager`). They refuse to run without `ALLOW_TEST_SEEDS=1`, and always when `APP_ENV` is production; set `APP_ENV=production` in the production deployment.
 3. `python -m app.seeds.seed_product_config --dry-run`, check its report, then run it without `--dry-run`.
 4. `python scripts/generate_missing_skill_embeddings.py`. Embeddings are never seeded.
 5. Enter the AI provider credentials and model assignments in the app. They're never exported from dev.

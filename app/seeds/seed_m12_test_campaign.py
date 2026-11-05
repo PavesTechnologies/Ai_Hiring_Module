@@ -172,6 +172,10 @@ def _campaign_candidate_idempotency_key(campaign_id, candidate_id, resume_id) ->
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+from app.seeds.seed_data_guard import refuse_unless_seed_data_allowed
+
+refuse_unless_seed_data_allowed("seed_m12_test_campaign")
+
 db = SessionLocal()
 
 try:
