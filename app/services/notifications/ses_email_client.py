@@ -13,8 +13,10 @@ LOG_ONLY_PREFIX = "log-only-"
 
 
 def email_delivery_is_log() -> bool:
-    """EMAIL_DELIVERY=log: emails are rendered and logged, never sent."""
-    return (settings.email_delivery or "ses").lower() == "log"
+    """EMAIL_DELIVERY=log: emails are rendered and logged, never sent.
+
+    Only an explicit "ses" sends; any other value is treated as log-only."""
+    return (settings.email_delivery or "").strip().lower() != "ses"
 
 
 class SESEmailClient:
@@ -33,6 +35,10 @@ class SESEmailClient:
 
     def _get_client(self):
         if self._client is None:
+            if email_delivery_is_log() or not (settings.ses_from_email or "").strip():
+                # ValueError: classified permanent, so it dead-letters instead of retrying.
+                reason = ValueError("SES client refused: EMAIL_DELIVERY is not 'ses' or SES_FROM_EMAIL is unset")
+                raise EmailDeliveryException(str(reason), reason)
             self._client = boto3.client(
                 "ses",
                 aws_access_key_id=settings.aws_access_key_id,

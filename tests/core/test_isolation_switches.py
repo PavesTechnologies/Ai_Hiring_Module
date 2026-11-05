@@ -36,3 +36,60 @@ def test_log_delivery_never_creates_an_ses_client(monkeypatch):
     monkeypatch.setattr(settings, "email_delivery", "log")
     with patch("boto3.client", side_effect=AssertionError("SES client created")):
         assert SESEmailClient().send_email(to_address="a@example.invalid", subject="s", body_text="b").startswith("log-only-")
+
+
+def test_email_delivery_defaults_to_log():
+    from app.core.config import Settings
+    assert Settings.model_fields["email_delivery"].default == "log"
+
+
+@pytest.mark.parametrize("value, mode", [("log", "log"), (" LOG ", "log"), ("", "log"), (None, "log"), ("Ses", "ses")])
+def test_email_delivery_is_trimmed_and_lower_cased(value, mode):
+    from app.core.config import Settings
+    assert Settings(email_delivery=value, ses_from_email="hr@example.invalid").email_delivery == mode
+
+
+@pytest.mark.parametrize("value", ["logs", "LOG_ONLY", "smtp", "true"])
+def test_a_misspelt_email_delivery_is_refused_at_startup(value):
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError, match="EMAIL_DELIVERY must be 'log' or 'ses'"):
+        Settings(email_delivery=value)
+
+
+def test_ses_delivery_without_a_sender_is_refused_at_startup():
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError, match="needs SES_FROM_EMAIL"):
+        Settings(email_delivery="ses", ses_from_email=" ")
+
+
+def _client_settings(**values):
+    from types import SimpleNamespace
+    base = dict(email_delivery="log", ses_from_email="hr@example.invalid",
+                aws_access_key_id="", aws_secret_access_key="", aws_region="ap-south-1")
+    return patch("app.services.notifications.ses_email_client.settings", SimpleNamespace(**{**base, **values}))
+
+
+@pytest.mark.parametrize("value", ["", "logs", "SES ", None])
+def test_only_an_exact_ses_value_counts_as_sending(value):
+    from app.services.notifications.ses_email_client import email_delivery_is_log
+    with _client_settings(email_delivery=value):
+        assert email_delivery_is_log() is (value != "SES ")
+
+
+def test_the_ses_client_is_refused_outside_ses_mode():
+    from app.exceptions.email_exception import EmailDeliveryException
+    from app.services.notifications.ses_email_client import SESEmailClient
+    with _client_settings(email_delivery="log"), patch("boto3.client", side_effect=AssertionError("SES client created")):
+        with pytest.raises(EmailDeliveryException) as raised:
+            SESEmailClient()._get_client()
+    assert isinstance(raised.value.original, ValueError)
+
+
+def test_the_ses_client_is_refused_without_a_sender():
+    from app.exceptions.email_exception import EmailDeliveryException
+    from app.services.notifications.ses_email_client import SESEmailClient
+    with _client_settings(email_delivery="ses", ses_from_email=""),             patch("boto3.client", side_effect=AssertionError("SES client created")):
+        with pytest.raises(EmailDeliveryException):
+            SESEmailClient()._get_client()

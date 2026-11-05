@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -86,9 +86,10 @@ class Settings(BaseSettings):
     # AWS SES (M07-E03 S02 T02) — reuses the same AWS credentials/region
     # above; only the verified sender address is SES-specific.
     ses_from_email: str = ""
-    # "ses" (default) sends through AWS SES; "log" only logs each email and
-    # never creates an SES client - for isolated local stacks (docker/e2e).
-    email_delivery: str = "ses"
+    # "log" (default) only logs each email and never creates an SES client;
+    # "ses" sends through AWS SES and needs SES_FROM_EMAIL. Anything else is
+    # refused at startup, so a missing or misspelt value can never send.
+    email_delivery: str = "log"
     # "supabase" (default) or "local" - files under local_storage_dir, for
     # isolated local stacks that must never touch the real bucket.
     storage_backend: str = "supabase"
@@ -205,6 +206,20 @@ class Settings(BaseSettings):
 
         cleaned = (str(origin).strip().strip('"').strip("'") for origin in origins)
         return ",".join(origin for origin in cleaned if origin)
+
+    @field_validator("email_delivery", mode="before")
+    @classmethod
+    def parse_email_delivery(cls, value: str | None) -> str:
+        mode = (value or "log").strip().lower()
+        if mode not in {"log", "ses"}:
+            raise ValueError(f"EMAIL_DELIVERY must be 'log' or 'ses', not {value!r}")
+        return mode
+
+    @model_validator(mode="after")
+    def ses_needs_a_sender(self) -> "Settings":
+        if self.email_delivery == "ses" and not self.ses_from_email.strip():
+            raise ValueError("EMAIL_DELIVERY=ses needs SES_FROM_EMAIL")
+        return self
 
     @field_validator("debug", mode="before")
     @classmethod

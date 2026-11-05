@@ -285,7 +285,8 @@ _lifecycle_log = logging.getLogger("airs.worker")
 def _log_worker_started(**_):
     # A restart with no "stopping" line before it means the process was
     # killed (e.g. watchmedo after a .py change), not that it exited itself.
-    _lifecycle_log.warning("AIRS worker started | pid=%s parent=%s", os.getpid(), os.getppid())
+    _lifecycle_log.warning("AIRS worker started | pid=%s parent=%s email_delivery=%s",
+                           os.getpid(), os.getppid(), settings.email_delivery)
 
 
 @signals.worker_shutting_down.connect
