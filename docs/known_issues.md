@@ -5,21 +5,13 @@ not fixed in the change that discovered or re-encountered them. Each entry
 should stay short: what's wrong, where it's been seen, and what the standing
 workaround is until someone actually fixes it.
 
+Open entries first; closed ones are kept below, under **Closed**, for the record. Every entry was checked against the code on 2026-11-05.
+
 ## Cleanup list: unused schema and settings
 
 Nothing reads these; they cost nothing today. Remove them in a small cleanup change (a migration each, with approval), not as part of feature work.
 
 - `hiring_campaigns.report_scheduled` (boolean, default false): in the schema since the initial migration; nothing in the backend or the airs frontend reads or writes it (checked 2026-11-03, retire v1 phase E).
-
-## A stated career break is parsed as a job (found 2026-10-30)
-
-**Status:** fixed 2026-11-02 in experience counting: `is_career_break` (career break, family care, sabbatical, parental / maternity / paternity leave, caregiving - in the entry's title or company) excludes the entry from experience, and the fairness report counts its months as a gap. The parse still returns it as an entry. Golden pair GAP-S2 (silent gap against stated parental leave) checks it.
-
-The golden set's counterfactual pairs (CF-GAP-S7-2, CF-GAP-D1-2) add the line "Career break (family care) · May 2021 – Jun 2022". The resume parse returns it as a `work_experience` entry: in D1 the company is "family care", in S7 there's no company. Those months can then count as work experience, so a candidate who states a break could get more experience than one who leaves the same gap unexplained.
-
-Seen in one parse each. The golden runner shows whether it changes an outcome.
-
-**To do:** decide how a stated break should be parsed (excluded from experience, kept as a gap) and handle it in the parse prompt or the experience calculation.
 
 ## A resume parse can vary between runs (found 2026-10-30)
 
@@ -60,8 +52,6 @@ No other skill differed. Changing only the name changes which of these three ski
 
 With the name visible the effect holds when time can't explain it (GitHub Actions: p 0.006 for Khan, 0.05 for Krishnan after correction). With it hidden the four match. The earlier 10-parse runs took each resume's parses in one block, so a change over time could have looked like a name effect; the interleaved run rules that out. GitHub Actions is still kept only about 4 times in 10 for everyone - ordinary run-to-run variation, now the same for every name.
 
----
-
 ## A maximum experience shouldn't reject: it acts as an age filter (found 2026-10-26)
 
 **Status:** open - no rule rejects on it today; one indirect path to close.
@@ -73,30 +63,6 @@ Checked on the senior JD:
 - **A maximum stated in the JD text itself** ("5-8 years") is extracted into `extracted_json.experience.max_experience_years`. From there it reaches the JD embedding text ("Experience: 5-8 years") and the JD data the AI evaluator is given. No AI-evaluation prompt mentions a maximum, but the model can still treat being over it as a gap and lower its score. That's the indirect path.
 
 **Rule:** a maximum must never reject or mark down a candidate, because more years correlates with age. **To do:** make the form's maximum optional (nullable), and leave the maximum out of the AI evaluator's JD data and the embedding text, or tell the evaluator explicitly to ignore it.
-
----
-
-## Editing a calibrated JD's details drops its calibration (found 2026-10-26)
-
-**Status:** fixed 2026-10-26. A new JD version now carries the previous calibration forward as a draft (`job_descriptions.calibration_draft_from`, `app/services/jd/jd_calibration_carry.py`):
-
-- **Details edit:** the JD skills and unknown-skill links are copied as they were, along with the template, role domain, tolerance, internship credit and education requirement. The calibrated minimum is carried only while the JD's own minimum is unchanged.
-- **New text or file:** skills still on the JD keep their tier, required flag and sense. Their requirement text is refilled from the new wording.
-
-The new version stays `NOT_CALIBRATED`. Calibration shows "carried from vN" and lists the skills the new text dropped, and HR re-confirms with one save. Still open: a degree or field edit still creates a version; it could live in calibration instead.
-
-The original report:
-
-`JDService.update_jd` handles a metadata-only edit (title, jurisdiction, experience, education degree or field) by creating a **new JD version** and deactivating the old one. The new version carries the text, extraction and required-skills JSON. It does **not** carry:
-
-- the JD skills (`jd_skills`);
-- the calibration (status `NOT_CALIBRATED`, no version);
-- the profile template, role domain, experience tolerance or internship credit;
-- the education requirement, which falls back to Mandatory.
-
-So setting the degree on a calibrated JD leaves an uncalibrated JD with no skills. A campaign can't use it until it's calibrated from scratch. Seen when setting the senior JD's education: version 2 had to be re-calibrated skill by skill.
-
-**To do:** a metadata edit should carry the JD skills and the calibration forward, or put the new version through calibration with the old settings pre-filled. A degree/field edit could also live in calibration itself, so it doesn't create a version at all.
 
 ## Worker and task logs contain candidate names and emails; production logs must not (found 2026-10-23)
 
@@ -136,9 +102,142 @@ confirmation, dry runs); retries inside the provider SDK on one request are not 
 Dev should use only synthetic data. The six real candidates in "AI transformation lead Sep" are not to be
 re-scored in dev.
 
+## Frontend: unknown-skill and skill detail pages are routed with role "General" (found 2026-10-12)
+
+**Status:** open - documented only; `App.jsx` (outside the airs folder) is not changed.
+
+In the frontend's `src/App.jsx`, `/ai-screening/skill-ontology/:skillId` and
+`/ai-screening/skill-ontology/unknown/:unknownSkillId` use
+`<ProtectedRoute roles={["General"]}>` rather than an HR_ADMIN role. Any signed-in
+user can open the pages. The backend still enforces HR_ADMIN on every unknown-skill
+action (map, approve, delete, suggestions), so nothing can be changed - but the
+pages and their read-only data are visible to all roles.
+
+**Fix, when the route owner agrees:** use the same HR_ADMIN route role as the other
+skill-curation pages.
+
+## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
+
+**Status:** open - documented only, no code change.
+
+`CampaignCandidateService.export_rejected_candidates` exports candidates
+currently at `pipeline_stage = REJECTED`, and `_to_export_row` fills
+"HR Override" with `decision_type == RESET` and "Override Reason" with
+`decision_reason` when it is a RESET. Since the decision_* redesign (98d721e)
+an HR override *is* the RESET decision, and `StageTransitionService.
+apply_hr_override` moves the candidate from REJECTED to SCREENING at the same
+time. So a candidate in this export never has a RESET as its current decision:
+the columns are always `False` / empty. (A candidate overridden and later
+rejected again also shows no override - the newer REJECTED decision replaced
+the RESET.)
+
+**If it matters later:** take the override from stage history (a REJECTED ->
+SCREENING row with a RESET snapshot) or from `get_override_report`, or drop
+the two columns. Tests: `tests/services/campaign/test_campaign_candidate_
+scorecard_service.py::test_export_rejected_candidates_writes_rows_and_logs_audit`
+asserts today's behaviour.
+
+## Epic 5: `MAX_EMAIL_RETRY_COUNT` (seeded, value 4) vs. the actual hardcoded retry cap (3)
+
+**Status:** open, discovered 2026-08-18 during Epic 5 Step 0's investigation.
+Real, minor inconsistency — not fixed as part of Step 2.
+
+`seed_platform_config.py` seeds `MAX_EMAIL_RETRY_COUNT = "4"`, described as
+"Max attempts for a transient interview/notification email send failure
+before dead-lettering." Nothing in the codebase actually reads this config
+key — `app/tasks/email_tasks.py`'s `send_candidate_email_task` uses its own
+hardcoded `_EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, ...)` instead,
+unrelated to the seeded value. Confirmed via a repo-wide grep for
+`MAX_EMAIL_RETRY_COUNT` — the seed row is the only reference anywhere.
+
+Practical impact is small: email sends really do cap at 3 attempts before
+dead-lettering, not 4, and nothing currently depends on the seeded value
+being authoritative. Worth fixing eventually (either read the config value
+into `_EMAIL_RETRY_POLICY.max_attempts` at task start, or delete the unused
+seed row so it stops implying a behavior that isn't real), but out of scope
+for Epic 5 Step 2's recipient-model widening.
+
+## Epic 5: real, built infrastructure with zero current callers - not bugs, deliberately forward-scoped
+
+**Status:** informational, not a defect. Naming the pattern explicitly
+because it's now happened twice with the same shape, and whoever picks up
+the feature each of these is actually waiting on should know the
+groundwork already exists rather than re-discovering or re-building it.
+
+- **`SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES`** (seeded platform
+  config, M12) - describes batching `SHORTLISTED` notifications into a
+  digest. No `SHORTLISTED` trigger event exists in `EmailTriggerEvent`,
+  and no digest/batching mechanism exists anywhere in this codebase.
+  Waiting on: whatever eventually decides shortlist notifications should
+  exist at all, and in digest form specifically.
+- **`user_notification_preferences`** (table + `is_notification_enabled()`
+  helper + minimal `GET`/`PUT /users/me/notification-preferences` API,
+  Epic 5 Step 3) - fully built and tested, but nothing calls
+  `is_notification_enabled()` yet. Confirmed during Step 3's own
+  investigation: of the 6 real `EmailTriggerEvent` values, the 5 with a
+  live send path today (`CANDIDATE_REJECTED`, `INTERVIEW_SCHEDULED`/
+  `RESCHEDULED`/`CANCELLED`, `CANDIDATE_SELECTED`) all target a candidate
+  or an external interviewer - neither has a `users.id` row to hold a
+  preference against. `UPLOAD_PERMANENTLY_FAILED` is the one trigger
+  event actually scoped for internal users (the uploader + all active
+  HR_ADMIN), but it has zero send path of its own (see the
+  `UPLOAD_PERMANENTLY_FAILED`-precedent comment in `app/models/email.py`
+  - that's D11, still unbuilt). Waiting on: D11 (or any other future
+  internal-user-facing trigger). Whoever builds that should know this
+  table and helper are already sitting there ready, not something to
+  design from scratch.
+
+Both were deliberately NOT forced into a fake integration just to prove
+they're wired - an honest "built, not yet consumed" beats a contrived
+caller that would need undoing later. If a third instance of this same
+shape turns up, it's worth asking whether trigger-event infrastructure is
+systematically being scoped ahead of the features that will use it, or
+whether that's simply an accurate reflection of this epic's own staged
+build order.
+
 ---
 
+# Closed
+
+## A stated career break is parsed as a job (found 2026-10-30)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
+
+**Status:** fixed 2026-11-02 in experience counting: `is_career_break` (career break, family care, sabbatical, parental / maternity / paternity leave, caregiving - in the entry's title or company) excludes the entry from experience, and the fairness report counts its months as a gap. The parse still returns it as an entry. Golden pair GAP-S2 (silent gap against stated parental leave) checks it.
+
+The golden set's counterfactual pairs (CF-GAP-S7-2, CF-GAP-D1-2) add the line "Career break (family care) · May 2021 – Jun 2022". The resume parse returns it as a `work_experience` entry: in D1 the company is "family care", in S7 there's no company. Those months can then count as work experience, so a candidate who states a break could get more experience than one who leaves the same gap unexplained.
+
+Seen in one parse each. The golden runner shows whether it changes an outcome.
+
+**To do:** decide how a stated break should be parsed (excluded from experience, kept as a gap) and handle it in the parse prompt or the experience calculation.
+
+## Editing a calibrated JD's details drops its calibration (found 2026-10-26)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
+
+**Status:** fixed 2026-10-26. A new JD version now carries the previous calibration forward as a draft (`job_descriptions.calibration_draft_from`, `app/services/jd/jd_calibration_carry.py`):
+
+- **Details edit:** the JD skills and unknown-skill links are copied as they were, along with the template, role domain, tolerance, internship credit and education requirement. The calibrated minimum is carried only while the JD's own minimum is unchanged.
+- **New text or file:** skills still on the JD keep their tier, required flag and sense. Their requirement text is refilled from the new wording.
+
+The new version stays `NOT_CALIBRATED`. Calibration shows "carried from vN" and lists the skills the new text dropped, and HR re-confirms with one save. Still open: a degree or field edit still creates a version; it could live in calibration instead.
+
+The original report:
+
+`JDService.update_jd` handles a metadata-only edit (title, jurisdiction, experience, education degree or field) by creating a **new JD version** and deactivating the old one. The new version carries the text, extraction and required-skills JSON. It does **not** carry:
+
+- the JD skills (`jd_skills`);
+- the calibration (status `NOT_CALIBRATED`, no version);
+- the profile template, role domain, experience tolerance or internship credit;
+- the education requirement, which falls back to Mandatory.
+
+So setting the degree on a calibrated JD leaves an uncalibrated JD with no skills. A campaign can't use it until it's calibrated from scratch. Seen when setting the senior JD's education: version 2 had to be re-calibrated skill by skill.
+
+**To do:** a metadata edit should carry the JD skills and the calibration forward, or put the new version through calibration with the old settings pre-filled. A degree/field edit could also live in calibration itself, so it doesn't create a version at all.
+
 ## Five campaign-candidate actions never commit their audit entry (found 2026-10-15)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** fixed 2026-10-15 (branch `fix-audit-commit-paths`). The removal now writes `CANDIDATE_REMOVED` before
 its single commit (same transaction as the delete); the four exports commit right after logging. Tests over HTTP
@@ -172,9 +271,9 @@ unrelated later commit. In the dev DB: `CANDIDATE_REMOVED` has a single row ever
 Workaround (before the fix): none - `campaign_candidates` was the only record that a removal happened, and these
 exports left no record at all.
 
----
-
 ## Bulk upload: a new resume for a candidate already in the campaign becomes their active version, but the campaign keeps the old one (found 2026-10-14)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** fixed 2026-10-23 (branch `feat/duplicate-resume-decisions`, migration `d6f8a0c2e4b7`). After
 identity extraction and before any Resume version is created or deactivated, a file whose candidate is already
@@ -201,9 +300,9 @@ Workaround: don't bulk-upload a changed resume for a candidate already in the ca
 campaign-candidate link and single-upload the file, or use `POST /campaign-candidates/{id}/update-resume`
 where the stage allows a reset to UPLOADED (there is no REJECTED -> UPLOADED transition).
 
----
-
 ## `DELETE /campaign-candidates/{id}` has no role restriction (found 2026-10-14)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** fixed 2026-10-23 (branch `fix/delete-candidate-role`). The route now requires HR_ADMIN or RECRUITER,
 and the service lets a RECRUITER remove a candidate only from a campaign whose `recruiter_id` is theirs (403
@@ -220,6 +319,8 @@ Seen in: planning the Phase 3 D3/D5 resume replacement (code reading).
 Workaround: none in the API; rely on the UI not offering the action to other roles.
 
 ## Upload "use existing" (duplicate file) never adds the candidate to the campaign (found 2026-10-08)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved 2026-10-08 in f94e6ed - both paths now commit the campaign
 candidate before answering 201 (audited + logged), and a "use existing" candidate
@@ -246,48 +347,9 @@ and queues its deterministic scoring. Fix: commit after
 `create_campaign_candidate` on both paths and queue scoring for the
 "use existing" candidate.
 
----
-
-## Frontend: unknown-skill and skill detail pages are routed with role "General" (found 2026-10-12)
-
-**Status:** open - documented only; `App.jsx` (outside the airs folder) is not changed.
-
-In the frontend's `src/App.jsx`, `/ai-screening/skill-ontology/:skillId` and
-`/ai-screening/skill-ontology/unknown/:unknownSkillId` use
-`<ProtectedRoute roles={["General"]}>` rather than an HR_ADMIN role. Any signed-in
-user can open the pages. The backend still enforces HR_ADMIN on every unknown-skill
-action (map, approve, delete, suggestions), so nothing can be changed - but the
-pages and their read-only data are visible to all roles.
-
-**Fix, when the route owner agrees:** use the same HR_ADMIN route role as the other
-skill-curation pages.
-
----
-
-## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
-
-**Status:** open - documented only, no code change.
-
-`CampaignCandidateService.export_rejected_candidates` exports candidates
-currently at `pipeline_stage = REJECTED`, and `_to_export_row` fills
-"HR Override" with `decision_type == RESET` and "Override Reason" with
-`decision_reason` when it is a RESET. Since the decision_* redesign (98d721e)
-an HR override *is* the RESET decision, and `StageTransitionService.
-apply_hr_override` moves the candidate from REJECTED to SCREENING at the same
-time. So a candidate in this export never has a RESET as its current decision:
-the columns are always `False` / empty. (A candidate overridden and later
-rejected again also shows no override - the newer REJECTED decision replaced
-the RESET.)
-
-**If it matters later:** take the override from stage history (a REJECTED ->
-SCREENING row with a RESET snapshot) or from `get_override_report`, or drop
-the two columns. Tests: `tests/services/campaign/test_campaign_candidate_
-scorecard_service.py::test_export_rejected_candidates_writes_rows_and_logs_audit`
-asserts today's behaviour.
-
----
-
 ## Skill matching (v1): fuzzy tier matches "IT governance" to AI Governance (found 2026-10-01)
+
+**Closed 2026-11-05:** v1 scoring and its fuzzy matching were removed (retire v1, phase E, 111f1d5); scoring v2 never matched it (its match blocklist).
 
 **Status:** open - v1 deliberately unchanged; blocked in scoring v2 only.
 
@@ -307,9 +369,9 @@ skills also need LLM confirmation. v1 still counts the match until its
 fuzzy tier is fixed (e.g. exclude pairs whose differing tokens are 2-letter
 acronyms).
 
----
-
 ## M12: 2 pre-Epic-4 candidates at INTERVIEW with no `interview_schedules` row (backfilled 2026-08-17)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved. One-time backfill, not evidence of an ongoing gap.
 
@@ -362,9 +424,9 @@ this entry's backfill and root-cause description for the original 2
 candidates are still accurate, only the "not an ongoing gap" conclusion
 was overclaimed.
 
----
-
 ## M12: the INTERVIEW-entry hook was missing from 2 of 3 real pipeline-stage-writing paths (fixed 2026-08-17)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved. Confirmed via full codebase sweep - all 3 real
 `pipeline_stage` writers now carry the hook; no others exist.
@@ -450,9 +512,9 @@ assumed - if a fourth writer is ever added, it needs this same hook
 wired in as part of that change, not discovered later via another live
 409.
 
----
-
 ## Test suite: widespread staleness from the `decision_*` model redesign
+
+**Closed 2026-11-05:** the suite is fully green (3252 passed, 2026-11-05); the stale tests were fixed or removed along the way.
 
 **Status:** open, discovered 2026-08-10, not fixed. Scope is large enough that
 it needs its own pass, not a fold-in to whatever change happens to trip over it.
@@ -491,9 +553,9 @@ rather than patching files one at a time as they happen to get touched by
 unrelated work (that's how the E02 test fixes ended up being only 3 of the
 ~15+ stale fixtures that actually exist).
 
----
-
 ## Test suite: `campaign_candidate.ai_evaluation` missing from stale `SimpleNamespace` fixtures
+
+**Closed 2026-11-05:** the suite is fully green (3252 passed, 2026-11-05).
 
 **Status:** open, discovered 2026-08-14, not fixed. Separate entry from
 "Test suite: widespread staleness from the `decision_*` model redesign"
@@ -547,9 +609,9 @@ this up should run a full, unscoped `pytest --collect-only -q` first
 entry and the `decision_*` entry above were each discovered by a
 targeted run that didn't cover the other's files.
 
----
-
 ## Alembic: multiple unmerged migration heads
+
+**Closed 2026-11-05:** one head (`b4d6f8a0c2e5`, 69 revisions); dev is at it, and a fresh database runs the whole chain with `alembic upgrade head`.
 
 **Status:** open, pre-existing, recurring. Not fixed by any of the entries below.
 
@@ -700,9 +762,9 @@ but with a *different*, unrelated error — see the new entry below
 two: the `9a1c2f3e6b7d` collision above is fully resolved at the file
 level; `d3a86f21c9e4` is a fresh, separate, still-open incident.
 
----
-
 ## Alembic: `alembic_version` stamped at a phantom revision `d3a86f21c9e4` (2026-08-11)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved 2026-08-13. Discovered as a side effect of verifying
 the `9a1c2f3e6b7d` collision fix above (`alembic current` was expected to
@@ -769,9 +831,9 @@ warn about this id at all.
 also from PR #94) was hidden by this collision's noise and only became
 visible once it was resolved — see the next entry.
 
----
-
 ## Alembic: `c1f4a7b93e20` (M11 saved views/skill search) is a second unmerged head (2026-08-13)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved 2026-08-13. Surfaced only after deleting the
 superseded `d3a86f21c9e4` placeholder above — with two migrations both
@@ -828,9 +890,9 @@ Authored a real merge migration (`43535e9e3cf7`, `down_revision =
 were already applied). Confirmed clean afterward: `alembic heads`/
 `current` resolve to the single new head with no warnings.
 
----
-
 ## Alembic/schema: undocumented "scheduled exports / compliance" drift (2026-08-13)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** resolved (bookkeeping only — the feature itself is not built).
 Discovered while verifying the `c1f4a7b93e20` merge above was safe to
@@ -871,9 +933,9 @@ action types anywhere in this codebase. Whoever picks up the real
 "compliance / scheduled exports" work will be adding code against a
 schema that already exists, not authoring the schema itself.
 
----
-
 ## `StageTransitionService.transition_on_ai_success` has zero test coverage
+
+**Closed 2026-11-05:** covered - `tests/services/campaign/test_near_miss_review.py::test_capped_hold_records_the_given_decision_source` runs the real method (the HOLD path) and the e2e fallback driver goes through it on the stack (SHORTLIST).
 
 **Status:** open, discovered 2026-08-11, not fixed. Worth its own ticket —
 out of scope for E02.
@@ -907,71 +969,9 @@ production, with nothing catching a regression.
 `transition_to_screening`/`transition_on_ai_success` are all pre-existing
 and untouched by E02's changes.
 
----
-
-## Epic 5: `MAX_EMAIL_RETRY_COUNT` (seeded, value 4) vs. the actual hardcoded retry cap (3)
-
-**Status:** open, discovered 2026-08-18 during Epic 5 Step 0's investigation.
-Real, minor inconsistency — not fixed as part of Step 2.
-
-`seed_platform_config.py` seeds `MAX_EMAIL_RETRY_COUNT = "4"`, described as
-"Max attempts for a transient interview/notification email send failure
-before dead-lettering." Nothing in the codebase actually reads this config
-key — `app/tasks/email_tasks.py`'s `send_candidate_email_task` uses its own
-hardcoded `_EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, ...)` instead,
-unrelated to the seeded value. Confirmed via a repo-wide grep for
-`MAX_EMAIL_RETRY_COUNT` — the seed row is the only reference anywhere.
-
-Practical impact is small: email sends really do cap at 3 attempts before
-dead-lettering, not 4, and nothing currently depends on the seeded value
-being authoritative. Worth fixing eventually (either read the config value
-into `_EMAIL_RETRY_POLICY.max_attempts` at task start, or delete the unused
-seed row so it stops implying a behavior that isn't real), but out of scope
-for Epic 5 Step 2's recipient-model widening.
-
----
-
-## Epic 5: real, built infrastructure with zero current callers - not bugs, deliberately forward-scoped
-
-**Status:** informational, not a defect. Naming the pattern explicitly
-because it's now happened twice with the same shape, and whoever picks up
-the feature each of these is actually waiting on should know the
-groundwork already exists rather than re-discovering or re-building it.
-
-- **`SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES`** (seeded platform
-  config, M12) - describes batching `SHORTLISTED` notifications into a
-  digest. No `SHORTLISTED` trigger event exists in `EmailTriggerEvent`,
-  and no digest/batching mechanism exists anywhere in this codebase.
-  Waiting on: whatever eventually decides shortlist notifications should
-  exist at all, and in digest form specifically.
-- **`user_notification_preferences`** (table + `is_notification_enabled()`
-  helper + minimal `GET`/`PUT /users/me/notification-preferences` API,
-  Epic 5 Step 3) - fully built and tested, but nothing calls
-  `is_notification_enabled()` yet. Confirmed during Step 3's own
-  investigation: of the 6 real `EmailTriggerEvent` values, the 5 with a
-  live send path today (`CANDIDATE_REJECTED`, `INTERVIEW_SCHEDULED`/
-  `RESCHEDULED`/`CANCELLED`, `CANDIDATE_SELECTED`) all target a candidate
-  or an external interviewer - neither has a `users.id` row to hold a
-  preference against. `UPLOAD_PERMANENTLY_FAILED` is the one trigger
-  event actually scoped for internal users (the uploader + all active
-  HR_ADMIN), but it has zero send path of its own (see the
-  `UPLOAD_PERMANENTLY_FAILED`-precedent comment in `app/models/email.py`
-  - that's D11, still unbuilt). Waiting on: D11 (or any other future
-  internal-user-facing trigger). Whoever builds that should know this
-  table and helper are already sitting there ready, not something to
-  design from scratch.
-
-Both were deliberately NOT forced into a fake integration just to prove
-they're wired - an honest "built, not yet consumed" beats a contrived
-caller that would need undoing later. If a third instance of this same
-shape turns up, it's worth asking whether trigger-event infrastructure is
-systematically being scoped ahead of the features that will use it, or
-whether that's simply an accurate reflection of this epic's own staged
-build order.
-
----
-
 ## Interview scheduling: historical rows' real timezone is unrecoverable (fixed going forward 2026-08-24)
+
+**Closed:** the fix below was checked against the code on 2026-11-05 and its regression tests pass.
 
 **Status:** fixed for every schedule()/reschedule() call from this date
 forward; one residual gap in historical data that cannot be corrected by
