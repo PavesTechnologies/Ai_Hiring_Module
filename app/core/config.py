@@ -176,6 +176,9 @@ class Settings(BaseSettings):
 
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
+    # The `aud` UMS puts in AIRS tokens. Set: every token must carry it. Empty: `aud` isn't
+    # checked (logged as a warning at startup) - set it before production.
+    jwt_audience: str = ""
 
     # CORS — a single comma-separated string of explicit origins; credentials
     # require non-wildcard origins.

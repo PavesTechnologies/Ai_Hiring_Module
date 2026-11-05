@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from app.core.config import settings
 from app.middleware.jwks import get_issuer, get_jwks_key
 
 logger = logging.getLogger(__name__)
@@ -33,19 +34,27 @@ def decode_token(token: str) -> dict:
         raise ValueError("Authentication service unavailable") from exc
 
     issuer = get_issuer()
+    audience = settings.jwt_audience.strip()
     try:
+        # exp is required: a token without one would never expire.
         payload = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
             issuer=issuer or None,
-            options={"verify_aud": False, "verify_iss": bool(issuer)})
+            audience=audience or None,
+            options={"verify_aud": bool(audience), "require_aud": bool(audience), "verify_iss": bool(issuer),
+                     "verify_exp": True, "require_exp": True})
     except JWTError as exc:
         low = str(exc).lower()
         if "expired" in low:
             raise ValueError("Token has expired") from exc
         if "issuer" in low:
             raise ValueError("Token issuer is invalid") from exc
+        if "audience" in low or '"aud"' in low:
+            raise ValueError("Token audience is invalid") from exc
+        if "exp" in low:
+            raise ValueError("Token has no expiry") from exc
         raise ValueError("Token signature or claims are invalid") from exc
 
     return payload
