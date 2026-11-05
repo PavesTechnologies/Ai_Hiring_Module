@@ -47,16 +47,15 @@ from app.services.jd.jd_service import JDReprocessRequired, JDService
 from app.services.jd.jd_retry_service import JDRetryService
 from app.tasks.jd_processing_tasks import process_jd_document
 from app.schemas.response import APIResponse
-from app.models.identity import UserRole
+from app.models.identity import SYSTEM_ORG_ID, UserRole
 
 router = APIRouter(
     prefix="/job-descriptions",
     tags=["Job Descriptions"],
 )
 
-# Placeholder tenant until org resolution is wired into the JWT — same
-# stand-in constant used by campaign_routes.SYSTEM_ORG.
-SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
+# Placeholder tenant until org resolution is wired into the JWT (app.models.identity.SYSTEM_ORG_ID).
+SYSTEM_ORG = SYSTEM_ORG_ID
 
 
 def _queue_reprocess(

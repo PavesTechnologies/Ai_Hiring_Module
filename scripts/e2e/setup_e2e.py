@@ -29,7 +29,7 @@ USERS = {
 CAMPAIGNS = {"A": "[E2E] AI transformation lead", "B": "[E2E] AI transformation lead - shared resume"}
 JD_TITLE_PREFIX = "[E2E] "
 SEEDS = ("seed_encryption_key", "seed_encryption_key_ai_provider", "seed_encryption_key_oauth_token",
-         "seed_platform_config", "seed_allowed_transitions", "seed_prompt_templates")
+         "seed_platform_config", "seed_allowed_transitions", "seed_prompt_templates", "seed_system_organization")
 
 
 def assert_isolated() -> None:
@@ -143,8 +143,7 @@ def main() -> None:
     import app.models  # noqa: F401
     from app.core.config import settings
     from app.models.campaigns import HiringCampaign
-    from app.api.routes.campaign_routes import SYSTEM_ORG
-    from app.models.identity import Organization, User, UserRole
+    from app.models.identity import User, UserRole
     from app.models.jd.job_descriptions import JobDescription
     from app.models.prompt_template import PromptTemplate
     from app.models.skills import SkillOntology
@@ -154,10 +153,6 @@ def main() -> None:
     db = SessionLocal()
     try:
         EmbeddingModelVersionRepository(db).sync_active_from_settings(settings.embedding_model)
-        # POST /campaigns creates every campaign under this org (the live DB has it; an empty one doesn't).
-        if db.get(Organization, SYSTEM_ORG) is None:
-            db.add(Organization(id=SYSTEM_ORG, name="E2E system organisation"))
-            db.flush()
         for user_id, (email, role, name) in USERS.items():
             if db.get(User, user_id) is None:
                 db.add(User(id=user_id, email=email, role=UserRole[role], full_name=name,

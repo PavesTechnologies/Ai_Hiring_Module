@@ -173,6 +173,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
 
 1. `alembic upgrade head`
 2. The base seeds:
+   - `seed_system_organization` (the organisation every campaign and JD is created under; without it the first campaign fails);
    - `seed_platform_config`, `seed_prompt_templates`, `seed_allowed_transitions`, `seed_email_templates`, `seed_skill_ontology_stopgap`, `seed_scoring_v2`;
    - the encryption-key seeds.
 

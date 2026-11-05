@@ -16,6 +16,11 @@ class UserRole(enum.Enum):
     HIRING_MANAGER = "HIRING_MANAGER"
 
 
+# The one organisation every campaign and JD belongs to until org resolution is wired into the
+# JWT. app/seeds/seed_system_organization.py creates its row on a fresh database.
+SYSTEM_ORG_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 

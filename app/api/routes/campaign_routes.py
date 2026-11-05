@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Security, status
 
 from app.dependencies.campaign import get_campaign_service, get_upload_history_service
 from app.enums.constants import MAX_PAGE_SIZE
-from app.models.identity import UserRole
+from app.models.identity import SYSTEM_ORG_ID, UserRole
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -55,7 +55,7 @@ router = APIRouter(prefix="/campaigns",
     tags=["Campaigns"],
 )
 
-SYSTEM_ORG = UUID("11111111-1111-1111-1111-111111111111")
+SYSTEM_ORG = SYSTEM_ORG_ID
 
 
 @router.post("",
