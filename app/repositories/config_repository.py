@@ -77,6 +77,21 @@ class ConfigRepository:
 
         return {row.key: row.value for row in rows}
 
+    def update_description(self, key: str, description: str, updated_by: str | None) -> tuple[str | None, str] | None:
+        """
+        A setting's description (its value is untouched): (old, new), or None when the key doesn't exist.
+        The caller audits and commits.
+        """
+        row = self.db.execute(select(PlatformConfig).where(PlatformConfig.key == key)).scalar_one_or_none()
+        if row is None:
+            return None
+        old = row.description
+        row.description = description
+        row.updated_by = updated_by
+        row.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return old, description
+
     def commit(self) -> None:
         self.db.commit()
 

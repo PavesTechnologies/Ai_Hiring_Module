@@ -31,9 +31,6 @@ DEV_ADDED_SOURCES = {"manual entry", "HR_CALIBRATION"}
 # SCORING_V2_CONFIG: no longer read (retire v1, phase E) - the scoring seed creates the current scoring
 # version with today's configuration instead.
 EXCLUDED_SETTINGS = {"SCORING_V2_DAILY_LLM_CALL_CAP", "SCORING_V2_CONFIG"}
-# Descriptions that are stale in dev, not in the seed: the base seed's text is current (the HR override report
-# it described was retired 2026-11-02), so dev's older wording must not reach a fresh database.
-STALE_DEV_DESCRIPTIONS = {"OVERRIDE_RATE_ALERT_THRESHOLD"}
 # Renamed in dev; applied to a fresh database only while the old row is untouched.
 RENAMES = {"skill_ontology": {"REST API": "REST APIs"}}
 
@@ -138,13 +135,11 @@ def build(diff: dict, reviewed: str | None = None, reviewed_names: set[str] | No
             *rules_new.values()]
 
     settings = diff["platform_config"]
-    approved_settings, dropped, excluded, stale = {}, [], [], []
+    approved_settings, dropped, excluded = {}, [], []
     for key, fields in settings["change"].items():
         name = json.loads(key)[0]
         value = fields.get("value")
-        if name in STALE_DEV_DESCRIPTIONS and set(fields) == {"description"}:
-            stale.append(name)
-        elif name in EXCLUDED_SETTINGS:
+        if name in EXCLUDED_SETTINGS:
             excluded.append(name)
         elif value and _same_number(value["from"], value["to"]) and set(fields) == {"value"}:
             dropped.append(name)
@@ -154,7 +149,7 @@ def build(diff: dict, reviewed: str | None = None, reviewed_names: set[str] | No
         _section("platform_config", settings["keys"], settings["fields"], approved=True,
                  note=f"Scoring v2 and model-capability config and the default weights built in dev. Format-only "
                       f"edits dropped: {sorted(dropped)}. Never seeded: {sorted(excluded)} - set in production after "
-                      f"enabling billing." + (f" Stale dev descriptions not seeded: {sorted(stale)}." if stale else ""),
+                      f"enabling billing.",
                  add=settings["add"], change=approved_settings),
         _section("prompt_templates", diff["prompt_templates"]["keys"], diff["prompt_templates"]["fields"],
                  approved=True, note="Prompt template edits made in dev.",

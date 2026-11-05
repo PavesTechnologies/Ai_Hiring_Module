@@ -46,7 +46,7 @@ Last verified 2026-10-30 on a throwaway local database at migration head `a7c9e1
 - A fresh database matches dev except the 13 skills merged or dropped in dev, three format-only setting edits (`50.00` to `50`), the call cap and `DETERMINISTIC_SCORE_REJECTS`.
 - A second run changes nothing.
 
-Regenerated 2026-11-05 after the duplicate-alias cleanup (in dev, through the skill service): 34 catalogue skills lost a generic or duplicated alias, JUnit became JUnit 5's parent, and SNS / SQS were merged into AWS SNS / AWS SQS. Inactive catalogue skills (merged in dev) are no longer seeded, like dev-added ones, and `OVERRIDE_RATE_ALERT_THRESHOLD`'s stale dev description isn't either. On a fresh database: no duplicate aliases, a second run changes nothing, and the golden set (full and no-LLM) passes with 0 changes and 0 LLM calls.
+Regenerated 2026-11-05 after the duplicate-alias cleanup (in dev, through the skill service): 34 catalogue skills lost a generic or duplicated alias, JUnit became JUnit 5's parent, and SNS / SQS were merged into AWS SNS / AWS SQS. Inactive catalogue skills (merged in dev) are no longer seeded, like dev-added ones, and `OVERRIDE_RATE_ALERT_THRESHOLD`'s description in dev was brought up to the current wording, so it isn't a seed change. On a fresh database: no duplicate aliases, a second run changes nothing, and the golden set (full and no-LLM) passes with 0 changes and 0 LLM calls.
 
 ## 3. Senior test set - done (2026-10-30)
 
