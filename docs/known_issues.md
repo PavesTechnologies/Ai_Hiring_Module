@@ -5,6 +5,12 @@ not fixed in the change that discovered or re-encountered them. Each entry
 should stay short: what's wrong, where it's been seen, and what the standing
 workaround is until someone actually fixes it.
 
+## Cleanup list: unused schema and settings
+
+Nothing reads these; they cost nothing today. Remove them in a small cleanup change (a migration each, with approval), not as part of feature work.
+
+- `hiring_campaigns.report_scheduled` (boolean, default false): in the schema since the initial migration; nothing in the backend or the airs frontend reads or writes it (checked 2026-11-03, retire v1 phase E).
+
 ## A stated career break is parsed as a job (found 2026-10-30)
 
 **Status:** fixed 2026-11-02 in experience counting: `is_career_break` (career break, family care, sabbatical, parental / maternity / paternity leave, caregiving - in the entry's title or company) excludes the entry from experience, and the fairness report counts its months as a gap. The parse still returns it as an entry. Golden pair GAP-S2 (silent gap against stated parental leave) checks it.

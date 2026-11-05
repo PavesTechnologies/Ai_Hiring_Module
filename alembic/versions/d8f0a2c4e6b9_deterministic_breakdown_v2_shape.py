@@ -21,7 +21,11 @@ stored v1-shaped: v1's breakdown with v2's numbers copied over and v2's own brea
 - Stage-history snapshots, audit entries and candidate_scoring_results are not touched (history).
 
 Every replaced breakdown is kept first in campaign_candidate_breakdown_backup (new table), which the
-downgrade restores. A fresh (production) database has no such rows: the update affects 0 rows there.
+downgrade restores.
+
+Irreversible since b4d6f8a0c2e5 dropped the backup table (approved 2026-11-03): downgrade stops.
+
+A fresh (production) database has no such rows: the update affects 0 rows there.
 Dev, 2026-11-02: 34 rows (all 34 campaign candidates; each one's nested v2 breakdown equals its latest
 acted-on v2 result row - score and outcome).
 """
@@ -59,8 +63,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("""
-        UPDATE campaign_candidates cc SET deterministic_breakdown = b.deterministic_breakdown
-        FROM campaign_candidate_breakdown_backup b WHERE b.campaign_candidate_id = cc.id
-    """)
-    op.drop_table("campaign_candidate_breakdown_backup")
+    # It restored the v1-shaped breakdowns from campaign_candidate_breakdown_backup, which migration
+    # b4d6f8a0c2e5 dropped (approved 2026-11-03, end of retire v1 phase E).
+    raise RuntimeError("d8f0a2c4e6b9 is irreversible: backup table dropped "
+                       "(campaign_candidate_breakdown_backup, by b4d6f8a0c2e5) - the v1-shaped breakdowns are gone.")
