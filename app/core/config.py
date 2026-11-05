@@ -176,9 +176,10 @@ class Settings(BaseSettings):
 
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
-    # The `aud` UMS puts in AIRS tokens. Set: every token must carry it. Empty: `aud` isn't
-    # checked (logged as a warning at startup) - set it before production.
-    jwt_audience: str = ""
+    # The `iss` every token must carry, exactly - UMS sets no `aud`, so the issuer is what ties a
+    # token to our UMS. Required when APP_ENV is production. Empty elsewhere: the issuer from
+    # UMS's discovery document is used instead.
+    jwt_issuer: str = ""
 
     # CORS — a single comma-separated string of explicit origins; credentials
     # require non-wildcard origins.
@@ -217,6 +218,12 @@ class Settings(BaseSettings):
         if mode not in {"log", "ses"}:
             raise ValueError(f"EMAIL_DELIVERY must be 'log' or 'ses', not {value!r}")
         return mode
+
+    @model_validator(mode="after")
+    def production_needs_a_jwt_issuer(self) -> "Settings":
+        if self.app_env.strip().lower() in {"production", "prod"} and not self.jwt_issuer.strip():
+            raise ValueError("APP_ENV=production needs JWT_ISSUER (the production UMS issuer URL)")
+        return self
 
     @model_validator(mode="after")
     def ses_needs_a_sender(self) -> "Settings":

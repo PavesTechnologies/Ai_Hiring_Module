@@ -1,4 +1,4 @@
-"""decode_token: exp is required, and aud is checked when JWT_AUDIENCE is set (a throwaway RSA key)."""
+"""decode_token: exp is required, and iss must be exactly JWT_ISSUER (UMS sets no aud). A throwaway RSA key."""
 import time
 from unittest.mock import patch
 
@@ -15,7 +15,8 @@ _PRIVATE_PEM = _private.private_bytes(serialization.Encoding.PEM, serialization.
                                       serialization.NoEncryption()).decode()
 _PUBLIC_JWK = jwk.construct(_private.public_key().public_bytes(
     serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode(), "RS256").to_dict()
-ISSUER = "https://ums.example.invalid"
+ISSUER = "https://ums.example.invalid/ums"
+DISCOVERY_ISSUER = "https://discovery.example.invalid/ums"
 
 
 def _token(**claims):
@@ -28,9 +29,9 @@ def _token(**claims):
 
 @pytest.fixture(autouse=True)
 def _keys(monkeypatch):
-    monkeypatch.setattr(settings, "jwt_audience", "")
+    monkeypatch.setattr(settings, "jwt_issuer", ISSUER)
     with patch.object(jwt_middleware, "get_jwks_key", return_value=_PUBLIC_JWK), \
-            patch.object(jwt_middleware, "get_issuer", return_value=ISSUER):
+            patch.object(jwt_middleware, "get_issuer", return_value=DISCOVERY_ISSUER):
         yield
 
 
@@ -48,19 +49,38 @@ def test_an_expired_token_is_refused():
         jwt_middleware.decode_token(_token(exp=int(time.time()) - 60))
 
 
-def test_audience_is_not_checked_when_unset():
+def test_aud_is_not_checked():
     assert jwt_middleware.decode_token(_token(aud="another-app"))["user_id"] == "u1"
 
 
-def test_the_configured_audience_is_required(monkeypatch):
-    monkeypatch.setattr(settings, "jwt_audience", "airs")
-    assert jwt_middleware.decode_token(_token(aud="airs"))["user_id"] == "u1"
-    with pytest.raises(ValueError, match="Token audience is invalid"):
-        jwt_middleware.decode_token(_token(aud="another-app"))
-    with pytest.raises(ValueError, match="Token audience is invalid"):
-        jwt_middleware.decode_token(_token())
-
-
-def test_a_wrong_issuer_is_refused():
+@pytest.mark.parametrize("iss", ["https://evil.example.invalid/ums", "https://ums.example.invalid/ums/",
+                                 "https://ums.example.invalid", DISCOVERY_ISSUER])
+def test_any_other_issuer_is_refused(iss):
     with pytest.raises(ValueError, match="Token issuer is invalid"):
-        jwt_middleware.decode_token(_token(iss="https://evil.example.invalid"))
+        jwt_middleware.decode_token(_token(iss=iss))
+
+
+def test_a_token_without_iss_is_refused():
+    with pytest.raises(ValueError, match="Token issuer is invalid"):
+        jwt_middleware.decode_token(_token(iss=None))
+
+
+def test_without_jwt_issuer_the_discovery_issuer_is_required(monkeypatch):
+    monkeypatch.setattr(settings, "jwt_issuer", "")
+    assert jwt_middleware.decode_token(_token(iss=DISCOVERY_ISSUER))["user_id"] == "u1"
+    with pytest.raises(ValueError, match="Token issuer is invalid"):
+        jwt_middleware.decode_token(_token(iss=ISSUER))
+
+
+@pytest.mark.parametrize("app_env", ["production", " Prod "])
+def test_production_refuses_to_start_without_jwt_issuer(app_env):
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError, match="needs JWT_ISSUER"):
+        Settings(app_env=app_env, jwt_issuer=" ")
+    assert Settings(app_env=app_env, jwt_issuer=ISSUER).jwt_issuer == ISSUER
+
+
+def test_development_starts_without_jwt_issuer():
+    from app.core.config import Settings
+    assert Settings(app_env="development", jwt_issuer="").jwt_issuer == ""

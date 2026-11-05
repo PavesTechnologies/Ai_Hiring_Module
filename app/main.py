@@ -163,13 +163,6 @@ app.openapi = custom_openapi  # type: ignore[method-assign]
 
 
 @app.on_event("startup")
-def _warn_when_token_audience_is_unchecked() -> None:
-    if not settings.jwt_audience.strip():
-        logger.warning(
-            "JWT_AUDIENCE is not set: token audience is not checked - set it before production")
-
-
-@app.on_event("startup")
 def sync_embedding_model_version() -> None:
     """
     Mirrors settings.embedding_model (.env) into the active

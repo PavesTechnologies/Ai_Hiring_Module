@@ -33,26 +33,24 @@ def decode_token(token: str) -> dict:
     except RuntimeError as exc:
         raise ValueError("Authentication service unavailable") from exc
 
-    issuer = get_issuer()
-    audience = settings.jwt_audience.strip()
+    # JWT_ISSUER when set (always in production); otherwise the discovery document's issuer.
+    issuer = settings.jwt_issuer.strip() or get_issuer()
     try:
-        # exp is required: a token without one would never expire.
+        # exp is required: a token without one would never expire. UMS sets no aud, so the
+        # issuer is checked instead: present and exactly the expected one.
         payload = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
             issuer=issuer or None,
-            audience=audience or None,
-            options={"verify_aud": bool(audience), "require_aud": bool(audience), "verify_iss": bool(issuer),
+            options={"verify_aud": False, "verify_iss": bool(issuer), "require_iss": bool(issuer),
                      "verify_exp": True, "require_exp": True})
     except JWTError as exc:
         low = str(exc).lower()
         if "expired" in low:
             raise ValueError("Token has expired") from exc
-        if "issuer" in low:
+        if "issuer" in low or '"iss"' in low:
             raise ValueError("Token issuer is invalid") from exc
-        if "audience" in low or '"aud"' in low:
-            raise ValueError("Token audience is invalid") from exc
         if "exp" in low:
             raise ValueError("Token has no expiry") from exc
         raise ValueError("Token signature or claims are invalid") from exc
