@@ -369,6 +369,8 @@ class SkillOntologyService:
                 raise UnprocessableError(f"Parent skill '{parent_skill_id}' does not exist.")
 
             aliases = self._clean_aliases(request.aliases)
+            for alias in aliases:
+                self._refuse_alias_of_another_skill(alias, skill_id=None)
 
             skill = SkillOntology(
                 id=uuid4(),
@@ -684,6 +686,7 @@ class SkillOntologyService:
     def _validate_rows(self, skills: list[dict]) -> BulkImportValidationResponse:
         existing_by_name = self.repository.get_all_canonical_names()
         seen_in_file: set[str] = set()
+        alias_rows_in_file: dict[str, str] = {}     # alias (lower case) -> the row's canonical_name that has it
         errors: list[BulkImportValidationErrorResponse] = []
 
         # A parent_skill may reference a canonical_name defined anywhere in
@@ -734,6 +737,23 @@ class SkillOntologyService:
                 errors.append(BulkImportValidationErrorResponse(
                     row=row_number, column="aliases", message="Aliases must not contain blank values.",
                 ))
+
+            own = existing_by_name.get(canonical_name)
+            for alias in self._clean_aliases(skill["aliases"]):
+                other = self.repository.find_active_skill_by_alias(alias, exclude_id=own.id if own else None)
+                earlier_row = alias_rows_in_file.get(alias.lower())
+                if other is not None:
+                    errors.append(BulkImportValidationErrorResponse(
+                        row=row_number, column="aliases",
+                        message=f"Alias '{alias}' already belongs to the active skill '{other.canonical_name}'.",
+                    ))
+                elif earlier_row is not None and earlier_row != canonical_name:
+                    errors.append(BulkImportValidationErrorResponse(
+                        row=row_number, column="aliases",
+                        message=f"Alias '{alias}' is also given to '{earlier_row}' in this file.",
+                    ))
+                else:
+                    alias_rows_in_file[alias.lower()] = canonical_name
 
         total_rows = len(skills)
         invalid_rows = len({error.row for error in errors if error.row is not None})
@@ -812,6 +832,11 @@ class SkillOntologyService:
                             raise ValueError(f"Parent skill '{skill['parent_skill']}' does not exist.")
 
                     cleaned_aliases = self._clean_aliases(skill["aliases"])
+                    own = existing_by_name.get(canonical_name)
+                    own_aliases = {a.lower() for a in (own.aliases or [])} if own else set()
+                    for alias in cleaned_aliases:
+                        if alias.lower() not in own_aliases:
+                            self._refuse_alias_of_another_skill(alias, skill_id=own.id if own else None)
 
                     # Each row gets its own SAVEPOINT: if this row's insert/
                     # update fails at the database level, only this row's
@@ -1064,7 +1089,8 @@ class SkillOntologyService:
         current_aliases, never replacing them.
         S04-T03: each new alias is validated against the whole ontology
         before being added — silently skipped if it already belongs to this
-        same skill, rejected with 409 if it belongs to any other skill.
+        same skill, rejected with 409 if another active skill has it
+        (_refuse_alias_of_another_skill).
         """
         existing_set = set(current_aliases)
         cleaned_incoming = self._clean_aliases(incoming_aliases)
@@ -1079,21 +1105,25 @@ class SkillOntologyService:
             if alias in existing_set:
                 continue  # already belongs to this skill — not an error, just a no-op
 
-            conflicting_skill = self.repository.find_skill_by_alias(alias, exclude_id=skill.id)
-            if conflicting_skill:
-                logger.info(
-                    "Alias conflict detected | alias='%s' conflicts_with_skill='%s' (id=%s)",
-                    alias, conflicting_skill.canonical_name, conflicting_skill.id,
-                )
-                raise ConflictError(
-                    f"Alias '{alias}' already belongs to canonical skill '{conflicting_skill.canonical_name}'."
-                )
+            self._refuse_alias_of_another_skill(alias, skill_id=skill.id)
 
             merged.append(alias)
             existing_set.add(alias)
             logger.info("Alias added | skill_id=%s alias='%s'", skill.id, alias)
 
         return merged
+
+    def _refuse_alias_of_another_skill(self, alias: str, *, skill_id: UUID | None) -> None:
+        """
+        One alias, one active skill: refuses (409) an alias another active skill already has (case-insensitive),
+        naming that skill. Every path that adds aliases uses it - update, create and bulk import - so the
+        daily alias duplicate audit stays at 0.
+        """
+        other = self.repository.find_active_skill_by_alias(alias, exclude_id=skill_id)
+        if other is not None:
+            logger.info("Alias conflict detected | alias='%s' conflicts_with_skill='%s' (id=%s)",
+                        alias, other.canonical_name, other.id)
+            raise ConflictError(f"Alias '{alias}' already belongs to the active skill '{other.canonical_name}'.")
 
     def _remove_aliases(
         self,

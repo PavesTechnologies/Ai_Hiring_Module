@@ -241,3 +241,22 @@ def test_the_committed_data_seeds_no_inactive_dev_added_skill():
             for key, values in section["add"].items():
                 if values.get("source") in ("manual entry", "HR_CALIBRATION"):
                     assert values.get("is_active") is not False, f"{name}: {key} is inactive in dev"
+
+
+def test_a_catalogue_skill_merged_away_in_dev_is_not_seeded():
+    """SNS merged into AWS SNS (inactive in dev, 2026-11-05): like a merged dev-added skill, nothing to seed."""
+    diff = _diff()
+    diff["skill_ontology"]["add"]['["SNS"]'] = {"canonical_name": "SNS", "source": "seed import", "is_active": False}
+    catalogue = _script("build_seed_data").build(diff)["catalogue.json"]["sections"][0]
+    assert list(catalogue["add"]) == ['["Kafka"]'] and "['SNS']" in catalogue["note"]
+
+
+def test_a_stale_dev_description_is_not_seeded_but_a_value_change_still_is():
+    diff = _diff()
+    stale = {"description": {"from": "the current text", "to": "dev's older text"}}
+    diff["platform_config"]["change"]['["OVERRIDE_RATE_ALERT_THRESHOLD"]'] = stale
+    approved = _script("build_seed_data").build(diff)["platform.json"]["sections"][0]
+    assert '["OVERRIDE_RATE_ALERT_THRESHOLD"]' not in approved["change"]
+    assert "Stale dev descriptions not seeded: ['OVERRIDE_RATE_ALERT_THRESHOLD']" in approved["note"]
+    diff["platform_config"]["change"]['["OVERRIDE_RATE_ALERT_THRESHOLD"]'] = {"value": {"from": "20", "to": "25"}}
+    assert '["OVERRIDE_RATE_ALERT_THRESHOLD"]' in _script("build_seed_data").build(diff)["platform.json"]["sections"][0]["change"]

@@ -10,7 +10,7 @@
     "description"
    ],
    "approved": true,
-   "note": "Scoring v2 and model-capability config and the default weights built in dev. Format-only edits dropped: ['AI_PASS_THRESHOLD', 'CAMPAIGN_WEIGHT_AI', 'SEMANTIC_PASS_THRESHOLD']. Never seeded: ['SCORING_V2_DAILY_LLM_CALL_CAP'] - set in production after enabling billing. SCORING_V2_CONFIG dropped (retire v1, phase E): scoring reads the current scoring version, which the scoring seed creates with today's configuration (dev's value merges to exactly it).",
+   "note": "Scoring v2 and model-capability config and the default weights built in dev. Format-only edits dropped: ['AI_PASS_THRESHOLD', 'CAMPAIGN_WEIGHT_AI', 'SEMANTIC_PASS_THRESHOLD']. Never seeded: ['SCORING_V2_DAILY_LLM_CALL_CAP'] - set in production after enabling billing. Stale dev descriptions not seeded: ['OVERRIDE_RATE_ALERT_THRESHOLD'].",
    "renames": {},
    "add": {},
    "change": {

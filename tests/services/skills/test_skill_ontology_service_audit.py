@@ -128,7 +128,7 @@ def test_reactivate_skill_logs_skill_ontology_entity_type():
 def test_update_skill_alias_merge_logs_skill_ontology_entity_type():
     skill = _make_skill(aliases=["py"])
     service, audit_service = make_service(skill)
-    service.repository.find_skill_by_alias.return_value = None
+    service.repository.find_active_skill_by_alias.return_value = None
 
     service.update_skill(
         skill.id,

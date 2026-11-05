@@ -16,7 +16,7 @@
     "confidence"
    ],
    "approved": true,
-   "note": "The skill catalogue: bulk-imported and seeded skills and corrections to the stop-gap seed rows. Embeddings are not seeded - run scripts/generate_missing_skill_embeddings.py after loading.",
+   "note": "The skill catalogue: bulk-imported and seeded skills and corrections to the stop-gap seed rows. Embeddings are not seeded - run scripts/generate_missing_skill_embeddings.py after loading. Not seeded (merged in dev, inactive): ['SNS', 'SQS'].",
    "renames": {},
    "add": {
     "[\".NET\"]": {
@@ -127,9 +127,7 @@
     },
     "[\"AWS IAM\"]": {
      "canonical_name": "AWS IAM",
-     "aliases": [
-      "IAM"
-     ],
+     "aliases": [],
      "category": "Security",
      "parent": "Identity & Access",
      "description": null,
@@ -299,9 +297,7 @@
     },
     "[\"Alchemy Solana\"]": {
      "canonical_name": "Alchemy Solana",
-     "aliases": [
-      "RPC Provider"
-     ],
+     "aliases": [],
      "category": "Blockchain",
      "parent": "Solana",
      "description": null,
@@ -325,9 +321,7 @@
     },
     "[\"Alembic\"]": {
      "canonical_name": "Alembic",
-     "aliases": [
-      "Database Migrations"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Python",
      "description": null,
@@ -403,9 +397,7 @@
     },
     "[\"Angular Frontend\"]": {
      "canonical_name": "Angular Frontend",
-     "aliases": [
-      "UI Components"
-     ],
+     "aliases": [],
      "category": "Frontend Framework",
      "parent": "Angular",
      "description": null,
@@ -846,9 +838,7 @@
     },
     "[\"Azure Event Hub\"]": {
      "canonical_name": "Azure Event Hub",
-     "aliases": [
-      "Event Streaming"
-     ],
+     "aliases": [],
      "category": "Cloud",
      "parent": "Azure",
      "description": null,
@@ -1198,9 +1188,7 @@
     },
     "[\"Bundler\"]": {
      "canonical_name": "Bundler",
-     "aliases": [
-      "Dependency Management"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Ruby",
      "description": null,
@@ -2251,9 +2239,7 @@
     },
     "[\"Devise\"]": {
      "canonical_name": "Devise",
-     "aliases": [
-      "Authentication"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Ruby",
      "description": null,
@@ -2290,9 +2276,7 @@
     },
     "[\"Docker Compose\"]": {
      "canonical_name": "Docker Compose",
-     "aliases": [
-      "Compose"
-     ],
+     "aliases": [],
      "category": "DevOps",
      "parent": "Docker",
      "description": null,
@@ -2631,9 +2615,7 @@
     },
     "[\"ExUnit\"]": {
      "canonical_name": "ExUnit",
-     "aliases": [
-      "Testing Framework"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Elixir",
      "description": null,
@@ -2723,9 +2705,7 @@
     },
     "[\"Fiber\"]": {
      "canonical_name": "Fiber",
-     "aliases": [
-      "Web Framework"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Go",
      "description": null,
@@ -2814,9 +2794,7 @@
     },
     "[\"Firebase Integration\"]": {
      "canonical_name": "Firebase Integration",
-     "aliases": [
-      "Backend Services"
-     ],
+     "aliases": [],
      "category": "Mobile",
      "parent": "Flutter",
      "description": null,
@@ -2840,9 +2818,7 @@
     },
     "[\"Firebase\"]": {
      "canonical_name": "Firebase",
-     "aliases": [
-      "Backend Services"
-     ],
+     "aliases": [],
      "category": "Mobile",
      "parent": "Android",
      "description": null,
@@ -3126,9 +3102,7 @@
     },
     "[\"Glide\"]": {
      "canonical_name": "Glide",
-     "aliases": [
-      "Image Loading"
-     ],
+     "aliases": [],
      "category": "Mobile",
      "parent": "Android",
      "description": null,
@@ -3375,9 +3349,7 @@
     },
     "[\"Helius\"]": {
      "canonical_name": "Helius",
-     "aliases": [
-      "RPC Provider"
-     ],
+     "aliases": [],
      "category": "Blockchain",
      "parent": "Solana",
      "description": null,
@@ -3557,9 +3529,7 @@
     },
     "[\"Identity Server\"]": {
      "canonical_name": "Identity Server",
-     "aliases": [
-      "OAuth Server"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": ".NET",
      "description": null,
@@ -3626,7 +3596,7 @@
       "JUnit5"
      ],
      "category": "Testing",
-     "parent": "Automation Testing",
+     "parent": "JUnit",
      "description": null,
      "not_description": null,
      "is_active": true,
@@ -3635,9 +3605,7 @@
     },
     "[\"JUnit\"]": {
      "canonical_name": "JUnit",
-     "aliases": [
-      "JUnit5"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Java",
      "description": null,
@@ -3731,7 +3699,6 @@
     "[\"Jetpack Compose\"]": {
      "canonical_name": "Jetpack Compose",
      "aliases": [
-      "Compose",
       "Android Compose"
      ],
      "category": "Mobile",
@@ -3796,9 +3763,7 @@
     },
     "[\"Kafka Integration\"]": {
      "canonical_name": "Kafka Integration",
-     "aliases": [
-      "Event Streaming"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Java",
      "description": null,
@@ -3900,9 +3865,7 @@
     },
     "[\"Kotest\"]": {
      "canonical_name": "Kotest",
-     "aliases": [
-      "Testing Framework"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Kotlin",
      "description": null,
@@ -4383,9 +4346,7 @@
     },
     "[\"Migrations\"]": {
      "canonical_name": "Migrations",
-     "aliases": [
-      "Database Migrations"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Prisma",
      "description": null,
@@ -4396,9 +4357,7 @@
     },
     "[\"Mix\"]": {
      "canonical_name": "Mix",
-     "aliases": [
-      "Build Tool"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Elixir",
      "description": null,
@@ -4461,9 +4420,7 @@
     },
     "[\"Molecule\"]": {
      "canonical_name": "Molecule",
-     "aliases": [
-      "Testing Framework"
-     ],
+     "aliases": [],
      "category": "DevOps",
      "parent": "Ansible",
      "description": null,
@@ -4826,9 +4783,7 @@
     },
     "[\"Nx\"]": {
      "canonical_name": "Nx",
-     "aliases": [
-      "Monorepo Tool"
-     ],
+     "aliases": [],
      "category": "Frontend",
      "parent": "Angular",
      "description": null,
@@ -5217,9 +5172,7 @@
     },
     "[\"Passport\"]": {
      "canonical_name": "Passport",
-     "aliases": [
-      "OAuth Server"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "PHP",
      "description": null,
@@ -5334,9 +5287,7 @@
     },
     "[\"Play Framework\"]": {
      "canonical_name": "Play Framework",
-     "aliases": [
-      "Web Framework"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Scala",
      "description": null,
@@ -5360,9 +5311,7 @@
     },
     "[\"Poetry\"]": {
      "canonical_name": "Poetry",
-     "aliases": [
-      "Dependency Management"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Python",
      "description": null,
@@ -5451,9 +5400,7 @@
     },
     "[\"PrimeNG\"]": {
      "canonical_name": "PrimeNG",
-     "aliases": [
-      "UI Components"
-     ],
+     "aliases": [],
      "category": "Frontend",
      "parent": "Angular",
      "description": null,
@@ -5858,9 +5805,7 @@
     },
     "[\"React Testing Library\"]": {
      "canonical_name": "React Testing Library",
-     "aliases": [
-      "Testing"
-     ],
+     "aliases": [],
      "category": "Frontend",
      "parent": "React",
      "description": null,
@@ -6079,9 +6024,7 @@
     },
     "[\"Rocket\"]": {
      "canonical_name": "Rocket",
-     "aliases": [
-      "Web Framework"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Rust",
      "description": null,
@@ -6225,24 +6168,9 @@
     },
     "[\"SDWebImage\"]": {
      "canonical_name": "SDWebImage",
-     "aliases": [
-      "Image Loading"
-     ],
+     "aliases": [],
      "category": "Mobile",
      "parent": "iOS",
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "seed import",
-     "confidence": "verified"
-    },
-    "[\"SNS\"]": {
-     "canonical_name": "SNS",
-     "aliases": [
-      "Simple Notification Service"
-     ],
-     "category": "Cloud",
-     "parent": "AWS",
      "description": null,
      "not_description": null,
      "is_active": true,
@@ -6308,19 +6236,6 @@
      ],
      "category": "Backend",
      "parent": "Rust",
-     "description": null,
-     "not_description": null,
-     "is_active": true,
-     "source": "seed import",
-     "confidence": "verified"
-    },
-    "[\"SQS\"]": {
-     "canonical_name": "SQS",
-     "aliases": [
-      "Simple Queue Service"
-     ],
-     "category": "Cloud",
-     "parent": "AWS",
      "description": null,
      "not_description": null,
      "is_active": true,
@@ -6408,9 +6323,7 @@
     },
     "[\"ScalaTest\"]": {
      "canonical_name": "ScalaTest",
-     "aliases": [
-      "Testing"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Scala",
      "description": null,
@@ -6982,9 +6895,7 @@
     },
     "[\"Supabase Auth\"]": {
      "canonical_name": "Supabase Auth",
-     "aliases": [
-      "Authentication"
-     ],
+     "aliases": [],
      "category": "Database",
      "parent": "Supabase",
      "description": null,
@@ -7396,9 +7307,7 @@
     },
     "[\"Turborepo\"]": {
      "canonical_name": "Turborepo",
-     "aliases": [
-      "Monorepo Tool"
-     ],
+     "aliases": [],
      "category": "Frontend",
      "parent": "Build Tools",
      "description": null,
@@ -8138,9 +8047,7 @@
     },
     "[\"sbt\"]": {
      "canonical_name": "sbt",
-     "aliases": [
-      "Build Tool"
-     ],
+     "aliases": [],
      "category": "Backend",
      "parent": "Scala",
      "description": null,

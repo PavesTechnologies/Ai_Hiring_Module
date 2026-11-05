@@ -1,8 +1,8 @@
 {
- "accepted_on": "2026-11-03",
- "run_at": "2026-11-03T13:40:13.042251+00:00",
+ "accepted_on": "2026-11-05",
+ "run_at": "2026-11-05T06:27:15.424768+00:00",
  "mode": "no_llm",
- "fingerprint": "e736dfa959399036c97aadd477f6fa41dd560f608a6459e883e83da9a4fe4d4f",
+ "fingerprint": "e238f560c5a144ed0d43023564ed42898662cca51422c3637b6b30d5168e1ca6",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
@@ -93,7 +93,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F2": {
    "outcome": "HOLD",
@@ -165,7 +165,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F3": {
    "outcome": "HOLD",
@@ -239,7 +239,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F4": {
    "outcome": "HOLD",
@@ -314,7 +314,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F5": {
    "outcome": "HOLD",
@@ -385,7 +385,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F6": {
    "outcome": "REJECT",
@@ -449,7 +449,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F7": {
    "outcome": "HOLD",
@@ -517,7 +517,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "F8": {
    "outcome": "HOLD",
@@ -588,7 +588,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D1": {
    "outcome": "HOLD",
@@ -662,7 +662,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D2": {
    "outcome": "HOLD",
@@ -724,7 +724,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D3": {
    "outcome": "HOLD",
@@ -792,7 +792,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D4": {
    "outcome": "HOLD",
@@ -858,7 +858,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D5": {
    "outcome": "HOLD",
@@ -933,7 +933,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D6": {
    "outcome": "HOLD",
@@ -995,7 +995,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D7": {
    "outcome": "HOLD",
@@ -1065,7 +1065,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "D8": {
    "outcome": "HOLD",
@@ -1129,7 +1129,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H1": {
    "outcome": "HOLD",
@@ -1191,7 +1191,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H2": {
    "outcome": "HOLD",
@@ -1253,7 +1253,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H3": {
    "outcome": "HOLD",
@@ -1315,7 +1315,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H4": {
    "outcome": "HOLD",
@@ -1377,7 +1377,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H5": {
    "outcome": "HOLD",
@@ -1443,7 +1443,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H6": {
    "outcome": "HOLD",
@@ -1514,7 +1514,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H7": {
    "outcome": "HOLD",
@@ -1578,7 +1578,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H8": {
    "outcome": "HOLD",
@@ -1649,7 +1649,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H9": {
    "outcome": "REJECT",
@@ -1726,7 +1726,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "H10": {
    "outcome": "HOLD",
@@ -1788,7 +1788,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S1": {
    "outcome": "HOLD",
@@ -1860,7 +1860,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S2": {
    "outcome": "HOLD",
@@ -1932,7 +1932,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S3": {
    "outcome": "HOLD",
@@ -2002,7 +2002,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S4": {
    "outcome": "HOLD",
@@ -2064,7 +2064,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S5": {
    "outcome": "HOLD",
@@ -2134,7 +2134,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S6": {
    "outcome": "HOLD",
@@ -2203,7 +2203,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S7": {
    "outcome": "HOLD",
@@ -2275,7 +2275,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "S8": {
    "outcome": "HOLD",
@@ -2339,7 +2339,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-F1-0": {
    "outcome": "HOLD",
@@ -2416,7 +2416,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-F1-2": {
    "outcome": "HOLD",
@@ -2493,7 +2493,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-F1-3": {
    "outcome": "HOLD",
@@ -2570,7 +2570,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-F1-4": {
    "outcome": "HOLD",
@@ -2647,7 +2647,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-S2-0": {
    "outcome": "HOLD",
@@ -2719,7 +2719,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-S2-1": {
    "outcome": "HOLD",
@@ -2791,7 +2791,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-S2-2": {
    "outcome": "HOLD",
@@ -2863,7 +2863,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-S2-3": {
    "outcome": "HOLD",
@@ -2935,7 +2935,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-NAME-S2-4": {
    "outcome": "HOLD",
@@ -3007,7 +3007,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-S7-0": {
    "outcome": "HOLD",
@@ -3079,7 +3079,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-S7-1": {
    "outcome": "HOLD",
@@ -3151,7 +3151,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-S7-2": {
    "outcome": "HOLD",
@@ -3223,7 +3223,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-D1-0": {
    "outcome": "HOLD",
@@ -3297,7 +3297,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-D1-1": {
    "outcome": "HOLD",
@@ -3371,7 +3371,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-D1-2": {
    "outcome": "HOLD",
@@ -3445,7 +3445,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-S2-1": {
    "outcome": "REJECT",
@@ -3517,7 +3517,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-GAP-S2-2": {
    "outcome": "REJECT",
@@ -3589,7 +3589,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-D1-0": {
    "outcome": "HOLD",
@@ -3663,7 +3663,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-D1-2": {
    "outcome": "HOLD",
@@ -3737,7 +3737,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-D1-3": {
    "outcome": "HOLD",
@@ -3811,7 +3811,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-D1-4": {
    "outcome": "HOLD",
@@ -3885,7 +3885,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-F3-0": {
    "outcome": "HOLD",
@@ -3959,7 +3959,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-F3-2": {
    "outcome": "HOLD",
@@ -4033,7 +4033,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-F3-3": {
    "outcome": "HOLD",
@@ -4107,7 +4107,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   },
   "CF-REGION-F3-4": {
    "outcome": "HOLD",
@@ -4181,7 +4181,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "6954e19c32004b18"
+   "scoring_config_version": "19e7c1e597e1353c"
   }
  }
 }

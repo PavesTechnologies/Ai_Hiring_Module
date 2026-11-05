@@ -185,13 +185,20 @@ class SkillOntologyRepository:
         """
         return {skill.canonical_name: skill for skill in self.db.query(SkillOntology).all()}
 
-    def find_skill_by_alias(self, alias: str, *, exclude_id: UUID) -> Optional[SkillOntology]:
-        """Finds another skill (not exclude_id) whose aliases array already contains this exact alias."""
-        return (
-            self.db.query(SkillOntology)
-            .filter(SkillOntology.aliases.any(alias), SkillOntology.id != exclude_id)
-            .first()
+    def find_active_skill_by_alias(self, alias: str, *, exclude_id: UUID | None = None) -> Optional[SkillOntology]:
+        """
+        Another ACTIVE skill (not exclude_id) whose aliases already contain this alias, compared
+        case-insensitively. An inactive skill's aliases don't count: a merged-away duplicate never blocks.
+        """
+        from sqlalchemy import text as sql_text
+        query = self.db.query(SkillOntology).filter(
+            SkillOntology.is_active.is_(True),
+            sql_text("exists (select 1 from unnest(skill_ontology.aliases) a where lower(a) = lower(:alias))")
+            .bindparams(alias=alias),
         )
+        if exclude_id is not None:
+            query = query.filter(SkillOntology.id != exclude_id)
+        return query.order_by(SkillOntology.canonical_name).first()
 
     def count_candidate_matches_by_alias(self, alias: str) -> int:
         """
