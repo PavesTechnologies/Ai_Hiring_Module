@@ -16,11 +16,12 @@ import pytest
 from app.core import oauth_state
 from app.core.config import settings
 from app.services.google_oauth_service import PROVIDER_GOOGLE, GoogleOAuthService
+from pydantic import SecretStr
 
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    monkeypatch.setattr(settings, "oauth_state_signing_key", "test-signing-key")
+    monkeypatch.setattr(settings, "oauth_state_signing_key", SecretStr("test-signing-key"))
 
 
 def _response(json_body, raises=False):

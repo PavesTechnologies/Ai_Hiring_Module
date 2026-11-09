@@ -85,8 +85,8 @@ def verify_feedback_token(token: str) -> tuple[UUID, UUID]:
 
 def _sign(payload_b64: str) -> str:
     # An empty key would make every signature forgeable: refuse to sign or verify with one.
-    if not settings.feedback_token_signing_key.strip():
+    if not settings.feedback_token_signing_key.get_secret_value().strip():
         raise RuntimeError("FEEDBACK_TOKEN_SIGNING_KEY is not set; refusing to sign or verify")
-    key = settings.feedback_token_signing_key.encode("utf-8")
+    key = settings.feedback_token_signing_key.get_secret_value().encode("utf-8")
     digest = hmac.new(key, payload_b64.encode("ascii"), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")

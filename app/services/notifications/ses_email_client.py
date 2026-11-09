@@ -41,8 +41,8 @@ class SESEmailClient:
                 raise EmailDeliveryException(str(reason), reason)
             self._client = boto3.client(
                 "ses",
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
+                aws_access_key_id=settings.aws_access_key_id.get_secret_value(),
+                aws_secret_access_key=settings.aws_secret_access_key.get_secret_value(),
                 region_name=settings.aws_region,
             )
         return self._client

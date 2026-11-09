@@ -62,7 +62,7 @@ def _build_raw_provider(provider: str, api_key: str, model: str, *, timeout_seco
 
 def build_env_fallback_provider(purpose: str | None = None) -> LLMProvider:
     """The pre-existing behaviour: Gemini configured from .env (requests recorded like any other)."""
-    return CountedProvider(GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model),
+    return CountedProvider(GeminiProvider(api_key=settings.gemini_api_key.get_secret_value(), model=settings.gemini_model),
                            purpose=purpose)
 
 

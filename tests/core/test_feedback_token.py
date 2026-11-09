@@ -5,11 +5,12 @@ import pytest
 
 from app.core import feedback_token
 from app.core.config import settings
+from pydantic import SecretStr
 
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    monkeypatch.setattr(settings, "feedback_token_signing_key", "test-feedback-signing-key")
+    monkeypatch.setattr(settings, "feedback_token_signing_key", SecretStr("test-feedback-signing-key"))
 
 
 def test_sign_then_verify_round_trips_both_ids():
@@ -74,13 +75,13 @@ def test_two_interviewers_on_the_same_round_get_distinct_tokens():
 
 @pytest.mark.parametrize("empty", ["", "   "])
 def test_an_empty_signing_key_refuses_to_sign(monkeypatch, empty):
-    monkeypatch.setattr(settings, "feedback_token_signing_key", empty)
+    monkeypatch.setattr(settings, "feedback_token_signing_key", SecretStr(empty))
     with pytest.raises(RuntimeError, match="FEEDBACK_TOKEN_SIGNING_KEY is not set"):
         feedback_token.sign_feedback_token(uuid4(), uuid4())
 
 
 def test_an_empty_signing_key_refuses_a_token_forged_with_an_empty_key(monkeypatch):
-    monkeypatch.setattr(settings, "feedback_token_signing_key", "")
+    monkeypatch.setattr(settings, "feedback_token_signing_key", SecretStr(""))
     import base64, hashlib, hmac, json
     payload = base64.urlsafe_b64encode(json.dumps({
         "interview_schedule_id": str(uuid4()), "interviewer_id": str(uuid4()),

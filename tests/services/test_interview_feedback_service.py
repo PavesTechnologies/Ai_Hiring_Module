@@ -20,11 +20,12 @@ from app.exceptions.campaign_exceptions import CampaignException
 from app.models.interview import InterviewFeedbackRecommendation
 from app.schemas.interview_feedback_schema import SubmitFeedbackRequest
 from app.services.interview_feedback_service import InterviewFeedbackService
+from pydantic import SecretStr
 
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    monkeypatch.setattr(settings, "feedback_token_signing_key", "test-feedback-signing-key")
+    monkeypatch.setattr(settings, "feedback_token_signing_key", SecretStr("test-feedback-signing-key"))
 
 
 def _make_schedule(**overrides):

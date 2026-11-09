@@ -83,7 +83,7 @@ class GoogleOAuthService:
             _TOKEN_URL,
             data={
                 "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_secret": settings.google_client_secret.get_secret_value(),
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": settings.google_redirect_uri,
@@ -119,7 +119,7 @@ class GoogleOAuthService:
             _TOKEN_URL,
             data={
                 "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_secret": settings.google_client_secret.get_secret_value(),
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
             },

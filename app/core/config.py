@@ -1,5 +1,6 @@
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
+from sqlalchemy.engine import URL
 
 
 def _split_cors_origins(value: str) -> list[str]:
@@ -12,7 +13,7 @@ def _split_cors_origins(value: str) -> list[str]:
 class Settings(BaseSettings):
     # Database (Aiven PostgreSQL)
     db_user: str
-    db_password: str
+    db_password: SecretStr
     db_host: str
     db_port: str = "5432"
     db_name: str
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: str = "6379"
     redis_username: str = ""
-    redis_password: str = ""
+    redis_password: SecretStr = SecretStr("")
     redis_db: int = 3
     # Optional separate DB index for the application cache, so cache SCANs
     # never walk Celery's broker keys and a cache flush never touches the
@@ -78,8 +79,8 @@ class Settings(BaseSettings):
     celery_llm_task_rate_limit: str | None = None
 
     # AWS S3
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
+    aws_access_key_id: SecretStr = SecretStr("")
+    aws_secret_access_key: SecretStr = SecretStr("")
     aws_region: str = "ap-south-1"
     aws_s3_bucket: str = ""
 
@@ -97,12 +98,12 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL:str
-    SUPABASE_PUBLISHABLE_KEY:str
-    SUPABASE_SECRET_KEY:str
+    SUPABASE_PUBLISHABLE_KEY:SecretStr
+    SUPABASE_SECRET_KEY:SecretStr
     SUPABASE_JWKS_URL:str
 
     # AI / Embeddings
-    gemini_api_key: str = ""
+    gemini_api_key: SecretStr = SecretStr("")
     gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "all-MiniLM-L6-v2"
 
@@ -142,7 +143,7 @@ class Settings(BaseSettings):
     groq_max_completion_tokens: int = 16000
 
     # Encryption
-    candidate_pii_key: str = ""
+    candidate_pii_key: SecretStr = SecretStr("")
 
     # Microsoft Teams calendar integration (M12) — delegated OAuth,
     # Calendars.ReadWrite/OnlineMeetings.ReadWrite/offline_access/User.Read.
@@ -150,13 +151,13 @@ class Settings(BaseSettings):
     # individually.
     microsoft_client_id: str = ""
     microsoft_tenant_id: str = ""
-    microsoft_client_secret: str = ""
+    microsoft_client_secret: SecretStr = SecretStr("")
     microsoft_redirect_uri: str = ""
 
     # Google Meet calendar integration (M12) - same delegated-OAuth shape
     # as Microsoft above, calendar.events scope only.
     google_client_id: str = ""
-    google_client_secret: str = ""
+    google_client_secret: SecretStr = SecretStr("")
     google_redirect_uri: str = ""
 
     # HMAC-signs the OAuth `state` param so /oauth/microsoft/callback (which
@@ -164,7 +165,7 @@ class Settings(BaseSettings):
     # public-path bypass for that route) can still verify which user
     # initiated the connect flow, without a session store this codebase
     # doesn't otherwise have.
-    oauth_state_signing_key: str = ""
+    oauth_state_signing_key: SecretStr = SecretStr("")
 
     # M12 Step 3 - HMAC-signs the interview-feedback link token
     # (app/core/feedback_token.py). Separate secret from
@@ -172,7 +173,7 @@ class Settings(BaseSettings):
     # payload shape, different lifetime (14 days vs. OAuth's 10 minutes) -
     # a leaked feedback-link key should never let anyone forge OAuth
     # state, or vice versa.
-    feedback_token_signing_key: str = ""
+    feedback_token_signing_key: SecretStr = SecretStr("")
 
     # UMS — User Management System (token issuer)
     ums_url: str   # required — set UMS_URL in .env
@@ -219,17 +220,21 @@ class Settings(BaseSettings):
             raise ValueError(f"EMAIL_DELIVERY must be 'log' or 'ses', not {value!r}")
         return mode
 
-    @model_validator(mode="after")
-    def production_needs_a_jwt_issuer(self) -> "Settings":
-        if self.app_env.strip().lower() in {"production", "prod"} and not self.jwt_issuer.strip():
+    # Cross-field checks are field validators on the later-declared field, reading the earlier one
+    # from info.data: a model validator's error would carry every raw input, secrets included.
+    @field_validator("app_env")
+    @classmethod
+    def production_needs_a_jwt_issuer(cls, value: str, info: ValidationInfo) -> str:
+        if value.strip().lower() in {"production", "prod"} and not (info.data.get("jwt_issuer") or "").strip():
             raise ValueError("APP_ENV=production needs JWT_ISSUER (the production UMS issuer URL)")
-        return self
+        return value
 
-    @model_validator(mode="after")
-    def ses_needs_a_sender(self) -> "Settings":
-        if self.email_delivery == "ses" and not self.ses_from_email.strip():
+    @field_validator("email_delivery")
+    @classmethod
+    def ses_needs_a_sender(cls, value: str, info: ValidationInfo) -> str:
+        if value == "ses" and not (info.data.get("ses_from_email") or "").strip():
             raise ValueError("EMAIL_DELIVERY=ses needs SES_FROM_EMAIL")
-        return self
+        return value
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -261,17 +266,17 @@ class Settings(BaseSettings):
         return f"{self.cache_key_prefix}:{hashlib.sha256(database.encode('utf-8')).hexdigest()[:10]}"
 
     @property
-    def database_url(self) -> str:
-        return (
-            f"{self.db_driver}://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
-            f"?sslmode={self.db_sslmode}"
-        )
+    def database_url(self) -> URL:
+        """A SQLAlchemy URL: printing it masks the password."""
+        return URL.create(self.db_driver, username=self.db_user, password=self.db_password.get_secret_value(),
+                          host=self.db_host, port=int(self.db_port), database=self.db_name,
+                          query={"sslmode": self.db_sslmode})
 
     def _redis_url_for_db(self, db: int) -> str:
         auth = ""
-        if self.redis_username or self.redis_password:
-            auth = f"{self.redis_username}:{self.redis_password}@"
+        password = self.redis_password.get_secret_value()
+        if self.redis_username or password:
+            auth = f"{self.redis_username}:{password}@"
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/{db}"
 
     @property
@@ -290,7 +295,9 @@ class Settings(BaseSettings):
     def CELERY_RESULT_BACKEND(self) -> str:
         return self.redis_url
 
-    model_config = {"env_file": ".env", "case_sensitive": False,"extra": "ignore"}
+    # Secrets are SecretStr (masked in repr, str and dumps); hide_input_in_errors keeps a failing
+    # validator from echoing the raw inputs, secrets included, in its error message.
+    model_config = {"env_file": ".env", "case_sensitive": False, "extra": "ignore", "hide_input_in_errors": True}
 
 
 settings = Settings()

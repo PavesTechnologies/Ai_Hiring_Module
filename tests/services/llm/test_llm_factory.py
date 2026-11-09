@@ -11,6 +11,7 @@ from app.services.llm.anthropic_provider import AnthropicProvider
 from app.services.llm.base import LLMErrorReason, LLMPermanentError, LLMTransientError, status_error
 from app.services.llm.gemini_provider import GeminiProvider
 from app.services.llm.openai_provider import GroqProvider, OpenAIProvider
+from pydantic import SecretStr
 
 _REPO = "app.services.llm.factory.AIProviderConfigRepository"
 _ENC = "app.services.llm.factory.EncryptionService"
@@ -19,7 +20,7 @@ _ENC = "app.services.llm.factory.EncryptionService"
 @pytest.fixture(autouse=True)
 def _env_gemini_key(monkeypatch):
     # genai.Client refuses to build without a key; the dev .env leaves it blank.
-    monkeypatch.setattr(factory.settings, "gemini_api_key", "test-gemini-key")
+    monkeypatch.setattr(factory.settings, "gemini_api_key", SecretStr("test-gemini-key"))
 
 
 def _raw(provider):

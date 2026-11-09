@@ -70,7 +70,7 @@ class MicrosoftOAuthService:
             f"https://login.microsoftonline.com/{settings.microsoft_tenant_id}/oauth2/v2.0/token",
             data={
                 "client_id": settings.microsoft_client_id,
-                "client_secret": settings.microsoft_client_secret,
+                "client_secret": settings.microsoft_client_secret.get_secret_value(),
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": settings.microsoft_redirect_uri,
@@ -107,7 +107,7 @@ class MicrosoftOAuthService:
             f"https://login.microsoftonline.com/{settings.microsoft_tenant_id}/oauth2/v2.0/token",
             data={
                 "client_id": settings.microsoft_client_id,
-                "client_secret": settings.microsoft_client_secret,
+                "client_secret": settings.microsoft_client_secret.get_secret_value(),
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "scope": _SCOPES,

@@ -9,5 +9,5 @@ def get_supabase():
     global _supabase
     if _supabase is None:
         from supabase import create_client
-        _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SECRET_KEY)
+        _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SECRET_KEY.get_secret_value())
     return _supabase

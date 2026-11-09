@@ -17,11 +17,12 @@ import pytest
 from app.core import oauth_state
 from app.core.config import settings
 from app.services.microsoft_oauth_service import PROVIDER_MICROSOFT, MicrosoftOAuthService
+from pydantic import SecretStr
 
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    monkeypatch.setattr(settings, "oauth_state_signing_key", "test-signing-key")
+    monkeypatch.setattr(settings, "oauth_state_signing_key", SecretStr("test-signing-key"))
 
 
 def _make_http_client(post_response=None):

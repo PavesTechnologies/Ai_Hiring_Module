@@ -4,11 +4,12 @@ import pytest
 
 from app.core import oauth_state
 from app.core.config import settings
+from pydantic import SecretStr
 
 
 @pytest.fixture(autouse=True)
 def _signing_key(monkeypatch):
-    monkeypatch.setattr(settings, "oauth_state_signing_key", "test-signing-key")
+    monkeypatch.setattr(settings, "oauth_state_signing_key", SecretStr("test-signing-key"))
 
 
 def test_sign_then_verify_round_trips_the_user_id():
@@ -86,13 +87,13 @@ def test_same_user_different_provider_still_verifies_correctly_for_each():
 
 @pytest.mark.parametrize("empty", ["", "   "])
 def test_an_empty_signing_key_refuses_to_sign(monkeypatch, empty):
-    monkeypatch.setattr(settings, "oauth_state_signing_key", empty)
+    monkeypatch.setattr(settings, "oauth_state_signing_key", SecretStr(empty))
     with pytest.raises(RuntimeError, match="OAUTH_STATE_SIGNING_KEY is not set"):
         oauth_state.sign_state("user-1", "MICROSOFT")
 
 
 def test_an_empty_signing_key_refuses_a_state_forged_with_an_empty_key(monkeypatch):
-    monkeypatch.setattr(settings, "oauth_state_signing_key", "")
+    monkeypatch.setattr(settings, "oauth_state_signing_key", SecretStr(""))
     import base64, hashlib, hmac, json
     payload = base64.urlsafe_b64encode(json.dumps({
         "user_id": "attacker", "provider": "MICROSOFT", "issued_at": int(time.time())}).encode()).decode().rstrip("=")
