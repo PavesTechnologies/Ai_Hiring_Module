@@ -40,7 +40,7 @@ from app.repositories.scoring_result_repository import ScoringResultRepository
 from app.repositories.skill_repository import SkillRepository
 from app.services.audit_service import AuditService
 from app.services.campaign.scoring_v2 import (
-    OUTCOME_NOT_RUN, OUTCOME_PASS, OUTCOME_PENDING, OUTCOME_REJECT, SCORING_VERSION,
+    OUTCOME_NOT_RUN, OUTCOME_PASS, OUTCOME_PENDING, OUTCOME_REJECT,
 )
 from app.services.campaign.scoring_v2_service import FALLBACK_NEVER, ScoringV2Service, v2_rejection_reason
 from app.services.campaign.stage_transition_service import StageTransitionService
@@ -88,6 +88,10 @@ def human_acted_since(db, campaign_candidate_id: UUID, since: datetime) -> str |
 
 
 TRANSITION_TRIGGER = "FULL_SCORING_AFTER_NO_LLM_FALLBACK"
+# Re-read under the row lock before full scoring acts: what apply_full_outcome and the recorded-only
+# path read and write.
+_DECISION_FIELDS = ("pipeline_stage", "previous_stage", "decision_type", "decision_source", "decision_reason",
+                    "decision_details", "deterministic_breakdown")
 
 
 def _audit_transition(audit_service, campaign_candidate, from_stage: PipelineStage) -> None:
@@ -172,7 +176,8 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
         config_repo = ConfigRepository(db)
         experience, education, domain = build_validation_inputs(config_repo, job_description, resume)
 
-        full = _v2_service(db).score(
+        service = _v2_service(db)
+        full = service.score(
             campaign=campaign, campaign_candidate=campaign_candidate, job_description=job_description,
             resume=resume, experience_result=experience, education_result=education, domain_result=domain,
             acted_on=False, llm_fallback=FALLBACK_NEVER,
@@ -182,7 +187,19 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
             task_log_service.mark_success(task_log, summary=json.dumps({"still_unavailable": full["outcome"]}))
             return
 
-        full_row = results.latest(campaign_candidate.id, SCORING_VERSION)
+        # Review item 25: the row this run saved - not latest(), which a shadow-version row committed
+        # meanwhile can be.
+        full_row = service.last_result_row
+        if full_row is None:
+            raise RuntimeError("full scoring saved no result row")
+        # Lock the candidate, then read its stage and decision and whether a person acted - all as
+        # committed now, after the scoring call. A person's move that landed during scoring is seen;
+        # one made from here on waits for this commit, and then validates against the new stage.
+        if candidate_repo.lock_stage_for_transition(campaign_candidate) is None:
+            task_log_service.mark_success(task_log, summary=json.dumps({"skipped": "candidate removed"}))
+            db.rollback()
+            return
+        db.refresh(campaign_candidate, attribute_names=list(_DECISION_FIELDS))
         fallback.awaiting_full_scoring = False
         acted_by_person = human_acted_since(db, campaign_candidate.id, fallback.created_at)
         completion = {"completes_fallback_result_id": str(fallback.id), "applied": acted_by_person is None}

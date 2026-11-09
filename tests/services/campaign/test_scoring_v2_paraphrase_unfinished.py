@@ -102,3 +102,35 @@ def test_a_failed_paraphrase_round_on_the_last_attempt_scores_without_the_llm():
     unavailable, no_llm = _score(_service(), RuntimeError("embeddings down"), svc.FALLBACK_ON_UNAVAILABLE)
     unavailable.assert_not_called()
     no_llm.assert_called_once()
+
+
+# --- review item 25: score() hands back the row it saved -----------------------------------------
+
+def test_score_records_the_row_it_saved_and_resets_it_each_call():
+    service = _service()
+    saved = []
+    first_round = SimpleNamespace(results=[{"canonical_skill_id": str(INC), "status": "CONFIRMED"}],
+                                  skipped_budget=False, llm_unavailable=False, cached=False, problem=None,
+                                  llm_calls=3, call=None)
+    campaign = SimpleNamespace(id=uuid4(), deterministic_threshold=50, required_skill_coverage_threshold=60,
+                               max_missing_core_skills=3, max_missing_core_pct=None)
+    repo = MagicMock()
+    repo.add.side_effect = saved.append
+    breakdown = {"outcome": "PASS", "deterministic_passed": True, "deterministic_score": 80.0}
+    kwargs = dict(campaign=campaign, campaign_candidate=SimpleNamespace(id=uuid4()), job_description=MagicMock(),
+                  resume=SimpleNamespace(id=uuid4(), parsed_json={}), experience_result=None, education_result=None,
+                  domain_result=None, acted_on=False)
+    with patch.object(svc, "jd_core_skill_specs", return_value=[CoreSkillSpec(INC, "Incident Management")]), \
+            patch.object(svc.CoreSkillConfirmationService, "confirm", return_value=first_round), \
+            patch.object(svc.ScoringV2Service, "_paraphrase_round", return_value=({"ran": False, "llm_calls": 0}, [])), \
+            patch.object(svc.ScoringV2Service, "provisional_inputs", return_value=[]), \
+            patch.object(svc, "jd_paraphrase_sections", return_value=[]), \
+            patch.object(svc, "score_threshold_rejects", return_value=True), \
+            patch.object(svc, "load_mandatory_skill_hierarchy", return_value={}), \
+            patch.object(svc, "score_v2", side_effect=lambda *a: dict(breakdown)), \
+            patch.object(svc, "ScoringResultRepository", return_value=repo):
+        service.score(**kwargs, persist=True)
+        assert saved and service.last_result_row is saved[0]
+        assert service.last_result_row.outcome == "PASS" and service.last_result_row.acted_on is False
+        service.score(**kwargs, persist=False)
+        assert service.last_result_row is None

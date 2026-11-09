@@ -360,6 +360,9 @@ class ScoringV2Service:
         default configuration and the platform's model.
         """
         from app.services.campaign.scoring_versions import current_version, provider_resolver_for
+        # The candidate_scoring_results row this call saves (persist=True), for a caller that must act
+        # on exactly this result - never "the latest row", which a concurrent shadow run can be.
+        self.last_result_row = None
         version = scoring_version if scoring_version is not None else current_version(self.db)
         default_resolver = self.provider_resolver
         self.provider_resolver = provider_resolver_for(self.db, version, default_resolver)
@@ -558,14 +561,15 @@ class ScoringV2Service:
             breakdown.update(scoring_mode=SCORING_MODE_LLM, awaiting_full_scoring=False)
 
         if persist:
-            ScoringResultRepository(self.db).add(CandidateScoringResult(
+            self.last_result_row = CandidateScoringResult(
                 campaign_candidate_id=campaign_candidate.id, scoring_version=SCORING_VERSION,
                 score=breakdown["deterministic_score"], passed=breakdown["deterministic_passed"],
                 outcome=breakdown["outcome"], breakdown=breakdown, scoring_config_version=config_version_hash,
                 config_snapshot=snapshot, acted_on=acted_on, scoring_mode=breakdown["scoring_mode"],
                 awaiting_full_scoring=bool(breakdown.get("awaiting_full_scoring")),
                 scoring_version_id=version.id if version is not None else None,
-            ))
+            )
+            ScoringResultRepository(self.db).add(self.last_result_row)
         return breakdown
 
     def _no_llm_confirmations(self, specs, evidence_rows, text_hash, auto_sections, tools, job, job_description,

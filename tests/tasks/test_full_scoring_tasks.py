@@ -85,10 +85,14 @@ class _World:
                                   deterministic_breakdown={"awaiting_full_scoring": True, "needs_review": True})
         self.results = MagicMock()
         self.results.get.return_value = self.fallback
-        self.results.latest.return_value = self.full_row
+        self.results.latest.side_effect = AssertionError("latest() can pick a shadow row - use the row scored")
+        self.order = []
         self.candidates = MagicMock()
         self.candidates.get_by_id.return_value = self.cc
+        self.candidates.lock_stage_for_transition.side_effect = lambda cc: (
+            self.order.append("lock") or (cc.pipeline_stage, PipelineStage.SCREENING))
         self.service = MagicMock()
+        self.service.last_result_row = self.full_row
         self.service.score.return_value = {"outcome": full_outcome, "deterministic_score": 80.0,
                                            "deterministic_passed": full_outcome != "REJECT", "needs_review": False}
         self.apply = MagicMock(return_value="shortlisted (AI recommendation, review cap lifted)")
@@ -107,7 +111,8 @@ class _World:
                 patch(f"{MODULE}.CampaignRepository"), patch(f"{MODULE}.ResumeRepository"), \
                 patch(f"{MODULE}.JDRepository"), patch(f"{MODULE}.ConfigRepository"), \
                 patch(f"{MODULE}._v2_service", return_value=self.service), \
-                patch(f"{MODULE}.human_acted_since", return_value=self.acted_by_person), \
+                patch(f"{MODULE}.human_acted_since",
+                      side_effect=lambda *a: self.order.append("human_check") or self.acted_by_person), \
                 patch(f"{MODULE}.apply_full_outcome", self.apply), \
                 patch(f"{MODULE}.StageTransitionService"), patch(f"{MODULE}.AuditService", return_value=self.audit), \
                 patch("app.services.campaign.validation_inputs.build_validation_inputs",
@@ -129,6 +134,35 @@ def test_applied_when_nobody_acted_since_the_fallback():
     assert w.full_row.breakdown["completes_fallback_result_id"] == str(w.fallback.id)
     assert w.audit.log.call_args.kwargs["details"]["applied"] is True
     db.commit.assert_called()
+
+
+def test_acts_on_the_row_it_scored_after_locking_and_rereading_the_candidate():
+    # Review item 25: lock, then re-read the stage/decision and check for a person's action.
+    from app.tasks.full_scoring_tasks import _DECISION_FIELDS
+    w = _World("PASS")
+    db = w.run()
+    assert w.order == ["lock", "human_check"]
+    db.refresh.assert_called_once_with(w.cc, attribute_names=list(_DECISION_FIELDS))
+    assert {"pipeline_stage", "decision_details", "deterministic_breakdown"} <= set(_DECISION_FIELDS)
+    assert w.full_row.acted_on is True and w.full_row.breakdown["applied"] is True
+
+
+def test_a_candidate_removed_during_scoring_is_skipped():
+    w = _World("REJECT")
+    w.candidates.lock_stage_for_transition.side_effect = None
+    w.candidates.lock_stage_for_transition.return_value = None
+    db = w.run()
+    w.apply.assert_not_called()
+    assert w.fallback.awaiting_full_scoring is True
+    db.commit.assert_not_called()
+
+
+def test_no_saved_row_fails_the_task_rather_than_guessing():
+    w = _World("PASS")
+    w.service.last_result_row = None
+    db = w.run()
+    w.apply.assert_not_called()
+    db.rollback.assert_called()
 
 
 def test_recorded_only_when_a_person_acted_since():
