@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -6,6 +5,7 @@ from app.models.pipeline import AIEvaluationStatus, AIRecommendation
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.schemas.ai.ai_evaluation_response import AIEvaluationGenerationSchema, AIEvaluationResponse
+from app.services.campaign.ai_evaluation_input import render_evaluation_prompt
 from app.services.extractions.llm_extraction_service import LLMExtractionService
 from app.services.llm.call_log import llm_call_source, llm_call_subject
 
@@ -124,14 +124,9 @@ class AIEvaluationService:
     @staticmethod
     def _render_prompt(prompt_template_text: str, resume_json: dict, jd_json: dict) -> str:
         """
-        Plain string assembly - the Prompt Template module has no
-        placeholder/Jinja templating (see LLMExtractionService.
-        extract_raw's own concatenation for the same convention elsewhere
-        in this codebase). Both documents are the already AI-ready
-        structured JSON produced by earlier pipeline stages.
+        Plain string assembly (the Prompt Template module has no templating). Review item 6:
+        the evaluator sees the redacted resume (no name, location or graduation year), the JD
+        without its maximum experience, and both as delimited data it is told never to take
+        instructions from - see ai_evaluation_input.
         """
-        return (
-            f"{prompt_template_text}\n\n"
-            f"Job Description (JSON):\n{json.dumps(jd_json)}\n\n"
-            f"Candidate Resume (JSON):\n{json.dumps(resume_json)}"
-        )
+        return render_evaluation_prompt(prompt_template_text, resume_json, jd_json)
