@@ -203,3 +203,47 @@ def test_reject_one_raises_409_when_already_rejected():
         service.reject_one(campaign_id=campaign_id, campaign_candidate_id=cc.id, reason="did not meet the bar", actor_id="hm-1", actor_role="HIRING_MANAGER")
 
     assert exc_info.value.status_code == 409
+
+
+# ----------------------------------------------------------------------
+# Review item 11: a move or reject on another campaign's candidate is refused before anything moves
+# ----------------------------------------------------------------------
+
+def _access_env():
+    from tests.support.campaign_access_world import access_world
+    return access_world()
+
+
+@pytest.mark.parametrize("who, role", [("hm-2", "HIRING_MANAGER"), ("rec-2", "RECRUITER")])
+def test_move_one_and_reject_one_refuse_another_campaigns_candidate(who, role):
+    with _access_env() as world:
+        cc = _cc(world.campaign_a.id, pipeline_stage=PipelineStage.SHORTLISTED)
+        campaign_candidate_repo = MagicMock()
+        campaign_candidate_repo.get_by_id.return_value = cc
+        service = make_service(campaign_candidate_repo=campaign_candidate_repo)
+        user = SimpleNamespace(user_id=who, roles=[role], authorised_roles=(role,))
+        for call in (
+            lambda: service.move_one(campaign_id=world.campaign_a.id, campaign_candidate_id=cc.id,
+                                     target_stage="HM_REVIEW", reason="moving it on", actor_id=who,
+                                     actor_role=role, access_user=user),
+            lambda: service.reject_one(campaign_id=world.campaign_a.id, campaign_candidate_id=cc.id,
+                                       reason="not a fit for this role", actor_id=who, actor_role=role,
+                                       access_user=user),
+        ):
+            with pytest.raises(CampaignException) as exc:
+                call()
+            assert exc.value.status_code == 403
+        service.pipeline_transition_service.transition_stage.assert_not_called()
+        campaign_candidate_repo.commit.assert_not_called()
+
+
+def test_move_one_lets_the_campaigns_own_hiring_manager_move():
+    with _access_env() as world:
+        cc = _cc(world.campaign_a.id, pipeline_stage=PipelineStage.SHORTLISTED)
+        campaign_candidate_repo = MagicMock()
+        campaign_candidate_repo.get_by_id.return_value = cc
+        service = make_service(campaign_candidate_repo=campaign_candidate_repo)
+        user = SimpleNamespace(user_id="hm-1", roles=["HIRING_MANAGER"], authorised_roles=("HIRING_MANAGER",))
+        service.move_one(campaign_id=world.campaign_a.id, campaign_candidate_id=cc.id, target_stage="HM_REVIEW",
+                         reason="moving it on", actor_id="hm-1", actor_role="HIRING_MANAGER", access_user=user)
+        service.pipeline_transition_service.transition_stage.assert_called_once()

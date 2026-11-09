@@ -92,7 +92,9 @@ def single_stage_move(
     request: SingleStageMoveRequest,
     service: BulkStageMoveService = Depends(get_bulk_stage_move_service),
     user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_candidate_in_campaign(user, campaign_id, campaign_candidate_id)
     result = service.move_one(
         campaign_id=campaign_id,
         campaign_candidate_id=campaign_candidate_id,
@@ -102,6 +104,7 @@ def single_stage_move(
         actor_role=authorising_role(user),
         actor_roles=authorising_roles(user),
         override_reason_code=request.override_reason_code,
+        access_user=user,
     )
     return APIResponse.ok(data=result, message=result.detail)
 
@@ -157,7 +160,9 @@ def manual_reject(
     request: ManualRejectRequest,
     service: BulkStageMoveService = Depends(get_bulk_stage_move_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_candidate_in_campaign(user, campaign_id, campaign_candidate_id)
     result = service.reject_one(
         campaign_id=campaign_id,
         campaign_candidate_id=campaign_candidate_id,
@@ -166,6 +171,7 @@ def manual_reject(
         actor_role=authorising_role(user),
         actor_roles=authorising_roles(user),
         override_reason_code=request.override_reason_code,
+        access_user=user,
     )
     return APIResponse.ok(data=result, message=result.detail)
 

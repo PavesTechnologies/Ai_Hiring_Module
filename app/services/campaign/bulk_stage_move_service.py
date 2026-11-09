@@ -157,6 +157,12 @@ class BulkStageMoveService:
 
     # ── T01 / T03 — single candidate ──────────────────────────────────
 
+    def _require_access(self, access_user, campaign_id: UUID) -> None:
+        """The shared campaign access check (app/services/campaign_access.py), when a caller is given."""
+        if access_user is not None:
+            from app.services.campaign_access import CampaignAccess
+            CampaignAccess(self.campaign_candidate_repo.db).require_campaign(access_user, campaign_id)
+
     def _load_in_campaign(self, campaign_id: UUID, campaign_candidate_id: UUID):
         cc = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         # Checked together: a candidate that exists but belongs to another
@@ -177,6 +183,7 @@ class BulkStageMoveService:
         actor_roles: list[str] | None = None,
         override_reason_code: str | None = None,
         outcome_override_check: bool = True,
+        access_user=None,
     ) -> SingleStageMoveResultResponse:
         """
         actor_roles: every role the caller holds that the route allows; the
@@ -185,6 +192,11 @@ class BulkStageMoveService:
 
         outcome_override_check=False: the move isn't a judgement on the
         system's outcome (a re-parse), so it is never an override.
+
+        access_user: the caller (TokenUser) - the shared campaign access check
+        runs on the campaign before anything moves (review item 11). Every
+        route passes it; only an internal caller that checked its own route
+        (the re-parse) leaves it out.
 
         M11-E04-S03-T01. Deliberately not implemented as bulk_move([one]) —
         a single move audits the candidate as the entity, which is what the
@@ -197,6 +209,7 @@ class BulkStageMoveService:
             raise CampaignException(f"Unknown pipeline stage '{target_stage}'.", 422)
 
         cc = self._load_in_campaign(campaign_id, campaign_candidate_id)
+        self._require_access(access_user, campaign_id)
         from_stage = cc.pipeline_stage
         if from_stage == to_stage:
             raise CampaignException("Candidate is already in that stage.", 409)
@@ -263,6 +276,7 @@ class BulkStageMoveService:
         actor_role: str | None,
         actor_roles: list[str] | None = None,
         override_reason_code: str | None = None,
+        access_user=None,
     ) -> SingleStageMoveResultResponse:
         """
         M11-E04-S03-T03 — manual rejection from the candidate list.
@@ -272,6 +286,7 @@ class BulkStageMoveService:
         decision record and the openings cap drift apart.
         """
         cc = self._load_in_campaign(campaign_id, campaign_candidate_id)
+        self._require_access(access_user, campaign_id)
         if cc.pipeline_stage == PipelineStage.REJECTED:
             raise CampaignException("Candidate is already rejected.", 409)
 
@@ -284,6 +299,7 @@ class BulkStageMoveService:
             actor_role=actor_role,
             actor_roles=actor_roles,
             override_reason_code=override_reason_code,
+            access_user=access_user,
         )
 
     def get_allowed_transitions(

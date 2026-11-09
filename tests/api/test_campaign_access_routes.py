@@ -56,7 +56,14 @@ ITEM_9_ROUTES = [
     ("GET", "/campaign-candidates/{campaign_candidate_id}/semantic", (HM, REC, HR), None),
     ("GET", "/campaign-candidates/{campaign_candidate_id}", (HM, REC, HR), None),
 ]
-ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES
+# Item 11: the generic stage move and manual reject.
+ITEM_11_ROUTES = [
+    ("POST", "/candidate-actions/campaigns/{campaign_id}/candidates/{campaign_candidate_id}/stage-move", (HM, REC),
+     {"target_stage": "HM_REVIEW", "reason": "Moving on after the screen"}),
+    ("POST", "/candidate-actions/campaigns/{campaign_id}/candidates/{campaign_candidate_id}/reject", (REC, HR),
+     {"reason": "Not a fit for this role"}),
+]
+ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES + ITEM_11_ROUTES
 
 OWNER = {HM: "hm-1", REC: "rec-1", HR: "hr-1"}
 OUTSIDER = {HM: "hm-2", REC: "rec-2"}
