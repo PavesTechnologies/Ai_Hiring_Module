@@ -166,6 +166,20 @@ def jd_calibration_fields(jd, campaign=None) -> dict:
     }
 
 
+def deterministic_replay_kwargs(entry) -> dict:
+    """
+    Review item 19: a dead-lettered DETERMINISTIC_SCORE replays as what it was. A score-only re-score
+    (a shortlisted or interviewing candidate's score refreshed, stage left alone) stores score_only in
+    its input_payload (deterministic_scoring_tasks._retry_or_dead_letter); dropping it replayed a
+    full screening, which could reject the candidate and queue semantic and AI scoring.
+    """
+    kwargs = {"campaign_candidate_id": str(entry.campaign_candidate_id)}
+    payload = getattr(entry, "input_payload", None)
+    if isinstance(payload, dict) and payload.get("score_only") is True:
+        kwargs["score_only"] = True
+    return kwargs
+
+
 class CampaignService:
 
     def __init__(self,
@@ -1732,7 +1746,7 @@ class CampaignService:
     # which owns the job/file counter bookkeeping a bare re-enqueue would skip.
     _DLQ_REPLAY_BUILDERS = {
         DETERMINISTIC_SCORE_TASK_TYPE: lambda e: (calculate_deterministic_score_task,
-            {"campaign_candidate_id": str(e.campaign_candidate_id)},
+            deterministic_replay_kwargs(e),
             e.campaign_candidate_id is not None,
         ),
         # Kwargs from the DLQ input_payload (prompt + re-parse mode); the

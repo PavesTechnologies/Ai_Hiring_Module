@@ -278,3 +278,52 @@ def test_replay_limit_allows_exactly_max_replays():
     assert response.results[0].status == "SKIPPED"
     assert "limit" in response.results[0].reason.lower()
     mock_task.apply_async.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# Review item 19: a score-only re-score replays as score-only.
+# ----------------------------------------------------------------------
+
+def _replay_deterministic(input_payload):
+    campaign_candidate_id = uuid4()
+    service, campaign_repo = _make_service()
+    entry = _make_dlq_entry(task_type="DETERMINISTIC_SCORE", campaign_candidate_id=campaign_candidate_id)
+    entry.input_payload = input_payload
+    campaign_repo.get_dlq_entries_by_ids.return_value = [entry]
+    with patch(f"{SERVICE_MODULE}.calculate_deterministic_score_task") as mock_task:
+        response = service.replay_dead_letter_tasks(
+            campaign_id=uuid4(), dlq_ids=[entry.id], replayed_by="hr-1", actor_role="HR_ADMIN",
+        )
+    assert response.replayed_count == 1
+    return campaign_candidate_id, mock_task.apply_async.call_args.kwargs["kwargs"]
+
+
+def test_a_dead_lettered_score_only_rescore_replays_as_score_only():
+    cc_id, kwargs = _replay_deterministic({"campaign_candidate_id": "x", "score_only": True})
+    assert kwargs == {"campaign_candidate_id": str(cc_id), "score_only": True}
+
+
+def test_a_dead_lettered_screening_replays_as_a_screening():
+    cc_id, kwargs = _replay_deterministic({"campaign_candidate_id": "x", "score_only": False})
+    assert kwargs == {"campaign_candidate_id": str(cc_id)}
+
+
+def test_an_entry_without_a_payload_replays_as_before():
+    cc_id, kwargs = _replay_deterministic(None)
+    assert kwargs == {"campaign_candidate_id": str(cc_id)}
+
+
+def test_a_score_only_dead_letter_round_trips_to_a_score_only_replay():
+    # The row the scoring task's dead-letter path writes, fed to the replay builder.
+    from app.tasks import deterministic_scoring_tasks as tasks
+    task = SimpleNamespace(request=SimpleNamespace(retries=tasks._DECISION_PENDING_RETRY_POLICY.max_attempts,
+                                                   id="task-1"), retry=MagicMock())
+    dead_letters = MagicMock()
+    cc_id = uuid4()
+    with patch.object(tasks, "DeadLetterQueueRepository", return_value=dead_letters):
+        tasks._retry_or_dead_letter(task, MagicMock(), MagicMock(), None, str(cc_id), True, RuntimeError("pending"))
+    task.retry.assert_not_called()
+    row = dead_letters.create.call_args.kwargs
+    entry = SimpleNamespace(campaign_candidate_id=row["campaign_candidate_id"], input_payload=row["input_payload"])
+    _, kwargs, linkable = CampaignService._DLQ_REPLAY_BUILDERS["DETERMINISTIC_SCORE"](entry)
+    assert linkable and kwargs == {"campaign_candidate_id": str(cc_id), "score_only": True}
