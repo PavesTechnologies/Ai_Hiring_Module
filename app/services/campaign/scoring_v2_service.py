@@ -166,6 +166,24 @@ def paraphrase_text_hash(text_hash: str, proposals) -> str:
     return hashlib.sha256(f"{text_hash}:paraphrase:{proposals_hash(proposals)}".encode("utf-8")).hexdigest()
 
 
+def paraphrase_round_outcome(paraphrase: dict) -> tuple[str, str] | None:
+    """
+    Review item 5: a paraphrase round that had skills to retry but did not finish must not let
+    the first round's NOT_FOUND decide - that could reject on a skill the round might have
+    found. The daily cap is NOT_RUN and a failure is PENDING, exactly like the first round:
+    the deciding path retries, then scores without the LLM (where NOT_FOUND is uncertain, so
+    HOLD at most), and never rejects on the partial result. None when the round finished, or
+    had nothing to retry.
+    """
+    if paraphrase.get("skipped_budget"):
+        return OUTCOME_NOT_RUN, "daily LLM call cap reached (paraphrase round)"
+    if paraphrase.get("llm_unavailable"):
+        return OUTCOME_PENDING, paraphrase.get("problem") or "confirmation LLM unavailable"
+    if paraphrase.get("failed"):
+        return OUTCOME_PENDING, f"paraphrase round failed: {paraphrase.get('problem') or 'unknown error'}"
+    return None
+
+
 class ScoringV2Service:
     def __init__(self, db, skill_repository, config_repository, *, provider_resolver=None, cache_service=None):
         """provider_resolver: () -> LLMProvider for the core confirmation; None = confirmation not run."""
@@ -464,12 +482,11 @@ class ScoringV2Service:
                 evidence += extra_evidence
                 # Counted with the confirmation calls, so the daily cap sees them.
                 confirmation["llm_calls"] = int(confirmation.get("llm_calls") or 0) + paraphrase["llm_calls"]
-                if paraphrase.get("llm_unavailable"):
-                    special_outcome = (OUTCOME_PENDING, paraphrase.get("problem") or "confirmation LLM unavailable")
             except Exception as exc:
-                # The first-round result stands; paraphrase never fails scoring.
                 logger.exception("v2 paraphrase round failed | campaign_candidate_id=%s", campaign_candidate.id)
-                paraphrase = {"ran": False, "llm_calls": 0, "problem": f"{type(exc).__name__}: {str(exc)[:200]}"}
+                paraphrase = {"ran": False, "llm_calls": 0, "failed": True,
+                              "problem": f"{type(exc).__name__}: {str(exc)[:200]}"}
+            special_outcome = paraphrase_round_outcome(paraphrase)
 
         fallback_reason = NO_LLM_ON_REQUEST if no_llm_now else None
         if special_outcome is not None and (
