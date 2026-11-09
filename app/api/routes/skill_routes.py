@@ -3,7 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Security
 
 from app.dependencies.skills import get_skill_curation_service
+from app.db.session import get_db
 from app.middleware.rbac import TokenUser, require_roles
+from app.services.campaign_access import CampaignAccess
+from sqlalchemy.orm import Session
 from app.models.identity import UserRole
 from app.schemas.response import APIResponse
 from app.schemas.skills.curation import (
@@ -328,6 +331,7 @@ def list_candidates_for_unknown_skill(
     user: TokenUser = Security(
         require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)
     ),
+    access_db: Session = Depends(get_db),
 ):
     """
     Candidates whose (active) resume carries this exact unmatched raw skill
@@ -335,6 +339,9 @@ def list_candidates_for_unknown_skill(
     skills are never deduped into unknown_skills the way JD-side ones are.
     """
     rows = service.list_candidates_for_unknown_skill(unknown_skill_id)
+    # Only candidates in campaigns the caller may see (campaign access rule).
+    visible = CampaignAccess(access_db).accessible_resume_ids(user, [cs.resume_id for cs, *_ in rows])
+    rows = [row for row in rows if row[0].resume_id in visible]
     return APIResponse.ok(
         data=[
             UnknownSkillCandidateItem(

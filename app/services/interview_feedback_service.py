@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from app.services.campaign_access import acting_user, can_access_campaign
 from app.core.encryption_service import EncryptionService
 from app.core.feedback_token import verify_feedback_token
 from app.enums.constants import ActionType, EntityType
@@ -57,7 +58,7 @@ class InterviewFeedbackService:
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
         if not campaign:
             raise CampaignException("Campaign not found.", 404)
-        if campaign.hiring_manager_id != user_id:
+        if not can_access_campaign(acting_user(user_id, ["HIRING_MANAGER"]), campaign):
             raise CampaignException("You do not have access to this candidate's campaign.", 403)
 
     def _resolve_token(self, token: str) -> tuple:
@@ -161,8 +162,9 @@ class InterviewFeedbackService:
         campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
             raise CampaignException("Campaign candidate not found.", 404)
-        if "HR_ADMIN" not in actor_roles:
-            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+        campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+        if not can_access_campaign(acting_user(actor_id, actor_roles), campaign):
+            raise CampaignException("You do not have access to this candidate's campaign.", 403)
 
         schedule = self.interview_schedule_repo.get_by_id(interview_id)
         if schedule is None or schedule.campaign_candidate_id != campaign_candidate_id:

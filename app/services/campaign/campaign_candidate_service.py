@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi.responses import StreamingResponse
 
+from app.services.campaign_access import acting_user, can_access_campaign
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
 from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_PAGE_SIZE
@@ -2288,7 +2289,7 @@ class CampaignCandidateService:
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
         if not campaign:
             raise CampaignException("Campaign not found.", 404)
-        if campaign.hiring_manager_id != user_id:
+        if not can_access_campaign(acting_user(user_id, ["HIRING_MANAGER"]), campaign):
             raise CampaignException(
                 "You do not have access to this candidate's campaign.", 403,
             )

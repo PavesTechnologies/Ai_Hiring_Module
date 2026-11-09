@@ -29,8 +29,9 @@ def _make_campaign_candidate(campaign_id=None):
     return SimpleNamespace(id=uuid4(), campaign_id=campaign_id or uuid4())
 
 
-def _make_campaign(hiring_manager_id, campaign_id=None):
-    return SimpleNamespace(id=campaign_id or uuid4(), hiring_manager_id=hiring_manager_id)
+def _make_campaign(hiring_manager_id, campaign_id=None, recruiter_id="recruiter-1", created_by="hr-1"):
+    return SimpleNamespace(id=campaign_id or uuid4(), hiring_manager_id=hiring_manager_id,
+                           recruiter_id=recruiter_id, created_by=created_by)
 
 
 def _make_schedule(status=InterviewStatus.PENDING, campaign_candidate_id=None, **overrides):
@@ -2152,24 +2153,17 @@ def test_get_campaign_interviews_recruiter_with_access_succeeds():
     campaign = _make_campaign(hiring_manager_id="someone-else")
     service, campaign, *_rest = _campaign_interview_env(campaign=campaign)
 
-    with patch("app.services.interview_schedule_service.DashboardRepository") as mock_dashboard_repo_cls:
-        mock_dashboard_repo_cls.return_value.is_campaign_accessible_to_recruiter.return_value = True
-        result = service.get_campaign_interviews(campaign.id, actor_id="recruiter-1", actor_roles=["RECRUITER"])
+    result = service.get_campaign_interviews(campaign.id, actor_id="recruiter-1", actor_roles=["RECRUITER"])
 
     assert result == []
-    mock_dashboard_repo_cls.return_value.is_campaign_accessible_to_recruiter.assert_called_once_with(
-        "recruiter-1", campaign.id,
-    )
 
 
 def test_get_campaign_interviews_recruiter_without_access_raises_403():
     campaign = _make_campaign(hiring_manager_id="someone-else")
     service, campaign, *_rest = _campaign_interview_env(campaign=campaign)
 
-    with patch("app.services.interview_schedule_service.DashboardRepository") as mock_dashboard_repo_cls:
-        mock_dashboard_repo_cls.return_value.is_campaign_accessible_to_recruiter.return_value = False
-        with pytest.raises(CampaignException) as exc_info:
-            service.get_campaign_interviews(campaign.id, actor_id="recruiter-1", actor_roles=["RECRUITER"])
+    with pytest.raises(CampaignException) as exc_info:
+        service.get_campaign_interviews(campaign.id, actor_id="recruiter-2", actor_roles=["RECRUITER"])
 
     assert exc_info.value.status_code == 403
 
@@ -2254,20 +2248,12 @@ def test_get_campaign_interviews_empty_result_skips_the_candidate_and_interviewe
 
 
 def test_campaign_calendar_recruiter_check_is_assigned_recruiter_or_creator():
-    # the real repository check over a mocked session: the query is the shared definition
-    from sqlalchemy.dialects import postgresql
+    # the shared campaign access rule (app/services/campaign_access.py): assigned recruiter or creator
     from app.services.interview_schedule_service import InterviewScheduleService
     service = InterviewScheduleService.__new__(InterviewScheduleService)
-    service.campaign_candidate_repo = MagicMock()
-    db = service.campaign_candidate_repo.db
-    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1")
-
-    db.execute.return_value.first.return_value = (campaign.id,)
-    service._authorize_campaign_access(campaign, "rec-1", ["RECRUITER"])            # allowed
-    sql = str(db.execute.call_args.args[0].compile(dialect=postgresql.dialect())).lower()
-    assert "hiring_campaigns.recruiter_id" in sql and "hiring_campaigns.created_by" in sql and "resumes" not in sql
-
-    db.execute.return_value.first.return_value = None
+    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1", recruiter_id="rec-1", created_by="rec-2")
+    service._authorize_campaign_access(campaign, "rec-1", ["RECRUITER"])            # assigned recruiter
+    service._authorize_campaign_access(campaign, "rec-2", ["RECRUITER"])            # creator
     with pytest.raises(CampaignException) as exc:
         service._authorize_campaign_access(campaign, "rec-9", ["RECRUITER"])
     assert exc.value.status_code == 403

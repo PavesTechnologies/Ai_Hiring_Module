@@ -50,7 +50,7 @@ def no_email():
 
 
 def _env(**schedule_overrides):
-    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1")
+    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1", recruiter_id="recruiter-1", created_by="hr-1")
     campaign_candidate = SimpleNamespace(id=uuid4(), campaign_id=campaign.id, full_name="Jane Candidate")
     fields = dict(
         id=uuid4(), campaign_candidate_id=campaign_candidate.id, round_number=1, status=InterviewStatus.SCHEDULED,
@@ -177,10 +177,8 @@ def test_reactivating_a_cancelled_interview_is_audited_as_such():
 
 def test_recruiter_reschedule_on_own_campaign_records_the_recruiter_role():
     service, audit, schedule, cc = _env()
-    with patch(f"{SERVICE}.DashboardRepository") as dashboard:
-        dashboard.return_value.is_campaign_accessible_to_recruiter.return_value = True
-        _reschedule(service, schedule, interviewers=(("Bob Interviewer", "bob@example.invalid"),),
-                    actor=("recruiter-1", "RECRUITER"))
+    _reschedule(service, schedule, interviewers=(("Bob Interviewer", "bob@example.invalid"),),
+                actor=("recruiter-1", "RECRUITER"))
 
     details = _the_audit_entry(audit, cc, ActionType.INTERVIEW_RESCHEDULED, actor=("recruiter-1", "RECRUITER"))
     assert details["fields_changed"] == ["interviewers"]

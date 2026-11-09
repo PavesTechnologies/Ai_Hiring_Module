@@ -5,6 +5,9 @@ Deliberately a separate router from campaign_candidate.py: that module belongs
 to M07/M10 and has been overwritten by pulls more than once, so M11's additions
 live here to keep merges clean.
 """
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Security, status
@@ -125,7 +128,9 @@ def get_allowed_transitions(
     campaign_candidate_id: UUID,
     service: BulkStageMoveService = Depends(get_bulk_stage_move_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_candidate_in_campaign(user, campaign_id, campaign_candidate_id)
     result = service.get_allowed_transitions(
         campaign_id=campaign_id,
         campaign_candidate_id=campaign_candidate_id,
@@ -176,7 +181,9 @@ def list_candidate_notes(
     campaign_candidate_id: UUID,
     service: CandidateNoteService = Depends(get_candidate_note_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     return APIResponse.ok(data=service.list_notes(campaign_candidate_id))
 
 
@@ -259,7 +266,9 @@ def candidate_note_counts(
     request: CandidateNoteCountsRequest,
     service: CandidateNoteService = Depends(get_candidate_note_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidates(user, request.campaign_candidate_ids)
     counts = service.note_counts(request.campaign_candidate_ids)
     return APIResponse.ok(data=CandidateNoteCountsResponse(counts=counts))
 

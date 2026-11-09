@@ -1,3 +1,4 @@
+from app.services.campaign_access import CampaignAccess
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile, status
@@ -127,8 +128,10 @@ def get_campaign_candidates(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
 
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     result = service.get_ranked_campaign_candidates(
         campaign_id,
         page=page,
@@ -173,7 +176,9 @@ def get_campaign_board(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     result = service.get_campaign_board(campaign_id)
 
     return APIResponse.ok(
@@ -254,8 +259,10 @@ def get_campaign_candidate_summary(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
 
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     summary = service.get_campaign_candidate_summary(campaign_id)
 
     return APIResponse.ok(
@@ -371,15 +378,16 @@ def apply_hr_override(
     description=(
         "HM_REVIEW -> INTERVIEW. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def advance_to_interview(
     campaign_candidate_id: UUID,
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     scorecard = service.advance_to_interview(
         campaign_candidate_id,
         actor_id=user.user_id,
@@ -400,15 +408,16 @@ def advance_to_interview(
     description=(
         "INTERVIEW -> SELECTED. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def select_candidate(
     campaign_candidate_id: UUID,
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     scorecard = service.select_candidate(
         campaign_candidate_id,
         actor_id=user.user_id,
@@ -437,7 +446,6 @@ def select_candidate(
         "transition is not duplicated at the endpoint layer anywhere else "
         "in this router either (see apply_hr_override)."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def reject_interview(
     campaign_candidate_id: UUID,
@@ -445,8 +453,10 @@ def reject_interview(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     scorecard = service.reject_at_interview(
         campaign_candidate_id,
         decision_reason=request.decision_reason,
@@ -474,13 +484,14 @@ def reject_interview(
         "template typo) - unlike feedback, this isn't a one-time locked "
         "decision. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def send_rejection_email(
     campaign_candidate_id: UUID,
     service: CampaignCandidateService = Depends(get_campaign_candidate_service),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     result = service.send_rejection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
@@ -500,13 +511,14 @@ def send_rejection_email(
         "(e.g. after fixing a template typo) - unlike feedback, this isn't a "
         "one-time locked decision. HIRING_MANAGER (own campaign only) or HR_ADMIN."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def send_selection_email(
     campaign_candidate_id: UUID,
     service: CampaignCandidateService = Depends(get_campaign_candidate_service),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     result = service.send_selection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
@@ -527,13 +539,14 @@ def send_selection_email(
         "campaign candidates only) or HR_ADMIN (any campaign); candidates "
         "can span multiple campaigns in a single call."
     ),
-    dependencies=[Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN))],
 )
 def bulk_send_rejection_email(
     request: BulkSendRejectionEmailRequest,
     service: CampaignCandidateService = Depends(get_campaign_candidate_service),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
 ):
+    # Per candidate: each goes through send_rejection_email's campaign access check, and one
+    # candidate outside the caller's campaigns is reported without blocking the others.
     result = service.bulk_send_rejection_email(
         request.campaign_candidate_ids, actor_id=user.user_id, actor_roles=user.roles,
     )
@@ -707,7 +720,9 @@ def get_candidate_ai_evaluation(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     ai_evaluation = service.get_candidate_ai_evaluation(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -733,7 +748,9 @@ def get_candidate_composite(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     composite = service.get_candidate_composite(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -799,7 +816,9 @@ def get_candidate_parse_changes(
     campaign_candidate_id: UUID,
     db: Session = Depends(get_db),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     return APIResponse.ok(
         data=ParseChangesResponse(**ResumeReparseService(db).list_changes(campaign_candidate_id)),
         message="Parse changes retrieved successfully.",
@@ -851,7 +870,9 @@ def get_candidate_timeline(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     timeline = service.get_candidate_timeline(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -877,7 +898,9 @@ def get_candidate_composite_history(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     history = service.get_candidate_composite_history(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -903,7 +926,9 @@ def get_candidate_ranking_details(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     details = service.get_candidate_ranking_details(campaign_candidate_id)
 
     return APIResponse.ok(

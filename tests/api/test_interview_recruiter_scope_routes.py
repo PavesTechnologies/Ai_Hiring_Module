@@ -1,8 +1,7 @@
 """
 Security fix: RECRUITER access to interview list / reschedule / cancel is scoped
-to the recruiter's own campaigns (created, uploaded to or bulk-uploaded to), the
-same check as the campaign-wide calendar (_authorize_campaign_access ->
-DashboardRepository.is_campaign_accessible_to_recruiter). HR_ADMIN stays
+to the recruiter's own campaigns (assigned recruiter or creator) by the shared
+campaign access rule (app/services/campaign_access.py). HR_ADMIN stays
 unscoped; HIRING_MANAGER keeps the own-campaign check.
 
 HTTP-level: real routes and real InterviewScheduleService over mocked repos.
@@ -70,7 +69,7 @@ def email_queues():
 
 
 def _env():
-    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1")
+    campaign = SimpleNamespace(id=uuid4(), hiring_manager_id="hm-1", recruiter_id="recruiter-1", created_by="hr-1")
     campaign_candidate = SimpleNamespace(id=uuid4(), campaign_id=campaign.id)
     start = datetime(2026, 8, 20, 15, 0, tzinfo=timezone.utc)
     schedule = SimpleNamespace(
@@ -119,12 +118,9 @@ def test_recruiter_on_another_campaign_gets_403_and_nothing_changes(client, emai
     service, campaign, campaign_candidate, schedule = _env()
     app.dependency_overrides[get_interview_schedule_service] = lambda: service
     _as("recruiter-2", "RECRUITER")
-    with patch(f"{SERVICE}.DashboardRepository") as dashboard:
-        dashboard.return_value.is_campaign_accessible_to_recruiter.return_value = False
-        response = _call(http, route, campaign_candidate, schedule)
+    response = _call(http, route, campaign_candidate, schedule)
 
     assert response.status_code == 403
-    dashboard.return_value.is_campaign_accessible_to_recruiter.assert_called_once_with("recruiter-2", campaign.id)
     assert schedule.status == InterviewStatus.SCHEDULED
     service.interview_schedule_repo.update.assert_not_called()
     service.interview_schedule_repo.add_history.assert_not_called()
@@ -141,12 +137,9 @@ def test_recruiter_on_their_own_campaign_still_works(client, email_queues, route
     service, campaign, campaign_candidate, schedule = _env()
     app.dependency_overrides[get_interview_schedule_service] = lambda: service
     _as("recruiter-1", "RECRUITER")
-    with patch(f"{SERVICE}.DashboardRepository") as dashboard:
-        dashboard.return_value.is_campaign_accessible_to_recruiter.return_value = True
-        response = _call(http, route, campaign_candidate, schedule)
+    response = _call(http, route, campaign_candidate, schedule)
 
     assert response.status_code == 200, response.text
-    dashboard.return_value.is_campaign_accessible_to_recruiter.assert_called_once_with("recruiter-1", campaign.id)
     if route != "list":
         service.interview_schedule_repo.commit.assert_called_once()
 
@@ -157,11 +150,9 @@ def test_hr_admin_stays_unscoped(client, email_queues, route):
     service, _, campaign_candidate, schedule = _env()
     app.dependency_overrides[get_interview_schedule_service] = lambda: service
     _as("hr-1", "HR_ADMIN")
-    with patch(f"{SERVICE}.DashboardRepository") as dashboard:
-        response = _call(http, route, campaign_candidate, schedule)
+    response = _call(http, route, campaign_candidate, schedule)
 
     assert response.status_code == 200, response.text
-    dashboard.assert_not_called()
 
 
 @pytest.mark.parametrize("route", ROUTES)

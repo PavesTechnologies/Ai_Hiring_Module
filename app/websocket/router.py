@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from dataclasses import replace
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -130,6 +131,25 @@ async def _authenticate_and_authorize(
         return None
 
 
+def _may_watch_campaign(user: TokenUser, campaign_id: UUID) -> bool:
+    """The campaign access check for the board socket, judged on the roles the socket admits."""
+    from app.db.session import SessionLocal
+    from app.exceptions.campaign_exceptions import CampaignException
+    from app.middleware.rbac import ROLE_PRECEDENCE
+    from app.services.campaign_access import CampaignAccess
+
+    admitted = replace(user, authorised_roles=tuple(
+        role for role in ROLE_PRECEDENCE if role in ALL_REALTIME_ROLES and role in user.roles))
+    db = SessionLocal()
+    try:
+        CampaignAccess(db).require_campaign(admitted, campaign_id)
+        return True
+    except CampaignException:
+        return False
+    finally:
+        db.close()
+
+
 def _token_expiry(user: TokenUser) -> float | None:
     exp = (user.claims or {}).get("exp")
     return float(exp) if isinstance(exp, (int, float)) else None
@@ -176,17 +196,16 @@ async def job_description_updates(
 @router.websocket("/campaign-candidates/campaign/{campaign_id}/board")
 async def campaign_board_updates(websocket: WebSocket, campaign_id: UUID) -> None:
     """
-    Allowed: HR_ADMIN, RECRUITER, HIRING_MANAGER.
-
-    Mirrors GET /airs/campaign-candidates/campaign/{campaign_id}/board's own
-    authorization exactly: role-gated only. That HTTP endpoint does not
-    check campaign ownership/assignment (HiringCampaign.hiring_manager_id/
-    recruiter_id are not enforced anywhere in the existing code - see
-    CampaignRepository.get_by_id / CampaignCandidateService.get_campaign_board),
-    so no additional campaign-access check is introduced here either.
+    Allowed: HR_ADMIN, RECRUITER, HIRING_MANAGER - and only on a campaign the caller may see:
+    the same campaign access check as GET .../campaign/{campaign_id}/board
+    (app/services/campaign_access.py). Refused with 1008 before anything is registered.
     """
     user = await _authenticate_and_authorize(websocket, ALL_REALTIME_ROLES)
     if user is None:
+        return
+    if not await asyncio.to_thread(_may_watch_campaign, user, campaign_id):
+        logger.warning("WebSocket rejected: no access to campaign %s (user_id=%s)", campaign_id, user.user_id)
+        await websocket.close(code=1008, reason="You do not have access to this campaign.")
         return
 
     channel = campaign_board_channel(str(campaign_id))

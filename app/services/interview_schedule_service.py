@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timezone
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from app.services.campaign_access import acting_user, can_access_campaign
 from app.core.encryption_service import EncryptionService
 from app.enums.constants import ActionType, EntityType, UserRole
 from app.middleware.rbac import authorising_role
@@ -9,7 +10,6 @@ from app.models.interview import InterviewHistoryEventType, InterviewPlatform, I
 from app.exceptions.campaign_exceptions import CampaignException
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
-from app.repositories.dashboard_repository import DashboardRepository
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.interview_feedback_repository import InterviewFeedbackRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
@@ -118,7 +118,7 @@ class InterviewScheduleService:
         campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
         if not campaign:
             raise CampaignException("Campaign not found.", 404)
-        if campaign.hiring_manager_id != user_id:
+        if not can_access_campaign(acting_user(user_id, ["HIRING_MANAGER"]), campaign):
             raise CampaignException(
                 "You do not have access to this candidate's campaign.", 403,
             )
@@ -154,15 +154,13 @@ class InterviewScheduleService:
         # (_authorize_campaign_access); before this a RECRUITER could read,
         # reschedule or cancel any campaign's interview by changing the ID.
         # HIRING_MANAGER keeps the own-campaign check.
-        if "HR_ADMIN" in actor_roles:
-            return campaign_candidate
-        if "RECRUITER" in actor_roles:
-            campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
-            if campaign is None:
-                raise CampaignException("Campaign not found.", 404)
-            self._authorize_campaign_access(campaign, actor_id, actor_roles)
-            return campaign_candidate
-        self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+        # One rule for every campaign-scoped route (app/services/campaign_access.py): HR_ADMIN all,
+        # HIRING_MANAGER their own campaigns, RECRUITER assigned or created.
+        campaign = self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
+        if campaign is None:
+            raise CampaignException("Campaign not found.", 404)
+        if not can_access_campaign(acting_user(actor_id, actor_roles), campaign):
+            raise CampaignException("You do not have access to this candidate's campaign.", 403)
         return campaign_candidate
 
     def _to_response(self, schedule, interviewers, history) -> InterviewScheduleResponse:
@@ -250,23 +248,9 @@ class InterviewScheduleService:
         return responses
 
     def _authorize_campaign_access(self, campaign, actor_id: str, actor_roles: list[str]) -> None:
-        """
-        Campaign-wide interview calendar follow-up - the first campaign-
-        level (not candidate-level) ownership check in this codebase.
-        HIRING_MANAGER mirrors the candidate-level
-        campaign.hiring_manager_id == user_id check used everywhere else
-        in this file; RECRUITER uses the one definition of a recruiter's
-        campaigns - assigned recruiter or creator (see
-        app/repositories/recruiter_campaigns.py).
-        """
-        if "HR_ADMIN" in actor_roles:
+        """The campaign-wide interview calendar: the shared campaign access rule (campaign_access)."""
+        if can_access_campaign(acting_user(actor_id, actor_roles), campaign):
             return
-        if "HIRING_MANAGER" in actor_roles and campaign.hiring_manager_id == actor_id:
-            return
-        if "RECRUITER" in actor_roles:
-            dashboard_repo = DashboardRepository(self.campaign_candidate_repo.db)
-            if dashboard_repo.is_campaign_accessible_to_recruiter(actor_id, campaign.id):
-                return
         raise CampaignException("You do not have access to this campaign's interviews.", 403)
 
     def get_campaign_interviews(

@@ -1,3 +1,4 @@
+from app.services.campaign_access import CampaignAccess
 from datetime import datetime
 from uuid import UUID
 
@@ -395,7 +396,9 @@ def delete_weight_preset(preset_id: UUID,
 def get_campaign_details(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.HIRING_MANAGER, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     campaign_details = service.get_campaign_details(campaign_id, user)
 
     return APIResponse.ok(data=campaign_details,
@@ -412,7 +415,9 @@ def get_campaign_details(campaign_id: UUID,
 def get_pipeline_summary(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     summary = service.get_pipeline_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Pipeline summary retrieved successfully.")
 
@@ -506,7 +511,9 @@ def get_dead_letter_queue(campaign_id: UUID,
 def get_processing_queue(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN,UserRole.RECRUITER,UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     return APIResponse.ok(data=service.get_processing_queue(campaign_id),
         message="Processing queue retrieved successfully.",
     )

@@ -1,3 +1,6 @@
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -266,8 +269,10 @@ def get_resume_parsed_json_by_candidate(
     campaign_candidate_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
     """Read-only monitoring endpoint — returns the campaign candidate's active resume's parsed_json."""
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     return APIResponse.ok(
         data=service.get_parsed_json_by_campaign_candidate(campaign_candidate_id),
         message="Parsed resume data retrieved successfully.",

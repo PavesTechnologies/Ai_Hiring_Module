@@ -3,6 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
 
+from app.db.session import get_db
+from app.services.campaign_access import CampaignAccess
+from sqlalchemy.orm import Session
 from app.dependencies.monitoring import get_embedding_dashboard_service, get_ops_monitoring_service
 from app.enums.constants import UserRole
 from app.middleware.rbac import TokenUser, require_roles
@@ -31,12 +34,16 @@ def get_queue_status(
     campaign_id: UUID | None = Query(default=None),
     service: OpsMonitoringService = Depends(get_ops_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.SUPER_ADMIN, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only ops monitoring endpoint — a database approximation of queue
     depth (COUNT(*) queries against celery_task_log/bulk_upload_job_files),
-    not a live broker read.
+    not a live broker read. Naming a campaign needs access to it; the unscoped
+    overview is counts only.
     """
+    if campaign_id is not None:
+        CampaignAccess(access_db).require_campaign(user, campaign_id)
     return APIResponse.ok(
         data=service.get_queue_status(campaign_id=campaign_id),
         message="Queue status retrieved successfully.",

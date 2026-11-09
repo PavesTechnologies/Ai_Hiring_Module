@@ -1,3 +1,6 @@
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from datetime import datetime
 from uuid import UUID
 
@@ -235,7 +238,9 @@ def suggest_skills(
     limit: int = Query(default=10, ge=1, le=25),
     service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     return APIResponse.ok(
         data=service.suggest_skills(campaign_id, q, limit),
         message="Skill suggestions retrieved successfully",
@@ -259,7 +264,9 @@ def filter_candidates_by_skill(
     q: str = Query(default="", description="Raw text typed, for search analytics."),
     service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     ids, tiers = service.resolve_skill_filter(
         campaign_id=campaign_id,
         skill_ids=skill_ids,
@@ -306,7 +313,9 @@ def filter_candidates(
     upload_type: str | None = Query(default=None, description="individual | bulk"),
     service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     ids = service.filter_candidates(
         campaign_id,
         experience_min=_parse_optional_float(experience_min, "experience_min"),
