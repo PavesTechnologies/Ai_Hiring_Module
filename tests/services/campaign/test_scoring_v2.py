@@ -219,3 +219,49 @@ def test_v1_no_longer_decides_anything():
     import app.tasks.deterministic_scoring_tasks as task
     assert not hasattr(task, "_v2_decides") and not hasattr(task, "_record_v1_result")
     assert not hasattr(task, "CandidateScoringService")
+
+
+# --- review item 24: an uncertain core skill is HOLD at most, never REJECT ----------
+
+ONE_CORE_JD = [_skill(CORE_A, "Program Management", "core"), _skill(SUP_C, "Stakeholder Management")]
+
+
+def test_one_core_jd_with_a_split_vote_is_review_not_reject():
+    # 0% core coverage only because the one core skill is uncertain: that fails coverage too, and
+    # still must not reject (product owner, 2026-11-05).
+    result = _score([_ev(CORE_A), _ev(SUP_C)], _confirm(A="UNCERTAIN"), jd=ONE_CORE_JD,
+                    required_skill_coverage_threshold=60.0)
+    assert result["outcome"] == "REVIEW" and result["deterministic_passed"] is True
+    assert result["core_confirmed_count"] == 0 and result["core_uncertain"] == ["Program Management"]
+    assert "Core skill coverage met only if the uncertain core skills are confirmed" in result["needs_review_reason"]
+
+
+def test_one_core_jd_with_its_core_skill_missing_still_rejects():
+    result = _score([_ev(SUP_C)], _confirm(A="NOT_FOUND"), jd=ONE_CORE_JD, required_skill_coverage_threshold=60.0)
+    assert result["outcome"] == "REJECT"
+
+
+def test_coverage_failed_by_definite_gaps_still_rejects_with_uncertainty_present():
+    jd = [_skill(i, f"Core {n}", "core") for n, i in enumerate((CORE_A, CORE_B, SUP_C, SUP_D))]
+    statuses = {str(CORE_A): {"status": "CONFIRMED"}, str(CORE_B): {"status": "UNCERTAIN"},
+                str(SUP_C): {"status": "NOT_FOUND"}, str(SUP_D): {"status": "NOT_FOUND"}}
+    # 2 of 4 even with the uncertain one confirmed: 50% < 75% - a definite failure.
+    result = _score([_ev(CORE_A), _ev(CORE_B)], statuses, jd=jd, allowed=3, required_skill_coverage_threshold=75.0)
+    assert result["outcome"] == "REJECT"
+
+
+def test_a_listed_only_core_skill_counts_as_missing_not_undecided():
+    # "Listed only, not shown in work" is a judgment on the evidence (votes were yes), not a split vote:
+    # all core skills listed only still rejects (golden S5, H6).
+    statuses = {str(CORE_A): {"status": "UNCERTAIN", "reason": "listed_only"},
+                str(CORE_B): {"status": "UNCERTAIN", "reason": "listed_only"}}
+    assert _score([_ev(CORE_A), _ev(CORE_B)], statuses)["outcome"] == "REJECT"
+    split = {str(CORE_A): {"status": "UNCERTAIN", "reason": "mixed_votes"},
+             str(CORE_B): {"status": "UNCERTAIN", "reason": "mixed_votes"}}
+    assert _score([_ev(CORE_A), _ev(CORE_B)], split)["outcome"] == "REVIEW"
+
+
+def test_the_listed_only_reason_matches_the_confirmation_service():
+    from app.services.campaign.scoring_v2 import REASON_LISTED_ONLY
+    from app.services.skills import core_skill_confirmation_service as confirmation
+    assert REASON_LISTED_ONLY == confirmation.REASON_LISTED_ONLY

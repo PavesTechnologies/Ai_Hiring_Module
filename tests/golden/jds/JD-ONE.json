@@ -1,0 +1,267 @@
+{
+ "key": "JD-ONE",
+ "campaign_name": "[P3] Junior Python Developer (one core skill)",
+ "job_description": {
+  "title": "Junior Python Developer",
+  "raw_text": "Junior Python Developer\nNorthwind Digital Labs · Bengaluru · Full-time\nAbout the role\nWe are hiring junior Python developers to join our platform team. You will build and maintain backend services and internal APIs, write tests, and work with senior engineers in code reviews.\nExperience\nMinimum 1 year of hands-on development experience. Internships count towards this.\nEducation\nB.E. / B.Tech in Computer Science.\nMust-have skills\nPython\nSQL\nREST APIs\nGit\nGood to have\nDjango or FastAPI\nUnit testing with pytest\nLinux command line\nDocker\nNice to have\nAWS\nReact\nResponsibilities\nBuild and maintain REST APIs in Python\nWrite SQL queries and simple database migrations\nWrite unit tests and fix bugs found in review\nUse Git for version control and pull requests",
+  "extracted_json": {
+   "aliases": {},
+   "location": "Bengaluru",
+   "metadata": {},
+   "education": {
+    "field": "Computer Science",
+    "degree": "B.E. / B.Tech",
+    "degree_level": "BACHELOR",
+    "field_normalized": "COMPUTER_SCIENCE",
+    "related_field_allowed": false
+   },
+   "work_mode": null,
+   "experience": {
+    "max_experience_years": null,
+    "min_experience_years": 1
+   },
+   "soft_skills": [],
+   "certifications": [],
+   "employment_type": "Full-time",
+   "required_skills": {
+    "core": [
+     "Python"
+    ],
+    "supporting": [
+     "SQL",
+     "REST APIs",
+     "Git"
+    ]
+   },
+   "preferred_skills": [
+    "Django",
+    "FastAPI",
+    "pytest",
+    "Linux command line",
+    "Docker",
+    "AWS",
+    "React"
+   ],
+   "responsibilities": [
+    "Build and maintain REST APIs in Python",
+    "Write SQL queries and simple database migrations",
+    "Write unit tests and fix bugs found in review",
+    "Use Git for version control and pull requests"
+   ],
+   "domain_capabilities": {
+    "required": [],
+    "preferred": []
+   }
+  },
+  "required_skills": {
+   "aliases": {},
+   "required": {
+    "core": [
+     "Python"
+    ],
+    "supporting": [
+     "SQL",
+     "REST APIs",
+     "Git"
+    ]
+   },
+   "preferred": [
+    "Django",
+    "FastAPI",
+    "pytest",
+    "Linux command line",
+    "Docker",
+    "AWS",
+    "React"
+   ]
+  },
+  "min_experience_years": "1.0",
+  "max_experience_years": "3.0",
+  "notice_period": 30,
+  "education_criteria": {
+   "field": null,
+   "degree": null
+  },
+  "source_format": "DOCX",
+  "original_filename": "jd_fresher.docx",
+  "version_number": 1,
+  "is_active_version": true,
+  "jurisdiction": "INDIA",
+  "is_verified": "VERIFIED",
+  "calibration_status": "CALIBRATED",
+  "calibration_version": 5,
+  "calibrated_min_experience_years": "1.0",
+  "experience_tolerance_years": null,
+  "education_requirement": "MANDATORY",
+  "internship_credit_pct": null,
+  "role_domain": "SOFTWARE",
+  "profile_template": "FRESHER"
+ },
+ "jd_skills": [
+  {
+   "skill": "AWS",
+   "mandatory": false,
+   "weight": "1.00",
+   "importance": null,
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Django",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Docker",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "FastAPI",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Linux",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "MANUAL_HR",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "Python",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "REST APIs",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "React",
+   "mandatory": false,
+   "weight": "1.00",
+   "importance": null,
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "git",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "CASE_INSENSITIVE",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "pytest",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "SUPPORTING",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "EXACT",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  },
+  {
+   "skill": "sql",
+   "mandatory": true,
+   "weight": "1.00",
+   "importance": "CORE",
+   "confidence": 1.0,
+   "sense_key": null,
+   "required": false,
+   "requirement_text": null,
+   "match_tier": "CASE_INSENSITIVE",
+   "verification_status": "HR_VERIFIED",
+   "aliases": []
+  }
+ ],
+ "unknown_skills": [],
+ "campaign": {
+  "name": "[P3] Junior Python Developer (one core skill)",
+  "status": "ACTIVE",
+  "weight_deterministic": "30.00",
+  "weight_semantic": "40.00",
+  "weight_ai": "30.00",
+  "semantic_threshold": "0.6500",
+  "ai_threshold": "50.00",
+  "deterministic_threshold": "70.00",
+  "required_skill_coverage_threshold": "60.00",
+  "max_missing_core_skills": 3,
+  "max_missing_core_pct": "25.00",
+  "scoring_v2_enabled": true,
+  "scoring_v2_shadow": true,
+  "jd_calibration_exempt": false,
+  "max_candidates": 1,
+  "deadline": null,
+  "report_scheduled": false,
+  "prompt_template": "Resume Parsing - Standard",
+  "ai_evaluate_prompt": "AI Evaluation - Fresher"
+ }
+}

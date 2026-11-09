@@ -4210,6 +4210,65 @@
   "model": "gemini-3.1-flash-lite",
   "used_fallback": false
  },
+ "ONE-SPLIT|1f676f527c417f0811f61210066003bd0cb598f7e0d33c2fe5f9bf4635a97972": {
+  "results": [
+   {
+    "canonical_skill_id": "7cbb1591-22fc-441e-9973-d6cdc3a4713a",
+    "name": "sql",
+    "jd_sense": null,
+    "jd_sense_basis": null,
+    "found": true,
+    "found_senses": [],
+    "sources": [
+     "LLM",
+     "SCAN"
+    ],
+    "confirmed": false,
+    "quote": "Wrote SQL queries",
+    "quote_verified": true,
+    "method": "llm",
+    "votes": [
+     "yes",
+     "no",
+     "yes"
+    ],
+    "status": "UNCERTAIN",
+    "reason": "mixed_votes",
+    "vote_quotes": [
+     "Wrote SQL queries",
+     null,
+     "Wrote SQL queries"
+    ],
+    "evidence_hash": "205a376fc73cd27d",
+    "llm": {
+     "provider": "GOOGLE",
+     "model": "gemini-3.1-flash-lite",
+     "used_fallback": false
+    },
+    "llm_votes": [
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     },
+     {
+      "provider": "GOOGLE",
+      "model": "gemini-3.1-flash-lite",
+      "used_fallback": false
+     }
+    ]
+   }
+  ],
+  "provider": "GOOGLE",
+  "model": "gemini-3.1-flash-lite",
+  "used_fallback": false,
+  "note": "Pinned split vote for review item 24 (the live vote was yes/yes/yes); edited by hand, not a model answer."
+ },
  "S2|ca71533ea6e26ff9a3927f7a94448b765c29ab6ed0bf402059a7f3fdae23a93f": {
   "results": [
    {

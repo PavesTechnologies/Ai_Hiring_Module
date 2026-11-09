@@ -4,7 +4,8 @@
  "jds": {
   "JD-F": "jds/JD-F.json",
   "JD-D": "jds/JD-D.json",
-  "JD-S": "jds/JD-S.json"
+  "JD-S": "jds/JD-S.json",
+  "JD-ONE": "jds/JD-ONE.json"
  },
  "cases": [
   {
@@ -1421,6 +1422,29 @@
      "HOLD"
     ],
     "why": "core skills need a vote or weren't found (Python, git, sql) - HOLD, never REJECT"
+   }
+  },
+  {
+   "id": "ONE-SPLIT",
+   "set": "phase3",
+   "jd": "JD-ONE",
+   "resume": "resumes/F1.json",
+   "source_docx": "tests/fixtures/duplicates/F1_v2.docx",
+   "expected": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "core": "0/1",
+    "note": "Review item 24: the JD's only core skill (SQL) gets a split vote (yes, no, yes - pinned in the vote cache). An uncertain core skill is HOLD at most, never REJECT - also when it leaves core coverage at 0% under a 60% threshold."
+   },
+   "tests": [
+    "uncertain_core_never_rejects"
+   ],
+   "expected_no_llm": {
+    "outcomes": [
+     "HOLD"
+    ],
+    "why": "SQL needs a vote (not auto-confirmed) - uncertain without the LLM: HOLD, never REJECT"
    }
   }
  ]

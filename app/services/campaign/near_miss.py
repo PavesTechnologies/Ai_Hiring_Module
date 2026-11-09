@@ -11,8 +11,15 @@ A near-miss is one of:
 
 Exactly one near-miss -> HOLD; two or more -> REJECT. Any other failed check
 (coverage, education, score threshold where it applies), experience short by
-more than the tolerance, or zero confirmed core skills (on a JD that has core
-skills) -> REJECT. Semantic and AI still run for a HOLD candidate. A semantic
+more than the tolerance, or zero confirmed and zero uncertain core skills (on a
+JD that has core skills) -> REJECT.
+
+Uncertain core skills (split vote, mismatched quote, failed vote; review item
+24, product owner 2026-11-05) never cause a REJECT: what they decide is HOLD at
+most. Only the definite facts can reject - the near-miss count is the definite
+missing core skills over the allowance that would apply were the uncertain ones
+confirmed; uncertainty that takes the candidate over the limit, or that a
+gate fails only because of (uncertain_failed_checks), is review, not rejection. Semantic and AI still run for a HOLD candidate. A semantic
 score below the threshold doesn't reject it - it is added to the review
 reason (add_review_note) and the candidate goes on to AI evaluation, which
 may still reject; the best outcome is capped at HOLD.
@@ -89,26 +96,41 @@ def evaluate_near_miss(
     over_limit_names: list[str] | None = None,
     experience: dict | None = None,
     other_failed_checks: list[str] | None = None,
+    definite_allowed_missing_core: int | None = None,
+    uncertain_failed_checks: list[str] | None = None,
 ) -> NearMissDecision:
     """
     The single decision rule. other_failed_checks are checks that are never a
     near-miss (coverage, education, score threshold); any of them rejects.
+    definite_allowed_missing_core: the allowance were every uncertain core skill
+    confirmed (it can differ when required core skills are uncertain); defaults
+    to allowed_missing_core. uncertain_failed_checks: checks that fail only
+    because uncertain core skills count as missing - HOLD at most.
     """
     near_misses: list[str] = []
-    near_miss_count = 0   # each core skill over the limit counts once
+    near_miss_count = 0   # each definite core skill over the limit counts once
+    uncertain_hold = False
     reject_reasons = [f"{name} not met" for name in (other_failed_checks or [])]
+    definite_allowed = allowed_missing_core if definite_allowed_missing_core is None else definite_allowed_missing_core
 
     if core_skill_count > 0:
         over = max(0, definite_missing_core + uncertain_core - allowed_missing_core)
-        if confirmed_core_count == 0:
+        definite_over = max(0, definite_missing_core - definite_allowed)
+        if confirmed_core_count == 0 and uncertain_core == 0:
             reject_reasons.append("No core skill confirmed")
-        elif over:
+        elif over or definite_over:
+            shown = max(over, definite_over)
             names = f" (missing: {', '.join(over_limit_names)})" if over_limit_names else ""
             uncertain_note = f", {uncertain_core} uncertain" if uncertain_core else ""
-            label = "core skill" if over == 1 else "core skills"
-            near_misses.append(f"{over} {label} over the missing-core limit of {allowed_missing_core}"
+            label = "core skill" if shown == 1 else "core skills"
+            near_misses.append(f"{shown} {label} over the missing-core limit of {allowed_missing_core}"
                                f"{uncertain_note}{names}")
-            near_miss_count += over
+            near_miss_count += definite_over
+            uncertain_hold = over > definite_over
+
+    for check in uncertain_failed_checks or []:
+        near_misses.append(f"{check} met only if the uncertain core skills are confirmed")
+        uncertain_hold = True
 
     if experience and experience.get("applicable") and experience.get("passed") is False:
         years, min_years = experience.get("candidate_years"), experience.get("min_years")
@@ -131,9 +153,9 @@ def evaluate_near_miss(
 
     if reject_reasons:
         return NearMissDecision(OUTCOME_REJECT, near_misses, reject_reasons)
-    if near_miss_count == 0:
+    if near_miss_count == 0 and not uncertain_hold:
         return NearMissDecision(OUTCOME_PASS)
-    if near_miss_count == 1:
+    if near_miss_count <= 1:
         return NearMissDecision(OUTCOME_HOLD, near_misses)
     return NearMissDecision(OUTCOME_REJECT, near_misses,
                             [f"{near_miss_count} near-misses - only one is allowed"])

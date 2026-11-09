@@ -1,15 +1,15 @@
 {
- "accepted_on": "2026-11-05",
- "run_at": "2026-11-05T06:53:22.317799+00:00",
+ "accepted_on": "2026-11-09",
+ "run_at": "2026-11-09T10:04:34.605895+00:00",
  "mode": "llm",
- "fingerprint": "25e4a366a680e2305c08c1962d16f50221f87e14ffea578f81a598c7ebd9b80b",
+ "fingerprint": "e96e3411b03e5fb22707f6266a2a118673e882996d35dac8f5a12de279d77343",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
   "output_tokens": 0,
   "case_calls": 0,
   "log_write_failures": 0,
-  "vote_cache_hits": 58,
+  "vote_cache_hits": 59,
   "dev_cache_hits": 0,
   "new_cache_entries": 0,
   "model": null,
@@ -2216,7 +2216,7 @@
    "failed_checks": [
     "Core skills"
    ],
-   "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1, 1 uncertain (missing: Data Engineering, MLOps)",
+   "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 1 (missing: Data Engineering, MLOps)",
    "experience_years": 14.2,
    "experience_ongoing": true,
    "scoring_mode": "llm",
@@ -4748,6 +4748,49 @@
    "llm_calls": 0,
    "problem": null,
    "scoring_config_version": "19e7c1e597e1353c"
+  },
+  "ONE-SPLIT": {
+   "outcome": "HOLD",
+   "core": "0/1",
+   "score": null,
+   "failed_checks": [
+    "Core skills",
+    "Core skill coverage"
+   ],
+   "needs_review_reason": "Needs recruiter review: 1 core skill over the missing-core limit of 0, 1 uncertain (missing: sql); Core skill coverage met only if the uncertain core skills are confirmed",
+   "experience_years": 1.0,
+   "experience_ongoing": false,
+   "scoring_mode": "llm",
+   "awaiting_full_scoring": false,
+   "numeric_inputs": {
+    "domain.score": null,
+    "education.score": 100.0,
+    "experience.effective_min_years": 1.0,
+    "experience.min_years": 1.0,
+    "experience.near_miss_tolerance_years": null,
+    "experience.score": 100.0
+   },
+   "skills": {
+    "sql": {
+     "status": "UNCERTAIN",
+     "method": "llm",
+     "reason": "mixed_votes",
+     "votes": [
+      "yes",
+      "no",
+      "yes"
+     ],
+     "quote": "Wrote SQL queries",
+     "paraphrase": null,
+     "evidence": [
+      "[SKILLS] Python, SQL, REST APIs, Git, FastAPI, Django, pytest, Docker, Linux, AWS",
+      "[EXPERIENCE] Wrote SQL queries and Alembic migrations on PostgreSQL"
+     ]
+    }
+   },
+   "llm_calls": 0,
+   "problem": null,
+   "scoring_config_version": "2be7f7963f105fb3"
   }
  }
 }

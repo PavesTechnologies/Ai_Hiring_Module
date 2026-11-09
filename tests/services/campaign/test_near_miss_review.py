@@ -42,7 +42,8 @@ def _exp(years, min_years, passed=None):
 @pytest.mark.parametrize("missing, uncertain, expected", [
     (3, 0, OUTCOME_HOLD),     # one definite skill over the limit
     (2, 1, OUTCOME_HOLD),     # the uncertain match takes them over by one
-    (3, 1, OUTCOME_REJECT),   # two over the limit
+    (3, 1, OUTCOME_HOLD),     # one definite over the limit; the uncertain one never makes it a REJECT
+    (4, 1, OUTCOME_REJECT),   # two definite over the limit
     (1, 1, OUTCOME_PASS),     # the uncertain one doesn't matter
     (4, 0, OUTCOME_REJECT),
 ])
@@ -65,9 +66,12 @@ def test_one_core_jd_missing_its_only_core_skill_rejects():
     assert _rule(core=1, allowed=0, missing=1).outcome == OUTCOME_REJECT
 
 
-def test_one_core_jd_with_its_only_core_skill_uncertain_rejects():
+def test_one_core_jd_with_its_only_core_skill_uncertain_is_hold():
+    # Review item 24: a split vote on the only core skill is review, never a rejection.
     decision = _rule(core=1, allowed=0, uncertain=1)
-    assert decision.outcome == OUTCOME_REJECT and "No core skill confirmed" in decision.reject_reasons
+    assert decision.outcome == OUTCOME_HOLD
+    assert decision.review_reason.startswith("Needs recruiter review: 1 core skill over the missing-core limit of 0"
+                                             ", 1 uncertain")
 
 
 def test_one_core_jd_with_it_confirmed_passes():
@@ -86,7 +90,50 @@ def test_two_core_jd_one_confirmed_one_uncertain_is_hold():
 
 def test_two_core_jd_none_confirmed_rejects():
     assert _rule(core=2, allowed=0, missing=2).outcome == OUTCOME_REJECT
-    assert _rule(core=2, allowed=0, missing=1, uncertain=1, confirmed=0).outcome == OUTCOME_REJECT
+
+
+def test_two_core_jd_none_confirmed_but_one_uncertain_is_hold():
+    # one definite near-miss (the missing one); the uncertain one adds review, not a second near-miss
+    assert _rule(core=2, allowed=0, missing=1, uncertain=1, confirmed=0).outcome == OUTCOME_HOLD
+
+
+# --- review item 24: uncertain core skills are HOLD at most, never REJECT ----------
+
+def test_zero_confirmed_and_zero_uncertain_still_rejects():
+    decision = _rule(core=3, allowed=1, missing=3, confirmed=0)
+    assert decision.outcome == OUTCOME_REJECT and "No core skill confirmed" in decision.reject_reasons
+
+
+@pytest.mark.parametrize("uncertain", [1, 2, 3])
+def test_all_core_skills_uncertain_is_hold_however_many(uncertain):
+    assert _rule(core=uncertain, allowed=0, uncertain=uncertain, confirmed=0).outcome == OUTCOME_HOLD
+
+
+def test_an_experience_near_miss_plus_uncertainty_stays_hold():
+    # Previously two near-misses (REJECT); the uncertain skill can't be the second one.
+    assert _rule(core=2, allowed=0, uncertain=1, experience=_exp(9.2, 10)).outcome == OUTCOME_HOLD
+
+
+def test_definite_facts_still_reject_whatever_is_uncertain():
+    assert _rule(core=6, allowed=0, missing=2, uncertain=2, confirmed=2).outcome == OUTCOME_REJECT
+    assert _rule(core=2, allowed=0, missing=1, uncertain=1, experience=_exp(9.2, 10)).outcome == OUTCOME_REJECT
+    assert _rule(core=2, allowed=0, uncertain=1, other=["Education"]).outcome == OUTCOME_REJECT
+
+
+def test_the_definite_allowance_judges_the_definite_missing():
+    # Two required core skills definitely missing (allowance 0 once the uncertain are confirmed): REJECT,
+    # even though the pessimistic allowance (2) would have covered them.
+    decision = evaluate_near_miss(core_skill_count=6, confirmed_core_count=2, allowed_missing_core=2,
+                                  definite_missing_core=2, uncertain_core=2, definite_allowed_missing_core=0)
+    assert decision.outcome == OUTCOME_REJECT
+
+
+def test_a_gate_failed_only_by_uncertainty_is_hold():
+    decision = evaluate_near_miss(core_skill_count=4, confirmed_core_count=2, allowed_missing_core=2,
+                                  definite_missing_core=0, uncertain_core=2,
+                                  uncertain_failed_checks=["Core skill coverage"])
+    assert decision.outcome == OUTCOME_HOLD
+    assert "Core skill coverage met only if the uncertain core skills are confirmed" in decision.review_reason
 
 
 def test_two_core_jd_one_missing_and_experience_short_rejects():

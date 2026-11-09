@@ -46,7 +46,8 @@ def _changed_lines(a: str, b: str) -> list[str]:
 def test_the_committed_golden_set_is_valid_and_complete():
     from collections import Counter
     counts = Counter(c["set"] for c in CASES)
-    assert (counts["phase3"], counts["hard_negative"], counts["senior"]) == (16, 10, 8)
+    # phase3 includes ONE-SPLIT (review item 24: a split vote on a one-core-skill JD)
+    assert (counts["phase3"], counts["hard_negative"], counts["senior"]) == (17, 10, 8)
     assert counts["counterfactual"] >= 1
 
 

@@ -4,7 +4,7 @@ The synthetic candidates scoring is checked against. They're self-contained: eve
 
 | Set | Cases | JD |
 |---|---|---|
-| phase3 | F1–F8, D1–D8 | JD-F (Junior Python Developer), JD-D (ServiceNow ITSM) |
+| phase3 | F1–F8, D1–D8, ONE-SPLIT | JD-F (Junior Python Developer), JD-D (ServiceNow ITSM), JD-ONE (JD-F with SQL as its only core skill) |
 | hard_negative | H1–H10 | JD-F, JD-D |
 | senior | S1–S8 | JD-S (Head of Data & AI Platforms) |
 | counterfactual | CF-… | as their base |
@@ -73,3 +73,5 @@ The resumes are built by `scripts/fixtures/build_counterfactuals.py`. All names 
 `--write` saves it. Refreeze deliberately: a new parse changes what the golden runner scores.
 
 The 34 original cases were frozen from dev's stored parses with `python -m scripts.golden.freeze_from_dev`. F1 is `tests/fixtures/duplicates/F1_v2.docx`, the version dev has scored.
+
+**Pinned votes:** ONE-SPLIT's vote-cache entry is edited by hand to a split vote (yes, no, yes) - the live model said yes three times. It checks that an undecided core skill never rejects (review item 24); its entry carries a `note` saying so. Re-recording the cache must keep it.

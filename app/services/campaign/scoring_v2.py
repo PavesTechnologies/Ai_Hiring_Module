@@ -84,6 +84,9 @@ STATUS_CONFIRMED = "CONFIRMED"
 STATUS_REJECTED = "REJECTED"
 STATUS_UNCONFIRMED = "UNCONFIRMED"
 STATUS_UNCERTAIN = "UNCERTAIN"
+# The confirmation service's REASON_LISTED_ONLY - kept here like the statuses above, so this pure module
+# stays free of the LLM-side imports (a test checks the two agree).
+REASON_LISTED_ONLY = "listed_only"
 STATUS_NOT_RUN = "NOT_RUN"
 STATUS_NOT_FOUND = "NOT_FOUND"
 STATUS_SENSE_MISMATCH = "SENSE_MISMATCH"
@@ -535,15 +538,35 @@ def score_v2(inputs: ScoringInputs, config: dict) -> dict:
     if passed:
         near_miss = NearMissDecision(NEAR_MISS_PASS)
     else:
+        # Review item 24: what fails only because uncertain core skills count as missing is
+        # review (HOLD at most), never a rejection. The definite picture - every uncertain core
+        # skill confirmed - gives the allowance and the coverage the definite facts are judged by.
+        # Undecided votes only (split, partly failed or quote-mismatched votes, a backup-model "no",
+        # the no-LLM fallback). A skill capped as "listed only, not shown in work" was judged on its
+        # evidence - it counts as missing, as before.
+        undecided = [e for e in entries if e["importance"] == "core" and e["confirmation_status"] == STATUS_UNCERTAIN
+                     and (inputs.confirmations.get(e["canonical_skill_id"]) or {}).get("reason") != REASON_LISTED_ONLY]
+        definite_missing = missing_core - len(undecided)
+        definite_required_missing = [e["canonical_name"] for e in entries if e["importance"] == "core"
+                                     and e.get("required") and not e["counts_for_core_gate"]
+                                     and e not in undecided]
+        definite_allowed = required_core_allowance(inputs.allowed_missing_core, definite_missing,
+                                                   len(definite_required_missing)) if core else allowed_core
+        uncertain_failed = []
+        if core and undecided and not coverage_passed:
+            definite_coverage = round((core_confirmed + len(undecided)) / len(core) * 100, 2)
+            if definite_coverage >= float(inputs.required_skill_coverage_threshold):
+                uncertain_failed.append("Core skill coverage")
         other_failed = [c["check"] for c in checks
-                        if not c["passed"] and c["check"] not in ("Core skills", "Experience")]
+                        if not c["passed"] and c["check"] not in ("Core skills", "Experience", *uncertain_failed)]
         missing_names = [e["canonical_name"] for e in entries
                          if e["importance"] == "core" and not e["counts_for_core_gate"]]
         near_miss = evaluate_near_miss(
             core_skill_count=len(core), confirmed_core_count=core_confirmed,
             allowed_missing_core=allowed_core,
-            definite_missing_core=missing_core - len(uncertain), uncertain_core=len(uncertain),
+            definite_missing_core=definite_missing, uncertain_core=len(undecided),
             over_limit_names=missing_names, experience=experience, other_failed_checks=other_failed,
+            definite_allowed_missing_core=definite_allowed, uncertain_failed_checks=uncertain_failed,
         )
     would_be_review = near_miss.needs_review
 
