@@ -1,3 +1,6 @@
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from typing import Literal
 from uuid import UUID
 
@@ -69,6 +72,7 @@ def decide_upload_decision(
     body: UploadDecisionDecideRequest,
     service: UploadDecisionService = Depends(get_upload_decision_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Only the uploader of the bulk file or an HR admin may decide (403
@@ -77,6 +81,7 @@ def decide_upload_decision(
     candidate's next resume version for this campaign, parsed and re-scored
     with the stage unchanged; other campaigns are marked score out of date.
     """
+    CampaignAccess(access_db).require_upload_decision(user, decision_id)
     result = service.decide(decision_id, body.choice, actor_id=user.user_id, actor_roles=list(user.roles or []))
     message = (
         "Existing resume kept - the new file was discarded."

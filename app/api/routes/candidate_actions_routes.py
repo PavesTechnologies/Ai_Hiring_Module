@@ -205,7 +205,9 @@ def add_candidate_note(
     request: CandidateNoteCreateRequest,
     service: CandidateNoteService = Depends(get_candidate_note_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     result = service.add_note(
         campaign_candidate_id, request.note_text,
         actor_id=user.user_id, actor_role=authorising_role(user),
@@ -225,7 +227,9 @@ def edit_candidate_note(
     request: CandidateNoteUpdateRequest,
     service: CandidateNoteService = Depends(get_candidate_note_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_note(user, note_id)
     result = service.edit_note(
         note_id, request.note_text,
         actor_id=user.user_id,
@@ -248,7 +252,9 @@ def delete_candidate_note(
     note_id: UUID,
     service: CandidateNoteService = Depends(get_candidate_note_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_note(user, note_id)
     service.delete_note(
         note_id,
         actor_id=user.user_id,

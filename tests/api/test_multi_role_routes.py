@@ -61,17 +61,12 @@ def _stopping_mock(method):
 
 
 @pytest.fixture(autouse=True)
-def campaign_access_granted():
+def _campaign_access_granted():
     """These tests check which roles reach the services, with made-up ids: the campaign access
-    check (tested in tests/services/test_campaign_access.py and the access route tests) is let through."""
-    from app.services import campaign_access
-    names = [n for n in vars(campaign_access.CampaignAccess) if n.startswith("require_")]
-    patchers = [patch.object(campaign_access.CampaignAccess, n, lambda *a, **k: None) for n in names]
-    for p in patchers:
-        p.start()
-    yield
-    for p in patchers:
-        p.stop()
+    check (tested on its own in tests/api/test_campaign_access_routes.py) is let through."""
+    from tests.support.campaign_access_world import campaign_access_granted
+    with campaign_access_granted():
+        yield
 
 def test_single_move_sends_only_the_roles_the_route_allows(make_client):
     service = _stopping_mock("move_one")

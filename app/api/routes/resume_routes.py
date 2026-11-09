@@ -68,6 +68,7 @@ def upload_resume(
     file: UploadFile = File(...),
     service: ResumeIntakeService = Depends(get_resume_intake_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Validates, stores the file, creates/reuses the candidate, inserts the
@@ -92,6 +93,7 @@ def upload_resume(
       their next resume version for this campaign, re-scored after parsing,
       stage unchanged).
     """
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     try:
         validated = ResumeUploadRequest(
             campaign_id=campaign_id,
@@ -408,6 +410,7 @@ def retry_resume_parse(
     resume_id: UUID,
     service: ResumeUploadService = Depends(get_resume_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Epic 4 (M05-E04) Phase D10 - re-dispatches a FAILED resume's
@@ -415,6 +418,7 @@ def retry_resume_parse(
     HR_ADMIN only, matching the equivalent bulk-file replay route's
     strictness.
     """
+    CampaignAccess(access_db).require_resume(user, resume_id)
     resume, new_task_id = service.retry_parse(
         resume_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
@@ -435,12 +439,14 @@ def replay_resume_dlq_entry(
     dlq_id: UUID,
     service: ResumeUploadService = Depends(get_resume_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Epic 4 (M05-E04) Phase D10 - replays a dead-lettered (retries
     exhausted) resume-processing failure from its DLQ entry. HR_ADMIN
     only, matching the equivalent bulk-file replay route's strictness.
     """
+    CampaignAccess(access_db).require_dead_letter(user, dlq_id)
     resume, new_task_id = service.replay_from_dlq(
         dlq_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
@@ -473,7 +479,9 @@ def delete_resume(
     reason: str | None = Query(default=None, max_length=500),
     service: ResumeCleanupService = Depends(get_resume_cleanup_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_resume(user, resume_id, every_campaign=True)
     service.delete_resume(
         resume_id=resume_id,
         actor_id=user.user_id,

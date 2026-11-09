@@ -88,3 +88,21 @@ def access_world():
     finally:
         for p in patchers:
             p.stop()
+
+
+@contextmanager
+def campaign_access_granted():
+    """
+    For route tests about something else (role forwarding, request bodies) that use made-up ids
+    over a mocked database: every CampaignAccess.require_* passes. The access check itself is
+    tested in tests/api/test_campaign_access_routes.py and tests/services/test_campaign_access.py.
+    """
+    names = [n for n in vars(CampaignAccess) if n.startswith("require_")]
+    patchers = [patch.object(CampaignAccess, n, lambda *a, **k: None) for n in names]
+    for p in patchers:
+        p.start()
+    try:
+        yield
+    finally:
+        for p in patchers:
+            p.stop()

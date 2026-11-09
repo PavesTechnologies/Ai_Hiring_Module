@@ -63,7 +63,34 @@ ITEM_11_ROUTES = [
     ("POST", "/candidate-actions/campaigns/{campaign_id}/candidates/{campaign_candidate_id}/reject", (REC, HR),
      {"reason": "Not a fit for this role"}),
 ]
-ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES + ITEM_11_ROUTES
+# Item 12: recruiter writes. A multipart body is {"form": {...}} (a small file is attached).
+UPLOAD_FORM = {"consent_confirmed": "true"}
+ITEM_12_ROUTES = [
+    ("POST", "/bulk-uploads", (REC, HR), {"form": {**UPLOAD_FORM, "campaign_id": "{campaign_id}"}}),
+    ("POST", "/bulk-uploads/{bulk_upload_job_id}/files/{file_id}/replay", (REC, HR), None),
+    ("POST", "/bulk-uploads/{bulk_upload_job_id}/cancel", (REC, HR), None),
+    ("POST", "/campaign-candidates", (REC, HR),
+     {"campaign_id": "{campaign_id}", "candidate_id": "{candidate_id}", "resume_id": "{resume_id}"}),
+    ("POST", "/campaign-candidates/{campaign_candidate_id}/override", (REC,),
+     {"override_reason": "Strong portfolio the screen did not read", "confirmation": True}),
+    ("POST", "/campaign-candidates/{campaign_candidate_id}/update-resume", (REC, HR), {"form": {}}),
+    ("POST", "/campaign-candidates/{campaign_candidate_id}/reparse", (REC, HR), {"reason": "Missed a section"}),
+    ("POST", "/campaign-candidates/{campaign_candidate_id}/rescore", (REC,), None),
+    ("DELETE", "/campaign-candidates/{campaign_candidate_id}", (REC, HR), None),
+    ("POST", "/campaigns/{campaign_id}/dead-letter-queue/replay", (REC, HR), {"dlq_ids": ["{dlq_id}"]}),
+    ("POST", "/campaigns/{campaign_id}/stalled-candidates/{campaign_candidate_id}/reprocess", (REC, HR), None),
+    ("POST", "/candidate-actions/candidates/{campaign_candidate_id}/notes", (REC, HR), {"note_text": "Called them"}),
+    ("PATCH", "/candidate-actions/notes/{note_id}", (REC, HR), {"note_text": "Called them twice"}),
+    ("DELETE", "/candidate-actions/notes/{note_id}", (REC, HR), None),
+    ("POST", "/resumes", (REC, HR), {"form": {**UPLOAD_FORM, "campaign_id": "{campaign_id}",
+                                              "candidate_full_name": "Test Person",
+                                              "candidate_email": "person@example.invalid"}}),
+    ("POST", "/resumes/{resume_id}/retry", (REC, HR), None),
+    ("POST", "/resumes/dead-letter-queue/{dlq_id}/replay", (REC, HR), None),
+    ("DELETE", "/resumes/{resume_id}", (REC, HR), None),
+    ("POST", "/upload-decisions/{decision_id}/decide", (REC, HR), {"choice": "keep_existing"}),
+]
+ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES + ITEM_11_ROUTES + ITEM_12_ROUTES
 
 OWNER = {HM: "hm-1", REC: "rec-1", HR: "hr-1"}
 OUTSIDER = {HM: "hm-2", REC: "rec-2"}
@@ -85,16 +112,22 @@ def call():
         def _call(route, user_id, role, side):
             method, template, _, body = route
             ids = {k: str(v) for k, v in world.ids(side).items()}
+            ids["file_id"] = "00000000-0000-0000-0000-000000000002"
             payload.clear()
             payload.update({"user_id": user_id, "email": f"{user_id}@example.invalid", "roles": [role]})
-            json_body = None
+            filled = None
             if body is not None:
                 import json
                 text = json.dumps(body)
                 for key, value in ids.items():
                     text = text.replace("{" + key + "}", value)
-                json_body = json.loads(text)
-            return http.request(method, template.format(**ids), json=json_body, headers={"Authorization": "Bearer t"})
+                filled = json.loads(text)
+            headers = {"Authorization": "Bearer t"}
+            url = template.format(**ids)
+            if isinstance(filled, dict) and "form" in filled:
+                files = {"file": ("resume.pdf", b"%PDF-1.4 test", "application/pdf")}
+                return http.request(method, url, data=filled["form"], files=files, headers=headers)
+            return http.request(method, url, json=filled, headers=headers)
 
         yield _call
         app.dependency_overrides.clear()

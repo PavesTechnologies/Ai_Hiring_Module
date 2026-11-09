@@ -532,7 +532,9 @@ def replay_dead_letter_tasks(campaign_id: UUID,
     request: DLQReplayRequest,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     result = service.replay_dead_letter_tasks(campaign_id,
         request.dlq_ids,
         replayed_by=user.user_id,
@@ -568,7 +570,9 @@ def reprocess_stalled_candidate(campaign_id: UUID,
     campaign_candidate_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_candidate_in_campaign(user, campaign_id, campaign_candidate_id)
     result = service.reprocess_stalled_candidate(campaign_id, campaign_candidate_id,
         actor_id=user.user_id, actor_role=authorising_role(user),
     )

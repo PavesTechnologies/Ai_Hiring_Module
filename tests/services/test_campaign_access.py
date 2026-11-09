@@ -116,3 +116,13 @@ def test_a_shared_resume_is_visible_from_any_of_its_campaigns_and_an_unlinked_on
         orphan.uploaded_by = "rec-2"
         access.require_resume(user("rec-2", "RECRUITER"), orphan.id)
         _raises(403, access.require_resume, user("rec-1", "RECRUITER"), orphan.id)
+
+
+def test_deleting_a_shared_resume_needs_every_campaign_it_is_in():
+    with access_world() as w:
+        access = CampaignAccess(db=None)
+        w.resume_campaigns[w.resume_a].append(w.campaign_b.id)          # shared with someone else's campaign
+        recruiter = user("rec-1", "RECRUITER")
+        access.require_resume(recruiter, w.resume_a)                   # retry/replay: one campaign is enough
+        _raises(403, lambda: access.require_resume(recruiter, w.resume_a, every_campaign=True))
+        access.require_resume(user("hr-1", "HR_ADMIN"), w.resume_a, every_campaign=True)

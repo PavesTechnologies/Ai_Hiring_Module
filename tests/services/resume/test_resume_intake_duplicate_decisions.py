@@ -30,6 +30,15 @@ from app.services.resume.resume_intake_service import ResumeIntakeService
 MODULE = "app.services.resume.resume_intake_service"
 
 
+@pytest.fixture(autouse=True)
+def _campaign_access_granted():
+    """Made-up ids over a mocked database: the campaign access check (tested on its own in
+    tests/api/test_campaign_access_routes.py) is let through here."""
+    from tests.support.campaign_access_world import campaign_access_granted
+    with campaign_access_granted():
+        yield
+
+
 def _cc(campaign_id):
     return SimpleNamespace(id=uuid4(), campaign_id=campaign_id, candidate_id=uuid4(), resume_id=uuid4(),
                            pipeline_stage=PipelineStage.SHORTLISTED)

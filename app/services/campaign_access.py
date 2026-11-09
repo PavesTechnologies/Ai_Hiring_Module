@@ -189,12 +189,20 @@ class CampaignAccess:
         self.require_campaign(user, decision.campaign_id)
         return decision
 
-    def require_resume(self, user, resume_id: UUID):
+    def require_resume(self, user, resume_id: UUID, *, every_campaign: bool = False):
+        """
+        every_campaign: for a destructive action (delete) on a resume shared by several campaigns,
+        access to all of them - not just one.
+        """
         from app.models.candidates import Resume
         resume = self._get(Resume, resume_id)
         if resume is None:
             raise CampaignException("Resume not found.", 404)
-        self.require_any_campaign(user, self._resume_campaign_ids(resume), owner_id=resume.uploaded_by)
+        campaign_ids = [c for c in dict.fromkeys(self._resume_campaign_ids(resume)) if c is not None]
+        if every_campaign and campaign_ids:
+            self.require_campaign_ids(user, campaign_ids)
+        else:
+            self.require_any_campaign(user, campaign_ids, owner_id=resume.uploaded_by)
         return resume
 
     def require_candidate(self, user, candidate_id: UUID):

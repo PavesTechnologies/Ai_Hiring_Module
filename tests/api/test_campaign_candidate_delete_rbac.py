@@ -12,6 +12,15 @@ from app.enums.constants import API_PREFIX
 _payload = {}
 
 
+@pytest.fixture(autouse=True)
+def _campaign_access_granted():
+    """Made-up ids over a mocked database: the campaign access check (tested on its own in
+    tests/api/test_campaign_access_routes.py) is let through here."""
+    from tests.support.campaign_access_world import campaign_access_granted
+    with campaign_access_granted():
+        yield
+
+
 def _decode(token):
     return _payload
 

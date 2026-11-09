@@ -69,10 +69,12 @@ def create_campaign_candidate(
         get_campaign_candidate_service
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
 
     # Committed inside add_campaign_candidate - 201 only after a successful commit.
     # HR_ADMIN, or the campaign's assigned recruiter (checked in the service).
+    CampaignAccess(access_db).require_campaign(user, request.campaign_id)
     candidate = service.add_campaign_candidate(
         request,
         actor_id=user.user_id,
@@ -350,7 +352,6 @@ def get_rejection_history(
         "SCREENING. RECRUITER only (reassigned from HR_ADMIN by the 2026-08-31 governance "
         "model, which removed HR_ADMIN from every transition-permission check)."
     ),
-    dependencies=[Security(require_roles(UserRole.RECRUITER))],
 )
 def apply_hr_override(
     campaign_candidate_id: UUID,
@@ -358,8 +359,10 @@ def apply_hr_override(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     scorecard = service.apply_hr_override(
         campaign_candidate_id,
         override_reason=request.override_reason,
@@ -580,7 +583,9 @@ def update_resume_for_resubmission(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     file_bytes = file.file.read()
     filename = file.filename or "resume"
 
@@ -787,7 +792,9 @@ def reparse_candidate_resume(
     request: ReparseRequest,
     db: Session = Depends(get_db),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     result = ResumeReparseService(db).request(
         campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id,
         actor_role=authorising_role(user), actor_roles=authorising_roles(user), reason=request.reason,
@@ -810,7 +817,9 @@ def rescore_candidate(
     campaign_candidate_id: UUID,
     db: Session = Depends(get_db),
     user: TokenUser = Security(require_roles(UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     result = ResumeReparseService(db).rescore_out_of_date(
         campaign_candidate_id=campaign_candidate_id, actor_id=user.user_id, actor_role=authorising_role(user),
     )
@@ -965,7 +974,9 @@ def delete_campaign_candidate(
         get_campaign_candidate_service,
     ),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     service.delete_campaign_candidate(
         campaign_candidate_id,
         actor_id=user.user_id,

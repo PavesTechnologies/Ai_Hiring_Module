@@ -1,3 +1,6 @@
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from datetime import datetime
 from uuid import UUID
 
@@ -54,6 +57,7 @@ def upload_bulk_zip(
     file: UploadFile = File(...),
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Validates and stores the ZIP archive, creates the bulk_upload_jobs
@@ -62,6 +66,7 @@ def upload_bulk_zip(
     Every file inside the ZIP is treated as the same jurisdiction and
     inherits this one submission's consent context (IP/user-agent).
     """
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     try:
         validated = BulkUploadRequest(
             campaign_id=campaign_id,
@@ -470,6 +475,7 @@ def replay_bulk_upload_file(
     file_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Re-enqueues a single FAILED file's parse task from its dead-lettered
@@ -477,6 +483,7 @@ def replay_bulk_upload_file(
     dead letter queue are replayable — duplicate-candidate and other
     deterministic failures never dead-letter and cannot be replayed here.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     job_file, new_task_id = service.replay_failed_file(
         job_id=bulk_upload_job_id,
         file_id=file_id,
@@ -505,6 +512,7 @@ def cancel_bulk_upload(
     bulk_upload_job_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Cancels a bulk upload that hasn't finished yet: the job moves to
@@ -513,6 +521,7 @@ def cancel_bulk_upload(
     naturally — this mirrors the campaign-pause behavior, since no
     real Celery-level task revocation exists in this codebase.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     job, files_cancelled = service.cancel_job(
         job_id=bulk_upload_job_id,
         actor_id=user.user_id,
