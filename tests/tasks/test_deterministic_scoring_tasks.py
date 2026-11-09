@@ -89,6 +89,8 @@ class _Harness:
 
     def __init__(self):
         self.campaign_candidate_repo = MagicMock()
+        # Nobody moved the candidate during scoring: the row lock reads the same stage.
+        self.campaign_candidate_repo.lock_stage_for_transition.side_effect = lambda c: (c.pipeline_stage, c.previous_stage)
         self.campaign_repo = MagicMock()
         self.resume_repo = MagicMock()
         self.jd_repo = MagicMock()

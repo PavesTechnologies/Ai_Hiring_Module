@@ -104,6 +104,21 @@ class CampaignCandidateRepository:
             .first()
         )
 
+    def lock_stage_for_transition(self, campaign_candidate) -> tuple | None:
+        """
+        Locks the candidate's row (SELECT ... FOR UPDATE) and returns its committed
+        (pipeline_stage, previous_stage), or None when the row is gone. Reads the columns, not
+        the mapped object: the session's copy may be stale (loaded before a long scoring run
+        while a person moved the candidate), and a column read always sees the latest commit.
+        The lock holds until the caller commits or rolls back.
+        """
+        row = self.db.execute(
+            select(CampaignCandidate.pipeline_stage, CampaignCandidate.previous_stage)
+            .where(CampaignCandidate.id == campaign_candidate.id)
+            .with_for_update()
+        ).first()
+        return (row.pipeline_stage, row.previous_stage) if row is not None else None
+
     def get_stage_history_by_idempotency_key(
         self,
         idempotency_key: str,

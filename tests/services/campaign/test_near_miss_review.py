@@ -172,6 +172,7 @@ def test_capped_hold_records_the_given_decision_source():
     service.allowed_transition_repo = MagicMock()
     service.allowed_transition_repo.is_transition_allowed.return_value = True
     service.campaign_candidate_repo = MagicMock()
+    service.campaign_candidate_repo.lock_stage_for_transition.side_effect = lambda c: (c.pipeline_stage, c.previous_stage)
     cc = SimpleNamespace(id=uuid4(), pipeline_stage=PipelineStage.SCREENING, previous_stage=None)
     assert service.transition_on_ai_success(
         cc, to_stage=PipelineStage.HOLD, decision_type=DecisionType.HOLD, change_reason="capped",

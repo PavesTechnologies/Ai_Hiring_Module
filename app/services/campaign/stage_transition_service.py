@@ -41,6 +41,23 @@ _INTERVIEW_EXIT_CASCADE_STAGES = frozenset(
 )
 
 
+# The moves automated scoring (the SYSTEM actor) may make, whatever allowed_transitions also
+# lets recruiters do. Every automated decision is made from SCREENING; once a person has moved
+# the candidate on (SHORTLISTED, INTERVIEW, ...), no scoring run - late, retried or replayed -
+# may move them again.
+_SYSTEM_MOVES = frozenset({
+    (PipelineStage.UPLOADED, PipelineStage.SCREENING),
+    (PipelineStage.SCREENING, PipelineStage.REJECTED),
+    (PipelineStage.SCREENING, PipelineStage.SHORTLISTED),
+    (PipelineStage.SCREENING, PipelineStage.HOLD),
+})
+# Full scoring after the no-LLM fallback also finishes a candidate the fallback left on HOLD.
+_FULL_SCORING_HOLD_MOVES = frozenset({
+    (PipelineStage.HOLD, PipelineStage.REJECTED),
+    (PipelineStage.HOLD, PipelineStage.SHORTLISTED),
+})
+
+
 @dataclass(frozen=True)
 class Actor:
     """
@@ -102,6 +119,40 @@ class StageTransitionService:
         # to build one, even the tasks that never reach to_stage=INTERVIEW.
         self.interview_schedule_repo = interview_schedule_repo
 
+    def _system_move_permitted(self, campaign_candidate, to_stage: PipelineStage,
+                               allow_from_hold: bool = False) -> bool:
+        """
+        The guard every automated (SYSTEM) move passes before it writes anything: lock the
+        candidate's row and re-read its committed stage, then allow only the moves automated
+        scoring may make (_SYSTEM_MOVES; HOLD sources only when the caller is full scoring after
+        the no-LLM fallback, allow_from_hold). A scoring run can take minutes; a recruiter who
+        moved the candidate in the meantime always wins - the run's move is refused, not applied.
+        On success the in-memory stage fields are synced to the locked row.
+        """
+        locked = self.campaign_candidate_repo.lock_stage_for_transition(campaign_candidate)
+        if locked is None:
+            logger.warning("Automated move refused - candidate row is gone | campaign_candidate_id=%s",
+                           campaign_candidate.id)
+            return False
+        current_stage, current_previous = locked
+        if current_stage != campaign_candidate.pipeline_stage:
+            logger.warning(
+                "Automated move refused - the candidate's stage changed during scoring | "
+                "campaign_candidate_id=%s loaded=%s now=%s to_stage=%s",
+                campaign_candidate.id, campaign_candidate.pipeline_stage.value, current_stage.value, to_stage.value,
+            )
+            return False
+        permitted = _SYSTEM_MOVES | (_FULL_SCORING_HOLD_MOVES if allow_from_hold else frozenset())
+        if (current_stage, to_stage) not in permitted:
+            logger.warning(
+                "Automated move refused - not a move automated scoring may make | "
+                "campaign_candidate_id=%s from_stage=%s to_stage=%s",
+                campaign_candidate.id, current_stage.value, to_stage.value,
+            )
+            return False
+        campaign_candidate.previous_stage = current_previous
+        return True
+
     def transition_to_screening(self, campaign_candidate) -> bool:
         """
         Moves campaign_candidate.pipeline_stage from UPLOADED to SCREENING -
@@ -121,6 +172,9 @@ class StageTransitionService:
 
         if from_stage != PipelineStage.UPLOADED:
             return False
+        if not self._system_move_permitted(campaign_candidate, to_stage):
+            return False
+        previous_stage = campaign_candidate.previous_stage
 
         if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):
             logger.error(
@@ -164,6 +218,7 @@ class StageTransitionService:
         decision_reason: str | None = None,
         decision_details: dict | None = None,
         decision_source: DecisionSource = DecisionSource.AI,
+        allow_from_hold: bool = False,
     ) -> bool:
         """
         decision_source: AI, or DETERMINISTIC when the deterministic
@@ -184,6 +239,8 @@ class StageTransitionService:
         are already guaranteed above their own thresholds by the time AI
         evaluation runs at all - rejected at an earlier layer otherwise).
         """
+        if not self._system_move_permitted(campaign_candidate, to_stage, allow_from_hold=allow_from_hold):
+            return False
         from_stage = campaign_candidate.pipeline_stage
         previous_stage = campaign_candidate.previous_stage
 
@@ -241,6 +298,7 @@ class StageTransitionService:
         decision_reason: str | None = None,
         decision_details: dict | None = None,
         decision_by_user_id: str | None = None,
+        allow_from_hold: bool = False,
     ) -> bool:
         """
         Moves campaign_candidate.pipeline_stage to REJECTED and inserts the
@@ -256,8 +314,10 @@ class StageTransitionService:
         or RECRUITER for a future manual rejection) - decision_type is
         always REJECTED here.
         """
-        from_stage = campaign_candidate.pipeline_stage
         to_stage = PipelineStage.REJECTED
+        if not self._system_move_permitted(campaign_candidate, to_stage, allow_from_hold=allow_from_hold):
+            return False
+        from_stage = campaign_candidate.pipeline_stage
         previous_stage = campaign_candidate.previous_stage
 
         if not self.allowed_transition_repo.is_transition_allowed(from_stage, to_stage, previous_stage=previous_stage):

@@ -119,6 +119,7 @@ def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate
             scores_snapshot={"scoring": full.get("scoring_config_version"), "outcome": outcome},
             decision_source=DecisionSource.DETERMINISTIC, decision_reason=v2_rejection_reason(full),
             decision_details={"full_scoring": True, "failed_checks": full.get("failed_checks") or []},
+            allow_from_hold=True,
         )
         if moved:
             _audit_transition(audit_service, campaign_candidate, stage)
@@ -133,6 +134,7 @@ def apply_full_outcome(stage_service: StageTransitionService, campaign_candidate
                 scores_snapshot=details.get("ai_response") or {},
                 decision_reason="AI evaluation recommended shortlisting this candidate.",
                 decision_details=details.get("ai_response"),
+                allow_from_hold=True,
             )
             if moved:
                 _audit_transition(audit_service, campaign_candidate, stage)

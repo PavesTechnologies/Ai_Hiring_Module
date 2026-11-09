@@ -53,6 +53,9 @@ def test_the_full_outcome_applied_to_a_candidate_nobody_touched(stage, outcome, 
     with patch(f"{MODULE}.v2_rejection_reason", return_value="Missing core skills"):
         assert apply_full_outcome(stages, candidate, full, audit) == effect
     assert stages.transition_to_rejected.called is rejected
+    # full scoring is the one automated caller allowed to finish a HOLD candidate (review item 4)
+    if rejected:
+        assert stages.transition_to_rejected.call_args.kwargs["allow_from_hold"] is True
     # every move the job makes is audited as a stage transition by SYSTEM; no move, no entry
     if rejected or moved_to:
         kwargs = audit.log.call_args.kwargs
@@ -65,6 +68,7 @@ def test_the_full_outcome_applied_to_a_candidate_nobody_touched(stage, outcome, 
     if moved_to:
         kwargs = stages.transition_on_ai_success.call_args.kwargs
         assert kwargs["to_stage"] == moved_to and kwargs["decision_type"] == DecisionType.SHORTLISTED
+        assert kwargs["allow_from_hold"] is True
     else:
         stages.transition_on_ai_success.assert_not_called()
 

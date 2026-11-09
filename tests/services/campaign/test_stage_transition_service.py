@@ -11,7 +11,7 @@ from app.exceptions.pipeline_transition_exceptions import (
     PipelineStageConflictException,
     PipelineTransitionReasonRequiredException,
 )
-from app.models.pipeline import DecisionSource, PipelineStage, TransitionSource
+from app.models.pipeline import DecisionSource, DecisionType, PipelineStage, TransitionSource
 from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 
 """
@@ -47,6 +47,10 @@ def make_service(is_allowed: bool):
     allowed_transition_repo = MagicMock()
     allowed_transition_repo.is_transition_allowed.return_value = is_allowed
     campaign_candidate_repo = MagicMock()
+    # The row lock re-reads the committed stage; here nobody else touched the candidate.
+    campaign_candidate_repo.lock_stage_for_transition.side_effect = (
+        lambda candidate: (candidate.pipeline_stage, candidate.previous_stage)
+    )
     service = StageTransitionService(allowed_transition_repo, campaign_candidate_repo, MagicMock(), MagicMock())
     return service, allowed_transition_repo, campaign_candidate_repo
 
@@ -802,3 +806,123 @@ def test_transition_to_a_non_screening_stage_never_enqueues_rescore():
         service.transition(candidate.id, PipelineStage.SHORTLISTED, Actor(roles=["HR_ADMIN"], id="hr-1"))
 
     mock_rescore.assert_not_called()
+
+
+# ---- Review item 4: automated moves lock the row and act only from SCREENING ----
+
+def _assert_nothing_written(candidate_repo):
+    candidate_repo.update.assert_not_called()
+    candidate_repo.create_stage_history.assert_not_called()
+    candidate_repo.create_transition_log.assert_not_called()
+
+
+def test_automated_reject_is_refused_when_a_recruiter_moved_the_candidate_during_scoring():
+    # Loaded at SCREENING before the scoring run; a recruiter shortlisted them meanwhile.
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SCREENING)
+    service, allowed_repo, candidate_repo = make_service(is_allowed=True)
+    candidate_repo.lock_stage_for_transition.side_effect = None
+    candidate_repo.lock_stage_for_transition.return_value = (PipelineStage.SHORTLISTED, PipelineStage.SCREENING)
+
+    moved = service.transition_to_rejected(candidate, change_reason="Deterministic filter rejection",
+                                           scores_snapshot={}, decision_source=DecisionSource.DETERMINISTIC)
+
+    assert moved is False
+    assert candidate.pipeline_stage == PipelineStage.SCREENING
+    assert candidate.decision_type is None
+    candidate_repo.lock_stage_for_transition.assert_called_once_with(candidate)
+    _assert_nothing_written(candidate_repo)
+
+
+@pytest.mark.parametrize("stage", [PipelineStage.SHORTLISTED, PipelineStage.HM_REVIEW, PipelineStage.INTERVIEW,
+                                   PipelineStage.HOLD, PipelineStage.UPLOADED])
+def test_automated_reject_is_refused_outside_screening_even_when_the_edge_exists(stage):
+    # SHORTLISTED->REJECTED and HOLD->REJECTED exist for recruiters; scoring may not use them.
+    candidate = _make_candidate(pipeline_stage=stage, previous_stage=PipelineStage.SCREENING)
+    service, allowed_repo, candidate_repo = make_service(is_allowed=True)
+
+    moved = service.transition_to_rejected(candidate, change_reason="AI evaluation rejection",
+                                           scores_snapshot={}, decision_source=DecisionSource.AI)
+
+    assert moved is False
+    assert candidate.pipeline_stage == stage
+    allowed_repo.is_transition_allowed.assert_not_called()
+    _assert_nothing_written(candidate_repo)
+
+
+@pytest.mark.parametrize("to_stage", [PipelineStage.SHORTLISTED, PipelineStage.HOLD])
+def test_automated_shortlist_or_hold_is_refused_for_a_shortlisted_candidate(to_stage):
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SHORTLISTED)
+    service, _, candidate_repo = make_service(is_allowed=True)
+
+    moved = service.transition_on_ai_success(candidate, to_stage=to_stage, decision_type=DecisionType.HOLD,
+                                             change_reason="AI", scores_snapshot={})
+
+    assert moved is False
+    _assert_nothing_written(candidate_repo)
+
+
+def test_hold_sources_are_only_for_full_scoring_after_the_fallback():
+    service, _, candidate_repo = make_service(is_allowed=True)
+    held = _make_candidate(pipeline_stage=PipelineStage.HOLD, previous_stage=PipelineStage.SCREENING)
+    assert service.transition_to_rejected(held, change_reason="x", scores_snapshot={},
+                                          decision_source=DecisionSource.DETERMINISTIC) is False
+    _assert_nothing_written(candidate_repo)
+
+    assert service.transition_to_rejected(held, change_reason="Full scoring after the no-LLM fallback",
+                                          scores_snapshot={}, decision_source=DecisionSource.DETERMINISTIC,
+                                          allow_from_hold=True) is True
+    assert held.pipeline_stage == PipelineStage.REJECTED
+
+    held_again = _make_candidate(pipeline_stage=PipelineStage.HOLD, previous_stage=PipelineStage.SCREENING)
+    assert service.transition_on_ai_success(held_again, to_stage=PipelineStage.SHORTLISTED,
+                                            decision_type=DecisionType.SHORTLISTED, change_reason="cap lifted",
+                                            scores_snapshot={}, allow_from_hold=True) is True
+    assert held_again.pipeline_stage == PipelineStage.SHORTLISTED
+
+
+def test_full_scoring_still_cannot_move_a_candidate_past_hold():
+    service, _, candidate_repo = make_service(is_allowed=True)
+    shortlisted = _make_candidate(pipeline_stage=PipelineStage.SHORTLISTED)
+    assert service.transition_to_rejected(shortlisted, change_reason="x", scores_snapshot={},
+                                          decision_source=DecisionSource.DETERMINISTIC, allow_from_hold=True) is False
+    _assert_nothing_written(candidate_repo)
+
+
+def test_automated_move_is_refused_when_the_row_is_gone():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.SCREENING)
+    service, _, candidate_repo = make_service(is_allowed=True)
+    candidate_repo.lock_stage_for_transition.side_effect = None
+    candidate_repo.lock_stage_for_transition.return_value = None
+
+    assert service.transition_to_rejected(candidate, change_reason="x", scores_snapshot={},
+                                          decision_source=DecisionSource.SEMANTIC) is False
+    _assert_nothing_written(candidate_repo)
+
+
+def test_transition_to_screening_is_refused_when_the_candidate_already_moved():
+    candidate = _make_candidate(pipeline_stage=PipelineStage.UPLOADED)
+    service, _, candidate_repo = make_service(is_allowed=True)
+    candidate_repo.lock_stage_for_transition.side_effect = None
+    candidate_repo.lock_stage_for_transition.return_value = (PipelineStage.SCREENING, PipelineStage.UPLOADED)
+
+    assert service.transition_to_screening(candidate) is False
+    assert candidate.pipeline_stage == PipelineStage.UPLOADED
+    _assert_nothing_written(candidate_repo)
+
+
+def test_lock_stage_for_transition_reads_the_columns_with_for_update():
+    from sqlalchemy.dialects import postgresql
+
+    from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
+
+    db = MagicMock()
+    db.execute.return_value.first.return_value = SimpleNamespace(
+        pipeline_stage=PipelineStage.SHORTLISTED, previous_stage=PipelineStage.SCREENING)
+    candidate = _make_candidate()
+
+    result = CampaignCandidateRepository(db).lock_stage_for_transition(candidate)
+
+    assert result == (PipelineStage.SHORTLISTED, PipelineStage.SCREENING)
+    sql = str(db.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "FOR UPDATE" in sql
+    assert "pipeline_stage" in sql and "previous_stage" in sql
