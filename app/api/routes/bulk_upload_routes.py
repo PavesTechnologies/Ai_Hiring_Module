@@ -113,8 +113,10 @@ def list_bulk_upload_history(
     size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Paginated bulk-upload history for one campaign, most recent first."""
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     items, total = service.list_history(campaign_id=campaign_id, page=page, size=size)
 
     return APIResponse.ok(
@@ -152,12 +154,14 @@ def export_bulk_upload_history(
     campaign_id: UUID = Query(...),
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Excel export of a campaign's full bulk-upload history (unpaginated).
     Registered before /{bulk_upload_job_id} so "export" isn't swallowed as
     a job id path parameter — mirrors jd_routes.py's export/{jd_id} ordering.
     """
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     excel_file = service.export_history(
         campaign_id=campaign_id,
         actor_id=user.user_id,
@@ -245,6 +249,7 @@ def get_bulk_upload_progress(
     bulk_upload_job_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Epic 4 (M05-E04) Phase D4 - lightweight, dedicated polling endpoint:
@@ -252,6 +257,7 @@ def get_bulk_upload_progress(
     separate from GET /{bulk_upload_job_id}, which also returns the full
     per-file list - unsuited to a frequent 10s poll.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     job, percent_complete, remaining_count, estimated_completion_at = service.get_job_progress(bulk_upload_job_id)
 
     return APIResponse.ok(
@@ -282,6 +288,7 @@ def get_bulk_upload_file_log(
     offset: int = Query(default=0, ge=0),
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Epic 4 (M05-E04) Phase D5 - live, most-recently-resolved-first log of
@@ -289,6 +296,7 @@ def get_bulk_upload_file_log(
     DUPLICATE/SKIPPED), most recent first. Persists after job completion -
     a plain read of already-durable rows.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     entries, total = service.get_file_log(bulk_upload_job_id, limit=limit, offset=offset)
 
     return APIResponse.ok(
@@ -306,8 +314,10 @@ def get_bulk_upload_detail(
     bulk_upload_job_id: UUID,
     service: BulkUploadService = Depends(get_bulk_upload_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """One bulk upload job's full detail, including its per-file breakdown."""
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     job, files, retry_counts = service.get_job_detail(bulk_upload_job_id)
 
     return APIResponse.ok(
@@ -357,6 +367,7 @@ def list_bulk_upload_files(
     sort_dir: str = Query(default="desc"),
     service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only monitoring endpoint — paginated, filterable, searchable file
@@ -364,6 +375,7 @@ def list_bulk_upload_files(
     GET /bulk-uploads/{id} stays as-is and unpaginated; this is what a UI
     should page through for a large ZIP.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     return APIResponse.ok(
         data=service.list_files(
             bulk_upload_job_id,
@@ -388,12 +400,14 @@ def get_bulk_upload_file_detail(
     file_id: UUID,
     service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only monitoring endpoint — mirrors the Resume Detail shape, with
     resume/candidate left null until a file's identity resolves (a file
     that fails before AI_EXTRACTION never gets a Resume row at all).
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     return APIResponse.ok(
         data=service.get_file_detail(bulk_upload_job_id, file_id),
         message="Bulk upload file detail retrieved successfully.",
@@ -411,6 +425,7 @@ def get_bulk_upload_file_timeline(
     attempt_number: int | None = Query(default=None, ge=1),
     service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only monitoring endpoint — identical StageTimeline shape as
@@ -418,6 +433,7 @@ def get_bulk_upload_file_timeline(
     at row-creation time (not just on success), so this resolves reliably
     at every point in a file's lifecycle.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     return APIResponse.ok(
         data=service.get_file_timeline(bulk_upload_job_id, file_id, attempt_number=attempt_number),
         message="Bulk upload file timeline retrieved successfully.",
@@ -433,6 +449,7 @@ def get_bulk_upload_job_metrics(
     bulk_upload_job_id: UUID,
     service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only monitoring endpoint — total_files/processed/failed/duplicate
@@ -440,6 +457,7 @@ def get_bulk_upload_job_metrics(
     retry_rate are computed live over this job's files' stage executions
     and task logs.
     """
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     return APIResponse.ok(
         data=service.get_job_metrics(bulk_upload_job_id),
         message="Bulk upload job metrics retrieved successfully.",
@@ -457,8 +475,10 @@ def get_bulk_upload_job_failures(
     size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     service: BulkUploadMonitoringService = Depends(get_bulk_upload_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Read-only monitoring endpoint — paginated list of this job's failed files, with resolved failure detail per file."""
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     return APIResponse.ok(
         data=service.get_job_failures(bulk_upload_job_id, page=page, size=size),
         message="Bulk upload job failures retrieved successfully.",

@@ -87,10 +87,23 @@ def create_campaign(request: CampaignCreateRequest,
 )
 def get_active_campaigns(service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
-    return APIResponse.ok(data=service.get_active_campaigns_minimal(),
+    return APIResponse.ok(data=_only_visible(service.get_active_campaigns_minimal(), user, access_db),
         message="Active campaigns retrieved successfully",
     )
+
+
+def _only_visible(campaigns: list, user, access_db) -> list:
+    """
+    Campaign access (review A-H5): HR_ADMIN sees every campaign; a hiring manager the ones they own;
+    a recruiter the ones they're assigned to or created. Filtered after the (shared, cached) list.
+    """
+    visible = CampaignAccess(access_db).visible_campaign_ids(user)
+    if visible is None:
+        return campaigns
+    visible = set(visible)
+    return [campaign for campaign in campaigns if campaign.id in visible]
 
 @router.get("/all",
     response_model=APIResponse[list[CampaignResponse]],
@@ -106,6 +119,7 @@ def get_all_campaigns(search: str | None = Query(None),
     show_closed: bool = Query(False),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
     filters = CampaignFilterRequest(search=search,
         status=status,
@@ -116,7 +130,7 @@ def get_all_campaigns(search: str | None = Query(None),
     )
 
 
-    campaigns = service.search_campaigns(filters, requesting_user=user)
+    campaigns = _only_visible(service.search_campaigns(filters, requesting_user=user), user, access_db)
 
     return APIResponse.ok(data=campaigns,
         message="Campaigns retrieved successfully",
@@ -307,7 +321,9 @@ def update_platform_default_weights(request: PlatformDefaultWeightsUpdateRequest
 def get_scoring_configuration(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     scoring_config = service.get_scoring_configuration(campaign_id)
 
     return APIResponse.ok(data=scoring_config,
@@ -444,7 +460,9 @@ def get_campaign_upload_history(
     offset: int = Query(default=0, ge=0),
     service: UploadHistoryService = Depends(get_upload_history_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     history = service.get_history(
         campaign_id,
         uploaded_by=uploaded_by,
@@ -467,7 +485,9 @@ def get_campaign_upload_history(
 def get_processing_status(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     summary = service.get_processing_status_summary(campaign_id)
     return APIResponse.ok(data=summary, message="Processing status summary retrieved successfully.")
 
@@ -491,7 +511,9 @@ def get_dead_letter_queue(campaign_id: UUID,
     ),
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     page = service.get_dead_letter_queue_for_campaign(
         campaign_id, limit=limit, offset=offset, include_resolved=include_resolved,
     )
@@ -642,7 +664,9 @@ def flag_candidate_for_review(campaign_id: UUID,
 def get_rejection_analytics(campaign_id: UUID,
     service: CampaignService = Depends(get_campaign_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     return APIResponse.ok(data=service.get_rejection_analytics(campaign_id),
         message="Rejection analytics retrieved successfully.",
     )

@@ -5,6 +5,9 @@ A separate router from campaign_routes/campaign_candidate for the same reason
 candidate_actions_routes is: those modules belong to other epics and have been
 overwritten by pulls, so M11's surface stays in its own file.
 """
+from app.services.campaign_access import CampaignAccess
+from app.db.session import get_db
+from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from urllib.parse import quote
 from uuid import UUID
@@ -61,7 +64,9 @@ def export_candidate_list(
     campaign_candidate_ids: list[UUID] | None = Query(default=None),
     export_service: ExportService = Depends(get_export_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     count = export_service.candidate_list_row_count(
         campaign_id, campaign_candidate_ids=campaign_candidate_ids,
     )

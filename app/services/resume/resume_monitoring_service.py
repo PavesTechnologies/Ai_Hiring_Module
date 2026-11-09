@@ -284,6 +284,7 @@ class ResumeMonitoringService:
         size: int,
         sort_by: str,
         sort_dir: str,
+        visible_campaign_ids: list[UUID] | None = None,
     ):
         """
         Shared page-fetch for list_resumes/list_resumes_with_pipeline_status -
@@ -301,6 +302,7 @@ class ResumeMonitoringService:
             email_hash=email_hash,
             uploaded_from=uploaded_from,
             uploaded_to=uploaded_to,
+            visible_campaign_ids=visible_campaign_ids,
         )
         resumes = self.resume_repository.search(
             **filters, page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
@@ -327,6 +329,8 @@ class ResumeMonitoringService:
             ),
             key=lambda cc: cc.created_at,
         ):
+            if visible_campaign_ids is not None and cc.campaign_id not in visible_campaign_ids:
+                continue    # a shared resume's other campaign: not the caller's to see
             campaign_candidates_by_resume_id[cc.resume_id] = cc
 
         return resumes, total, candidates_by_id, campaign_candidates_by_resume_id
@@ -351,12 +355,16 @@ class ResumeMonitoringService:
         size: int = 20,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> ResumeListResponse:
         params = dict(
             campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
             uploaded_from=uploaded_from, uploaded_to=uploaded_to,
             page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
         )
+        if visible_campaign_ids is not None:
+            # Scoped to the caller's campaigns: part of the cache key, so pages never cross users.
+            params["visible_campaign_ids"] = visible_campaign_ids
 
         if not self.cache_service:
             return self._load_resume_list(**params)
@@ -381,11 +389,13 @@ class ResumeMonitoringService:
         size: int,
         sort_by: str,
         sort_dir: str,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> ResumeListResponse:
         resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
             campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
             uploaded_from=uploaded_from, uploaded_to=uploaded_to,
             page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+            visible_campaign_ids=visible_campaign_ids,
         )
 
         items = []
@@ -426,6 +436,7 @@ class ResumeMonitoringService:
         size: int = 20,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> ResumeListWithPipelineResponse:
         """
         Same rows as list_resumes, plus each resume's linked
@@ -439,12 +450,15 @@ class ResumeMonitoringService:
             email_hash=email_hash, uploaded_from=uploaded_from, uploaded_to=uploaded_to,
             page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
         )
+        if visible_campaign_ids is not None:
+            params["visible_campaign_ids"] = visible_campaign_ids
 
         if not self.cache_service:
             return self._load_resume_list_with_pipeline_status(
                 campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
                 uploaded_from=uploaded_from, uploaded_to=uploaded_to,
                 page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+                visible_campaign_ids=visible_campaign_ids,
             )
 
         raw = self.cache_service.get_or_set(
@@ -453,6 +467,7 @@ class ResumeMonitoringService:
                 campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
                 uploaded_from=uploaded_from, uploaded_to=uploaded_to,
                 page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+                visible_campaign_ids=visible_campaign_ids,
             ).model_dump_json(),
             ttl=settings.cache_resume_list_ttl_seconds,
         )
@@ -471,11 +486,13 @@ class ResumeMonitoringService:
         size: int,
         sort_by: str,
         sort_dir: str,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> ResumeListWithPipelineResponse:
         resumes, total, candidates_by_id, campaign_candidates_by_resume_id = self._fetch_resume_page(
             campaign_id=campaign_id, parse_status=parse_status, source=source, email_hash=email_hash,
             uploaded_from=uploaded_from, uploaded_to=uploaded_to,
             page=page, size=size, sort_by=sort_by, sort_dir=sort_dir,
+            visible_campaign_ids=visible_campaign_ids,
         )
 
         items = []

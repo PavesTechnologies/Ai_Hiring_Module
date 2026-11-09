@@ -150,6 +150,25 @@ def _may_watch_campaign(user: TokenUser, campaign_id: UUID) -> bool:
         db.close()
 
 
+def _may_watch_task(user: TokenUser, task_id: str) -> bool:
+    """The campaign access check for the resume processing socket (the task's campaign)."""
+    from app.db.session import SessionLocal
+    from app.exceptions.campaign_exceptions import CampaignException
+    from app.middleware.rbac import ROLE_PRECEDENCE
+    from app.services.campaign_access import CampaignAccess
+
+    admitted = replace(user, authorised_roles=tuple(
+        role for role in ROLE_PRECEDENCE if role in RESUME_PROCESSING_ROLES and role in user.roles))
+    db = SessionLocal()
+    try:
+        CampaignAccess(db).require_task(admitted, task_id)
+        return True
+    except CampaignException:
+        return False
+    finally:
+        db.close()
+
+
 def _token_expiry(user: TokenUser) -> float | None:
     exp = (user.claims or {}).get("exp")
     return float(exp) if isinstance(exp, (int, float)) else None
@@ -243,6 +262,10 @@ async def resume_processing_updates(
     """
     user = await _authenticate_and_authorize(websocket, RESUME_PROCESSING_ROLES)
     if user is None:
+        return
+    if not await asyncio.to_thread(_may_watch_task, user, task_id):
+        logger.warning("WebSocket rejected: no access to task %s (user_id=%s)", task_id, user.user_id)
+        await websocket.close(code=1008, reason="You do not have access to this campaign.")
         return
 
     async def snapshot_fn() -> list[WebSocketEvent]:

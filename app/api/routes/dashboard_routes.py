@@ -347,7 +347,9 @@ def get_campaign_uploaders(
     campaign_id: UUID,
     service: CandidateSearchService = Depends(get_candidate_search_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     rows = service.get_campaign_uploaders(campaign_id)
     return APIResponse.ok(
         data=[

@@ -177,8 +177,15 @@ def list_resumes(
     sort_dir: Literal["asc", "desc"] = Query(default="desc"),
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Read-only monitoring endpoint — paginated, filterable resume list across both individual and bulk upload sources."""
+    # Campaign access (review A-H5): a named campaign must be the caller's; without one, the list
+    # covers only the campaigns they may see.
+    access = CampaignAccess(access_db)
+    if campaign_id is not None:
+        access.require_campaign(user, campaign_id)
+    visible_campaign_ids = access.visible_campaign_ids(user)
     return APIResponse.ok(
         data=service.list_resumes(
             campaign_id=campaign_id,
@@ -191,6 +198,7 @@ def list_resumes(
             size=size,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            visible_campaign_ids=visible_campaign_ids,
         ),
         message="Resume list retrieved successfully.",
     )
@@ -214,6 +222,7 @@ def list_resumes_with_pipeline_status(
     sort_dir: Literal["asc", "desc"] = Query(default="desc"),
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Same rows/filters/pagination as GET /resumes, plus each row's linked
@@ -221,6 +230,12 @@ def list_resumes_with_pipeline_status(
     decision_reason/decision_at - which stage the candidate is on, and
     whether they succeeded or failed there.
     """
+    # Campaign access (review A-H5): a named campaign must be the caller's; without one, the list
+    # covers only the campaigns they may see.
+    access = CampaignAccess(access_db)
+    if campaign_id is not None:
+        access.require_campaign(user, campaign_id)
+    visible_campaign_ids = access.visible_campaign_ids(user)
     return APIResponse.ok(
         data=service.list_resumes_with_pipeline_status(
             campaign_id=campaign_id,
@@ -233,6 +248,7 @@ def list_resumes_with_pipeline_status(
             size=size,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            visible_campaign_ids=visible_campaign_ids,
         ),
         message="Resume list with pipeline status retrieved successfully.",
     )
@@ -255,7 +271,9 @@ def get_resume_processing_status(
             "so the raw list is mostly SKIPPED repeats. Turn on for an audit trail."
         ),
     ),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_task(user, task_id)
     return APIResponse.ok(
         data=service.get_status(task_id, include_attempts=include_attempts),
         message="Processing status retrieved successfully.",
@@ -290,8 +308,10 @@ def get_resume_version_history(
     candidate_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Epic 3 (M05-E03) Phase C1 — read-only. Full resume version history for a candidate, most recent first, with the active version marked."""
+    CampaignAccess(access_db).require_candidate(user, candidate_id)
     return APIResponse.ok(
         data=service.get_version_history(candidate_id),
         message="Resume version history retrieved successfully.",
@@ -308,6 +328,7 @@ def compare_resume_versions(
     resume_id_2: UUID = Query(...),
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     S02-T02 — read-only diff of two resume versions belonging to the same
@@ -317,6 +338,8 @@ def compare_resume_versions(
     persisted. Registered ahead of /{resume_id} so this literal path isn't
     shadowed by that catch-all.
     """
+    CampaignAccess(access_db).require_resume(user, resume_id_1)
+    CampaignAccess(access_db).require_resume(user, resume_id_2)
     return APIResponse.ok(
         data=service.compare_resume_versions(resume_id_1, resume_id_2),
         message="Resume versions compared successfully.",
@@ -353,8 +376,10 @@ def get_resume_detail(
     resume_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Read-only monitoring endpoint — resume metadata, candidate summary, current processing state, skill/embedding/parser info, and failure detail if applicable."""
+    CampaignAccess(access_db).require_resume(user, resume_id)
     return APIResponse.ok(
         data=service.get_resume_detail(resume_id),
         message="Resume detail retrieved successfully.",
@@ -371,6 +396,7 @@ def get_resume_timeline(
     attempt_number: int | None = Query(default=None, ge=1),
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """
     Read-only monitoring endpoint — per-stage execution timeline for this
@@ -378,6 +404,7 @@ def get_resume_timeline(
     retries, set at enqueue time). Defaults to the current/latest attempt;
     pass attempt_number to view a specific historical retry instead.
     """
+    CampaignAccess(access_db).require_resume(user, resume_id)
     return APIResponse.ok(
         data=service.get_timeline(resume_id, attempt_number=attempt_number),
         message="Resume timeline retrieved successfully.",
@@ -393,8 +420,10 @@ def get_resume_parse_attempts(
     resume_id: UUID,
     service: ResumeMonitoringService = Depends(get_resume_monitoring_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Read-only monitoring endpoint — full attempt/failure history, merging resume_parse_attempts (successes) with stage_failure_logs (failures, including ones that never reached a successful attempt)."""
+    CampaignAccess(access_db).require_resume(user, resume_id)
     return APIResponse.ok(
         data=service.get_parse_attempts(resume_id),
         message="Parse attempt history retrieved successfully.",

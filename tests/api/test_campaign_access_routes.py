@@ -90,7 +90,37 @@ ITEM_12_ROUTES = [
     ("DELETE", "/resumes/{resume_id}", (REC, HR), None),
     ("POST", "/upload-decisions/{decision_id}/decide", (REC, HR), {"choice": "keep_existing"}),
 ]
-ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES + ITEM_11_ROUTES + ITEM_12_ROUTES
+# A-H5: recruiters (and HR) reading a campaign's uploads, exports, analytics and resumes.
+A_H5_ROUTES = [
+    ("GET", "/campaigns/{campaign_id}/scoring-config", (REC, HR), None),
+    ("GET", "/campaigns/{campaign_id}/upload-history", (REC, HR), None),
+    ("GET", "/campaigns/{campaign_id}/processing-status", (REC, HR), None),
+    ("GET", "/campaigns/{campaign_id}/dead-letter-queue", (REC, HR), None),
+    ("GET", "/campaigns/{campaign_id}/rejection-analytics", (REC, HR), None),
+    ("GET", "/dashboard/campaigns/{campaign_id}/uploaders", (REC, HR), None),
+    ("GET", "/exports/campaigns/{campaign_id}/candidates", (REC, HR), None),
+    ("GET", "/resumes?campaign_id={campaign_id}", (REC, HR), None),
+    ("GET", "/resumes/pipeline-status?campaign_id={campaign_id}", (REC, HR), None),
+    ("GET", "/resumes/processing-status/{task_id}", (REC, HR), None),
+    ("GET", "/resumes/candidate/{candidate_id}/versions", (REC, HR), None),
+    ("GET", "/resumes/compare?resume_id_1={resume_id}&resume_id_2={resume_id}", (REC, HR), None),
+    ("GET", "/resumes/{resume_id}", (REC, HR), None),
+    ("GET", "/resumes/{resume_id}/timeline", (REC, HR), None),
+    ("GET", "/resumes/{resume_id}/parse-attempts", (REC, HR), None),
+    ("GET", "/bulk-uploads?campaign_id={campaign_id}", (REC, HR), None),
+    ("GET", "/bulk-uploads/export?campaign_id={campaign_id}", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/progress", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/file-log", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/files", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/files/{file_id}", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/files/{file_id}/timeline", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/metrics", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/failures", (REC, HR), None),
+    ("GET", "/campaigns/{campaign_id}/upload-decisions", (REC, HR), None),
+    ("GET", "/bulk-uploads/{bulk_upload_job_id}/decisions", (REC, HR), None),
+]
+ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES + ITEM_11_ROUTES + ITEM_12_ROUTES + A_H5_ROUTES
 
 OWNER = {HM: "hm-1", REC: "rec-1", HR: "hr-1"}
 OUTSIDER = {HM: "hm-2", REC: "rec-2"}

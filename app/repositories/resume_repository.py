@@ -1085,6 +1085,7 @@ class ResumeRepository:
         uploaded_from: datetime | None = None,
         uploaded_to: datetime | None = None,
         uploaded_by: str | None = None,
+        visible_campaign_ids: list[UUID] | None = None,
         page: int = 1,
         size: int = 20,
         sort_by: str = "created_at",
@@ -1093,6 +1094,7 @@ class ResumeRepository:
         """Monitoring-only, no writes. Backs GET /resumes' list/search/filter."""
         conditions = self._build_search_conditions(
             campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to, uploaded_by,
+            visible_campaign_ids=visible_campaign_ids,
         )
         sort_column = _SORT_COLUMNS.get(sort_by, Resume.created_at)
         order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
@@ -1116,10 +1118,12 @@ class ResumeRepository:
         uploaded_from: datetime | None = None,
         uploaded_to: datetime | None = None,
         uploaded_by: str | None = None,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> int:
         """Same filters as search(), for the list endpoint's total count."""
         conditions = self._build_search_conditions(
             campaign_id, parse_status, source, email_hash, uploaded_from, uploaded_to, uploaded_by,
+            visible_campaign_ids=visible_campaign_ids,
         )
         stmt = select(func.count()).select_from(Resume).where(*conditions)
         return self.db.execute(stmt).scalar_one()
@@ -1178,6 +1182,7 @@ class ResumeRepository:
         uploaded_from: datetime | None,
         uploaded_to: datetime | None,
         uploaded_by: str | None = None,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> list:
         # Resume carries no campaign_id column itself — reached only via
         # campaign_candidates. A subquery (not a join) avoids duplicating a
@@ -1189,6 +1194,14 @@ class ResumeRepository:
                 CampaignCandidate.campaign_id == campaign_id
             )
             conditions.append(Resume.id.in_(resume_ids_in_campaign))
+        if visible_campaign_ids is not None:
+            # Campaign access (review A-H5): only resumes in campaigns the caller may see - linked
+            # through a campaign candidate or the bulk upload they came in with.
+            from app.models.async_tasks import BulkUploadJob
+            in_visible = select(CampaignCandidate.resume_id).where(
+                CampaignCandidate.campaign_id.in_(visible_campaign_ids))
+            jobs_in_visible = select(BulkUploadJob.id).where(BulkUploadJob.campaign_id.in_(visible_campaign_ids))
+            conditions.append(or_(Resume.id.in_(in_visible), Resume.bulk_upload_job_id.in_(jobs_in_visible)))
         if parse_status is not None:
             conditions.append(Resume.parse_status == parse_status)
         if source == "individual":

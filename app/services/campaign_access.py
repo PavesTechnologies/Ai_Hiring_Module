@@ -226,6 +226,31 @@ class CampaignAccess:
             raise _denied()
         return entry
 
+    def visible_campaign_ids(self, user) -> list | None:
+        """The ids of the campaigns this user may see, sorted (a stable cache key); None = every campaign."""
+        query = accessible_campaign_ids(user)
+        if query is None:
+            return None
+        return sorted(self.db.execute(query).scalars(), key=str)
+
+    def require_task(self, user, task_id):
+        """
+        A background task (resume processing status): through what it is about - its campaign
+        candidate, resume or bulk job; a task linked to none yet is whoever started it.
+        """
+        log = self._task_log(task_id)
+        if log is None:
+            raise CampaignException("Task not found.", 404)
+        if log.campaign_candidate_id is not None:
+            self.require_campaign_candidate(user, log.campaign_candidate_id)
+        elif log.resume_id is not None:
+            self.require_resume(user, log.resume_id)
+        elif log.bulk_upload_job_id is not None:
+            self.require_bulk_job(user, log.bulk_upload_job_id)
+        elif not sees_all_campaigns(user) and log.created_by != getattr(user, "user_id", None):
+            raise _denied()
+        return log
+
     def accessible_resume_ids(self, user, resume_ids) -> set:
         """Which of these resumes are in a campaign the user may see (for lists)."""
         ids = set(resume_ids or ())
@@ -237,6 +262,10 @@ class CampaignAccess:
 
     def _get(self, model, entity_id):
         return self.db.get(model, entity_id)
+
+    def _task_log(self, task_id):
+        from app.models.async_tasks import CeleryTaskLog
+        return self.db.execute(select(CeleryTaskLog).where(CeleryTaskLog.task_id == str(task_id))).scalars().first()
 
     def _campaigns(self, campaign_ids) -> list:
         return list(self.db.execute(

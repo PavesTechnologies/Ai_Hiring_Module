@@ -34,8 +34,10 @@ def list_campaign_upload_decisions(
     decision_status: _StatusFilter = Query(default=UploadDecisionStatus.PENDING.value, alias="status"),
     service: UploadDecisionService = Depends(get_upload_decision_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
     """Newest first. status=ALL returns every status (decided and expired too)."""
+    CampaignAccess(access_db).require_campaign(user, campaign_id)
     items = service.list_for_campaign(campaign_id, None if decision_status == "ALL" else decision_status)
     return APIResponse.ok(
         data=UploadDecisionListResponse(items=items, total=len(items)),
@@ -53,7 +55,9 @@ def list_bulk_upload_decisions(
     bulk_upload_job_id: UUID,
     service: UploadDecisionService = Depends(get_upload_decision_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_bulk_job(user, bulk_upload_job_id)
     items = service.list_for_job(bulk_upload_job_id)
     return APIResponse.ok(
         data=UploadDecisionListResponse(items=items, total=len(items)),
