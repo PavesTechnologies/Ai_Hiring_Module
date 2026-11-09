@@ -2,6 +2,7 @@ import logging
 from uuid import UUID
 
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+from app.services.notifications.dedup import notification_dedup_key
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 
@@ -72,14 +73,20 @@ class CandidateRejectionEmailService:
             )
             return None
 
-        notification = self.email_notification_repo.create(EmailNotification(
+        notification = self.email_notification_repo.create_unless_duplicate(EmailNotification(
             candidate_id=candidate_id,
             campaign_candidate_id=campaign_candidate_id,
             trigger_event=EmailTriggerEvent.CANDIDATE_REJECTED,
             template_id=template.id,
             status=EmailNotificationStatus.QUEUED,
+            dedup_key=None if allow_resend else notification_dedup_key(
+                EmailTriggerEvent.CANDIDATE_REJECTED, campaign_candidate_id=campaign_candidate_id),
         ))
-        self.email_notification_repo.commit()
+        if notification is None:
+            logger.info(
+                "Rejection email already queued/sent (raced) - skipping duplicate | "
+                "candidate_id=%s campaign_candidate_id=%s", candidate_id, campaign_candidate_id,
+            )
         return notification
 
     @staticmethod

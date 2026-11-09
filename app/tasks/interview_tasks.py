@@ -1,4 +1,5 @@
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
@@ -9,6 +10,7 @@ from app.services.interview_feedback_request_sweep_service import InterviewFeedb
 
 
 @celery_app.task(name="interview.request_feedback_for_ended_rounds", bind=True)
+@single_run("interview.request_feedback_for_ended_rounds")
 def request_interview_feedback_task(self):
     """
     Epic 5 Step 4 - hourly sweep queueing INTERVIEW_FEEDBACK_REQUESTED

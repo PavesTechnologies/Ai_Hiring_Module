@@ -5,6 +5,7 @@ from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotifi
 from app.models.interview import InterviewPlatform
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications.dedup import notification_dedup_key
 from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
@@ -166,7 +167,13 @@ def _queue_and_dispatch(
             )
             return
 
-        notification = notification_repo.create(EmailNotification(
+        if allow_resend:
+            dedup_key = None
+        elif interview_schedule_id is not None:
+            dedup_key = notification_dedup_key(trigger_event, interview_schedule_id=interview_schedule_id)
+        else:
+            dedup_key = notification_dedup_key(trigger_event, campaign_candidate_id=campaign_candidate_id)
+        notification = notification_repo.create_unless_duplicate(EmailNotification(
             candidate_id=candidate_id,
             campaign_candidate_id=campaign_candidate_id,
             interview_schedule_id=interview_schedule_id,
@@ -174,8 +181,14 @@ def _queue_and_dispatch(
             template_id=template.id,
             status=EmailNotificationStatus.QUEUED,
             template_context=template_context,
+            dedup_key=dedup_key,
         ))
-        notification_repo.commit()
+        if notification is None:
+            logger.info(
+                "%s email already queued/sent (raced) - skipping duplicate | campaign_candidate_id=%s",
+                trigger_event.value, campaign_candidate_id,
+            )
+            return
 
         send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
     except Exception:

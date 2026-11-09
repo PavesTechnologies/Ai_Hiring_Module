@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications.dedup import notification_dedup_key
 from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
             )
             return False
 
-        notification = notification_repo.create(EmailNotification(
+        notification = notification_repo.create_unless_duplicate(EmailNotification(
             candidate_id=None,
             campaign_candidate_id=campaign_candidate.id,
             interview_schedule_id=schedule.id,
@@ -96,8 +97,15 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
             template_id=template.id,
             status=EmailNotificationStatus.QUEUED,
             template_context={"recipient_name": interviewer.name, **extra_context},
+            dedup_key=notification_dedup_key(
+                trigger_event, interview_schedule_id=schedule.id, interviewer_id=interviewer.id),
         ))
-        notification_repo.commit()
+        if notification is None:
+            logger.info(
+                "%s email already queued/sent (raced) - skipping duplicate | interview_schedule_id=%s interviewer_id=%s",
+                trigger_event.value, schedule.id, interviewer.id,
+            )
+            return False
 
         send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
         return True

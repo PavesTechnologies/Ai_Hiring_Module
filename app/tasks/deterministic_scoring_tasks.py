@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
@@ -447,6 +448,7 @@ def recovery_action(logs, now: datetime, recovery_hours: float) -> str:
 
 
 @celery_app.task(name="scoring.recover_undecided_candidates")
+@single_run("scoring.recover_undecided_candidates")
 def recover_undecided_candidates() -> None:
     """
     Hourly safety net: candidates whose screening decision never landed (still UPLOADED or

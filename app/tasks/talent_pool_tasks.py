@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.models.pipeline import PipelineStage
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
@@ -44,6 +45,7 @@ def _compute_should_be_eligible(candidate, latest_campaign_candidate) -> bool:
 
 
 @celery_app.task(name="embedding.validate_talent_pool_eligibility")
+@single_run("embedding.validate_talent_pool_eligibility")
 def validate_talent_pool_eligibility() -> None:
     """
     Talent Pool Eligibility requirement: daily Celery Beat job that

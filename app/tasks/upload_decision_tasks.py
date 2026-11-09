@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -14,6 +15,7 @@ UPLOAD_DECISION_EXPIRY_TASK_TYPE = "UPLOAD_DECISION_EXPIRY"
 
 
 @celery_app.task(name="resume.expire_upload_decisions")
+@single_run("resume.expire_upload_decisions")
 def expire_upload_decisions_task() -> None:
     """
     Celery Beat, daily: every bulk-upload decision still PENDING 30 days after

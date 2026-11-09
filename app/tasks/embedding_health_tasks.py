@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -123,6 +124,7 @@ def _send_embedding_health_alert(
 
 
 @celery_app.task(name="embedding.monitor_health")
+@single_run("embedding.monitor_health")
 def monitor_embedding_health() -> None:
     """
     Requirement 5: runs every 30 minutes (celery_app.py's beat_schedule).

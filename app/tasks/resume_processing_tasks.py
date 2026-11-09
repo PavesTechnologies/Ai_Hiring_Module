@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 
 from app.models.async_tasks import DocumentType
@@ -771,6 +772,7 @@ RECOVERY_SCAN_INTERRUPTED_MESSAGE = ("Interrupted: the worker stopped before thi
 
 
 @celery_app.task(name="resume.recover_stalled_uploads")
+@single_run("resume.recover_stalled_uploads")
 def recover_stalled_resume_uploads_task() -> None:
     """
     Celery Beat entry point - periodic safety net alongside the FastAPI startup scan.

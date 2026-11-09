@@ -1,9 +1,12 @@
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.email import EmailNotification, EmailRecipientType, EmailTriggerEvent
+from app.models.email import EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
+
+DEDUP_INDEX = "uq_email_notifications_dedup_key"
 
 
 class EmailNotificationRepository:
@@ -16,6 +19,51 @@ class EmailNotificationRepository:
         self.db.flush()
         self.db.refresh(notification)
         return notification
+
+    def create_unless_duplicate(self, notification: EmailNotification) -> EmailNotification | None:
+        """
+        Inserts and commits the notification - unless a live row already holds its dedup_key, in which
+        case nothing is inserted and None comes back. The unique index decides (review item 7), so two
+        queuers racing past their read-before-insert check can never both insert. The insert runs in a
+        savepoint: a duplicate undoes only this row, never the caller's other work in the session.
+        """
+        try:
+            with self.db.begin_nested():
+                self.db.add(notification)
+                self.db.flush()
+        except IntegrityError as exc:
+            if DEDUP_INDEX not in str(getattr(exc, "orig", exc)):
+                raise
+            return None
+        self.db.commit()
+        self.db.refresh(notification)
+        return notification
+
+    def claim_for_sending(self, notification_id: UUID) -> bool:
+        """
+        QUEUED -> SENDING in one statement, committed: True for exactly one caller. The send task claims
+        before it calls SES, so a redelivered or concurrent task never sends the same row twice.
+        """
+        result = self.db.execute(
+            update(EmailNotification)
+            .where(EmailNotification.id == notification_id,
+                   EmailNotification.status == EmailNotificationStatus.QUEUED)
+            .values(status=EmailNotificationStatus.SENDING)
+            .execution_options(synchronize_session=False),
+        )
+        self.db.commit()
+        return result.rowcount == 1
+
+    def release_claim(self, notification_id: UUID) -> None:
+        """SENDING -> QUEUED, for a send SES definitely did not accept (so a retry is safe). Committed."""
+        self.db.execute(
+            update(EmailNotification)
+            .where(EmailNotification.id == notification_id,
+                   EmailNotification.status == EmailNotificationStatus.SENDING)
+            .values(status=EmailNotificationStatus.QUEUED)
+            .execution_options(synchronize_session=False),
+        )
+        self.db.commit()
 
     def get_by_id(self, notification_id: UUID) -> EmailNotification | None:
         return (

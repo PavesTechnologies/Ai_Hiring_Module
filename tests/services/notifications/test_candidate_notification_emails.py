@@ -41,7 +41,7 @@ def _patched(dedup_rows=None):
     notification_repo = MagicMock()
     notification_repo.get_by_interview_schedule_id_and_trigger_event.return_value = dedup_rows or []
     notification_repo.get_by_campaign_candidate_id_and_trigger_event.return_value = dedup_rows or []
-    notification_repo.create.side_effect = lambda n: n
+    notification_repo.create_unless_duplicate.side_effect = lambda n: n
 
     template_repo = MagicMock()
     template_repo.get_active_by_trigger_event.return_value = SimpleNamespace(id=uuid4())
@@ -173,15 +173,15 @@ def test_queue_interview_scheduled_email_creates_and_dispatches():
 
         mod.queue_interview_scheduled_email(MagicMock(), cc, schedule, [_interviewer()])
 
-        notification_repo.create.assert_called_once()
-        created = notification_repo.create.call_args.args[0]
+        notification_repo.create_unless_duplicate.assert_called_once()
+        created = notification_repo.create_unless_duplicate.call_args.args[0]
         assert isinstance(created, EmailNotification)
         assert created.candidate_id == cc.candidate_id
         assert created.campaign_candidate_id == cc.id
         assert created.interview_schedule_id == schedule.id
         assert created.trigger_event == EmailTriggerEvent.INTERVIEW_SCHEDULED
         assert created.template_context["interview_date"] == "August 28, 2026"
-        notification_repo.commit.assert_called_once()
+        notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
         mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(created.id)})
 
 
@@ -199,7 +199,7 @@ def test_queue_interview_scheduled_email_dedups_per_round_not_per_candidate():
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(MagicMock(), _campaign_candidate(), _schedule(), [])
 
-        notification_repo.create.assert_not_called()
+        notification_repo.create_unless_duplicate.assert_not_called()
         mock_task.apply_async.assert_not_called()
 
 
@@ -211,14 +211,14 @@ def test_queue_interview_scheduled_email_skips_when_no_active_template():
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(MagicMock(), _campaign_candidate(), _schedule(), [])
 
-        notification_repo.create.assert_not_called()
+        notification_repo.create_unless_duplicate.assert_not_called()
         mock_task.apply_async.assert_not_called()
 
 
 def test_queue_interview_scheduled_email_swallows_exceptions():
     """A failure to queue/dispatch must never propagate - the triggering write already committed."""
     notification_repo, template_repo = _patched()
-    notification_repo.commit.side_effect = RuntimeError("db exploded")
+    notification_repo.create_unless_duplicate.side_effect = RuntimeError("db exploded")
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
@@ -265,7 +265,7 @@ def test_queue_interview_rescheduled_email_uses_the_rescheduled_trigger_event():
         notification_repo.get_by_interview_schedule_id_and_trigger_event.assert_called_once_with(
             schedule.id, EmailTriggerEvent.INTERVIEW_RESCHEDULED,
         )
-        created = notification_repo.create.call_args.args[0]
+        created = notification_repo.create_unless_duplicate.call_args.args[0]
         assert created.trigger_event == EmailTriggerEvent.INTERVIEW_RESCHEDULED
 
 
@@ -284,7 +284,7 @@ def test_queue_interview_rescheduled_email_uses_the_current_meeting_link_not_a_s
         schedule = _schedule(meeting_link="https://teams.microsoft.com/l/meetup/NEW-post-reschedule-link")
         mod.queue_interview_rescheduled_email(MagicMock(), _campaign_candidate(), schedule, [])
 
-        created = notification_repo.create.call_args.args[0]
+        created = notification_repo.create_unless_duplicate.call_args.args[0]
         assert created.template_context["meeting_info"] == (
             "Join here: https://teams.microsoft.com/l/meetup/NEW-post-reschedule-link"
         )
@@ -299,7 +299,7 @@ def test_queue_interview_cancelled_email_uses_the_cancelled_trigger_event_and_pr
         schedule = _schedule()
         mod.queue_interview_cancelled_email(MagicMock(), _campaign_candidate(), schedule, [])
 
-        created = notification_repo.create.call_args.args[0]
+        created = notification_repo.create_unless_duplicate.call_args.args[0]
         assert created.trigger_event == EmailTriggerEvent.INTERVIEW_CANCELLED
         assert created.template_context["interview_date"] == "August 28, 2026"
 
@@ -317,7 +317,7 @@ def test_queue_candidate_selected_email_creates_and_dispatches():
 
         mod.queue_candidate_selected_email(MagicMock(), cc)
 
-        created = notification_repo.create.call_args.args[0]
+        created = notification_repo.create_unless_duplicate.call_args.args[0]
         assert created.trigger_event == EmailTriggerEvent.CANDIDATE_SELECTED
         assert created.interview_schedule_id is None
         assert created.template_context is None
@@ -335,7 +335,7 @@ def test_queue_candidate_selected_email_dedups_by_campaign_candidate_terminal_se
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
         mod.queue_candidate_selected_email(MagicMock(), _campaign_candidate())
 
-        notification_repo.create.assert_not_called()
+        notification_repo.create_unless_duplicate.assert_not_called()
         mock_task.apply_async.assert_not_called()
 
 
@@ -352,5 +352,5 @@ def test_queue_candidate_selected_email_allow_resend_skips_the_dedup_check():
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
         mod.queue_candidate_selected_email(MagicMock(), _campaign_candidate(), allow_resend=True)
 
-        notification_repo.create.assert_called_once()
+        notification_repo.create_unless_duplicate.assert_called_once()
         mock_task.apply_async.assert_called_once()

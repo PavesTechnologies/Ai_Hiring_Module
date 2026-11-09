@@ -42,3 +42,20 @@ def _email_is_log_only():
     settings.email_delivery = "log"
     yield
     assert settings.email_delivery == "log", "a test switched EMAIL_DELIVERY away from log-only"
+
+
+@pytest.fixture(autouse=True)
+def _scheduled_tasks_take_no_real_lock(monkeypatch):
+    """
+    @single_run (app/core/single_run.py) takes a Postgres advisory lock around each scheduled task.
+    Unit tests call those tasks directly with mocked sessions: the lock is always granted here and
+    never touches the database. tests/core/test_single_run.py tests the lock itself.
+    """
+    from contextlib import contextmanager
+    from app.core import single_run
+
+    @contextmanager
+    def granted(name):
+        yield True
+
+    monkeypatch.setattr(single_run, "_advisory_lock", granted)

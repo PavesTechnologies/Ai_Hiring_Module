@@ -1,4 +1,5 @@
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 
 from app.repositories.CampaignRepository import CampaignRepository
@@ -14,6 +15,7 @@ from app.services.campaign.resubmission_alert_service import ResubmissionAlertSe
 from app.services.celery_task_log_service import CeleryTaskLogService
 
 @celery_app.task(name="campaign.auto_close_expired_campaigns")
+@single_run("campaign.auto_close_expired_campaigns")
 
 def auto_close_expired_campaigns():
     """
@@ -71,6 +73,7 @@ def auto_close_expired_campaigns():
 
 
 @celery_app.task(name="campaign.detect_stalled_candidates")
+@single_run("campaign.detect_stalled_candidates")
 def detect_stalled_candidates():
     """
     : daily sweep flagging candidates stuck past their per-stage
@@ -124,6 +127,7 @@ def detect_stalled_candidates():
 
 
 @celery_app.task(name="campaign.evaluate_health_alerts")
+@single_run("campaign.evaluate_health_alerts")
 def evaluate_campaign_health_alerts():
     """
     daily background task evaluating pipeline health for every
@@ -179,6 +183,7 @@ def evaluate_campaign_health_alerts():
 
 
 @celery_app.task(name="campaign.evaluate_resubmission_alerts")
+@single_run("campaign.evaluate_resubmission_alerts")
 def evaluate_resubmission_alerts():
     """
     Epic 3 (M05-E03) Phase C4 — daily background task flagging candidates

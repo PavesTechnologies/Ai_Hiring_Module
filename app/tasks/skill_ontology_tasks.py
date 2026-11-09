@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import EMBEDDING_DIM, ActionType, EntityType
 from app.models.skills import SkillOntology
@@ -93,6 +94,7 @@ def generate_skill_embedding(task_id: str, skill_id: str) -> None:
 
 
 @celery_app.task(name="skill.detect_duplicate_aliases")
+@single_run("skill.detect_duplicate_aliases")
 def detect_duplicate_skill_aliases() -> None:
     """
     Scheduled audit (S04-T03): scans every skill_ontology row's aliases

@@ -3,6 +3,7 @@ import logging
 from app.core.config import settings
 from app.core.feedback_token import sign_feedback_token
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
+from app.services.notifications.dedup import notification_dedup_key
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.tasks.email_tasks import send_candidate_email_task
@@ -59,7 +60,7 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
         # own comment on this same [SEED] row.
         feedback_link = f"{settings.frontend_base_url}/interview-feedback/{token}"
 
-        notification = notification_repo.create(EmailNotification(
+        notification = notification_repo.create_unless_duplicate(EmailNotification(
             candidate_id=None,
             campaign_candidate_id=campaign_candidate.id,
             interview_schedule_id=schedule.id,
@@ -71,8 +72,16 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
             template_id=template.id,
             status=EmailNotificationStatus.QUEUED,
             template_context={"feedback_link": feedback_link, "recipient_name": interviewer.name},
+            dedup_key=notification_dedup_key(
+                EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
+                interview_schedule_id=schedule.id, interviewer_id=interviewer.id),
         ))
-        notification_repo.commit()
+        if notification is None:
+            logger.info(
+                "INTERVIEW_FEEDBACK_REQUESTED email already queued/sent (raced) - skipping duplicate | "
+                "interview_schedule_id=%s interviewer_id=%s", schedule.id, interviewer.id,
+            )
+            return False
 
         send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
         return True

@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
+
 from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
 from app.db.session import SessionLocal
@@ -35,6 +37,19 @@ EMAIL_SEND_TASK_TYPE = "EMAIL_SEND"
 # + CeleryTaskLogService.mark_retry/mark_dead this codebase already uses
 # for retry-then-dead-letter handling elsewhere.
 _EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
+
+
+def _not_sent(error: Exception) -> bool:
+    """
+    True when the failed send certainly did not deliver the email, so trying again cannot send it twice:
+    SES answered with an error, it was never reached, or the client was refused (no credentials, or
+    EMAIL_DELIVERY/sender not configured - SESEmailClient's ValueError). Anything else (a timeout after
+    the request went out, a dropped connection) may have delivered it.
+    """
+    original = error
+    while isinstance(original, EmailDeliveryException):    # the refusal arrives wrapped twice
+        original = original.original
+    return isinstance(original, (ClientError, EndpointConnectionError, NoCredentialsError, ValueError))
 
 
 def _html_escape_context(context: dict) -> dict:
@@ -93,6 +108,8 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
     task_id = self.request.id
     task_log = None
     notification = None
+    claimed = False         # this run moved the row QUEUED -> SENDING
+    sent = False            # SES accepted the email (or log mode logged it)
     attempt_number = self.request.retries + 1
     try:
         task_log_repo = CeleryTaskLogRepository(db)
@@ -120,6 +137,14 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
 
         if notification.status in (EmailNotificationStatus.SENT, EmailNotificationStatus.LOGGED):
             task_log_service.mark_success(task_log, summary=f"Notification already {notification.status.value}.")
+            return
+        if notification.status != EmailNotificationStatus.QUEUED:
+            # SENDING: an earlier run claimed it and may have sent it - never sent twice automatically.
+            # FAILED: dead-lettered; a new attempt is a new notification.
+            logger.warning("EMAIL_SEND skipped | email_notification_id=%s status=%s",
+                           email_notification_id, notification.status.value)
+            task_log_service.mark_success(
+                task_log, summary=f"Not sent: notification is {notification.status.value}.")
             return
 
         template = template_repo.get_by_id(notification.template_id)
@@ -168,7 +193,16 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         subject = template.subject.format(**context)
         body = template.body_template.format(**_html_escape_context(context))
 
+        # Review item 7: claim the row before calling SES. Exactly one run wins; a redelivered or
+        # concurrent run finds it SENDING (or already SENT) and leaves it alone.
+        if not notification_repo.claim_for_sending(notification.id):
+            logger.warning("EMAIL_SEND skipped | email_notification_id=%s reason=claimed_by_another_run",
+                           email_notification_id)
+            task_log_service.mark_success(task_log, summary="Not sent: another run claimed it.")
+            return
+        claimed = True
         message_id = SESEmailClient().send_email(to_address=to_address, subject=subject, body_text=body, is_html=True)
+        sent = True
 
         # EMAIL_DELIVERY=log: rendered and logged, never sent - recorded as LOGGED, not SENT.
         logged_only = str(message_id).startswith(LOG_ONLY_PREFIX)
@@ -188,7 +222,22 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         original = ex.original if isinstance(ex, EmailDeliveryException) else ex
         classification = classify(original)
 
-        if classification != FailureClassification.PERMANENT and attempt_number < _EMAIL_RETRY_POLICY.max_attempts:
+        if sent:
+            # Delivered, but recording it failed. The row stays SENDING (never re-sent); not a failure
+            # to retry or dead-letter.
+            logger.exception("EMAIL_SEND delivered but not recorded | email_notification_id=%s",
+                             email_notification_id)
+            if task_log:
+                task_log_service.mark_success(task_log, summary="Sent; recording the send failed (row left SENDING).")
+            return
+
+        outcome_unknown = claimed and not _not_sent(ex)
+        if claimed and not outcome_unknown:
+            # SES certainly did not take it: give the claim back so a retry can send it.
+            notification_repo.release_claim(notification.id)
+
+        if (not outcome_unknown and classification != FailureClassification.PERMANENT
+                and attempt_number < _EMAIL_RETRY_POLICY.max_attempts):
             if task_log:
                 task_log_service.mark_retry(task_log)
             delay = compute_backoff_seconds(_EMAIL_RETRY_POLICY, attempt_number)
@@ -204,6 +253,9 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         # the rejection record or the pipeline transition - those already
         # committed in a separate, earlier transaction.
         error_message = str(ex)
+        if outcome_unknown:
+            # Never retried automatically: SES may already have sent it.
+            error_message = f"Delivery outcome unknown - not retried automatically: {ex}"
         dead_letter_queue_repo.create(
             original_task_id=task_id,
             task_type=EMAIL_SEND_TASK_TYPE,
@@ -218,7 +270,10 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         dead_letter_queue_repo.commit()
 
         if notification is not None:
-            notification.status = EmailNotificationStatus.FAILED
+            if not outcome_unknown:
+                notification.status = EmailNotificationStatus.FAILED
+            # else: stays SENDING. FAILED would free its dedup key, and an automatic queuer could then
+            # send the email a second time.
             notification.error_reason = error_message
             notification_repo.update(notification)
             notification_repo.commit()

@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import or_, select
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import TaskStatus
@@ -240,6 +241,7 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
 
 
 @celery_app.task(name="scoring.complete_full_scoring_scan")
+@single_run("scoring.complete_full_scoring_scan")
 def complete_full_scoring_scan() -> None:
     """Hourly: queue the full scoring for fallback HOLDs while the daily cap leaves room for them."""
     db = SessionLocal()

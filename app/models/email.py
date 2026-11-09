@@ -67,6 +67,9 @@ class EmailTriggerEvent(enum.Enum):
 
 class EmailNotificationStatus(enum.Enum):
     QUEUED = "QUEUED"
+    # Claimed by the send task, which is about to call SES (review item 7). Never sent again
+    # automatically: a row left here may already have gone out.
+    SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
     # EMAIL_DELIVERY=log: the email was rendered and logged, never sent - recorded as such
@@ -75,7 +78,8 @@ class EmailNotificationStatus(enum.Enum):
 
 
 # A notification in one of these needs no second one for the same event and recipient.
-QUEUED_OR_DELIVERED = (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENT, EmailNotificationStatus.LOGGED)
+QUEUED_OR_DELIVERED = (EmailNotificationStatus.QUEUED, EmailNotificationStatus.SENDING,
+                       EmailNotificationStatus.SENT, EmailNotificationStatus.LOGGED)
 
 
 class EmailRecipientType(enum.Enum):
@@ -147,6 +151,9 @@ class EmailNotification(Base):
             "AND recipient_user_id IS NOT NULL AND recipient_email IS NOT NULL AND recipient_name IS NOT NULL)",
             name="chk_email_notifications_recipient_shape",
         ),
+        # One live notification per dedup key (review item 7; app/services/notifications/dedup.py).
+        Index("uq_email_notifications_dedup_key", "dedup_key", unique=True,
+              postgresql_where=text("dedup_key IS NOT NULL AND status <> 'FAILED'")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -186,6 +193,9 @@ class EmailNotification(Base):
     # re-resolved live at send time the way job_title/candidate_name are.
     # See ff1c2b57fbaf's docstring for the race this avoids.
     template_context: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # What makes two notifications the same email; NULL = never deduplicated (manual re-sends,
+    # internal-user alerts, rows from before c5e7a9b1d3f6).
+    dedup_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Epic 5 Step 2 - which round this notification is about, when it's
     # about one at all (NULL for CANDIDATE_REJECTED/CANDIDATE_SELECTED).
     # Exists specifically so INTERVIEW_SCHEDULED/RESCHEDULED/CANCELLED can

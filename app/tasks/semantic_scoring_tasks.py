@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from celery.exceptions import Retry
 
 from app.core.celery_app import celery_app
+from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
@@ -602,6 +603,7 @@ SEMANTIC_SCORE_RECOVERY_TASK_TYPE = "SEMANTIC_SCORE_RECOVERY_SCAN"
 
 
 @celery_app.task(name="scoring.recover_pending_semantic_scores")
+@single_run("scoring.recover_pending_semantic_scores")
 def recover_pending_semantic_scores() -> None:
     """
     Requirement 4 (automatic recovery), run periodically via Celery Beat:

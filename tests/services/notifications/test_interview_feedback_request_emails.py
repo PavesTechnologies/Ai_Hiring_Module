@@ -32,7 +32,7 @@ _NO_TEMPLATE_OVERRIDE = object()
 def _patched(dedup_rows=None, template=_NO_TEMPLATE_OVERRIDE):
     notification_repo = MagicMock()
     notification_repo.get_by_interview_schedule_id_and_interviewer_id_and_trigger_event.return_value = dedup_rows or []
-    notification_repo.create.side_effect = lambda n: n
+    notification_repo.create_unless_duplicate.side_effect = lambda n: n
 
     template_repo = MagicMock()
     template_repo.get_active_by_trigger_event.return_value = (
@@ -54,7 +54,7 @@ def test_queues_and_dispatches_with_a_real_signed_token_in_the_link():
         result = mod.queue_interview_feedback_requested_email(MagicMock(), cc, schedule, interviewer)
 
     assert result is True
-    created = notification_repo.create.call_args.args[0]
+    created = notification_repo.create_unless_duplicate.call_args.args[0]
     assert isinstance(created, EmailNotification)
     assert created.recipient_type == EmailRecipientType.EXTERNAL_INTERVIEWER
     assert created.candidate_id is None
@@ -66,7 +66,7 @@ def test_queues_and_dispatches_with_a_real_signed_token_in_the_link():
     assert created.trigger_event == EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED
     assert created.template_context["recipient_name"] == interviewer.name
     assert created.template_context["feedback_link"].startswith("https://app.example.com/interview-feedback/")
-    notification_repo.commit.assert_called_once()
+    notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
     mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(created.id)})
 
 
@@ -80,7 +80,7 @@ def test_dedups_per_interviewer_not_per_round():
         result = mod.queue_interview_feedback_requested_email(MagicMock(), _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False
-    notification_repo.create.assert_not_called()
+    notification_repo.create_unless_duplicate.assert_not_called()
     mock_task.apply_async.assert_not_called()
 
 
@@ -92,13 +92,13 @@ def test_skips_when_no_active_template():
         result = mod.queue_interview_feedback_requested_email(MagicMock(), _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False
-    notification_repo.create.assert_not_called()
+    notification_repo.create_unless_duplicate.assert_not_called()
     mock_task.apply_async.assert_not_called()
 
 
 def test_swallows_exceptions_and_returns_false():
     notification_repo, template_repo = _patched()
-    notification_repo.commit.side_effect = RuntimeError("db exploded")
+    notification_repo.create_unless_duplicate.side_effect = RuntimeError("db exploded")
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
          patch(f"{MODULE}.send_candidate_email_task") as mock_task:

@@ -15,7 +15,7 @@ def make_service(active_template=None):
     email_template_repo = MagicMock()
     email_template_repo.get_active_by_trigger_event.return_value = active_template
     email_notification_repo = MagicMock()
-    email_notification_repo.create.side_effect = lambda notification: notification
+    email_notification_repo.create_unless_duplicate.side_effect = lambda notification: notification
     service = CandidateRejectionEmailService(email_template_repo, email_notification_repo)
     return service, email_template_repo, email_notification_repo
 
@@ -34,7 +34,7 @@ def test_queue_rejection_email_creates_notification_when_template_active():
     assert notification.template_id == template.id
     assert notification.status == EmailNotificationStatus.QUEUED
     assert notification.trigger_event == EmailTriggerEvent.CANDIDATE_REJECTED
-    email_notification_repo.commit.assert_called_once()
+    email_notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
 
 
 def test_queue_rejection_email_returns_none_when_no_active_template():
@@ -43,8 +43,8 @@ def test_queue_rejection_email_returns_none_when_no_active_template():
     notification = service.queue_rejection_email(uuid4(), uuid4())
 
     assert notification is None
-    email_notification_repo.create.assert_not_called()
-    email_notification_repo.commit.assert_not_called()
+    email_notification_repo.create_unless_duplicate.assert_not_called()
+    email_notification_repo.create_unless_duplicate.assert_not_called()
 
 
 # ----------------------------------------------------------------------
@@ -62,7 +62,7 @@ def test_queue_rejection_email_skips_when_already_queued():
     notification = service.queue_rejection_email(uuid4(), uuid4())
 
     assert notification is None
-    email_notification_repo.create.assert_not_called()
+    email_notification_repo.create_unless_duplicate.assert_not_called()
 
 
 def test_queue_rejection_email_skips_when_already_sent():
@@ -75,7 +75,7 @@ def test_queue_rejection_email_skips_when_already_sent():
     notification = service.queue_rejection_email(uuid4(), uuid4())
 
     assert notification is None
-    email_notification_repo.create.assert_not_called()
+    email_notification_repo.create_unless_duplicate.assert_not_called()
 
 
 def test_queue_rejection_email_retries_after_a_prior_failed_attempt():
@@ -89,7 +89,7 @@ def test_queue_rejection_email_retries_after_a_prior_failed_attempt():
     notification = service.queue_rejection_email(uuid4(), uuid4())
 
     assert notification is not None
-    email_notification_repo.create.assert_called_once()
+    email_notification_repo.create_unless_duplicate.assert_called_once()
 
 
 # ----------------------------------------------------------------------
@@ -108,7 +108,7 @@ def test_allow_resend_bypasses_the_already_queued_dedup_check():
     notification = service.queue_rejection_email(uuid4(), uuid4(), allow_resend=True)
 
     assert notification is not None
-    email_notification_repo.create.assert_called_once()
+    email_notification_repo.create_unless_duplicate.assert_called_once()
 
 
 def test_allow_resend_bypasses_the_already_sent_dedup_check():
@@ -121,7 +121,7 @@ def test_allow_resend_bypasses_the_already_sent_dedup_check():
     notification = service.queue_rejection_email(uuid4(), uuid4(), allow_resend=True)
 
     assert notification is not None
-    email_notification_repo.create.assert_called_once()
+    email_notification_repo.create_unless_duplicate.assert_called_once()
 
 
 def test_allow_resend_still_returns_none_when_no_active_template():
@@ -130,7 +130,7 @@ def test_allow_resend_still_returns_none_when_no_active_template():
     notification = service.queue_rejection_email(uuid4(), uuid4(), allow_resend=True)
 
     assert notification is None
-    email_notification_repo.create.assert_not_called()
+    email_notification_repo.create_unless_duplicate.assert_not_called()
 
 
 def test_render_content_only_substitutes_candidate_name_and_job_title():
