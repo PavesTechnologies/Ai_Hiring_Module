@@ -219,6 +219,7 @@ class ResumeRepository:
         score_min: float | None = None,
         score_max: float | None = None,
         resolved_skill_ids_by_term: dict[str, UUID | None] | None = None,
+        visible_campaign_ids: list[UUID] | None = None,
         freshness_max_age_days: int = 180,
         page: int = 1,
         size: int = 6,
@@ -261,6 +262,7 @@ class ResumeRepository:
             score_min=score_min,
             score_max=score_max,
             resolved_skill_ids_by_term=resolved_skill_ids_by_term,
+            visible_campaign_ids=visible_campaign_ids,
         ))
 
         total = self.db.execute(
@@ -298,6 +300,7 @@ class ResumeRepository:
         experience_max: float | None = None,
         score_min: float | None = None,
         score_max: float | None = None,
+        visible_campaign_ids: list[UUID] | None = None,
         freshness_max_age_days: int = 180,
         page: int = 1,
         size: int = 6,
@@ -346,6 +349,7 @@ class ResumeRepository:
             score_min=score_min,
             score_max=score_max,
             resolved_skill_ids_by_term={},
+            visible_campaign_ids=visible_campaign_ids,
         ))
 
         total = self.db.execute(
@@ -394,6 +398,7 @@ class ResumeRepository:
         score_min: float | None,
         score_max: float | None,
         resolved_skill_ids_by_term: dict[str, UUID | None],
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> list:
         """
         Shared by search_talent_pool's COUNT and page queries — the exact
@@ -489,12 +494,21 @@ class ResumeRepository:
                 ).bindparams(bindparam("education_fields", education_fields, type_=ARRAY(String))),
             )
 
+        # Campaign access (review follow-up): the campaign, stage and score filters look only at the
+        # campaigns the caller may see, so they never reveal a candidate's stage or score elsewhere.
+        # None = every campaign (HR_ADMIN).
+        in_visible = (
+            [] if visible_campaign_ids is None
+            else [CampaignCandidate.campaign_id.in_(visible_campaign_ids)]
+        )
+
         if campaign_ids:
             conditions.append(
                 select(CampaignCandidate.id)
                 .where(
                     CampaignCandidate.candidate_id == Resume.candidate_id,
                     CampaignCandidate.campaign_id.in_(campaign_ids),
+                    *in_visible,
                 )
                 .exists(),
             )
@@ -515,6 +529,7 @@ class ResumeRepository:
                 .where(
                     CampaignCandidate.candidate_id == Resume.candidate_id,
                     CampaignCandidate.pipeline_stage.in_(pipeline_stages),
+                    *in_visible,
                 )
                 .exists(),
             )
@@ -528,7 +543,7 @@ class ResumeRepository:
         if score_min is not None or score_max is not None:
             best_score = (
                 select(func.max(CampaignCandidate.composite_score))
-                .where(CampaignCandidate.candidate_id == Resume.candidate_id)
+                .where(CampaignCandidate.candidate_id == Resume.candidate_id, *in_visible)
                 .correlate(Resume)
                 .scalar_subquery()
             )

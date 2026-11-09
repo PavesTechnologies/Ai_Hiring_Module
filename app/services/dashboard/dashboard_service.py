@@ -154,8 +154,11 @@ class DashboardService:
             stages=stages,
         )
 
-    def get_top_candidates(self, limit: int) -> TopCandidatesResponse:
-        rows = self.dashboard_repo.get_top_candidates(limit, campaign_status=CampaignStatus.ACTIVE)
+    def get_top_candidates(self, limit: int, visible_campaign_ids=None) -> TopCandidatesResponse:
+        """visible_campaign_ids: the caller's campaigns (campaign access); None = every campaign."""
+        rows = self.dashboard_repo.get_top_candidates(
+            limit, campaign_status=CampaignStatus.ACTIVE, visible_campaign_ids=visible_campaign_ids,
+        )
 
         candidates = []
         for campaign_candidate, candidate, resume, campaign in rows:
@@ -172,9 +175,11 @@ class DashboardService:
 
         return TopCandidatesResponse(candidates=candidates)
 
-    def get_notifications(self, limit: int) -> NotificationsFeedResponse:
+    def get_notifications(self, limit: int, visible_campaign_ids=None) -> NotificationsFeedResponse:
+        """visible_campaign_ids: the caller's campaigns (campaign access); None = every campaign."""
         entries = self.dashboard_repo.get_recent_audit_entries(
             limit, action_types=list(_ACTION_MESSAGE_TEMPLATES.keys()),
+            visible_campaign_ids=visible_campaign_ids,
         )
 
         actor_ids = {str(e.actor_id) for e in entries if e.actor_id}

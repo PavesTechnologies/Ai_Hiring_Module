@@ -136,28 +136,32 @@ class DashboardRepository:
     def get_top_candidates(self,
         limit: int,
         campaign_status: CampaignStatus = CampaignStatus.ACTIVE,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> list[tuple[CampaignCandidate, Candidate, Resume | None, HiringCampaign]]:
-        return (self.db.query(CampaignCandidate, Candidate, Resume, HiringCampaign)
+        query = (self.db.query(CampaignCandidate, Candidate, Resume, HiringCampaign)
             .join(Candidate, CampaignCandidate.candidate_id == Candidate.id)
             .outerjoin(Resume, CampaignCandidate.resume_id == Resume.id)
             .join(HiringCampaign, CampaignCandidate.campaign_id == HiringCampaign.id)
             .filter(HiringCampaign.status == campaign_status)
             .filter(CampaignCandidate.composite_score.isnot(None))
-            .order_by(CampaignCandidate.composite_score.desc())
-            .limit(limit)
-            .all()
         )
+        if visible_campaign_ids is not None:
+            # Campaign access: only candidates in campaigns the caller may see (None = every campaign).
+            query = query.filter(CampaignCandidate.campaign_id.in_(visible_campaign_ids))
+        return query.order_by(CampaignCandidate.composite_score.desc()).limit(limit).all()
 
     def get_recent_audit_entries(self,
         limit: int,
         action_types: list,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> list[AuditLog]:
-        return (self.db.query(AuditLog)
-            .filter(AuditLog.action_type.in_(action_types))
-            .order_by(AuditLog.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        query = self.db.query(AuditLog).filter(AuditLog.action_type.in_(action_types))
+        if visible_campaign_ids is not None:
+            # Campaign access: events in the caller's campaigns, plus events tied to no campaign
+            # (job descriptions). None = every campaign.
+            query = query.filter(or_(AuditLog.campaign_id.is_(None),
+                                     AuditLog.campaign_id.in_(visible_campaign_ids)))
+        return query.order_by(AuditLog.created_at.desc()).limit(limit).all()
 
     # ── shared helpers ────────────────────────────────────────────────
 

@@ -25,11 +25,9 @@ CHECKED_ELSEWHERE = {
     "get_interview_feedback": "InterviewFeedbackService.get_feedback_for_round",
     "bulk_send_rejection_email": "per candidate, in send_rejection_email (one outsider never blocks the rest)",
 }
-# Deliberately not campaign-scoped (product decision recorded in the batch 3 report).
-NOT_CAMPAIGN_SCOPED = {
-    "search_talent_pool_candidates": "the talent pool exists to find candidates outside your campaigns",
-    "get_talent_pool_candidate_profile": "the talent pool exists to find candidates outside your campaigns",
-}
+# Deliberately not campaign-scoped. (Empty since the batch 3 follow-up: the talent pool search
+# stays open to the whole pool but scopes its campaign data, and runs the check itself.)
+NOT_CAMPAIGN_SCOPED: dict[str, str] = {}
 
 
 def _api_routes():

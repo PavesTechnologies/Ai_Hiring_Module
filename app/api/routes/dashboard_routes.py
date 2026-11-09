@@ -103,15 +103,21 @@ def get_hiring_funnel(
 @router.get("/top-candidates",
     response_model=APIResponse[TopCandidatesResponse],
     status_code=status.HTTP_200_OK,
-    summary="Get top-ranked candidates across all active campaigns",
-    description="Highest composite_score candidates across every ACTIVE campaign, highest first.",
+    summary="Get top-ranked candidates across the caller's active campaigns",
+    description=(
+        "Highest composite_score candidates across the ACTIVE campaigns the caller may see, highest "
+        "first (HR_ADMIN: every campaign; hiring manager: their own; recruiter: assigned or created)."
+    ),
 )
 def get_top_candidates(
     limit: int = Query(default=5, ge=1, le=50),
     service: DashboardService = Depends(get_dashboard_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
-    return APIResponse.ok(data=service.get_top_candidates(limit), message="Top candidates retrieved successfully.")
+    visible = CampaignAccess(access_db).visible_campaign_ids(user)
+    return APIResponse.ok(data=service.get_top_candidates(limit, visible_campaign_ids=visible),
+                          message="Top candidates retrieved successfully.")
 
 
 @router.get("/notifications",
@@ -125,15 +131,19 @@ def get_top_candidates(
         "audited (campaign/candidate/JD/resume lifecycle events). It does not "
         "cover duplicate-resume flags, JD approval workflow, hiring-manager "
         "feedback, or interview scheduling, since none of those exist as "
-        "persisted events in the schema yet."
+        "persisted events in the schema yet. Scoped to the campaigns the caller may see; events "
+        "tied to no campaign (job descriptions) are shown to everyone."
     ),
 )
 def get_dashboard_notifications(
     limit: int = Query(default=10, ge=1, le=100),
     service: DashboardService = Depends(get_dashboard_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
-    return APIResponse.ok(data=service.get_notifications(limit), message="Notifications retrieved successfully.")
+    visible = CampaignAccess(access_db).visible_campaign_ids(user)
+    return APIResponse.ok(data=service.get_notifications(limit, visible_campaign_ids=visible),
+                          message="Notifications retrieved successfully.")
 
 
 @router.get(

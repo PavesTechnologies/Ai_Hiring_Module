@@ -105,7 +105,7 @@ def campaign_access_granted():
     over a mocked database: every CampaignAccess.require_* passes. The access check itself is
     tested in tests/api/test_campaign_access_routes.py and tests/services/test_campaign_access.py.
     """
-    names = [n for n in vars(CampaignAccess) if n.startswith("require_")]
+    names = [n for n in vars(CampaignAccess) if n.startswith("require_")] + ["visible_campaign_ids"]
     patchers = [patch.object(CampaignAccess, n, lambda *a, **k: None) for n in names]
     for p in patchers:
         p.start()

@@ -121,7 +121,13 @@ class TalentPoolService:
     # T01 + T02 — Unified Candidate Profile / Performance Summary
     # ------------------------------------------------------------------
 
-    def get_candidate_profile(self, candidate_id: UUID) -> TalentPoolCandidateProfileResponse:
+    def get_candidate_profile(
+        self, candidate_id: UUID, visible_campaign_ids: list[UUID] | None = None,
+    ) -> TalentPoolCandidateProfileResponse:
+        """
+        visible_campaign_ids (campaign access): the campaign and performance summaries cover only these
+        campaigns; the rest of the profile is profile-level and always shown. None = every campaign.
+        """
         candidate = self.candidate_repo.get_by_id(candidate_id)
         if candidate is None:
             raise NotFoundError(f"Candidate {candidate_id} not found.")
@@ -130,7 +136,9 @@ class TalentPoolService:
         embedding = self.resume_repo.get_embedding(resume.id) if resume is not None else None
         latest_consent = self.consent_repo.get_latest_by_candidate(candidate_id)
 
-        campaign_summary, performance_summary = self._build_campaign_and_performance_summary(candidate_id)
+        campaign_summary, performance_summary = self._build_campaign_and_performance_summary(
+            candidate_id, visible_campaign_ids,
+        )
 
         return TalentPoolCandidateProfileResponse(
             candidate=self._build_candidate_info(candidate, resume),
@@ -176,12 +184,16 @@ class TalentPoolService:
         )
 
     def _build_campaign_and_performance_summary(
-        self, candidate_id: UUID,
+        self, candidate_id: UUID, visible_campaign_ids: list[UUID] | None = None,
     ) -> tuple[CampaignSummaryResponse, PerformanceSummaryResponse]:
         # Reused exactly as CampaignCandidateService.get_candidate_campaign_history
         # already consumes it: (campaign_candidate, campaign_name, jd_title)
         # tuples, most recent submission first.
         rows = self.campaign_candidate_repo.get_all_by_candidate_across_campaigns(candidate_id)
+        if visible_campaign_ids is not None:
+            # Stages, scores and pipeline history only from the caller's campaigns.
+            visible = set(visible_campaign_ids)
+            rows = [row for row in rows if row[0].campaign_id in visible]
         total_campaigns = len(rows)
         top_5_skills = self.resume_repo.get_top_skills_by_candidate(candidate_id, limit=5)
 
@@ -307,6 +319,7 @@ class TalentPoolService:
         campaign_id: UUID | None = None,
         page: int = 1,
         size: int = 20,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> TalentPoolSearchResponse:
         """
         Read-only search/filter over the Talent Pool — every filter is
@@ -372,6 +385,7 @@ class TalentPoolService:
             score_min=score_min,
             score_max=score_max,
             resolved_skill_ids_by_term=resolved_skill_ids_by_term,
+            visible_campaign_ids=visible_campaign_ids,
             freshness_max_age_days=self._resume_freshness_max_age_days(),
             page=page,
             size=capped_size,
@@ -393,7 +407,7 @@ class TalentPoolService:
         page_candidate_ids = [candidate.id for candidate, _ in page_candidates_and_resumes]
         skills_by_resume_id = self.resume_repo.get_canonical_skills_by_resume_ids(page_resume_ids)
         best_composite_by_candidate_id = self.campaign_candidate_repo.get_best_composite_scores_by_candidate_ids(
-            page_candidate_ids,
+            page_candidate_ids, visible_campaign_ids=visible_campaign_ids,
         )
 
         items = [
@@ -438,6 +452,7 @@ class TalentPoolService:
         filters: TalentPoolSemanticSearchFilters | None = None,
         page: int = 1,
         size: int = 6,
+        visible_campaign_ids: list[UUID] | None = None,
     ) -> TalentPoolSemanticSearchResponse:
         """
         M14 — free-text semantic search over the Talent Pool. Pipeline order
@@ -504,6 +519,7 @@ class TalentPoolService:
             experience_max=filters.experience_max,
             score_min=filters.score_min,
             score_max=filters.score_max,
+            visible_campaign_ids=visible_campaign_ids,
             freshness_max_age_days=self._resume_freshness_max_age_days(),
             page=page,
             size=capped_size,
@@ -526,7 +542,7 @@ class TalentPoolService:
         page_candidate_ids = [candidate.id for candidate, _, _ in page_rows]
         skills_by_resume_id = self.resume_repo.get_canonical_skills_by_resume_ids(page_resume_ids)
         best_composite_by_candidate_id = self.campaign_candidate_repo.get_best_composite_scores_by_candidate_ids(
-            page_candidate_ids,
+            page_candidate_ids, visible_campaign_ids=visible_campaign_ids,
         )
 
         items = [
@@ -572,15 +588,22 @@ class TalentPoolService:
     # Talent Pool Normal Search — filter option metadata
     # ------------------------------------------------------------------
 
-    def get_search_filters(self) -> TalentPoolFiltersResponse:
+    def get_search_filters(self, visible_campaign_ids: list[UUID] | None = None) -> TalentPoolFiltersResponse:
+        """visible_campaign_ids (campaign access): the campaign options offered; None = every campaign."""
         if not self.cache_service:
-            return self._load_search_filters()
-        raw = self.cache_service.get_or_set(
-            reference_key("talent_pool_filters"),
-            loader=lambda: self._load_search_filters().model_dump_json(),
-            ttl=settings.cache_reference_ttl_seconds,
-        )
-        return TalentPoolFiltersResponse.model_validate_json(raw)
+            filters = self._load_search_filters()
+        else:
+            raw = self.cache_service.get_or_set(
+                reference_key("talent_pool_filters"),
+                loader=lambda: self._load_search_filters().model_dump_json(),
+                ttl=settings.cache_reference_ttl_seconds,
+            )
+            filters = TalentPoolFiltersResponse.model_validate_json(raw)
+        if visible_campaign_ids is not None:
+            # The cached options are shared by everyone; each caller sees only their campaigns.
+            visible = set(visible_campaign_ids)
+            filters.campaigns = [option for option in filters.campaigns if option.id in visible]
+        return filters
 
     def _load_search_filters(self) -> TalentPoolFiltersResponse:
         """

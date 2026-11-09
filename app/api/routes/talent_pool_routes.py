@@ -1,6 +1,10 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Security, status
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.services.campaign_access import CampaignAccess
 
 from app.dependencies.talent_pool import get_talent_pool_service
 from app.exception_handler.exceptions import BadRequestError
@@ -75,11 +79,10 @@ def _parse_campaign_id(campaign_id: str) -> UUID:
         "RESUME_FRESHNESS_MAX_AGE_DAYS) are returned. Read-only - no resume "
         "is selected here; ResumeSelectionService independently selects the "
         "resume actually used once a candidate is added to a campaign. "
-        "HR_ADMIN, RECRUITER or HIRING_MANAGER."
+        "HR_ADMIN, RECRUITER or HIRING_MANAGER. Search covers the whole Talent Pool; the campaign, "
+        "stage and score filters and each card's best_composite_score cover only the campaigns the "
+        "caller may see (HR_ADMIN: every campaign), and naming another campaign is refused."
     ),
-    dependencies=[
-        Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
-    ],
 )
 def search_talent_pool_candidates(
     search: str | None = Query(
@@ -114,7 +117,11 @@ def search_talent_pool_candidates(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=6, ge=1, le=100, description=f"Capped server-side at {TALENT_POOL_MAX_PAGE_SIZE}."),
     service: TalentPoolService = Depends(get_talent_pool_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    access = CampaignAccess(access_db)
+    access.require_campaign_ids(user, [*(campaign_ids or []), *([campaign_id] if campaign_id else [])])
     return APIResponse.ok(
         data=service.search_candidates(
             search=search, skill=skill, skills=skills,
@@ -125,6 +132,7 @@ def search_talent_pool_candidates(
             experience_min=experience_min, experience_max=experience_max,
             score_min=score_min, score_max=score_max,
             campaign_id=campaign_id, page=page, size=size,
+            visible_campaign_ids=access.visible_campaign_ids(user),
         ),
         message="Talent Pool candidates retrieved successfully.",
     )
@@ -173,15 +181,21 @@ def bulk_add_talent_pool_candidates_to_campaign(
         "they have ever been submitted to: identity, consent, talent-pool "
         "eligibility, active resume, and cross-campaign performance summary "
         "(best/average composite score, best AI recommendation, "
-        "shortlisted/selected counts, top 5 skills). HR_ADMIN only."
+        "shortlisted/selected counts, top 5 skills). HR_ADMIN only. The campaign and performance "
+        "summaries cover only the campaigns the caller may see (every campaign for HR_ADMIN), so the "
+        "rule holds if more roles are admitted later."
     ),
-    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
 )
 def get_talent_pool_candidate_profile(
     candidate_id: str,
     service: TalentPoolService = Depends(get_talent_pool_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+    access_db: Session = Depends(get_db),
 ):
-    profile = service.get_candidate_profile(_parse_candidate_id(candidate_id))
+    profile = service.get_candidate_profile(
+        _parse_candidate_id(candidate_id),
+        visible_campaign_ids=CampaignAccess(access_db).visible_campaign_ids(user),
+    )
 
     return APIResponse.ok(
         data=profile,
@@ -250,22 +264,25 @@ def add_talent_pool_candidate_to_campaign(
         "`total` reflects the structured-filtered, eligible candidate "
         "count, independent of the current page. Page size is capped at "
         f"{TALENT_POOL_MAX_PAGE_SIZE} regardless of what is requested. "
-        "HR_ADMIN, RECRUITER, and HIRING_MANAGER only."
+        "HR_ADMIN, RECRUITER, and HIRING_MANAGER only. The campaign, stage and score filters and "
+        "each card's best_composite_score cover only the campaigns the caller may see."
     ),
-    dependencies=[
-        Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
-    ],
 )
 def semantic_search_talent_pool_candidates(
     request: TalentPoolSemanticSearchRequest,
     service: TalentPoolService = Depends(get_talent_pool_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    access = CampaignAccess(access_db)
+    access.require_campaign_ids(user, (request.filters.campaign_ids if request.filters else None) or [])
     return APIResponse.ok(
         data=service.semantic_search_candidates(
             query=request.query,
             filters=request.filters,
             page=request.page,
             size=request.size,
+            visible_campaign_ids=access.visible_campaign_ids(user),
         ),
         message="Talent Pool semantic search results retrieved successfully.",
     )
@@ -283,16 +300,16 @@ def semantic_search_talent_pool_candidates(
         "field_normalized values already classified by the resume-"
         "extraction pipeline, active campaigns (id + name), and the "
         "existing PipelineStage values. Read-only - never executes a "
-        "candidate search. HR_ADMIN, RECRUITER, and HIRING_MANAGER only."
+        "candidate search. HR_ADMIN, RECRUITER, and HIRING_MANAGER only. The campaign options are "
+        "the campaigns the caller may see."
     ),
-    dependencies=[
-        Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
-    ],
 )
 def get_talent_pool_filters(
     service: TalentPoolService = Depends(get_talent_pool_service),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
     return APIResponse.ok(
-        data=service.get_search_filters(),
+        data=service.get_search_filters(CampaignAccess(access_db).visible_campaign_ids(user)),
         message="Talent Pool filter options retrieved successfully.",
     )

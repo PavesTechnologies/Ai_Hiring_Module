@@ -975,7 +975,9 @@ class CampaignCandidateRepository:
             "average": float(average) if average is not None else None,
         }
 
-    def get_best_composite_scores_by_candidate_ids(self, candidate_ids: list[UUID]) -> dict[UUID, float]:
+    def get_best_composite_scores_by_candidate_ids(
+        self, candidate_ids: list[UUID], visible_campaign_ids: list[UUID] | None = None,
+    ) -> dict[UUID, float]:
         """
         Talent Pool Search (M13-E01 S02 T0x) - MAX(composite_score) per
         candidate for a batch of candidates in ONE query, so the Talent
@@ -990,6 +992,8 @@ class CampaignCandidateRepository:
         - simply absent from the returned dict, exactly like a candidate
         with no campaign_candidates rows at all. Callers must treat a
         missing key as "no score", never as 0.
+
+        visible_campaign_ids (campaign access): only scores from these campaigns; None = every campaign.
         """
         if not candidate_ids:
             return {}
@@ -998,6 +1002,8 @@ class CampaignCandidateRepository:
             .where(CampaignCandidate.candidate_id.in_(candidate_ids))
             .group_by(CampaignCandidate.candidate_id)
         )
+        if visible_campaign_ids is not None:
+            stmt = stmt.where(CampaignCandidate.campaign_id.in_(visible_campaign_ids))
         return {
             candidate_id: float(best_score)
             for candidate_id, best_score in self.db.execute(stmt).all()
