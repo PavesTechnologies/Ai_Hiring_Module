@@ -48,7 +48,15 @@ ITEM_10_ROUTES = [
     ("GET", "/resumes/candidate/{campaign_candidate_id}/parsed-json", (HM, REC, HR), None),
     ("GET", "/monitoring/queue-status?campaign_id={campaign_id}", (HM, REC, HR), None),
 ]
-ROUTES = ITEM_10_ROUTES
+# Item 9: these five had no role check at all - any intranet token could read a scorecard.
+ITEM_9_ROUTES = [
+    ("GET", "/campaign-candidates/{campaign_candidate_id}/rejection-history", (HM, REC, HR), None),
+    ("GET", "/campaign-candidates/{campaign_candidate_id}/summary", (HM, REC, HR), None),
+    ("GET", "/campaign-candidates/{campaign_candidate_id}/deterministic", (HM, REC, HR), None),
+    ("GET", "/campaign-candidates/{campaign_candidate_id}/semantic", (HM, REC, HR), None),
+    ("GET", "/campaign-candidates/{campaign_candidate_id}", (HM, REC, HR), None),
+]
+ROUTES = ITEM_10_ROUTES + ITEM_9_ROUTES
 
 OWNER = {HM: "hm-1", REC: "rec-1", HR: "hr-1"}
 OUTSIDER = {HM: "hm-2", REC: "rec-2"}
@@ -110,3 +118,10 @@ def test_someone_elses_campaign_is_refused(call, route, role):
 def test_their_own_campaign_is_let_through(call, route, role):
     response = call(route, OWNER[role], role, "a")
     assert not _denied(response), response.text
+
+
+@pytest.mark.parametrize("route", ITEM_9_ROUTES, ids=[r[1] for r in ITEM_9_ROUTES])
+def test_a_token_without_a_campaign_role_is_refused_by_role(call, route):
+    # An intranet employee whose token carries only an org label ("General").
+    response = call(route, "emp-1", "General", "a")
+    assert response.status_code == 403 and "Access denied" in response.text

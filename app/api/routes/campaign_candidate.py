@@ -328,7 +328,10 @@ def get_rejection_history(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     history = service.get_rejection_history(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -641,7 +644,10 @@ def get_candidate_summary(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     summary = service.get_candidate_summary(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -665,8 +671,10 @@ def get_candidate_deterministic(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
-    user: TokenUser = Depends(get_current_user),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     # Scoring v2 shadow panel: HR_ADMIN only (read-only, never decides).
     deterministic = service.get_candidate_deterministic(
         campaign_candidate_id, include_shadow=UserRole.HR_ADMIN.value in authorising_roles(user),
@@ -693,7 +701,10 @@ def get_candidate_semantic(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     semantic = service.get_candidate_semantic(campaign_candidate_id)
 
     return APIResponse.ok(
@@ -845,7 +856,10 @@ def get_campaign_candidate_scorecard(
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER)),
+    access_db: Session = Depends(get_db),
 ):
+    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
     scorecard = service.get_campaign_candidate_scorecard(campaign_candidate_id)
 
     return APIResponse.ok(
