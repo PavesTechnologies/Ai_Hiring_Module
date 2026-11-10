@@ -76,6 +76,10 @@ def validate_talent_pool_eligibility() -> None:
             task_type=TALENT_POOL_ELIGIBILITY_TASK_TYPE,
         )
 
+        # Review item 16: embedding rows whose resume is gone (resume_embeddings has no foreign key) - a
+        # resume-derived vector with the candidate id, which could otherwise be reused for later resumes.
+        orphans_deleted = resume_repo.delete_orphaned_embeddings()
+
         candidate_ids = resume_repo.get_distinct_candidate_ids_with_embeddings()
         candidates_evaluated = 0
         rows_corrected = 0
@@ -83,10 +87,8 @@ def validate_talent_pool_eligibility() -> None:
         for candidate_id in candidate_ids:
             candidate = candidate_repo.get_by_id(candidate_id)
             if candidate is None:
-                # Orphaned embedding row (e.g. the candidate was hard-deleted
-                # via CandidateErasureService.erase_candidate, which already
-                # deletes resume_embeddings itself - this should be rare/
-                # transient, never this task's concern to clean up).
+                # Rows of a deleted candidate whose resume still exists - nothing to evaluate.
+                # (Rows of a deleted resume were removed above.)
                 continue
 
             campaign_candidates = campaign_candidate_repo.get_by_candidate_id(candidate_id)
@@ -108,6 +110,7 @@ def validate_talent_pool_eligibility() -> None:
         summary = json.dumps({
             "candidates_evaluated": candidates_evaluated,
             "rows_corrected": rows_corrected,
+            "orphaned_embeddings_deleted": orphans_deleted,
         })
         task_log_service.mark_success(task_log, summary=summary)
         logger.info(

@@ -129,6 +129,19 @@ def _dead_letter_and_mark_dead(
         task_log_service.mark_dead(task_log, error_message)
 
 
+def _skip_erased_resume(db, task_log, task_log_service: CeleryTaskLogService, resume_id: str) -> None:
+    """
+    Review item 16: the resume was erased while this task ran - write nothing. The check runs under the
+    resume's row lock right before the insert, and erasure locks the same rows first, so no vector of an
+    erased resume can land after the erasure (resume_embeddings has no foreign key to stop it).
+    """
+    db.rollback()
+    if task_log is not None:
+        task_log_service.mark_success(task_log, summary=json.dumps(
+            {"skipped": True, "reason": "Resume erased while the embedding ran - nothing written."}))
+    logger.warning("Embedding not written | resume_id=%s reason=resume_erased", resume_id)
+
+
 def _enqueue_resume_embedding(db, resume_id, task_log_service: CeleryTaskLogService) -> None:
    
     task_log_repo = task_log_service.repository
@@ -253,6 +266,9 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
         )
 
         if existing_embedding is not None:
+            if not resume_repo.lock_if_exists(resume.id):
+                _skip_erased_resume(db, task_log, task_log_service, resume_id)
+                return
             # Talent Pool Eligibility: is_talent_pool_eligible is
             # deliberately NEVER copied from the matched row (unlike
             # is_anonymized, which is a property of the text/vector
@@ -358,6 +374,9 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
             # embedding_model_version_id) race between our dedup-by-hash
             # check above and this insert - report it as reused, since that
             # is what actually happened, never as a second generation.
+            if not resume_repo.lock_if_exists(resume.id):
+                _skip_erased_resume(db, task_log, task_log_service, resume_id)
+                return
             _, was_created = resume_repo.create_resume_embedding(
                 resume_id=resume.id,
                 candidate_id=resume.candidate_id,

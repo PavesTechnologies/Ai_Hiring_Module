@@ -129,6 +129,9 @@ class CandidateErasureService:
             # Plain values captured before delete - the rows are gone after commit.
             erased_resume_ids = [resume.id for resume in resumes]
             removed = [(cc.campaign_id, cc.id) for cc in campaign_candidates]
+            # Review item 16: before their embeddings are deleted - an embedding task running now
+            # re-checks its resume under this lock before writing, so it can't write a vector back.
+            self.resume_repo.lock_for_erasure(erased_resume_ids)
 
             # Upload decisions (any status) go too; a PENDING one's held bulk
             # file is deleted from storage like the resume files below.

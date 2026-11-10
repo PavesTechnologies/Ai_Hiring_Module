@@ -667,6 +667,32 @@ class ResumeRepository:
         self.db.execute(delete(ResumeEmbedding).where(ResumeEmbedding.candidate_id == candidate_id))
         self.db.flush()
 
+    def lock_for_erasure(self, resume_ids: list[UUID]) -> None:
+        """
+        Review item 16: erasure row-locks the candidate's resumes before deleting anything. An embedding
+        task re-checks its resume under the same lock just before writing (lock_if_exists), so the two
+        serialise: either the vector is written first and erasure then deletes it, or erasure commits
+        first and the task finds no resume. Ordered by id so two erasures never deadlock.
+        """
+        if resume_ids:
+            self.db.execute(select(Resume.id).where(Resume.id.in_(list(resume_ids)))
+                            .order_by(Resume.id).with_for_update()).all()
+
+    def lock_if_exists(self, resume_id: UUID) -> bool:
+        """Row-locks the resume and says whether it still exists (held until the caller commits)."""
+        return self.db.execute(
+            select(Resume.id).where(Resume.id == resume_id).with_for_update()
+        ).first() is not None
+
+    def delete_orphaned_embeddings(self) -> int:
+        """Daily reconciliation (review item 16): embedding rows whose resume no longer exists."""
+        result = self.db.execute(
+            delete(ResumeEmbedding).where(~select(Resume.id).where(Resume.id == ResumeEmbedding.resume_id).exists())
+            .execution_options(synchronize_session=False)
+        )
+        self.db.flush()
+        return result.rowcount or 0
+
     def delete_candidate_skills_by_candidate(self, candidate_id: UUID) -> None:
         """Candidate erasure — read counterpart is get_candidate_skills; this removes every candidate_skills row for the candidate."""
         self.db.execute(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))

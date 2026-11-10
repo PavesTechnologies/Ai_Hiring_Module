@@ -27,6 +27,7 @@ def _make_embedding(is_talent_pool_eligible=True):
 class _Harness:
     def __init__(self):
         self.resume_repo = MagicMock()
+        self.resume_repo.delete_orphaned_embeddings.return_value = 0
         self.candidate_repo = MagicMock()
         self.campaign_candidate_repo = MagicMock()
         self.campaign_candidate_repo.get_by_candidate_id.return_value = []
