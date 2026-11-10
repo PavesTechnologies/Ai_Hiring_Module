@@ -132,12 +132,22 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
 
 A checklist in order. Each item says what I do and what I need from you. Nothing sends email: `EMAIL_DELIVERY=log` everywhere until the deliberate real-email test.
 
-### 6.1 Code review
+### 6.1 Code review - fixes done (2026-11-10)
 
-- [ ] **Review of the whole system,** module by module: scoring v2 and the pipeline, the Celery tasks and scheduled jobs, notifications and email, audit and erasure, auth and roles, migrations and seeds, the airs frontend. I report findings ranked by severity; fixes go in as separate changes, each with the golden set and the full suite.
-  - *From you:* the order of areas (or "all, highest risk first"), and whether a second reviewer outside this session should read the report.
-- [ ] **Triage the open [known issues](known_issues.md):** which must be fixed before real candidates (for example the five candidate actions that never commit their audit entry, `DELETE /campaign-candidates/{id}` without a role restriction, the upload "use existing" path, personal data in logs) and which can wait.
-  - *From you:* the must-fix list.
+- [x] **Review of the whole system** (2026-11-05), in the agreed order (auth and roles; erasure, audit and personal data; email; migrations and seeds; tasks and scheduled jobs; scoring and pipeline; airs frontend). Report: 8 Critical and 18 High, every one checked against the code, plus Medium and Low findings per area.
+- [x] **Must-fix list** (2026-11-05): the verified Critical and High findings plus four known issues (maximum experience as an age filter, personal data in logs, the skill-ontology pages open to "General", the email retry count) - 30 items, fixed in six batches.
+- [x] **Fixes** (2026-11-05 to 2026-11-10), one commit per item, each batch with the golden set (full and no-LLM), the full suite, and e2e after batches 2, 4 and 5; no email sent at any point.
+  - Batches 1-6 and their follow-ups are merged: backend RMe (`4976fca`), airs frontend lms_for_pms (`12280b48`).
+  - Migrations applied to dev on the way, all approved: the email send claim and dedup index (`c5e7a9b1d3f6`), the stuck-send column and alert trigger (`d7f9b1c3e5a8`), optional JD maximum experience (`e8b0d2f4a6c8`).
+  - Last checks on the merged code: full suite 3,908 passed; golden 60 cases, 0 failures, 0 changes, both modes; e2e 4 of 4 drivers; 0 emails.
+
+**Still open before deployment:**
+
+- [ ] **App.jsx route roles (items 29 and F-5):** branch `fix-airs-route-roles` (`b3992da8`, `ea79f514`) gives every airs route the roles its backend allows; no airs route is open to "General" after it. It changes `src/App.jsx`, outside the airs folder. *From the App.jsx owner:* review and merge.
+- [ ] **Talent Pool profile link:** branch `fix-talent-pool-profile-link` (`c0239ca2`) disables View Profile for roles that can't open a profile. *From you:* the go-ahead to merge it into lms_for_pms.
+- [ ] **Medium and Low findings** in the report were not part of the must-fix list; they wait until after launch unless you pick any now. The known issues that wait are listed in [known issues](known_issues.md).
+- [ ] **Leftovers from the fixes**, accepted as they are: bulk files staged before item 28 keep file names in their storage keys until the job or candidate is deleted; `logger.exception` tracebacks in the worker log are not scrubbed (covered by the worker-log retention item under 6.3); the monitoring stage timeline shows the error class instead of the message.
+- [ ] **Cleanup list** in [known issues](known_issues.md) (the unused `report_scheduled` column, the test-order dependence): small changes, any time, a migration only with approval.
 
 ### 6.2 Deploy to the dev environment
 
