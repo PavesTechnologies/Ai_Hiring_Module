@@ -25,8 +25,13 @@ venv/
 .idea/
 .vscode/
 
-# Tests and docs are not needed at runtime.
+# Tests and docs are not needed at runtime - except the golden set's data, so it can run in a pod
+# against the deployed database (python -m scripts.golden.run --cache-only). Its reports are
+# written to tests/golden/runs/ inside the container; local runs stay out of the image.
 tests/
+!tests/golden/
+tests/golden/runs/
+tests/golden/test_*.py
 docs/
 *.md
 !README.md

@@ -208,12 +208,15 @@ COPY --from=model-cache /opt/hf   /opt/hf
 WORKDIR /app
 
 # alembic/ and alembic.ini are included on purpose - the `migrate` role needs
-# them. .dockerignore keeps .env, .venv, tests/, docs/ and the scratch files
+# them. .dockerignore keeps .env, .venv, tests/ (but tests/golden), docs/ and the scratch files
 # out; secrets are injected at runtime, never baked into a layer.
 COPY --chown=airs:airs alembic.ini ./
 COPY --chown=airs:airs alembic ./alembic
 COPY --chown=airs:airs scripts ./scripts
 COPY --chown=airs:airs app ./app
+# The golden set's data (.dockerignore keeps only tests/golden, without its runs/), so the golden
+# run works in a pod: python -m scripts.golden.run --cache-only. Owned by airs: reports go to runs/.
+COPY --chown=airs:airs tests/golden ./tests/golden
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 
