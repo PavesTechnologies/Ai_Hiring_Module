@@ -32,8 +32,7 @@ def _db(row):
 def test_a_stuck_email_is_resolved_and_audited(outcome, status):
     row, audit = _row(), MagicMock()
     db = _db(row)
-    result = resolve_stuck(db, row.id, outcome=outcome, note="Checked SES: delivered", actor_id="hr-1",
-                           actor_role="HR_ADMIN", audit_service=audit)
+    result = resolve_stuck(db, row.id, outcome=outcome, actor_id="hr-1", actor_role="HR_ADMIN", audit_service=audit)
     assert row.status == status and result["status"] == status.value
     assert (row.sent_at is not None) == (status == EmailNotificationStatus.SENT)
     details = audit.log.call_args.kwargs["details"]
@@ -51,7 +50,7 @@ def test_a_stuck_email_is_resolved_and_audited(outcome, status):
 def test_what_cannot_be_resolved(row, outcome, code):
     audit = MagicMock()
     with pytest.raises(StuckEmailError) as caught:
-        resolve_stuck(_db(row), uuid4(), outcome=outcome, note=None, actor_id="hr", actor_role="HR_ADMIN",
+        resolve_stuck(_db(row), uuid4(), outcome=outcome, actor_id="hr", actor_role="HR_ADMIN",
                       audit_service=audit)
     assert caught.value.status_code == code
     audit.log.assert_not_called()

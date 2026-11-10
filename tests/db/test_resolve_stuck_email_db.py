@@ -30,7 +30,7 @@ def test_a_stuck_email_is_listed_then_resolved_with_an_audit_entry(db):  # noqa:
     assert str(row.id) in {item["id"] for item in list_stuck(db)}
 
     db.commit = db.flush        # inside the rolled-back fixture
-    resolve_stuck(db, row.id, outcome="SENT", note="Delivered per SES", actor_id=user.id, actor_role="HR_ADMIN",
+    resolve_stuck(db, row.id, outcome="SENT", actor_id=user.id, actor_role="HR_ADMIN",
                   audit_service=AuditService(AuditRepository(db)))
     db.refresh(row)
     assert row.status == EmailNotificationStatus.SENT and row.sent_at is not None

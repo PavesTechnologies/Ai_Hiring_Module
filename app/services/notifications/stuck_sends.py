@@ -90,8 +90,7 @@ class StuckEmailError(Exception):
         self.message, self.status_code = message, status_code
 
 
-def resolve_stuck(db, notification_id, *, outcome: str, note: str | None, actor_id: str, actor_role: str,
-                  audit_service) -> dict:
+def resolve_stuck(db, notification_id, *, outcome: str, actor_id: str, actor_role: str, audit_service) -> dict:
     """
     Resolves an email left in SENDING after a person checked the email provider: SENT (delivered) or FAILED
     (not delivered - re-send it through the business action). Only a SENDING row; audited; committed; sends
@@ -115,7 +114,7 @@ def resolve_stuck(db, notification_id, *, outcome: str, note: str | None, actor_
         actor_id=actor_id, actor_role=actor_role, action_type=ActionType.EMAIL_SEND_RESOLVED.value,
         entity_type=EntityType.EMAIL_NOTIFICATION.value, entity_id=row.id, campaign_id=None,
         details={"outcome": outcome, "trigger_event": _value(row.trigger_event),
-                 "provider_message_id": row.provider_message_id, "note": (note or "").strip()[:500] or None},
+                 "provider_message_id": row.provider_message_id},
     )
     db.commit()
     return {"id": str(row.id), "status": _value(row.status)}

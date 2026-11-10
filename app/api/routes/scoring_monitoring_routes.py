@@ -164,7 +164,7 @@ def get_stuck_emails(db: Session = Depends(get_db)):
     response_model=APIResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="Resolve a stuck email as sent or failed, after checking the email provider",
-    description=('Body: {"outcome": "SENT" | "FAILED", "note": "..."}. Only an email in SENDING; audited '
+    description=('Body: {"outcome": "SENT" | "FAILED"}. Only an email in SENDING; audited '
                  "(EMAIL_SEND_RESOLVED). FAILED frees its duplicate-protection key: re-send it through the "
                  "business action if needed. Sends nothing. HR_ADMIN only."),
 )
@@ -174,11 +174,8 @@ def post_resolve_stuck_email(
     db: Session = Depends(get_db),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    note = payload.get("note")
-    if note is not None and not isinstance(note, str):
-        raise CampaignException("note must be text.", 422)
     try:
-        result = resolve_stuck(db, notification_id, outcome=str(payload.get("outcome") or ""), note=note,
+        result = resolve_stuck(db, notification_id, outcome=str(payload.get("outcome") or ""),
                                actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value,
                                audit_service=AuditService(AuditRepository(db)))
     except StuckEmailError as exc:
