@@ -123,7 +123,8 @@ def _new_user_from_token(user: TokenUser) -> User:
         id=user.user_id,
         email=user.email,
         password_hash="EXTERNAL_AUTH",  # identity lives in the UMS, not here
-        role=LocalUserRole[role_name] if role_name else LocalUserRole.RECRUITER,
+        # No AIRS role in the token -> none here (A-M3); never a default RECRUITER.
+        role=LocalUserRole[role_name] if role_name else None,
         full_name=user.claims.get("name") or user.email,
         is_active=True,
     )
@@ -162,7 +163,17 @@ def _ensure_local_user(user: TokenUser, db: Session) -> None:
     Provisions one from the token's own claims on first sight instead of
     requiring a manual sync step.
     """
-    if db.get(User, user.user_id) is not None:
+    local = db.get(User, user.user_id)
+    if local is not None:
+        # A-M3: the local role mirrors the token on every request - a demoted user's role (and the
+        # HR-admin alerts it brings) follows the identity service instead of staying as first seen.
+        role_name = resolve_actor_role(user)
+        role = LocalUserRole[role_name] if role_name else None
+        if local.role != role:
+            logger.info("Local role of user %s refreshed from the token: %s -> %s", user.user_id,
+                        getattr(local.role, "value", local.role), getattr(role, "value", role))
+            local.role = role
+            db.commit()
         return
 
     existing = db.query(User).filter(User.email == user.email).first()
@@ -182,12 +193,14 @@ def require_roles(*allowed_roles: UserRole) -> Callable:
     def _check(request: Request, db: Session = Depends(get_db)) -> TokenUser:
         user = _to_token_user(_get_payload(request))
 
+        # Before the role check (A-M3): a refused request still refreshes the local role, so a
+        # user who lost their AIRS role stops getting role-based alerts.
+        _ensure_local_user(user, db)
+
         if allowed and not any(role in allowed for role in user.roles):
             raise ForbiddenError(
                 f"Access denied. Required: {' or '.join(sorted(allowed))}"
             )
-
-        _ensure_local_user(user, db)
 
         authorised = tuple(role for role in ROLE_PRECEDENCE if role in allowed and role in user.roles)
         authorised += tuple(sorted(role for role in allowed & set(user.roles) if role not in authorised))
