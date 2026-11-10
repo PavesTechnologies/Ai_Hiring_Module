@@ -4,7 +4,6 @@ import uuid
 from app.db.session import SessionLocal
 from app.models.prompt_template import PromptTemplate, PromptTemplateStatus
 
-db = SessionLocal()
 
 
 def _hash(text: str) -> str:
@@ -1429,14 +1428,29 @@ _TEMPLATES = [
 ]
 
 
-try:
+
+def seed(db) -> dict:
+    """
+    Adds each seeded prompt that the database doesn't have yet. A prompt is "already there" when the
+    same text exists, or (M-M2) when a template with the same task type and name exists in any version:
+    one edited in the app has a new content hash, and re-running the seed must not add a second ACTIVE
+    prompt beside it. Prompt changes on an existing database go through the app's versioning and the
+    golden set, not through this seed. Commits. Returns counts.
+    """
+    counts = {"added": 0, "identical": 0, "edited_kept": 0}
     for entry in _TEMPLATES:
         text = entry["template_text"].strip()
         content_hash = _hash(text)
 
-        existing = db.query(PromptTemplate).filter(PromptTemplate.content_hash == content_hash).first()
-        if existing:
+        if db.query(PromptTemplate).filter(PromptTemplate.content_hash == content_hash).first():
+            counts["identical"] += 1
             print(f"Skipping (identical content already exists): {entry['name']} ({entry['task_type']})")
+            continue
+        same_name = db.query(PromptTemplate).filter(PromptTemplate.task_type == entry["task_type"],
+                                                    PromptTemplate.name == entry["name"]).first()
+        if same_name:
+            counts["edited_kept"] += 1
+            print(f"Kept the existing prompt as it is (differs from the seed): {entry['name']} ({entry['task_type']})")
             continue
 
         db.add(PromptTemplate(
@@ -1447,15 +1461,24 @@ try:
             content_hash=content_hash,
             status=PromptTemplateStatus.ACTIVE,
         ))
+        counts["added"] += 1
         print(f"Added prompt template: {entry['name']} ({entry['task_type']})")
-
     db.commit()
-    print("\nPrompt templates seeded successfully")
+    return counts
 
-except Exception as e:
-    db.rollback()
-    print(f"Error seeding prompt templates: {e}")
-    raise
 
-finally:
-    db.close()
+def main() -> None:
+    db = SessionLocal()
+    try:
+        counts = seed(db)
+        print(f"\nPrompt templates seeded successfully: {counts}")
+    except Exception as e:
+        db.rollback()
+        print(f"Error seeding prompt templates: {e}")
+        raise
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
