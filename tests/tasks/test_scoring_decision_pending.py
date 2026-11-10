@@ -108,7 +108,10 @@ def _log(status, hours_ago, *, completed=True):
     ([_log(TaskStatus.DEAD, 2)], "recent"),                              # ... only 2 h ago
     ([_log(TaskStatus.DEAD, 9), _log(TaskStatus.FAILURE, 1)], "recent"),  # the latest attempt counts
     ([_log(TaskStatus.DEAD, 9), _log(TaskStatus.RETRY, 0.2, completed=False)], "in_flight"),
-    ([_log(TaskStatus.QUEUED, 30, completed=False)], "in_flight"),       # queued is never doubled
+    ([_log(TaskStatus.QUEUED, 0.2, completed=False)], "in_flight"),      # queued is never doubled
+    # Review item 8: a row untouched for longer than any task is held has lost its message.
+    ([_log(TaskStatus.QUEUED, 30, completed=False)], "requeue"),
+    ([_log(TaskStatus.RETRY, 1, completed=False)], "recent"),          # stale, but tried 1 h ago: waits
 ])
 def test_recovery_action(logs, expected):
     from app.tasks.deterministic_scoring_tasks import recovery_action
@@ -128,6 +131,7 @@ def test_the_recovery_job_requeues_only_what_is_due():
     task_logs = MagicMock()
     task_logs.get_by_campaign_candidate_and_task_type.side_effect = lambda cc_id, task_type: logs[cc_id]
     task_logs.get_by_task_id.return_value = None
+    task_logs.create.side_effect = lambda log: log      # the repository hands back the row it stored
     config = MagicMock()
     config.get_configs_by_keys.return_value = {}
     apply_async = MagicMock()

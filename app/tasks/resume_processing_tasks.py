@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import IN_FLIGHT_STALE_AFTER, LOST_STALLED_MESSAGE, dispatch_or_mark_lost
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
 
@@ -272,24 +273,18 @@ def _enqueue_deterministic_scoring(
             continue
 
         scoring_task_id = str(uuid4())
-        task_log_service.create_log(
+        log = task_log_service.create_log(
             task_id=scoring_task_id,
             task_type=DETERMINISTIC_SCORE_TASK_TYPE,
             idempotency_key=idempotency_key,
             resume_id=resume_id,
             campaign_candidate_id=campaign_candidate.id,
         )
-
-        try:
-            calculate_deterministic_score_task.apply_async(
-                kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
-                task_id=scoring_task_id,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to enqueue deterministic scoring for campaign_candidate_id=%s resume_id=%s",
-                campaign_candidate.id, resume_id,
-            )
+        # A failed hand-off marks the row lost; the hourly recovery scan
+        # (recover_undecided_candidates) then queues the candidate again.
+        dispatch_or_mark_lost(calculate_deterministic_score_task,
+                              kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                              log=log, task_log_service=task_log_service)
 
 
 def _stored_candidate_name(db, candidate_id) -> str | None:
@@ -649,9 +644,11 @@ def recover_stalled_resume_uploads(db=None) -> int:
                 )
                 task_log_service.mark_dispatch_failed(task_log, str(exc))
 
+        live_task_ids = _live_task_ids()
         recovered += _recover_stalled_in_flight(
-            task_log_repo, campaign_candidate_repo, campaign_repo,
+            task_log_repo, campaign_candidate_repo, campaign_repo, live_task_ids=live_task_ids,
         )
+        _mark_stalled_tasks_lost(task_log_repo, live_task_ids)
         return recovered
     finally:
         if owns_session:
@@ -693,7 +690,8 @@ def _live_task_ids() -> set[str] | None:
     return live
 
 
-def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_repo) -> int:
+def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_repo, *,
+                               live_task_ids: set[str] | None = None) -> int:
     """
     Redispatches RESUME_DOCUMENT_PROCESSING rows orphaned mid-flight —
     RUNNING under a worker that died, or RETRY whose countdown died with
@@ -714,7 +712,6 @@ def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_
     status atomically, so a row that recovered between the scan and the
     claim is left alone.
     """
-    live_task_ids = _live_task_ids()
     if live_task_ids is None:
         logger.info("Stalled in-flight scan skipped | reason=worker_state_unknown")
         return 0
@@ -764,6 +761,32 @@ def _recover_stalled_in_flight(task_log_repo, campaign_candidate_repo, campaign_
             )
 
     return recovered
+
+
+def _mark_stalled_tasks_lost(task_log_repo, live_task_ids: set[str] | None) -> int:
+    """
+    Review item 8 - the stalled-task sweep for every other task type. A row still QUEUED/RUNNING/RETRY
+    and untouched for IN_FLIGHT_STALE_AFTER, whose task no worker holds, has lost its message: it is
+    marked lost (FAILURE, dispatch_failed), so it is visible and terminal, and the next trigger or
+    recovery scan for that work queues it again. Resume parsing is excluded: it is redispatched above.
+
+    Same liveness rule as above: if the workers can't be asked, nothing is marked. The update re-checks
+    the row atomically, so a task that started meanwhile is left alone. Returns how many were marked.
+    """
+    if live_task_ids is None:
+        logger.info("Stalled task sweep skipped | reason=worker_state_unknown")
+        return 0
+    cutoff = datetime.now(timezone.utc) - IN_FLIGHT_STALE_AFTER
+    message = LOST_STALLED_MESSAGE.format(minutes=int(IN_FLIGHT_STALE_AFTER.total_seconds() // 60))
+    marked = 0
+    for task_log in task_log_repo.get_stale_in_flight(cutoff, exclude_task_types=[RESUME_DOCUMENT_PROCESSING_TASK_TYPE]):
+        if task_log.task_id in live_task_ids:
+            continue
+        if task_log_repo.mark_lost_if_still_stale(task_log.id, cutoff, message):
+            marked += 1
+            logger.warning("Stalled task marked lost | task_type=%s task_id=%s previous_status=%s",
+                           task_log.task_type, task_log.task_id, task_log.status.value)
+    return marked
 
 
 RECOVERY_SCAN_INTERRUPTED_AFTER = timedelta(minutes=30)

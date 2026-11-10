@@ -170,6 +170,42 @@ class CeleryTaskLogRepository:
         self.db.commit()
         return result.rowcount == 1
 
+    def get_stale_in_flight(self, stale_before: datetime, *, exclude_task_types) -> list[CeleryTaskLog]:
+        """
+        Review item 8: rows of every task type (but exclude_task_types) still QUEUED/RUNNING/RETRY and
+        untouched since before `stale_before` - the stalled-task sweep marks them lost once no worker
+        holds them.
+        """
+        last_touched = func.coalesce(CeleryTaskLog.started_at, CeleryTaskLog.queued_at)
+        return (
+            self.db.query(CeleryTaskLog)
+            .filter(
+                CeleryTaskLog.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY]),
+                last_touched < stale_before,
+                CeleryTaskLog.task_type.notin_(list(exclude_task_types)),
+            )
+            .order_by(last_touched)
+            .all()
+        )
+
+    def mark_lost_if_still_stale(self, task_log_id: UUID, stale_before: datetime, message: str) -> bool:
+        """
+        FAILURE + dispatch_failed (lost: safe to redo) - only if the row is still in flight and still
+        untouched since `stale_before`, so a task that started meanwhile is left alone. Committed.
+        """
+        last_touched = func.coalesce(CeleryTaskLog.started_at, CeleryTaskLog.queued_at)
+        result = self.db.execute(
+            update(CeleryTaskLog)
+            .where(CeleryTaskLog.id == task_log_id,
+                   CeleryTaskLog.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY]),
+                   last_touched < stale_before)
+            .values(status=TaskStatus.FAILURE, dispatch_failed=True, error_message=message,
+                    completed_at=func.now())
+            .execution_options(synchronize_session=False)
+        )
+        self.db.commit()
+        return result.rowcount == 1
+
     def get_by_task_id(self, task_id: str) -> CeleryTaskLog | None:
         return (
             self.db.query(CeleryTaskLog)

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -51,7 +52,6 @@ DECISION_RECOVERY_TASK_TYPE = "SCORING_DECISION_RECOVERY_SCAN"
 _RECOVERY_HOURS_KEY = "SCORING_DECISION_RECOVERY_HOURS"
 _DEFAULT_RECOVERY_HOURS = 6.0
 _RECOVERY_GRACE = timedelta(minutes=30)
-_IN_FLIGHT = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY)
 
 
 class ScoringV2DecisionPending(Exception):
@@ -438,7 +438,7 @@ def recovery_action(logs, now: datetime, recovery_hours: float) -> str:
     queued / running / waiting to retry), "recent" (the last attempt ended under recovery_hours
     ago - e.g. dead-lettered on the daily cap, which only a reset fixes), else "requeue".
     """
-    if any(log.status in _IN_FLIGHT for log in logs):
+    if any(is_in_flight(log, now) for log in logs):    # review item 8: stale rows don't count
         return "in_flight"
     ends = [log.completed_at or log.started_at or log.queued_at for log in logs]
     ends = [end for end in ends if end is not None]
@@ -475,12 +475,12 @@ def recover_undecided_candidates() -> None:
             if action != "requeue":
                 counts[action] += 1
                 continue
-            scoring_task_id = str(uuid4())
-            task_log_service.create_log(task_id=scoring_task_id, task_type=DETERMINISTIC_SCORE_TASK_TYPE,
-                                        campaign_candidate_id=campaign_candidate.id)
-            calculate_deterministic_score_task.apply_async(
-                kwargs={"campaign_candidate_id": str(campaign_candidate.id)}, task_id=scoring_task_id)
-            counts["requeued"] += 1
+            log = task_log_service.create_log(task_id=str(uuid4()), task_type=DETERMINISTIC_SCORE_TASK_TYPE,
+                                              campaign_candidate_id=campaign_candidate.id)
+            if dispatch_or_mark_lost(calculate_deterministic_score_task,
+                                     kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                                     log=log, task_log_service=task_log_service):
+                counts["requeued"] += 1
         task_log_service.mark_success(task_log, summary=json.dumps(counts))
         logger.info("Scoring decision recovery | %s", counts)
     except Exception as ex:

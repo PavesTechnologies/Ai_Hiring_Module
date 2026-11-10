@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.models.async_tasks import FailureClassification, TaskStatus
 from app.models.campaigns import CampaignStatus
@@ -67,7 +68,7 @@ def _enqueue_composite_scoring(
     """
     task_log_repo = task_log_service.repository
     already_queued = any(
-        log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
+        is_in_flight(log)       # review item 8: a stale row no longer blocks a re-queue
         for log in task_log_repo.get_by_campaign_candidate_and_task_type(
             campaign_candidate_id, COMPOSITE_SCORE_TASK_TYPE,
         )
@@ -80,18 +81,11 @@ def _enqueue_composite_scoring(
         task_type=COMPOSITE_SCORE_TASK_TYPE,
         campaign_candidate_id=campaign_candidate_id,
     )
-    try:
-        calculate_composite_score_task.apply_async(
-            kwargs={
-                "campaign_candidate_id": str(campaign_candidate_id),
-                "trigger_source": trigger_source.value,
-            },
-            task_id=log.task_id,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue COMPOSITE_SCORE for campaign_candidate_id=%s", campaign_candidate_id,
-        )
+    dispatch_or_mark_lost(
+        calculate_composite_score_task,
+        kwargs={"campaign_candidate_id": str(campaign_candidate_id), "trigger_source": trigger_source.value},
+        log=log, task_log_service=task_log_service,
+    )
 
 
 @celery_app.task(name="scoring.calculate_composite_score", bind=True)

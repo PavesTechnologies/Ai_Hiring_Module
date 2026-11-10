@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import FailureClassification, TaskStatus
@@ -73,7 +74,7 @@ def _enqueue_ai_evaluation(
     """
     task_log_repo = task_log_service.repository
     already_queued = any(
-        log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING)
+        is_in_flight(log)       # review item 8: a stale row no longer blocks a re-queue
         for log in task_log_repo.get_by_campaign_candidate_and_task_type(
             campaign_candidate.id, AI_EVALUATE_TASK_TYPE,
         )
@@ -86,15 +87,8 @@ def _enqueue_ai_evaluation(
         task_type=AI_EVALUATE_TASK_TYPE,
         campaign_candidate_id=campaign_candidate.id,
     )
-    try:
-        calculate_ai_evaluation_task.apply_async(
-            kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
-            task_id=log.task_id,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue AI_EVALUATE for campaign_candidate_id=%s", campaign_candidate.id,
-        )
+    dispatch_or_mark_lost(calculate_ai_evaluation_task, kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                          log=log, task_log_service=task_log_service)
 
 
 def passed_or_kept_after_semantic(campaign_candidate) -> bool:

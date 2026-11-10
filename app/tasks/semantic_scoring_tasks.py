@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from celery.exceptions import Retry
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight, reset_for_redispatch
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -229,19 +230,12 @@ def _semantic_score_idempotency_key(campaign_candidate_id) -> str:
     return hashlib.sha256(f"{campaign_candidate_id}SEM".encode("utf-8")).hexdigest()
 
 
-def _dispatch_semantic_score_task(campaign_candidate, log: CeleryTaskLog) -> None:
-    try:
-        calculate_semantic_score_task.apply_async(
-            kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
-            task_id=log.task_id,
-        )
+def _dispatch_semantic_score_task(campaign_candidate, log: CeleryTaskLog, task_log_service) -> None:
+    if dispatch_or_mark_lost(calculate_semantic_score_task, kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                             log=log, task_log_service=task_log_service):
         logger.info(
             "Semantic scoring queued | campaign_candidate_id=%s task_id=%s",
             campaign_candidate.id, log.task_id,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue SEMANTIC_SCORE for campaign_candidate_id=%s", campaign_candidate.id,
         )
 
 
@@ -302,11 +296,12 @@ def _enqueue_semantic_scoring(
                 "TRACE: celery_task_log row created (task_id=%s) BEFORE dispatch | campaign_candidate_id=%s",
                 new_task_id, campaign_candidate.id,
             )
-            _dispatch_semantic_score_task(campaign_candidate, log)
+            _dispatch_semantic_score_task(campaign_candidate, log, task_log_service)
             return
         existing_log = log  # lost the race - another caller's row already exists
 
-    if existing_log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.SUCCESS):
+    # Review item 8: a stale QUEUED/RUNNING/RETRY row is no longer "in flight" - it is reused below.
+    if existing_log.status == TaskStatus.SUCCESS or is_in_flight(existing_log):
         logger.info(
             "Semantic scoring enqueue skipped | campaign_candidate_id=%s reason=already_queued_or_scored",
             campaign_candidate.id,
@@ -317,11 +312,10 @@ def _enqueue_semantic_scoring(
     # legitimate re-trigger (HR override, recovery scan). Reuse the same
     # idempotency-keyed row (with a fresh Celery task_id) rather than
     # inserting a second one, which the unique index would reject.
-    existing_log.task_id = new_task_id
-    existing_log.status = TaskStatus.QUEUED
+    reset_for_redispatch(existing_log, new_task_id)
     log = task_log_repo.update(existing_log)
     task_log_repo.commit()
-    _dispatch_semantic_score_task(campaign_candidate, log)
+    _dispatch_semantic_score_task(campaign_candidate, log, task_log_service)
 
 
 @celery_app.task(name="scoring.calculate_semantic_score", bind=True)

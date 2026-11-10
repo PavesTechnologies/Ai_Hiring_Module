@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.models.async_tasks import TaskStatus
 from app.repositories.CampaignRepository import CampaignRepository
@@ -48,21 +49,15 @@ def enqueue_scoring_v2(campaign_candidate, task_log_service: CeleryTaskLogServic
     """Queues the shadow v2 task unless one is already queued/running for this candidate."""
     task_log_repo = task_log_service.repository
     if any(
-        log.status in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY)
+        is_in_flight(log)       # review item 8: a stale row no longer blocks a re-queue
         for log in task_log_repo.get_by_campaign_candidate_and_task_type(campaign_candidate.id, SCORING_V2_TASK_TYPE)
     ):
         return False
     log = task_log_service.create_log(
         task_id=str(uuid4()), task_type=SCORING_V2_TASK_TYPE, campaign_candidate_id=campaign_candidate.id,
     )
-    try:
-        calculate_scoring_v2_task.apply_async(
-            kwargs={"campaign_candidate_id": str(campaign_candidate.id)}, task_id=log.task_id,
-        )
-        return True
-    except Exception:
-        logger.exception("Failed to enqueue SCORING_V2 for campaign_candidate_id=%s", campaign_candidate.id)
-        return False
+    return dispatch_or_mark_lost(calculate_scoring_v2_task, kwargs={"campaign_candidate_id": str(campaign_candidate.id)},
+                                 log=log, task_log_service=task_log_service)
 
 
 @celery_app.task(name="scoring.calculate_scoring_v2", bind=True)

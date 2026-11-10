@@ -9,6 +9,9 @@ from celery.exceptions import Retry
 
 from app.core.cache_invalidation import CacheInvalidator
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import (
+    IN_FLIGHT_STATUSES, dispatch_or_mark_lost, is_in_flight, is_lost, reset_for_redispatch,
+)
 from app.db.session import SessionLocal
 from app.models.async_tasks import CeleryTaskLog, FailureClassification, TaskStatus
 from app.models.config import CBState
@@ -131,10 +134,22 @@ def _enqueue_resume_embedding(db, resume_id, task_log_service: CeleryTaskLogServ
     task_log_repo = task_log_service.repository
     idempotency_key = f"{EMBED_RESUME_TASK_TYPE}:{resume_id}"
 
-    if task_log_repo.get_by_idempotency_key(idempotency_key) is not None:
-        logger.info(
-            "Embedding generation already queued/run for resume_id=%s - skipping.", resume_id,
-        )
+    existing = task_log_repo.get_by_idempotency_key(idempotency_key)
+    if existing is not None:
+        # Review item 8: a lost row (never dispatched, or stalled with no worker) or a stale in-flight one
+        # is reused for a fresh attempt. Anything else - running, done, or a real failure (which needs a
+        # person) - is left alone, as before.
+        stale = getattr(existing, "status", None) in IN_FLIGHT_STATUSES and not is_in_flight(existing)
+        if not (is_lost(existing) or stale):
+            logger.info(
+                "Embedding generation already queued/run for resume_id=%s - skipping.", resume_id,
+            )
+            return
+        reset_for_redispatch(existing, str(uuid4()))
+        task_log_repo.update(existing)
+        task_log_repo.commit()
+        dispatch_or_mark_lost(generate_resume_embedding_task, kwargs={"resume_id": str(resume_id)},
+                              log=existing, task_log_service=task_log_service)
         return
 
     embedding_task_id = str(uuid4())
@@ -155,13 +170,8 @@ def _enqueue_resume_embedding(db, resume_id, task_log_service: CeleryTaskLogServ
         )
         return
 
-    try:
-        generate_resume_embedding_task.apply_async(
-            kwargs={"resume_id": str(resume_id)},
-            task_id=embedding_task_id,
-        )
-    except Exception:
-        logger.exception("Failed to enqueue EMBED_RESUME for resume_id=%s", resume_id)
+    dispatch_or_mark_lost(generate_resume_embedding_task, kwargs={"resume_id": str(resume_id)},
+                          log=log, task_log_service=task_log_service)
 
 
 @celery_app.task(name="embedding.generate_resume_embedding", bind=True)

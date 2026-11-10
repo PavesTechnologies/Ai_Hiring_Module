@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import or_, select
 
 from app.core.celery_app import celery_app
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -55,7 +56,6 @@ SCAN_BATCH = 50
 # Calls one candidate's full scoring may need (3 votes per asked core skill, a paraphrase round):
 # the scan stops queueing when this no longer fits under the daily cap.
 CALLS_PER_CANDIDATE = 15
-_IN_FLIGHT = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY)
 
 
 def _v2_service(db):
@@ -257,19 +257,19 @@ def complete_full_scoring_scan() -> None:
         for row in waiting:
             logs = task_log_service.repository.get_by_campaign_candidate_and_task_type(
                 row.campaign_candidate_id, FULL_SCORING_TASK_TYPE)
-            if any(log.status in _IN_FLIGHT for log in logs):
+            if any(is_in_flight(log) for log in logs):     # review item 8: stale rows don't count
                 in_flight += 1
                 continue
             if not service._budget(CALLS_PER_CANDIDATE * (queued + 1)):
                 quota_reached = True
                 break
-            task_id = str(uuid4())
-            task_log_service.create_log(task_id=task_id, task_type=FULL_SCORING_TASK_TYPE,
-                                        campaign_candidate_id=row.campaign_candidate_id)
-            complete_full_scoring_task.apply_async(
-                kwargs={"campaign_candidate_id": str(row.campaign_candidate_id), "fallback_result_id": str(row.id)},
-                task_id=task_id)
-            queued += 1
+            log = task_log_service.create_log(task_id=str(uuid4()), task_type=FULL_SCORING_TASK_TYPE,
+                                              campaign_candidate_id=row.campaign_candidate_id)
+            if dispatch_or_mark_lost(
+                    complete_full_scoring_task,
+                    kwargs={"campaign_candidate_id": str(row.campaign_candidate_id), "fallback_result_id": str(row.id)},
+                    log=log, task_log_service=task_log_service):
+                queued += 1
         summary = {"waiting": len(waiting), "queued": queued, "in_flight": in_flight, "quota_reached": quota_reached,
                    "at": datetime.now(timezone.utc).isoformat()}
         task_log_service.mark_success(task_log, summary=json.dumps(summary))
