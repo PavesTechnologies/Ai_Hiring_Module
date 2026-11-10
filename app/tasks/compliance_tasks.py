@@ -4,7 +4,11 @@ Erasure file cleanup (review item 14).
 Candidate erasure commits the database deletion first and then deletes the stored files. A file whose
 delete fails is handed to delete_erased_files, which retries with backoff; one still failing after the
 last attempt is dead-lettered with its paths (task type ERASURE_FILE_DELETE), so it shows as an open
-dead letter in monitoring for a person to finish. The paths are kept only so the files can be deleted.
+dead letter in monitoring. The paths are kept only so the files can be deleted.
+
+A daily job (retry_dead_lettered_file_deletes) runs each open entry again under its original task id;
+when a run deletes every file, its dead-letter entry is deleted - not just resolved - so no path of an
+erased candidate is kept once nothing is left to delete.
 """
 import logging
 from datetime import datetime, timezone
@@ -14,7 +18,8 @@ from celery.exceptions import Retry
 
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.storage_service import StorageService
-from app.core.task_dispatch import dispatch_or_mark_lost
+from app.core.single_run import single_run
+from app.core.task_dispatch import dispatch_or_mark_lost, reset_for_redispatch
 from app.db.session import SessionLocal, rollback_quietly
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
@@ -41,8 +46,9 @@ def _delete_all(storage, bucket: str, paths: list[str]) -> list[str]:
 
 def dead_letter_paths(db, *, task_id: str, bucket: str, paths: list[str], attempts: int, first_at: datetime,
                       reason: str) -> None:
-    """Records the files still to delete as an open dead letter (committed)."""
+    """Records the files still to delete as an open dead letter (committed) - one entry per task."""
     repo = DeadLetterQueueRepository(db)
+    repo.delete_by_task_id(task_id)          # a re-run that fails again replaces its entry
     repo.create(original_task_id=task_id, task_type=ERASURE_FILE_DELETE_TASK_TYPE,
                 final_error_message=f"{len(paths)} erased candidate file(s) not deleted: {reason}",
                 input_payload={"bucket": bucket, "paths": list(paths)}, retry_count=attempts,
@@ -82,6 +88,10 @@ def delete_erased_files(self, bucket: str, paths: list[str]) -> None:
             task_log_service.mark_running(task_log)
         remaining = _delete_all(StorageService(), bucket, list(paths))
         if not remaining:
+            # Nothing left to delete: the dead-letter entry (and the paths it holds) goes too.
+            dead_letters = DeadLetterQueueRepository(db)
+            dead_letters.delete_by_task_id(self.request.id)
+            dead_letters.commit()
             if task_log is not None:
                 task_log_service.mark_success(task_log, summary=f"{len(paths)} file(s) deleted")
             return
@@ -103,5 +113,39 @@ def delete_erased_files(self, bucket: str, paths: list[str]) -> None:
         rollback_quietly(db)
         logger.exception("Erasure file cleanup failed | task_id=%s", self.request.id)
         raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="compliance.retry_dead_lettered_file_deletes")
+@single_run("compliance.retry_dead_lettered_file_deletes")
+def retry_dead_lettered_file_deletes() -> None:
+    """
+    Daily: each open ERASURE_FILE_DELETE dead letter is run again under its original task id (its log
+    row is reset), so a success deletes the entry. A failed hand-off leaves the entry as it is.
+    """
+    db = SessionLocal()
+    try:
+        task_log_service = CeleryTaskLogService(CeleryTaskLogRepository(db))
+        entries = DeadLetterQueueRepository(db).get_open_by_task_type(ERASURE_FILE_DELETE_TASK_TYPE)
+        queued = 0
+        for entry in entries:
+            payload = entry.input_payload if isinstance(entry.input_payload, dict) else {}
+            if not payload.get("paths"):
+                continue
+            log = task_log_service.repository.get_by_task_id(entry.original_task_id)
+            if log is None:
+                continue
+            reset_for_redispatch(log, log.task_id)
+            task_log_service.repository.update(log)
+            task_log_service.repository.commit()
+            queued += dispatch_or_mark_lost(delete_erased_files,
+                                            kwargs={"bucket": payload.get("bucket"), "paths": payload["paths"]},
+                                            log=log, task_log_service=task_log_service)
+        if entries:
+            logger.warning("Erasure file deletes: %s dead-lettered task(s) queued again", queued)
+    except Exception:
+        rollback_quietly(db)
+        logger.exception("Retrying dead-lettered erasure file deletes failed")
     finally:
         db.close()

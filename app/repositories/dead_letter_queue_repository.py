@@ -155,6 +155,12 @@ class DeadLetterQueueRepository:
             self.db.execute(delete(DeadLetterQueue).where(or_(*conditions)))
             self.db.flush()
 
+    def get_open_by_task_type(self, task_type: str) -> list[DeadLetterQueue]:
+        """Open (not replayed, not resolved) entries of one task type."""
+        return list(self.db.query(DeadLetterQueue).filter(
+            DeadLetterQueue.task_type == task_type, DeadLetterQueue.replayed_at.is_(None),
+            DeadLetterQueue.resolved_at.is_(None)).all())
+
     def delete_by_task_id(self, original_task_id: str) -> None:
         """Dead-letter cleanup — removes the dead-letter entry for one task_id."""
         self.db.execute(delete(DeadLetterQueue).where(DeadLetterQueue.original_task_id == original_task_id))

@@ -252,6 +252,12 @@ celery_app.conf.beat_schedule = {
         # this interval.
         "schedule": crontab(minute="*/5"),
     },
+    "retry-dead-lettered-erasure-file-deletes": {
+        "task": "compliance.retry_dead_lettered_file_deletes",
+        # Erased candidates' files whose delete kept failing: run each again once a day; a success
+        # deletes the dead-letter entry. Its own off-peak hour.
+        "schedule": crontab(minute=45, hour=5),
+    },
     "expire-upload-decisions": {
         "task": "resume.expire_upload_decisions",
         # Duplicate resume decisions: a held bulk file nobody decided on in

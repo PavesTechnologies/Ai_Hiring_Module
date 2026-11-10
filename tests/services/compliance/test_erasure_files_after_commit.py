@@ -176,3 +176,56 @@ def test_the_route_reports_pending_files():
                                                     user=SimpleNamespace(user_id="hr-1"))
     assert response.data == {"files_deleted": 1, "files_pending_deletion": 2}
     assert "2 stored file(s) could not be deleted yet" in response.message
+
+
+# --- once a retry succeeds, the dead letter goes (batch 5 follow-up) ---------------------------
+
+def test_a_successful_run_deletes_its_dead_letter_entry():
+    from app.tasks import compliance_tasks as mod
+    dead_letters = MagicMock()
+    with patch.object(mod, "DeadLetterQueueRepository", return_value=dead_letters):
+        outcome, log, _ = _run_task([], retries=0)
+    assert outcome is None
+    dead_letters.delete_by_task_id.assert_called_once_with("t-1")
+    dead_letters.commit.assert_called_once()
+    dead_letters.resolve_open.assert_not_called()           # deleted, not merely resolved
+    log.mark_success.assert_called_once()
+
+
+def test_a_run_that_fails_again_replaces_its_entry():
+    from app.tasks import compliance_tasks as mod
+    from datetime import datetime, timezone
+    repo = MagicMock()
+    with patch.object(mod, "DeadLetterQueueRepository", return_value=repo):
+        mod.dead_letter_paths(MagicMock(), task_id="t-1", bucket="b", paths=["p"], attempts=6,
+                              first_at=datetime.now(timezone.utc), reason="x")
+    order = [c[0] for c in repo.mock_calls if c[0] in ("delete_by_task_id", "create")]
+    assert order == ["delete_by_task_id", "create"]
+
+
+def test_the_daily_job_runs_each_open_entry_again_under_its_original_task_id():
+    from app.tasks import compliance_tasks as mod
+    entry = SimpleNamespace(original_task_id="t-1", input_payload={"bucket": "b", "paths": ["p1"]})
+    empty = SimpleNamespace(original_task_id="t-2", input_payload={})
+    log = SimpleNamespace(task_id="t-1", status=None, dispatch_failed=True, error_message="x", queued_at=None,
+                          started_at=None, completed_at=None)
+    dead_letters = MagicMock()
+    dead_letters.get_open_by_task_type.return_value = [entry, empty]
+    task_log_service = MagicMock()
+    task_log_service.repository.get_by_task_id.return_value = log
+    with patch.object(mod, "SessionLocal", return_value=MagicMock()), \
+            patch.object(mod, "DeadLetterQueueRepository", return_value=dead_letters), \
+            patch.object(mod, "CeleryTaskLogService", return_value=task_log_service), \
+            patch.object(mod, "CeleryTaskLogRepository"), \
+            patch.object(mod, "dispatch_or_mark_lost", return_value=True) as dispatch:
+        mod.retry_dead_lettered_file_deletes()
+    dead_letters.get_open_by_task_type.assert_called_once_with("ERASURE_FILE_DELETE")
+    dispatch.assert_called_once()
+    assert dispatch.call_args.kwargs["kwargs"] == {"bucket": "b", "paths": ["p1"]}
+    assert dispatch.call_args.kwargs["log"].task_id == "t-1" and log.dispatch_failed is False
+
+
+def test_the_daily_job_is_scheduled():
+    from app.core.celery_app import celery_app
+    assert any(e["task"] == "compliance.retry_dead_lettered_file_deletes"
+               for e in celery_app.conf.beat_schedule.values())
