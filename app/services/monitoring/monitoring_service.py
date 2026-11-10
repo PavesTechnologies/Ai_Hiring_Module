@@ -210,8 +210,16 @@ def task_health(db, *, since: datetime, campaign_id: UUID | None, now: datetime 
         join campaign_candidates cc on cc.id = x.campaign_candidate_id
         where x.outcome = 'PENDING'{_campaign_filter('cc', campaign_id)}
         group by 1, 2"""), {"campaign_id": campaign_id}).all()
-    dead = db.execute(text("""
-        select task_type, count(*) as n from dead_letter_queue where replayed_at is null group by 1""")).all()
+    # Open = neither replayed nor resolved (a later success resolves its chain); with a campaign chosen, only
+    # entries of that campaign's candidates or resumes.
+    campaign_scope = """ and (exists (select 1 from campaign_candidates cc where cc.id = d.campaign_candidate_id
+                                          and cc.campaign_id = :campaign_id)
+                              or exists (select 1 from campaign_candidates cc where cc.resume_id = d.resume_id
+                                          and cc.campaign_id = :campaign_id))""" if campaign_id else ""
+    dead = db.execute(text(f"""
+        select d.task_type, count(*) as n from dead_letter_queue d
+        where d.replayed_at is null and d.resolved_at is null{campaign_scope}
+        group by 1"""), {"campaign_id": campaign_id}).all()
     names = _campaign_names(db, {r.campaign_id for r in pending})
     by_type: dict = defaultdict(dict)
     for r in statuses:
