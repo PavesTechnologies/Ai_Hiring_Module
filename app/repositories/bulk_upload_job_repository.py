@@ -164,6 +164,10 @@ class BulkUploadJobRepository:
         )
         return self.db.execute(stmt).scalars().all()
 
+    def get_by_statuses(self, statuses) -> list[BulkUploadJob]:
+        """Jobs in any of these statuses (the stalled-job sweep, review item 23)."""
+        return list(self.db.query(BulkUploadJob).filter(BulkUploadJob.status.in_(list(statuses))).all())
+
     def commit(self) -> None:
         self.db.commit()
 

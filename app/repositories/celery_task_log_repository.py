@@ -206,6 +206,13 @@ class CeleryTaskLogRepository:
         self.db.commit()
         return result.rowcount == 1
 
+    def get_by_bulk_upload_job_and_task_type(self, bulk_upload_job_id: UUID, task_type: str) -> list[CeleryTaskLog]:
+        return list(
+            self.db.query(CeleryTaskLog)
+            .filter(CeleryTaskLog.bulk_upload_job_id == bulk_upload_job_id, CeleryTaskLog.task_type == task_type)
+            .all()
+        )
+
     def get_by_task_id(self, task_id: str) -> CeleryTaskLog | None:
         return (
             self.db.query(CeleryTaskLog)

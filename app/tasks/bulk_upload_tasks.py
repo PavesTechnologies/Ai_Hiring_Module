@@ -19,6 +19,7 @@ from app.models.async_tasks import (
     BulkUploadStatus,
     DocumentType,
     ProcessingStage,
+    TaskStatus,
 )
 from app.models.candidates import FileFormat, Resume
 from app.models.resume.resume_source_format import ResumeSourceFormat
@@ -96,6 +97,86 @@ _BULK_FILE_FORMAT_TO_SOURCE_FORMAT = {
 }
 
 
+BULK_EXTRACT_TASK_TYPE = "BULK_EXTRACT"
+
+
+def _extract_and_stage(job, job_repo, file_repo, task_log_service, task_log, storage_service,
+                       zip_validation_service, uploaded_paths: list[str]) -> list[BulkUploadJobFile] | None:
+    """
+    Downloads the job's ZIP, stages each real entry in storage and records one QUEUED
+    bulk_upload_job_files row per file (committed). None when the job was failed instead (corrupt ZIP,
+    too many files) - the job and task log are already marked. Objects this run uploads are appended to
+    uploaded_paths, for the caller's cleanup on failure.
+    """
+    job_repo.update_status(job.id, BulkUploadStatus.EXTRACTING)
+    job_repo.commit()
+
+    zip_bytes = storage_service.download_file(BULK_UPLOAD_STORAGE_BUCKET, job.zip_storage_path)
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile as exc:
+        job_repo.update_status(
+            job.id, BulkUploadStatus.FAILED, error_summary=f"Corrupt ZIP archive: {exc}",
+        )
+        job_repo.commit()
+        task_log_service.mark_failure(task_log, f"Corrupt ZIP archive: {exc}")
+        return None
+
+    real_entries: list[tuple[object, str]] = []
+    for entry in archive.infolist():
+        if entry.is_dir():
+            continue
+        if any(entry.filename.startswith(prefix) for prefix in _JUNK_PATH_PREFIXES):
+            continue
+        basename = entry.filename.rsplit("/", 1)[-1]
+        if not basename or basename.startswith("."):
+            continue
+        real_entries.append((entry, basename))
+
+    try:
+        zip_validation_service.validate_file_count(len(real_entries))
+    except MaxFilesExceededException as exc:
+        job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=exc.message)
+        job_repo.commit()
+        task_log_service.mark_failure(task_log, exc.message)
+        return None
+
+    staged_files: list[BulkUploadJobFile] = []
+    for index, (entry, basename) in enumerate(real_entries):
+        # Key uses a storage-safe copy of the name (Supabase rejects e.g.
+        # "[", "]"); original_filename below keeps the real one.
+        # Review item 23: the key is fixed per ZIP entry (its position), so a run that stopped
+        # midway is resumed - an object an earlier run already staged is reused, never orphaned.
+        object_path = (
+            f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{index:04d}_{storage_safe_filename(basename)}"
+        )
+        if not storage_service.file_exists(BULK_UPLOAD_STORAGE_BUCKET, object_path):
+            storage_service.upload_file(
+                bucket_name=BULK_UPLOAD_STORAGE_BUCKET,
+                file_path=object_path,
+                file_content=archive.read(entry),
+            )
+        uploaded_paths.append(object_path)     # cleaned up if this run fails, reused or not
+        # task_id generated here (not in the enqueue loop below) so it
+        # can be stored on the row itself and later correlated back to
+        # this file's own celery_task_log entry (e.g. retry_count).
+        staged_files.append(
+            BulkUploadJobFile(
+                bulk_upload_job_id=job.id,
+                original_filename=basename,
+                storage_path=object_path,
+                status=BulkUploadFileStatus.QUEUED,
+                task_id=str(uuid4()),
+            )
+        )
+
+    if staged_files:
+        staged_files = file_repo.create_many(staged_files)
+        file_repo.commit()
+    return staged_files
+
+
 @celery_app.task(name="bulk_upload.extract_zip")
 def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
     """
@@ -120,7 +201,14 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         storage_service = StorageService()
         zip_validation_service = ZipValidationService(config_repo)
 
-        task_log = task_log_service.create_log(task_id=task_id, task_type="BULK_EXTRACT")
+        # Review item 23: get-or-create. A redelivered extraction (worker crash, broker redelivery) used
+        # to fail here on the unique task_id before it ever loaded the job, leaving it EXTRACTING.
+        existing_log = task_log_repo.get_by_task_id(task_id)
+        if existing_log is not None and existing_log.status == TaskStatus.SUCCESS:
+            logger.info("BULK_EXTRACT already completed for task_id=%s - skipping duplicate run.", task_id)
+            return
+        task_log = task_log_service.mark_running(
+            existing_log or task_log_service.create_log(task_id=task_id, task_type=BULK_EXTRACT_TASK_TYPE))
         task_log.bulk_upload_job_id = UUID(bulk_upload_job_id)
         task_log_repo.update(task_log)
         task_log_repo.commit()
@@ -141,70 +229,26 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
             task_log_service.mark_failure(task_log, error_summary)
             return
 
-        job_repo.update_status(job.id, BulkUploadStatus.EXTRACTING)
-        job_repo.commit()
-
-        zip_bytes = storage_service.download_file(BULK_UPLOAD_STORAGE_BUCKET, job.zip_storage_path)
-
-        try:
-            archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
-        except zipfile.BadZipFile as exc:
-            job_repo.update_status(
-                job.id, BulkUploadStatus.FAILED, error_summary=f"Corrupt ZIP archive: {exc}",
-            )
-            job_repo.commit()
-            task_log_service.mark_failure(task_log, f"Corrupt ZIP archive: {exc}")
+        if job.status not in (BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING):
+            # A redelivery after extraction finished: only files never handed to the queue go now.
+            handed_over = 0
+            if job.status == BulkUploadStatus.PROCESSING:
+                handed_over = dispatch_waiting_files(task_log_repo, file_repo.get_by_job_id(job.id))
+            task_log_service.mark_success(
+                task_log, summary=f"Already extracted ({job.status.value}); {handed_over} file(s) handed over.")
             return
 
-        real_entries: list[tuple[object, str]] = []
-        for entry in archive.infolist():
-            if entry.is_dir():
-                continue
-            if any(entry.filename.startswith(prefix) for prefix in _JUNK_PATH_PREFIXES):
-                continue
-            basename = entry.filename.rsplit("/", 1)[-1]
-            if not basename or basename.startswith("."):
-                continue
-            real_entries.append((entry, basename))
-
-        try:
-            zip_validation_service.validate_file_count(len(real_entries))
-        except MaxFilesExceededException as exc:
-            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=exc.message)
-            job_repo.commit()
-            task_log_service.mark_failure(task_log, exc.message)
-            return
-
-        staged_files: list[BulkUploadJobFile] = []
-        for entry, basename in real_entries:
-            file_bytes = archive.read(entry)
-            # Key uses a storage-safe copy of the name (Supabase rejects e.g.
-            # "[", "]"); original_filename below keeps the real one.
-            object_path = (
-                f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{uuid4()}_{storage_safe_filename(basename)}"
-            )
-            storage_service.upload_file(
-                bucket_name=BULK_UPLOAD_STORAGE_BUCKET,
-                file_path=object_path,
-                file_content=file_bytes,
-            )
-            uploaded_paths.append(object_path)
-            # task_id generated here (not in the enqueue loop below) so it
-            # can be stored on the row itself and later correlated back to
-            # this file's own celery_task_log entry (e.g. retry_count).
-            staged_files.append(
-                BulkUploadJobFile(
-                    bulk_upload_job_id=job.id,
-                    original_filename=basename,
-                    storage_path=object_path,
-                    status=BulkUploadFileStatus.QUEUED,
-                    task_id=str(uuid4()),
-                )
-            )
-
+        # An earlier run recorded the files, then stopped before the job moved on: don't extract again.
+        staged_files: list[BulkUploadJobFile] = file_repo.get_by_job_id(job.id)
         if staged_files:
-            staged_files = file_repo.create_many(staged_files)
-            file_repo.commit()
+            logger.warning("BULK_EXTRACT resuming job %s: %d file(s) already staged.", job.id, len(staged_files))
+        else:
+            staged_files = _extract_and_stage(
+                job, job_repo, file_repo, task_log_service, task_log, storage_service, zip_validation_service,
+                uploaded_paths,
+            )
+            if staged_files is None:
+                return      # the job was failed (corrupt ZIP / too many files) and the log marked
 
         job_repo.set_total_files(job.id, len(staged_files))
         job_repo.update_status(
@@ -239,14 +283,8 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
             )
             return
 
-        for staged_file in staged_files:
-            parse_bulk_upload_file.apply_async(
-                kwargs={
-                    "task_id": staged_file.task_id,
-                    "bulk_upload_job_file_id": str(staged_file.id),
-                },
-                task_id=staged_file.task_id,
-            )
+        # Only files not already handed over (a resumed run may find some dispatched already).
+        dispatch_waiting_files(task_log_repo, staged_files)
 
         summary = f"Extracted {len(staged_files)} file(s) from '{job.original_filename}'."
         task_log_service.mark_success(task_log, summary=summary)
@@ -269,6 +307,82 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
 
     finally:
         db.close()
+
+
+def dispatch_waiting_files(task_log_repo, files, live_task_ids: set[str] | None = None) -> int:
+    """
+    Review item 23: hands each QUEUED/RUNNING file to the queue under its own task_id when it needs it -
+    never dispatched (no task log yet), or, when live_task_ids is given (the recovery sweep, which asked
+    the workers), its parse task was lost or stalled and no worker holds it. The parse task gets or
+    creates its log under that task_id. Returns how many were dispatched.
+    """
+    from app.core.task_dispatch import IN_FLIGHT_STATUSES, is_in_flight, is_lost
+    dispatched = 0
+    for job_file in files:
+        if job_file.status not in (BulkUploadFileStatus.QUEUED, BulkUploadFileStatus.RUNNING):
+            continue
+        log = task_log_repo.get_by_task_id(job_file.task_id)
+        if log is None:
+            due = job_file.status == BulkUploadFileStatus.QUEUED
+        elif live_task_ids is None or job_file.task_id in live_task_ids:
+            due = False
+        else:
+            due = is_lost(log) or (log.status in IN_FLIGHT_STATUSES and not is_in_flight(log))
+        if not due:
+            continue
+        try:
+            parse_bulk_upload_file.apply_async(
+                kwargs={"task_id": job_file.task_id, "bulk_upload_job_file_id": str(job_file.id)},
+                task_id=job_file.task_id,
+            )
+            dispatched += 1
+        except Exception:
+            logger.exception("Dispatching bulk file %s failed; the recovery sweep will retry it.", job_file.id)
+    return dispatched
+
+
+def recover_stalled_bulk_jobs(db, live_task_ids: set[str] | None) -> dict:
+    """
+    Review item 23 - part of the 5-minute recovery job. Nothing else resumes a bulk job whose task died:
+    - PENDING/EXTRACTING with no extraction in flight, last active over IN_FLIGHT_STALE_AFTER ago (a
+      crash mid-extraction, or a hand-off that failed at upload time): extraction runs again, as a new
+      task; it resumes from what is already staged;
+    - PROCESSING whose extraction ended over IN_FLIGHT_STALE_AFTER ago: files never dispatched, or whose
+      parse task was lost or stalled with no worker holding it, are dispatched again.
+    Nothing happens when the workers can't be asked.
+    """
+    from app.core.task_dispatch import IN_FLIGHT_STALE_AFTER, is_in_flight, last_touched
+    counts = {"extractions_restarted": 0, "files_dispatched": 0}
+    if live_task_ids is None:
+        return counts
+    now = datetime.now(timezone.utc)
+    cutoff = now - IN_FLIGHT_STALE_AFTER
+    job_repo, file_repo = BulkUploadJobRepository(db), BulkUploadJobFileRepository(db)
+    task_log_repo = CeleryTaskLogRepository(db)
+    for job in job_repo.get_by_statuses([BulkUploadStatus.PENDING, BulkUploadStatus.EXTRACTING,
+                                         BulkUploadStatus.PROCESSING]):
+        logs = task_log_repo.get_by_bulk_upload_job_and_task_type(job.id, BULK_EXTRACT_TASK_TYPE)
+        if any(is_in_flight(log, now) or log.task_id in live_task_ids for log in logs):
+            continue
+        times = [t for t in (last_touched(log) for log in logs) if t is not None]
+        times += [log.completed_at for log in logs if log.completed_at is not None]
+        last_active = max(times) if times else job.created_at
+        if last_active is None or last_active > cutoff:
+            continue
+        if job.status == BulkUploadStatus.PROCESSING:
+            counts["files_dispatched"] += dispatch_waiting_files(task_log_repo, file_repo.get_by_job_id(job.id),
+                                                                 live_task_ids)
+            continue
+        new_task_id = str(uuid4())
+        try:
+            extract_bulk_upload_zip.apply_async(
+                kwargs={"task_id": new_task_id, "bulk_upload_job_id": str(job.id)}, task_id=new_task_id)
+            counts["extractions_restarted"] += 1
+            logger.warning("Stalled bulk extraction restarted | job_id=%s status=%s task_id=%s",
+                           job.id, job.status.value, new_task_id)
+        except Exception:
+            logger.exception("Restarting bulk extraction for job %s failed", job.id)
+    return counts
 
 
 def _cleanup_orphaned_uploads(storage_service: StorageService, paths: list[str]) -> None:

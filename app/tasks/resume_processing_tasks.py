@@ -650,6 +650,14 @@ def recover_stalled_resume_uploads(db=None) -> int:
             task_log_repo, campaign_candidate_repo, campaign_repo, live_task_ids=live_task_ids,
         )
         _mark_stalled_tasks_lost(task_log_repo, live_task_ids)
+        try:
+            from app.tasks.bulk_upload_tasks import recover_stalled_bulk_jobs
+            bulk = recover_stalled_bulk_jobs(db, live_task_ids)
+            if any(bulk.values()):
+                logger.warning("Stalled bulk jobs recovered | %s", bulk)
+        except Exception:
+            logger.exception("Stalled bulk job sweep failed")
+            rollback_quietly(db)
         return recovered
     finally:
         if owns_session:
