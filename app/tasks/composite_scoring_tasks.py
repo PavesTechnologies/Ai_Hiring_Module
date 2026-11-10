@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
@@ -204,7 +205,7 @@ def calculate_composite_score_task(self, campaign_candidate_id: str, trigger_sou
         # weights) - dead-letter, mark the task_log DEAD, log the failure
         # reason. Never re-raised - this is now dead-lettered/terminal
         # bookkeeping, same convention as calculate_semantic_score_task.
-        error_message = str(ex)
+        error_message = safe_error(ex)
         try:
             DeadLetterQueueRepository(db).create(
                 original_task_id=task_id,

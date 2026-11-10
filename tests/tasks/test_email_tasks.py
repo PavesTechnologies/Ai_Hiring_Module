@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+
+from app.core.safe_errors import SafeRetryError
 from botocore.exceptions import ClientError
 
 from app.exceptions.email_exception import EmailDeliveryException
@@ -147,7 +149,7 @@ def test_retries_on_transient_ses_failure():
         client_error = ClientError({"Error": {"Code": "Throttling", "Message": "Rate exceeded"}}, "SendEmail")
         h.ses_client_instance.send_email.side_effect = EmailDeliveryException("SES send_email failed", client_error)
 
-        with pytest.raises(EmailDeliveryException):
+        with pytest.raises(SafeRetryError):   # review item 28: no SES text
             send_candidate_email_task(email_notification_id=str(notification.id))
 
         h.dead_letter_queue_repo.create.assert_not_called()

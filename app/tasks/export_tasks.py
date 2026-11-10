@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal, rollback_quietly
 from app.enums.constants import ActionType
@@ -171,7 +172,7 @@ def generate_export_task(
         if task_log is not None:
             try:
                 task_log.status = TaskStatus.FAILURE
-                task_log.error_message = str(exc)[:2000]
+                task_log.error_message = safe_error(exc)
                 task_log.completed_at = datetime.now(timezone.utc)
                 db.commit()
             except Exception:

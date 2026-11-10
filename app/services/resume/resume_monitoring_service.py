@@ -564,8 +564,8 @@ class ResumeMonitoringService:
             )
         except StorageException:
             logger.exception(
-                "Failed to generate download URL for resume_id=%s file_path=%s",
-                resume.id, resume.file_path,
+                "Failed to generate download URL for resume_id=%s",
+                resume.id,
             )
 
         candidate = self.candidate_repository.get_by_id(campaign_candidate.candidate_id)

@@ -53,7 +53,9 @@ class AIEvaluationService:
             # exception type, so error_classifier.classify() reliably marks
             # a malformed AI response PERMANENT (matches extract_raw's own
             # json.JSONDecodeError -> ValueError convention).
-            raise ValueError(f"AI Evaluation response failed schema validation: {exc}") from exc
+            # Review item 28: the pydantic error quotes the model output (it can quote the resume) - count only.
+            raise ValueError(f"AI Evaluation response failed schema validation "
+                             f"({len(getattr(exc, 'errors', lambda: [])())} error(s))") from exc
 
         return validated.model_dump()
 

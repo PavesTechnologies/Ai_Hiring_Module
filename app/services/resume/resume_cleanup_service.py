@@ -126,4 +126,4 @@ class ResumeCleanupService:
         try:
             self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, file_path)
         except Exception:
-            logger.exception("Failed to delete resume file '%s' from storage during resume cleanup.", file_path)
+            logger.warning("Failed to delete a resume file from storage during resume cleanup.")

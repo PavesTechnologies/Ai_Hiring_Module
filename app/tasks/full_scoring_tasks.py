@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.core.single_run import single_run
@@ -234,7 +235,7 @@ def complete_full_scoring_task(self, campaign_candidate_id: str, fallback_result
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Full scoring after the fallback failed | campaign_candidate_id=%s", campaign_candidate_id)
     finally:
         db.close()
@@ -277,7 +278,7 @@ def complete_full_scoring_scan() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Full scoring scan failed")
     finally:
         db.close()

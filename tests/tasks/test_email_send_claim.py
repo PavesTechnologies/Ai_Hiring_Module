@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+
+from app.core.safe_errors import SafeRetryError
 from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError
 
 from app.exceptions.email_exception import EmailDeliveryException
@@ -68,7 +70,7 @@ def test_a_send_ses_certainly_refused_gives_the_claim_back_and_retries(original)
     with _Harness() as h:
         notification = _ready(h)
         h.ses_client_instance.send_email.side_effect = EmailDeliveryException("SES send_email failed", original)
-        with pytest.raises(EmailDeliveryException):
+        with pytest.raises(SafeRetryError):   # review item 28: no SES text
             _send(notification)
         h.notification_repo.release_claim.assert_called_once_with(notification.id)
         h.dead_letter_queue_repo.create.assert_not_called()
@@ -117,7 +119,7 @@ def test_a_failure_before_the_claim_retries_without_touching_the_claim():
     with _Harness() as h:
         notification = _ready(h)
         h.template_repo.get_by_id.side_effect = ConnectionError("db blip")
-        with pytest.raises(ConnectionError):
+        with pytest.raises(SafeRetryError):
             _send(notification)
         h.notification_repo.claim_for_sending.assert_not_called()
         h.notification_repo.release_claim.assert_not_called()

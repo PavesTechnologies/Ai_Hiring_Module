@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from app.core.celery_app import bounded_countdown
+from app.core.safe_errors import SafeRetryError, safe_error
 from app.models.async_tasks import FailureClassification
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import DEFAULT_POLICY, STAGE_POLICIES, compute_backoff_seconds
@@ -45,7 +46,7 @@ class RetryDriver:
             error.stage,
             attempt_number,
             type(error.original).__name__,
-            str(error.original),
+            safe_error(error.original),   # review item 28: no exception text (resume content, paths)
             classification,
         )
         self.stage_failure_log_repo.commit()
@@ -59,7 +60,7 @@ class RetryDriver:
             self.dead_letter_queue_repo.create(
                 original_task_id=task_id,
                 task_type=self.task_type,
-                final_error_message=str(error.original),
+                final_error_message=safe_error(error.original),
                 full_error_trace=None,
                 # A caller-supplied payload (resume processing: the task's own
                 # kwargs, incl. re-parse mode) wins - it's what a replay needs.
@@ -82,5 +83,5 @@ class RetryDriver:
 
         self.celery_task_log_service.mark_retry(self.task_log)
         delay = compute_backoff_seconds(policy, attempt_number)
-        celery_task.retry(exc=error.original, countdown=bounded_countdown(delay), max_retries=_CELERY_MAX_RETRIES_CEILING)
+        celery_task.retry(exc=SafeRetryError(safe_error(error.original)), countdown=bounded_countdown(delay), max_retries=_CELERY_MAX_RETRIES_CEILING)
         return True

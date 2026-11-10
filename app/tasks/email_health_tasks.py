@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.single_run import single_run
@@ -82,7 +83,7 @@ def monitor_stuck_sends() -> None:
     except Exception as ex:
         rollback_quietly(db)
         if task_log_service is not None and task_log is not None:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Stuck-send check failed")
     finally:
         db.close()

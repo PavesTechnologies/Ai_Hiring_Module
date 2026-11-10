@@ -452,8 +452,8 @@ class UploadDecisionService:
         for path in paths:
             try:
                 self.storage_service.delete_file(RESUME_STORAGE_BUCKET, path)
-            except Exception:
-                logger.exception("Could not delete a discarded upload file '%s'.", path)
+            except Exception as exc:
+                logger.warning("Could not delete a discarded upload file (%s).", type(exc).__name__)
 
     # --- internals ----------------------------------------------------------------
     def _keep_existing(self, decision: UploadDecision, status: UploadDecisionStatus, action_type: ActionType,

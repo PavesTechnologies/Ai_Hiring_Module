@@ -300,6 +300,14 @@ class ResumeReparseService:
         self.db.commit()
         return version.diff
 
+    def _reparse_reason(self, reparse: dict) -> str | None:
+        """The recruiter's reason - from the task arguments, else (a dead-letter replay, whose stored
+        payload leaves the free text out - review item 28) from the version row."""
+        if reparse.get("reason"):
+            return reparse["reason"]
+        version = self.db.get(ResumeParseVersion, UUID(reparse["version_id"])) if reparse.get("version_id") else None
+        return getattr(version, "reason", None)
+
     def mark_failed(self, version_id: str, error: str) -> None:
         version = self.db.get(ResumeParseVersion, UUID(version_id))
         if version is not None:
@@ -338,7 +346,7 @@ class ResumeReparseService:
                     audit_service=self.audit_service,
                 ).move_one(
                     campaign_id=campaign.id, campaign_candidate_id=cc.id, target_stage=PipelineStage.SCREENING.value,
-                    reason=f"Re-parsed resume: {reparse.get('reason')}", actor_id=reparse.get("actor_id"),
+                    reason=f"Re-parsed resume: {self._reparse_reason(reparse)}", actor_id=reparse.get("actor_id"),
                     actor_role=reparse.get("actor_role"),
                     # Not an override (the user's decision, 2026-11-03): the input changed and the new
                     # score decides. Re-parses of rejected candidates are counted on their own instead

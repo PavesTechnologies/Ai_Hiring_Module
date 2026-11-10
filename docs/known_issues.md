@@ -67,7 +67,7 @@ Checked on the senior JD:
 
 ## Worker and task logs contain candidate names and emails; production logs must not (found 2026-10-23)
 
-**Status:** open - must be fixed before production holds real candidate data.
+**Status:** fixed 2026-11-10 (review item 28), with two leftovers below. Task logs, dead letters, stage rows, `email_notifications.error_reason` and worker log lines get the exception's class and provider error code only (`app/core/safe_errors.py`; a sweep test checks no `str(exc)` reaches a stored sink); log mode logs the message id, not the recipient or subject; bulk files are staged as `{index:04d}.{ext}`; storage errors name no file; database errors hide their parameters; a re-parse dead letter leaves out the recruiter's reason. Leftovers: bulk files staged before this change keep their old `{uuid}_{file name}` keys until the job or candidate is deleted; `logger.exception` tracebacks remain in tasks whose errors are not provider or parse errors. Trade-off: the stage timeline in monitoring now shows the error class (e.g. `FileValidationException`) instead of the message.
 
 The Celery worker log (`logs/celery-worker.log*`) and the `celery_task_log` /
 `dead_letter_queue` tables quote candidates' personal data: uploaded file names

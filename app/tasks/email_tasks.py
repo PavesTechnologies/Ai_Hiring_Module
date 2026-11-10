@@ -7,6 +7,7 @@ from botocore.exceptions import ClientError, EndpointConnectionError, NoCredenti
 
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.encryption_service import EncryptionService
+from app.core.safe_errors import SafeRetryError, safe_error
 from app.db.session import SessionLocal
 from app.exceptions.email_exception import EmailDeliveryException
 from app.models.async_tasks import FailureClassification, TaskStatus
@@ -248,8 +249,8 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         if sent:
             # Delivered, but recording it failed. The row stays SENDING (never re-sent); not a failure
             # to retry or dead-letter.
-            logger.exception("EMAIL_SEND delivered but not recorded | email_notification_id=%s",
-                             email_notification_id)
+            logger.error("EMAIL_SEND delivered but not recorded | email_notification_id=%s error=%s",
+                         email_notification_id, safe_error(ex))
             if task_log:
                 task_log_service.mark_success(task_log, summary="Sent; recording the send failed (row left SENDING).")
             return
@@ -266,19 +267,21 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
             delay = compute_backoff_seconds(retry_policy, attempt_number)
             logger.warning(
                 "EMAIL_SEND transient failure, retrying | email_notification_id=%s attempt=%s delay=%ss error=%s",
-                email_notification_id, attempt_number, delay, ex,
+                email_notification_id, attempt_number, delay, safe_error(ex),
             )
-            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=retry_policy.max_attempts)
+            # Review item 28: Celery logs the retry exception's text - hand it one without the SES message.
+            self.retry(exc=SafeRetryError(safe_error(ex)), countdown=bounded_countdown(delay), max_retries=retry_policy.max_attempts)
             return
 
         # T03: retries exhausted (or a permanent/business failure) -
         # dead-letter + mark the notification FAILED. This never rolls back
         # the rejection record or the pipeline transition - those already
         # committed in a separate, earlier transaction.
-        error_message = str(ex)
+        # Review item 28: the class and SES error code only - SES messages can echo the recipient.
+        error_message = safe_error(ex)
         if outcome_unknown:
             # Never retried automatically: SES may already have sent it.
-            error_message = f"Delivery outcome unknown - not retried automatically: {ex}"
+            error_message = f"Delivery outcome unknown - not retried automatically: {error_message}"
         dead_letter_queue_repo.create(
             original_task_id=task_id,
             task_type=EMAIL_SEND_TASK_TYPE,
@@ -303,7 +306,8 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
 
         if task_log:
             task_log_service.mark_dead(task_log, error_message)
-        logger.exception("EMAIL_SEND permanently failed | email_notification_id=%s", email_notification_id)
+        logger.error("EMAIL_SEND permanently failed | email_notification_id=%s error=%s",
+                     email_notification_id, error_message)
         # Deliberately not re-raised: this is now dead-lettered/terminal
         # bookkeeping, not an unhandled Celery-level failure.
 

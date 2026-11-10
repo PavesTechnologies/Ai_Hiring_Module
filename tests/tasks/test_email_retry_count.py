@@ -4,6 +4,8 @@ Review item 30: the email send reads MAX_EMAIL_RETRY_COUNT (seeded 4) instead of
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from app.core.safe_errors import SafeRetryError
 from botocore.exceptions import ClientError
 
 from app.exceptions.email_exception import EmailDeliveryException
@@ -47,7 +49,7 @@ def test_the_send_retries_up_to_the_configured_count(retries_so_far, retried):
         send_candidate_email_task.push_request(retries=retries_so_far)
         try:
             if retried:
-                with pytest.raises(EmailDeliveryException):
+                with pytest.raises(SafeRetryError):   # review item 28: no SES text
                     send_candidate_email_task(email_notification_id=str(notification.id))
                 h.dead_letter_queue_repo.create.assert_not_called()
             else:

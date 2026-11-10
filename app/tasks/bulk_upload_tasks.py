@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
-from app.core.storage_service import StorageService, storage_safe_filename
+from app.core.safe_errors import SafeRetryError, safe_error
+from app.core.storage_service import StorageService
 from app.db.session import SessionLocal, rollback_quietly
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
@@ -59,6 +60,7 @@ from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.skills.skill_evidence_service import build_v2_detection
 from app.services.pii.pii_types import PIIType
 from app.services.resume.bulk_zip_entries import real_entries as zip_real_entries
+from app.services.resume.bulk_zip_entries import staged_entry_index, staged_file_name
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_processing_context import ResumeProcessingContext
@@ -141,7 +143,7 @@ def _extract_and_stage(job, job_repo, file_repo, task_log_service, task_log, sto
         # Review item 23: the key is fixed per ZIP entry (its position), so a run that stopped
         # midway is resumed - an object an earlier run already staged is reused, never orphaned.
         object_path = (
-            f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{index:04d}_{storage_safe_filename(basename)}"
+            f"campaign_{job.campaign_id}/bulk-zip/{job.id}/{staged_file_name(index, basename)}"
         )
         if not storage_service.file_exists(BULK_UPLOAD_STORAGE_BUCKET, object_path):
             storage_service.upload_file(
@@ -278,13 +280,13 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         # Only files not already handed over (a resumed run may find some dispatched already).
         dispatch_waiting_files(task_log_repo, staged_files)
 
-        summary = f"Extracted {len(staged_files)} file(s) from '{job.original_filename}'."
+        summary = f"Extracted {len(staged_files)} file(s) for job {job.id}."
         task_log_service.mark_success(task_log, summary=summary)
 
     except Exception as ex:
         rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         if job is not None:
             # Phase B9: previously only the task_log reflected this failure —
             # the job itself stayed stuck at EXTRACTING forever (invisible as
@@ -292,10 +294,11 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
             # already uploaded before the failure were left as storage
             # orphans with no bulk_upload_job_files row ever pointing at them.
             _cleanup_orphaned_uploads(storage_service, uploaded_paths)
-            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=str(ex))
+            job_repo.update_status(job.id, BulkUploadStatus.FAILED, error_summary=safe_error(ex))
             job_repo.commit()
-        logger.exception("Bulk upload extraction task failed for job_id %s", bulk_upload_job_id)
-        raise
+        logger.error("Bulk upload extraction task failed for job_id %s: %s", bulk_upload_job_id, safe_error(ex))
+        # Review item 28: re-raised without its message (a storage error names the staged path).
+        raise SafeRetryError(safe_error(ex)) from None
 
     finally:
         db.close()
@@ -387,7 +390,8 @@ def _cleanup_orphaned_uploads(storage_service: StorageService, paths: list[str])
         try:
             storage_service.delete_file(BULK_UPLOAD_STORAGE_BUCKET, path)
         except Exception:
-            logger.warning("Failed to clean up orphaned upload '%s' after extraction failure.", path)
+            logger.warning("Failed to clean up an orphaned staged upload after extraction failure (%s).",
+                           path.rsplit("/", 1)[-1] if staged_entry_index(path) is not None else "older key")
 
 
 def _resolve_bulk_candidate_identity(
@@ -838,7 +842,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
         _maybe_finalize_job(job_repo, job.id)
 
         task_log_service.mark_success(
-            task_log, summary=f"Parsed '{job_file.original_filename}' -> candidate {candidate.id}.",
+            task_log, summary=f"Parsed job file {job_file.id} -> candidate {candidate.id}.",
         )
 
         # M08-E01: bulk-uploaded resumes share this same pipeline, so they
@@ -889,12 +893,13 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
                 job_repo.commit()
                 _maybe_finalize_job(job_repo, job.id)
             if task_log:
-                task_log_service.mark_failure(task_log, str(stage_exc.original))
+                task_log_service.mark_failure(task_log, safe_error(stage_exc.original))
             logger.warning(
                 "Bulk upload file %s permanently failed at stage %s: %s",
-                bulk_upload_job_file_id, stage_exc.stage, stage_exc.original,
+                bulk_upload_job_file_id, stage_exc.stage, safe_error(stage_exc.original),
             )
-            raise stage_exc.original
+            # Review item 28: Celery logs a failed task's exception - this one carries no resume text.
+            raise SafeRetryError(safe_error(stage_exc.original)) from None
 
     except CampaignException as exc:
         rollback_quietly(db)   # review item 22: the session may be broken
@@ -930,9 +935,9 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             job_repo.commit()
             _maybe_finalize_job(job_repo, job.id)
         if task_log:
-            task_log_service.mark_failure(task_log, str(exc))
+            task_log_service.mark_failure(task_log, safe_error(exc))
         logger.warning(
-            "Bulk upload file %s failed to parse: %s", bulk_upload_job_file_id, exc,
+            "Bulk upload file %s failed to parse: %s", bulk_upload_job_file_id, safe_error(exc),
         )
 
     finally:

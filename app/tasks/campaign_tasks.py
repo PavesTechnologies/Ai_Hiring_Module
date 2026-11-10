@@ -1,3 +1,4 @@
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
 from app.db.session import SessionLocal, rollback_quietly
@@ -63,7 +64,7 @@ def auto_close_expired_campaigns():
         rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
-                str(ex),
+                safe_error(ex),
             )
 
         print(f"Celery Task Failed : {ex}")
@@ -119,7 +120,7 @@ def detect_stalled_candidates():
         rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
-                str(ex),
+                safe_error(ex),
             )
 
         raise
@@ -176,7 +177,7 @@ def evaluate_campaign_health_alerts():
         rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
-                str(ex),
+                safe_error(ex),
             )
 
         raise
@@ -236,7 +237,7 @@ def evaluate_resubmission_alerts():
         if task_log:
             task_log_service.mark_failure(
                 task_log,
-                str(ex),
+                safe_error(ex),
             )
 
         raise

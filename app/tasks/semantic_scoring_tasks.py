@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from celery.exceptions import Retry
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight, is_lost, reset_for_redispatch
 from app.core.single_run import single_run
@@ -582,7 +583,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
             self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_SEMANTIC_SCORE_RETRY_POLICY.max_attempts)
             return
 
-        error_message = str(ex)
+        error_message = safe_error(ex)
         try:
             DeadLetterQueueRepository(db).create(
                 original_task_id=task_id,
@@ -665,7 +666,7 @@ def recover_pending_semantic_scores() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Semantic score recovery scan failed")
 
     finally:

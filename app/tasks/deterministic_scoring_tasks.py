@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.core.single_run import single_run
@@ -385,7 +386,7 @@ def calculate_deterministic_score_task(self, campaign_candidate_id: str, score_o
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Deterministic scoring task failed for campaign_candidate_id %s", campaign_candidate_id)
         raise
     finally:
@@ -418,7 +419,7 @@ def _retry_or_dead_letter(task, db, task_log_service, task_log, campaign_candida
         logger.exception("Failed to dead-letter DETERMINISTIC_SCORE for campaign_candidate_id=%s", campaign_candidate_id)
         db.rollback()
     if task_log:
-        task_log_service.mark_dead(task_log, str(ex))
+        task_log_service.mark_dead(task_log, safe_error(ex))
     logger.error("Scoring decision still pending - dead-lettered | campaign_candidate_id=%s: %s",
                  campaign_candidate_id, ex)
 
@@ -486,7 +487,7 @@ def recover_undecided_candidates() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Scoring decision recovery scan failed")
     finally:
         db.close()

@@ -1,3 +1,4 @@
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
 from app.db.session import SessionLocal, rollback_quietly
@@ -49,7 +50,7 @@ def request_interview_feedback_task(self):
     except Exception as ex:
         rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         raise
 
     finally:

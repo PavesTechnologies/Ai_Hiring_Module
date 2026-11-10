@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
@@ -126,7 +127,7 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
             return
         try:
             DeadLetterQueueRepository(db).create(
-                original_task_id=task_id, task_type=SCORING_V2_TASK_TYPE, final_error_message=str(ex)[:2000],
+                original_task_id=task_id, task_type=SCORING_V2_TASK_TYPE, final_error_message=safe_error(ex),
                 input_payload={"campaign_candidate_id": campaign_candidate_id}, retry_count=attempt_number,
                 first_attempted_at=task_log.queued_at if task_log else datetime.now(timezone.utc),
                 last_attempted_at=datetime.now(timezone.utc), campaign_candidate_id=UUID(campaign_candidate_id),
@@ -136,7 +137,7 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
             logger.exception("Failed to dead-letter SCORING_V2 for campaign_candidate_id=%s", campaign_candidate_id)
             db.rollback()
         if task_log:
-            task_log_service.mark_dead(task_log, str(ex))
+            task_log_service.mark_dead(task_log, safe_error(ex))
         logger.error("Scoring v2 gave up (dead-lettered) | campaign_candidate_id=%s: %s", campaign_candidate_id, ex)
     finally:
         db.close()

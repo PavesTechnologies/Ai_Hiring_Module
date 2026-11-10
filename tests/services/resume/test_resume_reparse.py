@@ -178,10 +178,11 @@ def test_quota_failure_dead_letters_with_the_reparse_mode_and_replays_as_a_repar
                                         input_payload=replay_payload(resume_id, prompt_id, reparse))
     assert retried is False
     payload = dlq.create.call_args.kwargs["input_payload"]
-    assert payload["reparse"] == reparse and payload["prompt_template_id"] == str(prompt_id)
+    stored = {k: v for k, v in reparse.items() if k != "reason"}     # review item 28: no free text
+    assert payload["reparse"] == stored and payload["prompt_template_id"] == str(prompt_id)
 
     kwargs = replay_kwargs(SimpleNamespace(resume_id=resume_id, input_payload=payload))
-    assert kwargs == {"resume_id": str(resume_id), "prompt_template_id": str(prompt_id), "reparse": reparse}
+    assert kwargs == {"resume_id": str(resume_id), "prompt_template_id": str(prompt_id), "reparse": stored}
 
 
 def test_campaign_replay_builder_keeps_reparse_mode_and_old_entries_still_replay():
@@ -281,3 +282,16 @@ def test_finish_marks_other_campaigns_out_of_date_without_rescoring_them():
     assert "AI transformation lead (test)" in other.score_out_of_date_reason
     rescore.assert_called_once_with(service.db, cc)            # only the requesting candidate
     assert version.diff["other_campaigns_marked_out_of_date"] == 1 and version.diff["status"] == "COMPLETED"
+
+
+def test_a_replay_reads_the_reason_from_the_version_row():
+    """Review item 28: the dead-letter payload has no reason; the stage move still gets it."""
+    from unittest.mock import MagicMock
+    from types import SimpleNamespace
+    from uuid import uuid4
+    db = MagicMock()
+    db.get.return_value = SimpleNamespace(reason="missed section")
+    service = ResumeReparseService.__new__(ResumeReparseService)
+    service.db = db
+    assert service._reparse_reason({"version_id": str(uuid4())}) == "missed section"
+    assert service._reparse_reason({"version_id": str(uuid4()), "reason": "given"}) == "given"

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import bounded_countdown, celery_app
+from app.core.safe_errors import SafeRetryError, safe_error
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -392,16 +393,16 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
             delay = compute_backoff_seconds(_AI_EVALUATION_RETRY_POLICY, attempt_number)
             logger.warning(
                 "AI evaluation transient failure, retrying | campaign_candidate_id=%s attempt=%s delay=%ss error=%s",
-                campaign_candidate_id, attempt_number, delay, ex,
+                campaign_candidate_id, attempt_number, delay, safe_error(ex),
             )
-            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_AI_EVALUATION_RETRY_POLICY.max_attempts)
+            self.retry(exc=SafeRetryError(safe_error(ex)), countdown=bounded_countdown(delay), max_retries=_AI_EVALUATION_RETRY_POLICY.max_attempts)
             return
 
         # Retries exhausted (or a permanent failure) - dead-letter, mark the
         # task_log DEAD, log the failure reason. Never re-raised: this is
         # now dead-lettered/terminal bookkeeping, same convention as
         # calculate_semantic_score_task.
-        error_message = str(ex)
+        error_message = safe_error(ex)     # review item 28
         try:
             DeadLetterQueueRepository(db).create(
                 original_task_id=task_id,

@@ -89,13 +89,13 @@ def test_an_extraction_that_already_succeeded_does_nothing():
 def test_staged_object_paths_are_fixed_per_entry_and_reused():
     with _world() as w:
         prefix = f"campaign_{w.job.campaign_id}/bulk-zip/{w.job.id}/"
-    with _world(existing_objects={prefix + "0000_CV.pdf"}) as w2:
+    with _world(existing_objects={prefix + "0000.pdf"}) as w2:
         w2.job.id, w2.job.campaign_id = w.job.id, w.job.campaign_id
         _run(w2)
     uploaded = [c.kwargs["file_path"] for c in w2.storage.upload_file.call_args_list]
-    assert uploaded == [prefix + "0001_CV.pdf"]       # the first was staged by an earlier run
+    assert uploaded == [prefix + "0001.pdf"]       # the first was staged by an earlier run
     paths = [f.storage_path for f in w2.file_repo.create_many.call_args.args[0]]
-    assert paths == [prefix + "0000_CV.pdf", prefix + "0001_CV.pdf"]   # same names, two candidates
+    assert paths == [prefix + "0000.pdf", prefix + "0001.pdf"]   # same names, two candidates - no name in the key
 
 
 def test_a_run_that_finds_its_files_recorded_does_not_extract_again():

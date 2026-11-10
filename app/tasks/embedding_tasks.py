@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from celery.exceptions import Retry
 
+from app.core.safe_errors import safe_error
 from app.core.cache_invalidation import CacheInvalidator
 from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import (
@@ -353,7 +354,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
                     embed_ex._embed_retry_already_handled = True
                     self.retry(exc=embed_ex, countdown=bounded_countdown(delay), max_retries=_CELERY_MAX_RETRIES_CEILING)
                     return
-                error_message = str(embed_ex)
+                error_message = safe_error(embed_ex)
                 _dead_letter_and_mark_dead(
                     db, task_id, resume_id, resume_uuid, embed_attempt_number,
                     task_log, task_log_service, error_message,
@@ -450,7 +451,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
             return
 
 
-        error_message = str(ex)
+        error_message = safe_error(ex)
         _dead_letter_and_mark_dead(
             db, task_id, resume_id, resume_uuid, attempt_number, task_log, task_log_service, error_message,
         )

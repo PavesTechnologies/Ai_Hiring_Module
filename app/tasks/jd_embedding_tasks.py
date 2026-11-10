@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import bounded_countdown, celery_app
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -169,7 +170,7 @@ def generate_jd_embedding(self, task_id: str, jd_id: str, force_regenerate: bool
             self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_EMBED_JD_RETRY_POLICY.max_attempts)
             return
 
-        error_message = str(ex)
+        error_message = safe_error(ex)
         _dead_letter_and_mark_dead(
             db, task_id, jd_id, jd_uuid, force_regenerate, attempt_number, task_log, task_log_service, error_message,
         )

@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
 from app.core.config import settings
@@ -232,7 +233,7 @@ def monitor_embedding_health() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Embedding health check failed")
 
     finally:

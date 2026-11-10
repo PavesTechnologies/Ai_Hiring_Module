@@ -11,6 +11,17 @@ _UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_KEY_STEM = 100
 
 
+_ID_LIKE = re.compile(r"^(?:[0-9a-fA-F-]{8,}|\d{4})(?:\.[A-Za-z0-9]{1,8})?$")
+
+
+def _key_ref(file_path) -> str:
+    """A storage key for an error message - its last part only when that is an id (review item 28):
+    an older bulk key ends in the uploaded file name, often the candidate's name."""
+    path = str(file_path or "")
+    head, _, last = path.rpartition("/")
+    return path if _ID_LIKE.match(last) else f"{head}/<file>" if head else "<file>"
+
+
 def storage_safe_filename(filename: str) -> str:
     """
     A user-supplied file name made safe for a Supabase Storage object key.
@@ -56,7 +67,7 @@ class StorageService:
         root = Path(settings.local_storage_dir).resolve()
         path = (root / bucket_name / file_path).resolve()
         if root not in path.parents:
-            raise StorageException(f"Invalid storage path '{file_path}'.")
+            raise StorageException(f"Invalid storage path '{_key_ref(file_path)}'.")
         return path
 
     def upload_file(
@@ -82,7 +93,7 @@ class StorageService:
             if self._local():
                 path = self._local_path(bucket_name, file_path)
                 if path.exists():
-                    raise StorageException(f"File '{file_path}' already exists.")
+                    raise StorageException(f"File '{_key_ref(file_path)}' already exists.")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(file_content)
                 return file_path
@@ -121,7 +132,7 @@ class StorageService:
 
         except Exception as ex:
             raise StorageException(
-                f"Failed to delete file '{file_path}'."
+                f"Failed to delete file '{_key_ref(file_path)}'."
             ) from ex
 
     def download_file(
@@ -142,7 +153,7 @@ class StorageService:
 
         except Exception as ex:
             raise StorageException(
-                f"Failed to download file '{file_path}'."
+                f"Failed to download file '{_key_ref(file_path)}'."
             ) from ex
 
     def generate_signed_url(
@@ -174,7 +185,7 @@ class StorageService:
 
         except Exception as ex:
             raise StorageException(
-                f"Failed to generate signed URL for '{file_path}'."
+                f"Failed to generate signed URL for '{_key_ref(file_path)}'."
             ) from ex
 
     def file_exists(
@@ -201,5 +212,5 @@ class StorageService:
 
         except Exception as ex:
             raise StorageException(
-                f"Failed to check file '{file_path}'."
+                f"Failed to check file '{_key_ref(file_path)}'."
             ) from ex

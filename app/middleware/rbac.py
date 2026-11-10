@@ -136,7 +136,7 @@ def _rekey_local_user(db: Session, old_id: str, user: TokenUser) -> None:
     the new id so attribution history survives instead of colliding with the
     users.email UNIQUE constraint.
     """
-    logger.info("Re-keying local user %s -> %s (%s)", old_id, user.user_id, user.email)
+    logger.info("Re-keying local user %s -> %s", old_id, user.user_id)
 
     # Free the unique email, insert the new identity, repoint every FK, drop the old row.
     db.execute(

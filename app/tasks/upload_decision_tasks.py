@@ -2,6 +2,7 @@ import json
 import logging
 from uuid import uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
@@ -35,7 +36,7 @@ def expire_upload_decisions_task() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Upload decision expiry failed")
     finally:
         db.close()

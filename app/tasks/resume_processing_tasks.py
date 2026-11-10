@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
+from app.core.safe_errors import safe_error
 from app.core.task_dispatch import IN_FLIGHT_STALE_AFTER, LOST_STALLED_MESSAGE, dispatch_or_mark_lost
 from app.core.single_run import single_run
 from app.db.session import SessionLocal, rollback_quietly
@@ -104,7 +105,9 @@ def replay_payload(resume_id, prompt_template_id, reparse: dict | None, new_vers
     """What a dead-letter replay needs to re-run this task exactly (stored as the DLQ input_payload)."""
     payload = {"resume_id": str(resume_id), "prompt_template_id": str(prompt_template_id)}
     if reparse:
-        payload["reparse"] = reparse
+        # Review item 28: not the recruiter's free-text reason (it can name the candidate) - the replay
+        # reads it from the re-parse version row.
+        payload["reparse"] = {k: v for k, v in reparse.items() if k != "reason"}
     if new_version:
         payload["new_version"] = new_version
     return payload
@@ -193,7 +196,7 @@ def _mark_reparse_failed(db, reparse: dict | None, error) -> None:
         return
     try:
         from app.services.resume.resume_reparse_service import ResumeReparseService
-        ResumeReparseService(db).mark_failed(reparse["version_id"], str(error))
+        ResumeReparseService(db).mark_failed(reparse["version_id"], safe_error(error))
     except Exception:
         logger.exception("Could not mark re-parse version %s failed.", reparse.get("version_id"))
         db.rollback()
@@ -536,7 +539,7 @@ def process_resume_document(
                     logger.exception("Failed to mark resume %s parse_status=FAILED.", resume_id)
                     db.rollback()
             if task_log:
-                task_log_service.mark_failure(task_log, str(stage_exc.original))
+                task_log_service.mark_failure(task_log, safe_error(stage_exc.original))
             if resume is not None:
                 _notify_resume_changed(db, resume.id)
             _mark_reparse_failed(db, reparse, stage_exc.original)
@@ -557,7 +560,7 @@ def process_resume_document(
                 logger.exception("Failed to mark resume %s parse_status=FAILED.", resume_id)
                 db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         if resume is not None:
             _notify_resume_changed(db, resume.id)
         _mark_reparse_failed(db, reparse, ex)
@@ -841,7 +844,7 @@ def recover_stalled_resume_uploads_task() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Resume upload recovery scan failed")
 
     finally:

@@ -3,6 +3,7 @@ import logging
 
 from sqlalchemy import text
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.models.async_tasks import TaskStatus
@@ -68,7 +69,7 @@ def reindex_ivfflat_resume_embeddings(self) -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("REINDEX_IVFFLAT failed")
 
     finally:

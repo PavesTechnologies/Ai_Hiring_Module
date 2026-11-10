@@ -90,10 +90,10 @@ def structured_call(
         except (ValidationError, InvalidLLMOutput) as exc:
             last_error = exc
         logger.warning("LLM structured output invalid (attempt %s/%s, schema=%s): %s",
-                       attempt, MAX_ATTEMPTS, schema.__name__, str(last_error)[:300])
+                       attempt, MAX_ATTEMPTS, schema.__name__, type(last_error).__name__)   # review item 28
     if accept_invalid and last_checked is not None and isinstance(last_error, InvalidLLMOutput):
         return last_checked
     raise LLMPermanentError(
-        f"LLM output still invalid after {MAX_ATTEMPTS} attempts: {last_error}",
+        f"LLM output still invalid after {MAX_ATTEMPTS} attempts: {type(last_error).__name__}",
         reason=LLMErrorReason.BAD_OUTPUT,
     ) from last_error

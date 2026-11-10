@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.db.session import SessionLocal, rollback_quietly
 
@@ -198,14 +199,14 @@ def process_jd_document(
             )
         if not should_retry:
             if task_log:
-                task_log_service.mark_failure(task_log, str(stage_exc.original))
+                task_log_service.mark_failure(task_log, safe_error(stage_exc.original))
             logger.exception("JD document processing task failed for task_id %s", task_id)
             raise stage_exc.original
     except Exception as ex:
         
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("JD document processing task failed for task_id %s", task_id)
         raise
 

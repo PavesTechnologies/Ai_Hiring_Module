@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.core.safe_errors import safe_error
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
@@ -86,7 +87,7 @@ def generate_skill_embedding(task_id: str, skill_id: str) -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Embedding generation failed | skill_id=%s task_id=%s", skill_id, task_id)
 
     finally:
@@ -171,7 +172,7 @@ def detect_duplicate_skill_aliases() -> None:
     except Exception as ex:
         db.rollback()
         if task_log:
-            task_log_service.mark_failure(task_log, str(ex))
+            task_log_service.mark_failure(task_log, safe_error(ex))
         logger.exception("Alias duplicate audit failed")
 
     finally:

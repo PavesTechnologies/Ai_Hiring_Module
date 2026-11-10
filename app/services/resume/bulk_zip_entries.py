@@ -10,7 +10,16 @@ import re
 import zipfile
 
 JUNK_PATH_PREFIXES = ("__MACOSX/",)
-_STAGED_INDEX = re.compile(r"^(\d{4})_")
+# "0003.pdf" (review item 28: no file name in the key) or "0003_cv.pdf" (staged before that).
+_STAGED_INDEX = re.compile(r"^(\d{4})(?:[_.]|$)")
+_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,8}$")
+
+
+def staged_file_name(index: int, basename: str) -> str:
+    """The staged object's name: the entry's position and extension only - an uploaded file name
+    often is the candidate's name, and storage keys appear in logs and errors (review item 28)."""
+    match = _EXTENSION.search(basename or "")
+    return f"{index:04d}{match.group(0).lower() if match else ''}"
 
 
 def real_entries(archive: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str]]:

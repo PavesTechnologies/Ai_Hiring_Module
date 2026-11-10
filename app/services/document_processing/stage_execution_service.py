@@ -1,5 +1,7 @@
 import logging
 import time
+
+from app.core.safe_errors import safe_error
 from typing import Callable, TypeVar
 from uuid import UUID
 
@@ -114,7 +116,7 @@ class StageExecutionService:
         except Exception as exc:
             duration_ms = int((time.monotonic() - started) * 1000)
             try:
-                self.complete_stage(execution, StageExecutionStatus.FAILED, str(exc), duration_ms, context=context)
+                self.complete_stage(execution, StageExecutionStatus.FAILED, safe_error(exc), duration_ms, context=context)
                 if context is not None and checkpoint_repo is not None:
                     checkpoint_repo.upsert(
                         task_id,

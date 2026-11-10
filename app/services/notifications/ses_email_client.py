@@ -4,6 +4,7 @@ from uuid import uuid4
 import boto3
 
 from app.core.config import settings
+from app.core.safe_errors import safe_error
 from app.exceptions.email_exception import EmailDeliveryException
 
 
@@ -59,8 +60,8 @@ class SESEmailClient:
             # Isolated local stack: nothing leaves the machine - no SES client
             # is ever created. Logged so tests can see what would have gone out.
             message_id = f"{LOG_ONLY_PREFIX}{uuid4()}"
-            logger.warning("EMAIL NOT SENT (EMAIL_DELIVERY=log) | id=%s to=%s subject=%s",
-                           message_id, to_address, subject)
+            # Review item 28: no recipient address or subject (it carries the candidate's name).
+            logger.warning("EMAIL NOT SENT (EMAIL_DELIVERY=log) | id=%s", message_id)
             return message_id
         body_key = "Html" if is_html else "Text"
         try:
@@ -74,4 +75,6 @@ class SESEmailClient:
             )
             return response["MessageId"]
         except Exception as exc:
-            raise EmailDeliveryException(f"SES send_email failed: {exc}", exc) from exc
+            # Review item 28: SES errors can echo the recipient - the message carries the error class
+            # and code only; the raw exception stays on .original for classification.
+            raise EmailDeliveryException(f"SES send_email failed: {safe_error(exc)}", exc) from exc
