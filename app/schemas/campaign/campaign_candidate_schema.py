@@ -870,23 +870,6 @@ class CandidateRejectionHistoryEntryResponse(BaseModel):
     )
 
 
-class HrOverrideRequest(BaseModel):
-   
-
-    override_reason: str = Field(..., min_length=20)
-    confirmation: bool
-    # A move against the system's screening outcome (or resolving a HOLD) needs one of the
-    # outcome_overrides.REASON_CODES; without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
-    override_reason_code: str | None = Field(default=None, max_length=40)
-
-    @field_validator("confirmation")
-    @classmethod
-    def _confirmation_must_be_true(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError("confirmation must be true to apply an HR override.")
-        return value
-
-
 class RejectAtInterviewRequest(BaseModel):
     """
     Epic 1: HIRING_MANAGER rejects a candidate at INTERVIEW. decision_reason

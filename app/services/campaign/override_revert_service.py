@@ -24,13 +24,16 @@ class OverrideRevertService:
     M11-E04-S02-T03 — clear an HR override and restore the automated decision
     it replaced.
 
-    The counterpart to CampaignCandidateService.apply_hr_override, which moves
+    The counterpart to the removed HR override of a rejection (which moved
     REJECTED → SCREENING and stashes the decision it overrode into
     campaign_candidate.decision_details under the `overridden_*` keys. This
     reads those keys back rather than recomputing anything: re-deriving the
     original rejection would mean re-running the deterministic/semantic layers
     against today's JD and weights, which can legitimately produce a different
     verdict than the one actually being reverted.
+
+    That route was removed before launch (overrides now go only through stage moves with reason
+    codes), so this only applies to RESET overrides recorded earlier; none exist on a fresh database.
     """
 
     def __init__(

@@ -71,8 +71,6 @@ ITEM_12_ROUTES = [
     ("POST", "/bulk-uploads/{bulk_upload_job_id}/cancel", (REC, HR), None),
     ("POST", "/campaign-candidates", (REC, HR),
      {"campaign_id": "{campaign_id}", "candidate_id": "{candidate_id}", "resume_id": "{resume_id}"}),
-    ("POST", "/campaign-candidates/{campaign_candidate_id}/override", (REC,),
-     {"override_reason": "Strong portfolio the screen did not read", "confirmation": True}),
     ("POST", "/campaign-candidates/{campaign_candidate_id}/update-resume", (REC, HR), {"form": {}}),
     ("POST", "/campaign-candidates/{campaign_candidate_id}/reparse", (REC, HR), {"reason": "Missed a section"}),
     ("POST", "/campaign-candidates/{campaign_candidate_id}/rescore", (REC,), None),

@@ -171,56 +171,6 @@ SCREENING, MANUAL/HR_ADMIN-attributed instead of SYSTEM/anonymous.
 """
 
 
-def test_apply_hr_override_applies_when_allowed():
-    candidate = _make_candidate(pipeline_stage=PipelineStage.REJECTED)
-    service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=True)
-
-    result = service.apply_hr_override(
-        candidate, changed_by="hr-admin-1", change_reason="HR_ADMIN override of deterministic rejection",
-    )
-
-    assert result is True
-    assert candidate.pipeline_stage == PipelineStage.SCREENING
-    allowed_transition_repo.is_transition_allowed.assert_called_once_with(
-        PipelineStage.REJECTED, PipelineStage.SCREENING, previous_stage=None,
-    )
-    campaign_candidate_repo.update.assert_called_once_with(candidate)
-    campaign_candidate_repo.create_stage_history.assert_called_once_with(
-        campaign_candidate_id=candidate.id,
-        from_stage=PipelineStage.REJECTED,
-        to_stage=PipelineStage.SCREENING,
-        changed_by="hr-admin-1",
-        change_reason="HR_ADMIN override of deterministic rejection",
-        transition_source=TransitionSource.MANUAL,
-        scores_snapshot={
-            "decision_type": "RESET",
-            "decision_source": "RECRUITER",
-            "decision_reason": "HR_ADMIN override of deterministic rejection",
-            "decision_details": {
-                "overridden_decision_type": None,
-                "overridden_decision_source": None,
-                "overridden_decision_reason": None,
-                "overridden_decision_at": None,
-            },
-        },
-    )
-
-
-def test_apply_hr_override_is_a_no_op_when_blocked():
-    candidate = _make_candidate(pipeline_stage=PipelineStage.REJECTED)
-    service, allowed_transition_repo, campaign_candidate_repo = make_service(is_allowed=False)
-
-    result = service.apply_hr_override(
-        candidate, changed_by="hr-admin-1", change_reason="HR_ADMIN override of deterministic rejection",
-    )
-
-    assert result is False
-    # pipeline_stage must be untouched - still REJECTED, not silently SCREENING.
-    assert candidate.pipeline_stage == PipelineStage.REJECTED
-    campaign_candidate_repo.update.assert_not_called()
-    campaign_candidate_repo.create_stage_history.assert_not_called()
-
-
 """
 E02: StageTransitionService.transition() - single validated entry point,
 checked in this exact order: existence -> role -> reason -> concurrency

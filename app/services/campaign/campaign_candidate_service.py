@@ -111,7 +111,6 @@ from app.services.campaign.layer_failure import (
 )
 from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.campaign.outcome_override_report import campaign_override_rate
-from app.services.campaign.outcome_overrides import check_move
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
@@ -2168,113 +2167,6 @@ class CampaignCandidateService:
     # that isn't scoped to a single entity (audit_log.entity_id is
     # NOT NULL).
     EXPORT_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
-
-    def apply_hr_override(
-        self,
-        campaign_candidate_id: UUID,
-        override_reason: str,
-        actor_id: str,
-        actor_role: str | None = None,
-        override_reason_code: str | None = None,
-    ) -> CandidateScorecardResponse:
-        """
-        HR_ADMIN override of a deterministic OR semantic rejection (M08-E02
-        S03 T03 extends this beyond deterministic-only) - re-enters the
-        candidate into SCREENING. Applies only to this single
-        campaign_candidate_id; never touches any other candidate or
-        campaign. The rejection being overridden is never deleted - it's
-        captured into decision_details before being replaced by the RESET
-        decision (T02: Rejection History already shows both, via
-        campaign_candidate_stage_history).
-        """
-        try:
-            campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
-            if not campaign_candidate:
-                raise CampaignException("Campaign candidate not found.", 404)
-
-            if campaign_candidate.pipeline_stage != PipelineStage.REJECTED:
-                raise CampaignException(
-                    "HR override can only be applied to a candidate currently in the REJECTED stage.",
-                    409,
-                )
-
-            if campaign_candidate.decision_type != DecisionType.REJECTED or campaign_candidate.decision_source not in (
-                DecisionSource.DETERMINISTIC, DecisionSource.SEMANTIC,
-            ):
-                raise CampaignException(
-                    "HR override is only available for candidates rejected at the "
-                    "deterministic or semantic layer.",
-                    409,
-                )
-
-            # Bringing back a REJECT is an override of the system's outcome: it needs a reason
-            # code and is recorded (outcome_overrides) - checked before anything changes.
-            override = check_move(self.campaign_candidate_repo.db, campaign_candidate, PipelineStage.REJECTED,
-                                  PipelineStage.SCREENING, actor_id=actor_id, actor_role=actor_role,
-                                  reason_code=override_reason_code)
-
-            campaign_candidate.deterministic_passed = True
-            ai_evaluation = self.ai_evaluation_repo.get_or_create(campaign_candidate.id)
-            ai_evaluation.ai_evaluation_status = AIEvaluationStatus.PENDING
-            self.ai_evaluation_repo.update(ai_evaluation)
-            self.campaign_candidate_repo.update(campaign_candidate)
-
-            if self.stage_transition_service is None:
-                raise CampaignException("Stage transition service is not configured.", 500)
-
-            # Validated against allowed_transitions (REJECTED -> SCREENING)
-            # before the stage actually changes - reuses StageTransitionService,
-            # extended with apply_hr_override rather than duplicated. Captures
-            # the rejection being overridden into campaign_candidate.
-            # decision_details before overwriting decision_* with the RESET
-            # decision - read back below for the audit log, rather than
-            # snapshotting the prior state ourselves.
-            transitioned = self.stage_transition_service.apply_hr_override(
-                campaign_candidate,
-                changed_by=actor_id,
-                change_reason=_HR_OVERRIDE_CHANGE_REASON,
-                decision_reason=override_reason,
-            )
-            if not transitioned:
-                raise CampaignException(
-                    "Stage transition REJECTED -> SCREENING is not allowed - override not applied.",
-                    409,
-                )
-            if override is not None:
-                self.campaign_candidate_repo.db.add(override)
-
-            overridden = campaign_candidate.decision_details or {}
-
-            # Story 543: no separate SEMANTIC_OVERRIDE_APPLIED action type
-            # exists (and adding one is an unnecessary enum/migration for
-            # what audit_log.details already records) - reuses
-            # DETERMINISTIC_OVERRIDE_APPLIED for both layers, with
-            # overridden_layer distinguishing which one in the detail.
-            self.audit_service.log(
-                actor_id=actor_id,
-                actor_role=actor_role,
-                action_type=ActionType.DETERMINISTIC_OVERRIDE_APPLIED,
-                entity_type=EntityType.CAMPAIGN_CANDIDATE,
-                entity_id=campaign_candidate.id,
-                campaign_id=campaign_candidate.campaign_id,
-                details={
-                    "override_reason_provided": bool(override_reason),
-                    "original_rejection_reason_provided": bool(overridden.get("overridden_decision_reason")),
-                    "overridden_layer": overridden.get("overridden_decision_source"),
-                },
-            )
-
-            self.campaign_candidate_repo.commit()
-
-            # Best-effort, after commit - never undoes the already-committed
-            # override (M07-E03 S02 T02).
-            self._queue_post_override_evaluation(campaign_candidate)
-
-            return self.get_campaign_candidate_scorecard(campaign_candidate_id)
-
-        except Exception:
-            self.campaign_candidate_repo.rollback()
-            raise
 
     def _assert_hiring_manager_owns_campaign(
         self, campaign_candidate: CampaignCandidate, user_id: str,

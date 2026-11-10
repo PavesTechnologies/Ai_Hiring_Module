@@ -155,26 +155,8 @@ def test_bulk_single_and_reject_moves_pass_the_code_on():
         "EXPERIENCE_JUDGEMENT"
 
 
-def test_the_hr_override_and_the_stalled_override_check_and_record():
-    from app.services.campaign.campaign_candidate_service import CampaignCandidateService
-    from app.models.pipeline import DecisionSource, DecisionType
+def test_the_stalled_override_checks_and_records():
     marker = object()
-    service = CampaignCandidateService.__new__(CampaignCandidateService)
-    service.campaign_candidate_repo = MagicMock()
-    service.ai_evaluation_repo = MagicMock()
-    service.stage_transition_service = MagicMock()
-    service.stage_transition_service.apply_hr_override.return_value = False      # stop right after the check
-    cc = SimpleNamespace(id=uuid4(), campaign_id=uuid4(), pipeline_stage=S.REJECTED,
-                         decision_type=DecisionType.REJECTED, decision_source=DecisionSource.DETERMINISTIC)
-    service.campaign_candidate_repo.get_by_id.return_value = cc
-    with patch("app.services.campaign.campaign_candidate_service.check_move", return_value=marker) as check, \
-            pytest.raises(CampaignException):
-        service.apply_hr_override(cc.id, override_reason="The skills are there in the projects section",
-                                  actor_id="r1", actor_role="RECRUITER", override_reason_code="SKILL_EVIDENCE_MISSED")
-    args, kwargs = check.call_args
-    assert args[2:] == (S.REJECTED, S.SCREENING) and kwargs["reason_code"] == "SKILL_EVIDENCE_MISSED"
-    service.campaign_candidate_repo.db.add.assert_not_called()                  # the transition failed: not recorded
-
     from app.schemas.campaign.campaign_monitoring_schema import StageOverrideRequest
     from app.services.campaign.campaign_service import CampaignService
     campaign_service = CampaignService.__new__(CampaignService)

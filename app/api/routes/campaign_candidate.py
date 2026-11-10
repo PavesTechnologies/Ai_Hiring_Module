@@ -32,7 +32,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     CandidateSortField,
     CandidateSummaryResponse,
     CandidateTimelineResponse,
-    HrOverrideRequest,
     RankedCampaignCandidatesResponse,
     RejectAtInterviewRequest,
     SendRejectionEmailResponse,
@@ -339,40 +338,6 @@ def get_rejection_history(
     return APIResponse.ok(
         data=history,
         message="Rejection history retrieved successfully.",
-    )
-
-
-@router.post(
-    "/{campaign_candidate_id}/override",
-    response_model=APIResponse[CandidateScorecardResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Apply HR Override",
-    description=(
-        "RECRUITER override of a deterministic rejection - re-enters the candidate into "
-        "SCREENING. RECRUITER only (reassigned from HR_ADMIN by the 2026-08-31 governance "
-        "model, which removed HR_ADMIN from every transition-permission check)."
-    ),
-)
-def apply_hr_override(
-    campaign_candidate_id: UUID,
-    request: HrOverrideRequest,
-    service: CampaignCandidateService = Depends(
-        get_campaign_candidate_service,
-    ),
-    user: TokenUser = Security(require_roles(UserRole.RECRUITER)),
-    access_db: Session = Depends(get_db),
-):
-    CampaignAccess(access_db).require_campaign_candidate(user, campaign_candidate_id)
-    scorecard = service.apply_hr_override(
-        campaign_candidate_id,
-        override_reason=request.override_reason,
-        actor_id=user.user_id,
-        actor_role=authorising_role(user, (UserRole.RECRUITER,)),
-    )
-
-    return APIResponse.ok(
-        data=scorecard,
-        message="HR override applied successfully.",
     )
 
 
