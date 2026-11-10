@@ -1051,7 +1051,7 @@ class CampaignCandidateRepository:
         self.db.delete(campaign_candidate)
         self.db.flush()
 
-    def get_pending_semantic_score_with_ready_embedding(self) -> list[CampaignCandidate]:
+    def get_pending_semantic_score_with_ready_embedding(self, campaign_statuses=None) -> list[CampaignCandidate]:
         """
         Automatic recovery (M08-E02): every campaign_candidate that already
         passed deterministic screening but has no semantic_score yet, AND
@@ -1066,17 +1066,23 @@ class CampaignCandidateRepository:
         below is a manual EXISTS-style join condition on resume_id, the
         same pattern get_campaign_history_entries already uses to bridge
         the two tables.
+
+        Review item 21: only candidates still being screened (SCREENING or HOLD) on a campaign in
+        campaign_statuses (the scoreable ones) - never rejected candidates or closed campaigns.
         """
-        return (
+        query = (
             self.db.query(CampaignCandidate)
             .join(ResumeEmbedding, ResumeEmbedding.resume_id == CampaignCandidate.resume_id)
             .filter(
                 CampaignCandidate.deterministic_passed.is_(True),
                 CampaignCandidate.semantic_score.is_(None),
+                CampaignCandidate.pipeline_stage.in_([PipelineStage.SCREENING, PipelineStage.HOLD]),
             )
-            .distinct()
-            .all()
         )
+        if campaign_statuses is not None:
+            query = (query.join(HiringCampaign, HiringCampaign.id == CampaignCandidate.campaign_id)
+                     .filter(HiringCampaign.status.in_(list(campaign_statuses))))
+        return query.distinct().all()
 
     def get_never_screened(self, campaign_statuses, created_before: datetime) -> list[CampaignCandidate]:
         """

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from celery.exceptions import Retry
 
 from app.core.celery_app import bounded_countdown, celery_app
-from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight, reset_for_redispatch
+from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight, is_lost, reset_for_redispatch
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
@@ -244,7 +244,13 @@ def _enqueue_semantic_scoring(
     task_log_service: CeleryTaskLogService,
     resume_repo: ResumeRepository,
     jd_id=None,
+    from_recovery_scan: bool = False,
 ) -> None:
+    """
+    from_recovery_scan (review item 21): the 15-minute scan never re-queues a real terminal failure
+    (dead-lettered, or failed other than lost) - that needs a person (DLQ replay). Before, it re-queued
+    one every 15 minutes forever: ~96 retries and dead-letter rows per candidate per day.
+    """
 
     # TEMPORARY DIAGNOSTIC LOGGING (enqueue-trigger investigation) - remove
     # once the missing-SEMANTIC_SCORE-row issue is confirmed resolved.
@@ -300,8 +306,22 @@ def _enqueue_semantic_scoring(
             return
         existing_log = log  # lost the race - another caller's row already exists
 
+    # Review item 21: a SUCCESS that was only the missing-embedding skip is not a score - now that the
+    # embedding exists (the caller checked), the candidate is queued again. That is what the recovery
+    # scan and the embedding-completion trigger exist for; before, the SUCCESS row blocked both.
+    skipped_for_embedding = (
+        existing_log.status == TaskStatus.SUCCESS
+        and getattr(campaign_candidate, "semantic_score", None) is None
+        and getattr(campaign_candidate, "decision_reason", None) == MISSING_RESUME_EMBEDDING_REASON
+    )
+    if from_recovery_scan and existing_log.status in (TaskStatus.DEAD, TaskStatus.FAILURE) and not is_lost(existing_log):
+        logger.info(
+            "Semantic scoring recovery skipped | campaign_candidate_id=%s reason=terminal_failure_needs_a_person",
+            campaign_candidate.id,
+        )
+        return
     # Review item 8: a stale QUEUED/RUNNING/RETRY row is no longer "in flight" - it is reused below.
-    if existing_log.status == TaskStatus.SUCCESS or is_in_flight(existing_log):
+    if (existing_log.status == TaskStatus.SUCCESS and not skipped_for_embedding) or is_in_flight(existing_log):
         logger.info(
             "Semantic scoring enqueue skipped | campaign_candidate_id=%s reason=already_queued_or_scored",
             campaign_candidate.id,
@@ -628,9 +648,11 @@ def recover_pending_semantic_scores() -> None:
             task_type=SEMANTIC_SCORE_RECOVERY_TASK_TYPE,
         )
 
-        pending_candidates = campaign_candidate_repo.get_pending_semantic_score_with_ready_embedding()
+        pending_candidates = campaign_candidate_repo.get_pending_semantic_score_with_ready_embedding(
+            _SCOREABLE_CAMPAIGN_STATUSES,
+        )
         for campaign_candidate in pending_candidates:
-            _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo)
+            _enqueue_semantic_scoring(campaign_candidate, task_log_service, resume_repo, from_recovery_scan=True)
 
         summary = json.dumps({
             "candidates_found": len(pending_candidates),
