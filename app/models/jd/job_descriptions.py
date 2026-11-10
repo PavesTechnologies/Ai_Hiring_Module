@@ -78,7 +78,9 @@ class JobDescription(Base):
     extracted_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
     required_skills: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
     min_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=False)
-    max_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=False)
+    # Optional (review item 27): more years correlates with age, so a maximum never rejects or marks
+    # down - nothing in scoring, the embedding text or the AI evaluator's input reads it.
+    max_experience_years: Mapped[Optional[float]] = mapped_column(Numeric(4, 1), nullable=True)
     notice_period: Mapped[Optional[int]] = mapped_column(Integer, nullable=False)
     education_criteria: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False)
     source_format: Mapped[JDSourceFormat] = mapped_column(SAEnum(JDSourceFormat, name="jd_source_format_enum"), nullable=False)

@@ -38,7 +38,8 @@ class CreateJDRequest(BaseModel):
 
     min_experience_years: float = Field(...)
 
-    max_experience_years: float = Field(...)
+    # Optional (review item 27): informational only, never used to reject or mark down.
+    max_experience_years: Optional[float] = None
 
     notice_period: int = Field(...)
 
@@ -54,7 +55,7 @@ class UpdateJDRequest(BaseModel):
     raw_text: Optional[str] = None
     jurisdiction: str
     min_experience_years: float = Field(...)
-    max_experience_years: float = Field(...)
+    max_experience_years: Optional[float] = None
     notice_period: int = Field(...)
     education_criteria: EducationCriteria = Field(...)
 

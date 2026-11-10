@@ -70,13 +70,10 @@ class EmbeddingService:
         if extraction.certifications:
             parts.append("Certifications: " + ", ".join(extraction.certifications))
 
-        if extraction.experience and (
-            extraction.experience.min_experience_years is not None
-            or extraction.experience.max_experience_years is not None
-        ):
-            min_years = extraction.experience.min_experience_years
-            max_years = extraction.experience.max_experience_years
-            parts.append(f"Experience: {min_years or 0}-{max_years or min_years or 0} years")
+        # The minimum only (review item 27): a maximum correlates with age, so it stays out of the text
+        # every candidate is compared against.
+        if extraction.experience and extraction.experience.min_experience_years is not None:
+            parts.append(f"Experience: {extraction.experience.min_experience_years:g}+ years")
 
         if extraction.education and (extraction.education.degree or extraction.education.field):
             education_parts = [p for p in (extraction.education.degree, extraction.education.field) if p]
