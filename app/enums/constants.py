@@ -140,6 +140,8 @@ class ActionType(enum.Enum):
     # under 24 hours ago, and a campaign back under the threshold after an alert.
     PLATFORM_ALERT_SKIPPED = "PLATFORM_ALERT_SKIPPED"
     PLATFORM_ALERT_CLEARED = "PLATFORM_ALERT_CLEARED"
+    # An HR admin resolved an email stuck in SENDING as sent or failed (after checking SES).
+    EMAIL_SEND_RESOLVED = "EMAIL_SEND_RESOLVED"
     # GDPR-style candidate hard delete — the DB-side audit_action_type_enum
     # does NOT yet contain this value (same caveat as the other entries
     # above); needs the paired migration
@@ -223,6 +225,7 @@ class EntityType(enum.Enum):
     PROMPT_TEMPLATE = "PROMPT_TEMPLATE"
     AI_PROVIDER_CONFIG = "AI_PROVIDER_CONFIG"
     UPLOAD_DECISION = "UPLOAD_DECISION"
+    EMAIL_NOTIFICATION = "EMAIL_NOTIFICATION"
 
 
 S3_RESUME_PREFIX = "resumes/"

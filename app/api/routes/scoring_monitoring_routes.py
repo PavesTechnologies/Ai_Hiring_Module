@@ -23,6 +23,7 @@ from app.services.audit_service import AuditService
 from app.services.monitoring.fairness_report import MIN_GROUP_SIZE_KEY, fairness_report, min_group_size
 from app.services.monitoring.llm_prices import LLM_MODEL_PRICES_KEY, InvalidPrices, load_prices, validate_prices
 from app.services.monitoring.monitoring_service import monitoring_summary
+from app.services.notifications.stuck_sends import StuckEmailError, list_stuck, resolve_stuck
 
 router = APIRouter(prefix="/monitoring", tags=["Scoring Monitoring"])
 _PLATFORM_CONFIG_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
@@ -144,3 +145,43 @@ def put_fairness_settings(
     )
     db.commit()
     return APIResponse.ok(data={"min_group_size": size}, message="Fairness settings saved.")
+
+
+@router.get(
+    "/stuck-emails",
+    response_model=APIResponse[list],
+    status_code=status.HTTP_200_OK,
+    summary="Emails stuck in SENDING over 30 minutes (delivery unknown)",
+    description="Ids, type, times and the SES message id - no recipient. HR_ADMIN only.",
+    dependencies=[Security(require_roles(UserRole.HR_ADMIN))],
+)
+def get_stuck_emails(db: Session = Depends(get_db)):
+    return APIResponse.ok(data=list_stuck(db), message="Stuck emails.")
+
+
+@router.post(
+    "/stuck-emails/{notification_id}/resolve",
+    response_model=APIResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Resolve a stuck email as sent or failed, after checking the email provider",
+    description=('Body: {"outcome": "SENT" | "FAILED", "note": "..."}. Only an email in SENDING; audited '
+                 "(EMAIL_SEND_RESOLVED). FAILED frees its duplicate-protection key: re-send it through the "
+                 "business action if needed. Sends nothing. HR_ADMIN only."),
+)
+def post_resolve_stuck_email(
+    notification_id: UUID,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
+):
+    note = payload.get("note")
+    if note is not None and not isinstance(note, str):
+        raise CampaignException("note must be text.", 422)
+    try:
+        result = resolve_stuck(db, notification_id, outcome=str(payload.get("outcome") or ""), note=note,
+                               actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value,
+                               audit_service=AuditService(AuditRepository(db)))
+    except StuckEmailError as exc:
+        db.rollback()
+        raise CampaignException(exc.message, exc.status_code)
+    return APIResponse.ok(data=result, message=f"Email resolved as {result['status']}.")
