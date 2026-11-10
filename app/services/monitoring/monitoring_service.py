@@ -8,7 +8,8 @@ The HR_ADMIN monitoring view (Phase 4): how scoring is running, from data the ap
   (calls logged against a resume, llm_call_subject); app calls only - dry runs and golden runs apart;
 - quota: today's calls per model against its daily cap (the provider's day, midnight Pacific), and
   the last 7 days;
-- tasks: task statuses by type, stuck tasks, PENDING scoring results, open dead letters;
+- tasks: task statuses by type, stuck tasks, PENDING scoring results, open dead letters, emails stuck
+  in SENDING over 30 minutes (stuck_emails);
 - rejected re-parses: re-parses requested for a REJECTED candidate, per campaign and per recruiter -
   not overrides (the new score decides), so counted here on their own to show a pattern.
 
@@ -25,6 +26,7 @@ from sqlalchemy import text
 from app.services.campaign.scoring_v2_service import cap_for_model, daily_llm_call_caps
 from app.services.llm.call_log import QUOTA_DAY_ZONE, quota_day_start
 from app.services.monitoring.llm_prices import estimate_cost, load_prices
+from app.services.notifications.stuck_sends import stuck_sends
 
 APP_CONTEXT = "app"
 STUCK_AFTER = timedelta(hours=1)
@@ -221,7 +223,17 @@ def task_health(db, *, since: datetime, campaign_id: UUID | None, now: datetime 
         "pending_results": [{"campaign_id": str(r.campaign_id), "campaign": names.get(r.campaign_id),
                              "scoring_version": r.scoring_version, "count": r.n} for r in pending],
         "open_dead_letters": [{"task_type": r.task_type, "count": r.n} for r in dead],
+        "stuck_emails": _stuck_emails(db, now),
     }
+
+
+def _stuck_emails(db, now: datetime) -> dict:
+    """Emails SENDING past STUCK_SENDING_AFTER (delivery unknown; a person checks them). Org-wide counts."""
+    stuck = stuck_sends(db, now=now)
+    oldest = stuck.pop("oldest_since")
+    stuck.pop("newest_since")
+    stuck["oldest_minutes"] = int((now - oldest).total_seconds() // 60) if oldest else None
+    return stuck
 
 
 def rejected_reparses(db, *, since: datetime, campaign_id: UUID | None) -> dict:

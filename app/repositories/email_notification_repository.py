@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -48,7 +49,7 @@ class EmailNotificationRepository:
             update(EmailNotification)
             .where(EmailNotification.id == notification_id,
                    EmailNotification.status == EmailNotificationStatus.QUEUED)
-            .values(status=EmailNotificationStatus.SENDING)
+            .values(status=EmailNotificationStatus.SENDING, sending_since=func.now())
             .execution_options(synchronize_session=False),
         )
         self.db.commit()
@@ -60,10 +61,31 @@ class EmailNotificationRepository:
             update(EmailNotification)
             .where(EmailNotification.id == notification_id,
                    EmailNotification.status == EmailNotificationStatus.SENDING)
-            .values(status=EmailNotificationStatus.QUEUED)
+            .values(status=EmailNotificationStatus.QUEUED, sending_since=None)
             .execution_options(synchronize_session=False),
         )
         self.db.commit()
+
+    def get_stuck_sending(self, stuck_before: datetime, exclude_triggers=()) -> list[tuple]:
+        """
+        (trigger_event, count, oldest, newest) for rows SENDING since before stuck_before - claimed
+        and never recorded as sent or failed, so their delivery is unknown. created_at stands in for
+        rows claimed before sending_since existed.
+        """
+        since = func.coalesce(EmailNotification.sending_since, EmailNotification.created_at)
+        query = (
+            self.db.query(EmailNotification.trigger_event, func.count(EmailNotification.id),
+                          func.min(since), func.max(since))
+            .filter(EmailNotification.status == EmailNotificationStatus.SENDING, since < stuck_before)
+        )
+        if exclude_triggers:
+            query = query.filter(EmailNotification.trigger_event.notin_(list(exclude_triggers)))
+        return [tuple(row) for row in query.group_by(EmailNotification.trigger_event).all()]
+
+    def get_latest_created_at(self, trigger_event: EmailTriggerEvent) -> datetime | None:
+        """When the newest notification of this trigger was queued (None if never)."""
+        return (self.db.query(func.max(EmailNotification.created_at))
+                .filter(EmailNotification.trigger_event == trigger_event).scalar())
 
     def get_by_id(self, notification_id: UUID) -> EmailNotification | None:
         return (

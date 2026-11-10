@@ -63,6 +63,9 @@ class EmailTriggerEvent(enum.Enum):
     # score is over EMBEDDING_FAILURE_ALERT_THRESHOLD - to every active HR_ADMIN (INTERNAL_USER).
     # It used to call SES directly; now it is a notification like every other email.
     EMBEDDING_HEALTH_ALERT = "EMBEDDING_HEALTH_ALERT"
+    # Emails left SENDING past STUCK_SENDING_AFTER (their delivery is unknown; never re-sent
+    # automatically) - to every active HR_ADMIN (INTERNAL_USER). Counts only, no recipient details.
+    EMAIL_SEND_STUCK_ALERT = "EMAIL_SEND_STUCK_ALERT"
 
 
 class EmailNotificationStatus(enum.Enum):
@@ -196,6 +199,10 @@ class EmailNotification(Base):
     # What makes two notifications the same email; NULL = never deduplicated (manual re-sends,
     # internal-user alerts, rows from before c5e7a9b1d3f6).
     dedup_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # When the send claimed the row (QUEUED -> SENDING); cleared when a claim is released. A row left
+    # SENDING past STUCK_SENDING_AFTER shows in monitoring and in the stuck-send alert. NULL on rows
+    # claimed before d7f9b1c3e5a8 (created_at stands in).
+    sending_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Epic 5 Step 2 - which round this notification is about, when it's
     # about one at all (NULL for CANDIDATE_REJECTED/CANDIDATE_SELECTED).
     # Exists specifically so INTERVIEW_SCHEDULED/RESCHEDULED/CANCELLED can

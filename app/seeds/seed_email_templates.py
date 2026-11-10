@@ -380,6 +380,30 @@ _TEMPLATES = [
         ),
         "is_active": True,
     },
+    # Stuck-send check (email_health_tasks.py) - to every active HR_ADMIN (INTERNAL_USER).
+    # Ops-facing: counts and trigger types only, no recipient details.
+    {
+        "trigger_event": EmailTriggerEvent.EMAIL_SEND_STUCK_ALERT,
+        "name": "Email Send Stuck Alert",
+        "subject": "Email alert: {stuck_count} email(s) stuck sending",
+        "body_template": _card(
+            "Emails Stuck Sending",
+            '<p style="margin:0 0 18px;">Hello {recipient_name},</p>'
+            '<p style="margin:0 0 25px;">Some emails were handed to the email provider but their '
+            "delivery was never confirmed. They may or may not have gone out, so they are not sent "
+            "again automatically. Please check them.</p>"
+            + _section_title("Details")
+            + _details_box(
+                [
+                    ("Stuck emails", "{stuck_count} (sending for over {stuck_after_minutes} minutes)"),
+                    ("Oldest", "{oldest_minutes} minutes"),
+                    ("By type", "{by_trigger}"),
+                ],
+            )
+            + _cta_button("{monitoring_link}", "Open monitoring"),
+        ),
+        "is_active": True,
+    },
 ]
 
 try:

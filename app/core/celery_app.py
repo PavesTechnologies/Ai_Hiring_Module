@@ -142,6 +142,7 @@ celery_app.conf.imports = (
     "app.tasks.interview_tasks",
     "app.tasks.export_tasks",
     "app.tasks.email_tasks",
+    "app.tasks.email_health_tasks",
     "app.tasks.unknown_skill_reevaluation_tasks",
     "app.tasks.upload_decision_tasks",
 )
@@ -215,6 +216,12 @@ celery_app.conf.beat_schedule = {
         "task": "embedding.monitor_health",
         # Requirement 5: runs every 30 minutes exactly, per spec.
         "schedule": crontab(minute="*/30"),
+    },
+    "monitor-stuck-email-sends": {
+        "task": "notifications.monitor_stuck_sends",
+        # Emails left SENDING over 30 minutes (outcome unknown, never re-sent automatically) -
+        # HR_ADMIN alert, at most once per newly stuck email or every 24 h while still stuck.
+        "schedule": crontab(minute="7-59/15"),
     },
     "validate-talent-pool-eligibility": {
         "task": "embedding.validate_talent_pool_eligibility",

@@ -7,11 +7,12 @@ workaround is until someone actually fixes it.
 
 Open entries first; closed ones are kept below, under **Closed**, for the record. Every entry was checked against the code on 2026-11-05.
 
-## Cleanup list: unused schema and settings
+## Cleanup list: unused schema and settings, test hygiene
 
-Nothing reads these; they cost nothing today. Remove them in a small cleanup change (a migration each, with approval), not as part of feature work.
+Nothing reads these, or they only bite in an unusual run; they cost nothing today. Fix them in a small cleanup change (a migration each where schema is involved, with approval), not as part of feature work.
 
 - `hiring_campaigns.report_scheduled` (boolean, default false): in the schema since the initial migration; nothing in the backend or the airs frontend reads or writes it (checked 2026-11-03, retire v1 phase E).
+- **Test order dependence (found 2026-11-10, batch 4):** running `tests/services` before `tests/core` (e.g. `pytest tests/services tests/core`) fails `tests/core/test_celery_worker_logging.py::test_a_rotating_log_file` - something earlier in `tests/services` leaves logging state that test doesn't expect. It fails the same way on the commit before batch 4; the normal full-suite order (`pytest` with no paths) passes. Find the test that leaks the logging handler or config and isolate it.
 
 ## A resume parse can vary between runs (found 2026-10-30)
 
