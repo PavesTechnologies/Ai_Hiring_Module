@@ -1,5 +1,7 @@
+import hashlib
 import io
 import logging
+import re
 import zipfile
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -28,6 +30,8 @@ logger = logging.getLogger(__name__)
 # CampaignCandidateService._RESUME_STORAGE_BUCKET) — not worth a shared
 # constant module just for this one string.
 _RESUME_STORAGE_BUCKET = "airs_resumes"
+# A staged bulk file's key: campaign_{id}/bulk-zip/{job_id}/{index:04d}_{name}
+_STAGED_JOB = re.compile(r"bulk-zip/([0-9a-fA-F-]{36})/")
 
 
 class CandidateErasureService:
@@ -141,7 +145,7 @@ class CandidateErasureService:
 
             # Their bulk-upload file rows, their entries in stored zips, and
             # task-log / dead-letter rows that name them (EMAIL_SEND included).
-            traces = self._erase_upload_and_log_traces(candidate, resumes, parse_task_ids)
+            traces = self._erase_upload_and_log_traces(candidate, resumes, parse_task_ids, held_files)
             # Before the resumes' derived rows go: those rows are where the hash
             # of each resume's text is recorded.
             traces.update(self._erase_processing_and_cache_traces(erased_resume_ids, parse_task_ids))
@@ -346,43 +350,53 @@ class CandidateErasureService:
                 terms.append(value)
         return terms
 
-    def _erase_upload_and_log_traces(self, candidate, resumes, parse_task_ids: set | None = None) -> dict:
+    def _erase_upload_and_log_traces(self, candidate, resumes, parse_task_ids: set | None = None,
+                                     held_paths=()) -> dict:
         """
         What the row-by-row erasure misses: the bulk-upload job-file rows of
         the candidate's files (they carry the uploaded file names), the
         candidate's entries inside the stored ZIPs (rebuilt without them, or
         deleted when nothing else remains), and task-log / dead-letter rows
-        that quote their name, email, phone or - within their own bulk jobs
-        only - their file names. Does not commit.
+        that quote their name, email or phone, or that belong to their own
+        bulk files. Does not commit.
+
+        Review item 15: a job file is theirs only by storage path - one of their resume files or held
+        upload-decision files - or, for a file skipped as an identical duplicate, by its content hash
+        matching one of their resumes. Never by file name: two "CV.pdf" files in one ZIP belong to
+        different people.
         """
+        own_paths = {resume.file_path for resume in resumes if resume.file_path} | {p for p in held_paths if p}
         resume_paths = {resume.file_path for resume in resumes if resume.file_path}
-        file_names = {resume.original_filename for resume in resumes if resume.original_filename}
-        job_ids = sorted({resume.bulk_upload_job_id for resume in resumes if resume.bulk_upload_job_id},
-                         key=str)
+        own_hashes = {h for h in (getattr(resume, "file_hash", None) for resume in resumes) if h}
+        job_ids = {resume.bulk_upload_job_id for resume in resumes if resume.bulk_upload_job_id}
+        # A held file (pending upload decision) can sit in a job none of their resumes came from.
+        job_ids |= {UUID(m.group(1)) for m in (_STAGED_JOB.search(p or "") for p in held_paths) if m}
+        job_ids = sorted(job_ids, key=str)
 
         job_files_deleted, zips_rebuilt, zips_deleted, zip_failures = 0, 0, 0, 0
+        own_file_task_ids: set[str] = set()
         if self.bulk_upload_job_file_repo is not None:
             for job_id in job_ids:
-                mine = [f for f in self.bulk_upload_job_file_repo.get_by_job_id(job_id)
-                        if f.storage_path in resume_paths or f.original_filename in file_names]
-                names_in_job = {f.original_filename for f in mine}
-                file_names |= names_in_job
-                if parse_task_ids is not None:
-                    parse_task_ids.update(t for t in (getattr(f, "task_id", None) for f in mine) if t)
+                job_files = self.bulk_upload_job_file_repo.get_by_job_id(job_id)
+                mine = [f for f in job_files
+                        if f.storage_path in own_paths or self._is_their_skipped_copy(f, own_hashes)]
+                own_file_task_ids.update(t for t in (getattr(f, "task_id", None) for f in mine) if t)
                 for job_file in mine:
-                    if job_file.storage_path not in resume_paths:      # e.g. a skipped duplicate's copy
+                    if job_file.storage_path not in resume_paths:      # a skipped duplicate's copy, a held file
                         self._delete_resume_file(job_file.storage_path)
                 self.bulk_upload_job_file_repo.delete_by_ids([f.id for f in mine])
                 job_files_deleted += len(mine)
-                outcome = self._strip_zip(job_id, names_in_job)
+                others = [f for f in job_files if f not in mine]
+                outcome = self._strip_zip(job_id, mine, others)
                 zips_rebuilt += outcome == "rebuilt"
                 zips_deleted += outcome == "deleted"
                 zip_failures += outcome == "failed"
+        if parse_task_ids is not None:
+            parse_task_ids.update(own_file_task_ids)
 
         terms = self._personal_terms(candidate)
-        task_ids = self.celery_task_log_repo.find_task_ids_mentioning(
-            terms, scoped_terms=[name for name in file_names if len(name) >= 5], bulk_upload_job_ids=job_ids,
-        )
+        task_ids = self.celery_task_log_repo.find_task_ids_mentioning(terms)
+        task_ids = list(dict.fromkeys([*task_ids, *sorted(own_file_task_ids)]))
         self.dead_letter_queue_repo.delete_for_erasure(task_ids, terms)
         self.celery_task_log_repo.delete_by_task_ids(task_ids)
 
@@ -393,6 +407,19 @@ class CandidateErasureService:
             "bulk_zip_failures": zip_failures,
             "task_logs_naming_candidate_deleted": len(task_ids),
         }
+
+    def _is_their_skipped_copy(self, job_file, own_hashes: set[str]) -> bool:
+        """A file skipped as identical to a resume already in the campaign: theirs if the bytes match."""
+        from app.models.async_tasks import BulkUploadFileStatus
+        if not own_hashes or getattr(job_file, "status", None) != BulkUploadFileStatus.SKIPPED_DUPLICATE:
+            return False
+        try:
+            content = self.storage_service.download_file(_RESUME_STORAGE_BUCKET, job_file.storage_path)
+        except Exception as exc:
+            logger.warning("Erasure: a skipped duplicate file could not be read (%s) - left in place.",
+                           type(exc).__name__)
+            return False
+        return hashlib.md5(content).hexdigest() in own_hashes
 
     def _erase_processing_and_cache_traces(self, resume_ids: list[UUID], parse_task_ids=()) -> dict:
         """
@@ -416,24 +443,41 @@ class CandidateErasureService:
             stage_rows += self.document_processing_repo.delete_for_tasks(sorted(parse_task_ids or ()))
         return {"processing_stage_rows_deleted": stage_rows, "parse_cache_entries_deleted": cache_rows}
 
-    def _strip_zip(self, job_id: UUID, names: set[str]) -> str:
+    def _strip_zip(self, job_id: UUID, mine: list, others: list) -> str:
         """
-        Removes the candidate's entries (matched by file name, as the
-        extraction names them) from one job's stored ZIP: rebuilt under a new
-        path when other files remain, deleted when none do. The ZIP is only
-        read at extraction, so neither breaks the job. Best-effort on
-        storage, like resume files - logged, never blocks the DB erasure.
+        Removes the candidate's entries from one job's stored ZIP: rebuilt under a new path when other
+        files remain, deleted when none do. The ZIP is only read at extraction, so neither breaks the job.
+
+        Review item 15: an entry is found by the position extraction staged it under ("0003_cv.pdf" is
+        the fourth real entry). A file staged before positions were used ("{uuid}_cv.pdf") is matched by
+        name only when no other file in the job has that name; otherwise the ZIP is left as it is and
+        counted as a failure - never strip someone else's file. Storage errors are logged, never block
+        the DB erasure.
         """
-        if self.bulk_upload_job_repo is None or not names:
+        if self.bulk_upload_job_repo is None or not mine:
             return "none"
         job = self.bulk_upload_job_repo.get_by_id(job_id)
         if job is None or not job.zip_storage_path:
             return "none"
+        from app.services.resume.bulk_zip_entries import real_entries, staged_entry_index
         old_path = job.zip_storage_path
         try:
             archive = zipfile.ZipFile(io.BytesIO(self.storage_service.download_file(_RESUME_STORAGE_BUCKET, old_path)))
-            kept = [entry for entry in archive.infolist()
-                    if entry.filename.rsplit("/", 1)[-1] not in names]
+            entries = real_entries(archive)
+            remove: set[str] = set()
+            other_names = {f.original_filename for f in others}
+            for job_file in mine:
+                index = staged_entry_index(job_file.storage_path)
+                if index is not None:
+                    if index >= len(entries) or entries[index][1] != job_file.original_filename:
+                        raise ValueError("the stored ZIP no longer matches its staged files")
+                    remove.add(entries[index][0].filename)
+                    continue
+                same_name = [entry for entry, name in entries if name == job_file.original_filename]
+                if len(same_name) != 1 or job_file.original_filename in other_names:
+                    raise ValueError("an older staged file can't be told apart by name")
+                remove.add(same_name[0].filename)
+            kept = [entry for entry in archive.infolist() if entry.filename not in remove]
             if len(kept) == len(archive.infolist()):
                 return "none"
             if not any(not entry.is_dir() for entry in kept):
@@ -451,8 +495,9 @@ class CandidateErasureService:
             job.zip_storage_path = new_path
             self._delete_resume_file(old_path)                  # after the commit (item 14)
             return "rebuilt"
-        except Exception:
-            logger.exception("Erasure: could not remove the candidate's files from bulk ZIP of job %s", job_id)
+        except Exception as exc:
+            logger.warning("Erasure: could not remove the candidate's files from bulk ZIP of job %s (%s: %s)",
+                           job_id, type(exc).__name__, exc if isinstance(exc, ValueError) else "storage error")
             return "failed"
 
     def _delete_resume_file(self, file_path: str) -> None:

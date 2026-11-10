@@ -58,6 +58,7 @@ from app.services.pii.pii_detection_service import PIIDetectionService
 from app.services.pii.pii_redaction_service import PIIRedactionService
 from app.services.skills.skill_evidence_service import build_v2_detection
 from app.services.pii.pii_types import PIIType
+from app.services.resume.bulk_zip_entries import real_entries as zip_real_entries
 from app.services.resume.candidate_service import CandidateService
 from app.services.resume.file_validation_service import FileValidationService
 from app.services.resume.resume_processing_context import ResumeProcessingContext
@@ -86,7 +87,6 @@ _NEEDS_DECISION_SUMMARY = (
     "Candidate already in this campaign with a different resume - waiting for a decision "
     "(keep existing or use new version)."
 )
-_JUNK_PATH_PREFIXES = ("__MACOSX/",)
 _IMAGE_FORMATS = (FileFormat.PNG, FileFormat.JPEG)
 # PDF/DOCX only — validation_result.file_format is already guaranteed to be
 # one of these two by the _IMAGE_FORMATS rejection above by the time this
@@ -123,16 +123,8 @@ def _extract_and_stage(job, job_repo, file_repo, task_log_service, task_log, sto
         task_log_service.mark_failure(task_log, f"Corrupt ZIP archive: {exc}")
         return None
 
-    real_entries: list[tuple[object, str]] = []
-    for entry in archive.infolist():
-        if entry.is_dir():
-            continue
-        if any(entry.filename.startswith(prefix) for prefix in _JUNK_PATH_PREFIXES):
-            continue
-        basename = entry.filename.rsplit("/", 1)[-1]
-        if not basename or basename.startswith("."):
-            continue
-        real_entries.append((entry, basename))
+    # Shared with erasure, which maps a staged file back to its entry by this order (review item 15).
+    real_entries = zip_real_entries(archive)
 
     try:
         zip_validation_service.validate_file_count(len(real_entries))
