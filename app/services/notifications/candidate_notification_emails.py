@@ -5,7 +5,7 @@ from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotifi
 from app.models.interview import InterviewPlatform
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
-from app.services.notifications.dedup import notification_dedup_key
+from app.services.notifications.dedup import interview_event_id, notification_dedup_key
 from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
@@ -142,10 +142,21 @@ def _queue_and_dispatch(
         template_context = _interview_email_context(schedule, interviewers or []) if schedule is not None else None
 
         notification_repo = EmailNotificationRepository(db)
+        event_id = interview_event_id(db, interview_schedule_id, trigger_event) if interview_schedule_id else None
+        if allow_resend:
+            dedup_key = None
+        elif interview_schedule_id is not None:
+            dedup_key = notification_dedup_key(trigger_event, interview_schedule_id=interview_schedule_id,
+                                               event_id=event_id)
+        else:
+            dedup_key = notification_dedup_key(trigger_event, campaign_candidate_id=campaign_candidate_id)
         if interview_schedule_id is not None:
             existing = notification_repo.get_by_interview_schedule_id_and_trigger_event(
                 interview_schedule_id, trigger_event,
             )
+            if event_id is not None:
+                # Review item 17: only this reschedule / cancellation counts as already notified.
+                existing = [n for n in existing if getattr(n, "dedup_key", None) == dedup_key]
         else:
             existing = notification_repo.get_by_campaign_candidate_id_and_trigger_event(
                 campaign_candidate_id, trigger_event,
@@ -167,12 +178,6 @@ def _queue_and_dispatch(
             )
             return
 
-        if allow_resend:
-            dedup_key = None
-        elif interview_schedule_id is not None:
-            dedup_key = notification_dedup_key(trigger_event, interview_schedule_id=interview_schedule_id)
-        else:
-            dedup_key = notification_dedup_key(trigger_event, campaign_candidate_id=campaign_candidate_id)
         notification = notification_repo.create_unless_duplicate(EmailNotification(
             candidate_id=candidate_id,
             campaign_candidate_id=campaign_candidate_id,

@@ -14,10 +14,44 @@ Each key has exactly the shape of that trigger's existing dedup rule:
 
 A manual re-send (allow_resend=True) carries no key, so it is never blocked; nor do internal-user alerts,
 which have their own cadence.
+
+Review item 17: a round can be rescheduled or cancelled (and reinstated, and cancelled) more than once,
+and every time is news to the candidate and the interviewers. Those keys also carry the interview
+history event that caused them (interview_event_id), so the second reschedule is not mistaken for the
+first.
 """
 from uuid import UUID
 
 from app.models.email import EmailTriggerEvent
+
+# Triggers that can happen more than once to the same round -> the history event type behind them.
+_REPEATABLE_ROUND_EVENTS = {
+    EmailTriggerEvent.INTERVIEW_RESCHEDULED: "RESCHEDULED",
+    EmailTriggerEvent.INTERVIEW_INTERVIEWER_RESCHEDULED: "RESCHEDULED",
+    EmailTriggerEvent.INTERVIEW_CANCELLED: "CANCELLED",
+    EmailTriggerEvent.INTERVIEW_INTERVIEWER_CANCELLED: "CANCELLED",
+}
+
+
+def interview_event_id(db, interview_schedule_id: UUID, trigger_event: EmailTriggerEvent) -> UUID | None:
+    """
+    For a repeatable round trigger: the id of the round's latest history event of the matching type
+    (reschedule() and cancel() write it in the same commit, before queueing the emails). None for other
+    triggers, or if there is no such event.
+    """
+    event_type = _REPEATABLE_ROUND_EVENTS.get(trigger_event)
+    if event_type is None:
+        return None
+    from app.models.interview import InterviewHistoryEventType, InterviewScheduleHistory
+    entry = (
+        db.query(InterviewScheduleHistory)
+        .filter(InterviewScheduleHistory.interview_id == interview_schedule_id,
+                InterviewScheduleHistory.event_type == InterviewHistoryEventType(event_type))
+        .order_by(InterviewScheduleHistory.changed_at.desc(), InterviewScheduleHistory.id.desc())
+        .first()
+    )
+    event_id = getattr(entry, "id", None)
+    return event_id if isinstance(event_id, UUID) else None
 
 
 def notification_dedup_key(

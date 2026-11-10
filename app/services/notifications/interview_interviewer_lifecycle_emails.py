@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
-from app.services.notifications.dedup import notification_dedup_key
+from app.services.notifications.dedup import interview_event_id, notification_dedup_key
 from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
@@ -66,9 +66,15 @@ def _round_context(schedule, interviewer) -> dict:
 def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trigger_event, extra_context) -> bool:
     try:
         notification_repo = EmailNotificationRepository(db)
+        event_id = interview_event_id(db, schedule.id, trigger_event)
+        dedup_key = notification_dedup_key(trigger_event, interview_schedule_id=schedule.id,
+                                           interviewer_id=interviewer.id, event_id=event_id)
         existing = notification_repo.get_by_interview_schedule_id_and_interviewer_id_and_trigger_event(
             schedule.id, interviewer.id, trigger_event,
         )
+        if event_id is not None:
+            # Review item 17: only this reschedule / cancellation counts as already notified.
+            existing = [n for n in existing if getattr(n, "dedup_key", None) == dedup_key]
         if any(n.status in QUEUED_OR_DELIVERED for n in existing):
             logger.info(
                 "%s email already queued/sent - skipping duplicate | interview_schedule_id=%s interviewer_id=%s",
@@ -97,8 +103,7 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
             template_id=template.id,
             status=EmailNotificationStatus.QUEUED,
             template_context={"recipient_name": interviewer.name, **extra_context},
-            dedup_key=notification_dedup_key(
-                trigger_event, interview_schedule_id=schedule.id, interviewer_id=interviewer.id),
+            dedup_key=dedup_key,
         ))
         if notification is None:
             logger.info(
