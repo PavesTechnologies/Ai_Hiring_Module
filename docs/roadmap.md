@@ -155,7 +155,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
   - *From you:* find and stop it (it isn't the Kubernetes deployment scaled to 0). I confirm from the database's connection list.
 - [ ] **Deploy RMe (backend) and lms_for_pms (airs frontend)** to the Kubernetes dev deployment: API, worker and beat. The dev database is already at the latest migration, so the deployed code must be current; older code fails on the dropped columns, as the stray worker shows.
   - *From you:* the image build, push and deploy (or the commands and access to run them), and the names, not the values, of the deployment's secrets, so I can confirm `EMAIL_DELIVERY=log` and no SES path.
-- [ ] **Re-run the test sets there:** the golden set, full and no-LLM, from inside the deployment (expected: 59 cases, 0 failures, 0 LLM calls, since votes are matched by skill name); then one synthetic upload end to end through the deployed workers (scoring, a shadow version, monitoring, no email).
+- [ ] **Re-run the test sets there:** the golden set, full and no-LLM, from inside a pod (the image carries the golden set; `EMAIL_DELIVERY=log python -m scripts.golden.run --cache-only` and `--no-llm`; expected: 60 cases, 0 failures, 0 LLM calls, since votes are matched by skill name); then one synthetic upload end to end through the deployed workers (scoring, a shadow version, monitoring, no email).
   - *From you:* a way to run a one-off job or `exec` into a worker pod.
 
 ### 6.3 Production setup
@@ -164,7 +164,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
   - *From you:* the provisioning (or the infra owner), and the endpoint and secret names.
 - [ ] **Fresh database** by the procedure below: migrations, the base seeds, product config (dry run first), embeddings, provider credentials entered in the app. Never a copy of dev.
   - *From you:* database access for the session that runs it (or you run it from this list and send me the outputs), and entering the provider credentials yourself.
-- [ ] **Golden set against production** right after setup, full and no-LLM (expected: 59 cases, 0 failures, 0 LLM calls). It shows production's configuration scores exactly like dev's.
+- [ ] **Golden set against production** right after setup, full and no-LLM, with `--cache-only` (expected: 60 cases, 0 failures, 0 LLM calls). It shows production's configuration scores exactly like dev's.
   - *From you:* the same access as above.
 - [ ] **Before production holds real candidate data:**
   - [ ] **Gemini billing:** move to the paid tier. See [known issues](known_issues.md). *From you:* the billing change.
@@ -175,6 +175,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
   - [ ] **No other deployment shares the production database:** confirm that only the production API and workers connect to it (check `pg_stat_activity` client addresses). A second worker on the dev database ran its own scheduled jobs, including an HR alert email, for weeks unnoticed. On 2026-11-03 it was still connecting from 13.207.112.154 after the instance was reported stopped and the backend, Celery worker and beat were scaled to 0, so check the database's own connection list, not the deployment's status. *From you:* the production deployment's outbound addresses, so I can tell them apart.
   - [ ] **No personal data in logs:** worker logs, task logs and dead-letter rows. See [known issues](known_issues.md). *From you:* the log destination and its retention.
   - [ ] **Worker logs: short retention and restricted access,** since tracebacks can still carry personal data in exception messages (stored errors keep only the error class since review item 28, but `logger.exception` tracebacks in the worker log are not scrubbed). *From you:* the retention period and who may read the worker logs.
+  - [ ] **Set `LOOKUP_HASH_KEY`** in the production secret store before the first candidate (`python -c "import secrets; print(secrets.token_urlsafe(48))"`). Candidate email and phone lookup hashes are keyed by it; unset, they derive from the candidate-PII key, which then can never be rotated out. Setting or changing it later means restarting every process and re-hashing (`python -m scripts.rehash_candidate_lookups --apply`). *From you:* nothing beyond storing it.
   - [ ] **Retention policies:** `retention_policies` is empty. Set retention days per entity type and jurisdiction, as GDPR requires, and seed them. *From you:* the retention periods (a legal / HR decision).
   - [ ] **Confirm the production UMS issuer URL:** the API refuses to start in production without `JWT_ISSUER` and rejects every token whose `iss` isn't exactly that value (UMS sets no `aud`, so the issuer is what's checked). Dev's is `https://enterpriseappdev.pavestechnologies.net/ums`. *From you:* the production UMS's `iss` value (the token-claims helper shows it), and `APP_ENV=production` set in the deployment.
   - [ ] **Users and roles:** the real HR admin, recruiter and hiring manager accounts. *From you:* the people and their roles.
@@ -186,7 +187,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
 0. **New key material, never dev's.** Generate fresh values and store them only in the production secret store (never in a file in the image, a ticket or chat):
    - the three encryption keys, one Fernet key each, `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`:
      `ENCRYPTION_KEY_CANDIDATE_PII_V1`, `ENCRYPTION_KEY_AI_PROVIDER_V1`, `ENCRYPTION_KEY_OAUTH_TOKEN_V1`;
-   - the two signing keys, `python -c "import secrets; print(secrets.token_urlsafe(48))"`: `OAUTH_STATE_SIGNING_KEY`, `FEEDBACK_TOKEN_SIGNING_KEY`.
+   - the two signing keys and the lookup-hash key, `python -c "import secrets; print(secrets.token_urlsafe(48))"`: `OAUTH_STATE_SIGNING_KEY`, `FEEDBACK_TOKEN_SIGNING_KEY`, `LOOKUP_HASH_KEY`.
 
    The key seeds below create only the alias rows; the material comes from these variables. Dev's keys sit on developer machines, so reusing one would encrypt production candidate data, provider keys and OAuth tokens with a key outside production's control. Back the encryption keys up with the database backups: losing one makes its data unreadable.
 1. `alembic upgrade head`
