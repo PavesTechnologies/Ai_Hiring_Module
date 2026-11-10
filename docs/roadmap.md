@@ -128,26 +128,29 @@ Plan approved 2026-11-02, built in order, each phase with a golden run before me
   - The golden vote cache is keyed by skill name, not id, so the frozen votes answer on a fresh or production database (full golden set verified on one: 59 cases, 0 failures, 0 LLM calls). The Redis cache prefix follows the connected database.
   - Migration `b4d6f8a0c2e5` dropped both backup tables (approved 2026-11-03), so `d8f0a2c4e6b9` and `a3c5e7f9b2d4` can no longer be downgraded: their downgrades stop with "irreversible: backup table dropped". The full migration chain and the golden set (full and no-LLM) were verified on a fresh database afterwards.
 
-## 6. Go to production - next
+## 6. Go to production - development complete (2026-11-10)
+
+Development is complete: the code review's fixes, the deferred findings and the pre-launch gaps are all merged and checked. What remains is deployment (6.2), production setup (6.3), the App.jsx route-roles change, and the teammate review.
 
 A checklist in order. Each item says what I do and what I need from you. Nothing sends email: `EMAIL_DELIVERY=log` everywhere until the deliberate real-email test.
 
-### 6.1 Code review - fixes done (2026-11-10)
+### 6.1 Code review and pre-launch fixes - done (2026-11-10)
 
 - [x] **Review of the whole system** (2026-11-05), in the agreed order (auth and roles; erasure, audit and personal data; email; migrations and seeds; tasks and scheduled jobs; scoring and pipeline; airs frontend). Report: 8 Critical and 18 High, every one checked against the code, plus Medium and Low findings per area.
-- [x] **Must-fix list** (2026-11-05): the verified Critical and High findings plus four known issues (maximum experience as an age filter, personal data in logs, the skill-ontology pages open to "General", the email retry count) - 30 items, fixed in six batches.
-- [x] **Fixes** (2026-11-05 to 2026-11-10), one commit per item, each batch with the golden set (full and no-LLM), the full suite, and e2e after batches 2, 4 and 5; no email sent at any point.
-  - Batches 1-6 and their follow-ups are merged: backend RMe (`4976fca`), airs frontend lms_for_pms (`12280b48`).
-  - Migrations applied to dev on the way, all approved: the email send claim and dedup index (`c5e7a9b1d3f6`), the stuck-send column and alert trigger (`d7f9b1c3e5a8`), optional JD maximum experience (`e8b0d2f4a6c8`).
-  - Last checks on the merged code: full suite 3,908 passed; golden 60 cases, 0 failures, 0 changes, both modes; e2e 4 of 4 drivers; 0 emails.
+- [x] **Must-fix list** (30 items: the verified Critical and High findings plus four known issues), fixed in six batches with follow-ups, one commit per item.
+- [x] **Deferred findings fixed before launch:** A-M3 (no default AIRS role; the local role follows the token), A-M2 (no user with an empty email), P-M3 (keyed HMAC lookup hashes; dev re-hashed), F-8 (PDF worker bundled), M-M2 and M-M3 (re-running seeds keeps edited prompts and email templates).
+- [x] **Pre-launch gaps fixed:** the "Override rejection" action removed (overrides only through stage moves with reason codes); the SES message id stored on each email; an audited HR-admin action to resolve a stuck email as delivered or not; the golden set in the deployed image; the "Open dead letters" count fixed; Talent Pool profile and add-to-campaign shown only to the roles that may use them.
+- [x] **Merged:** backend RMe `331b69f`, airs frontend lms_for_pms `f19edb6c`. Migrations applied to dev on the way, all additive and approved: `c5e7a9b1d3f6`, `d7f9b1c3e5a8`, `e8b0d2f4a6c8`, `f9c1e3a5b7d0`, `a1c3e5f7b9d2`, `b2d4f6a8c0e3` (head).
+- [x] **Final checks on merged RMe:** full suite 3,917 passed; golden set 60 cases, 0 failures, 0 changes, 0 LLM calls, full and no-LLM; e2e 4 of 4 drivers on the batch 5 code; frontend build passes; no email sent at any point.
+- [x] **Docs drafted for review:** the HR user guide and the operations runbook (Claude Docs).
 
-**Still open before deployment:**
+**Remaining before go-live:**
 
 - [ ] **App.jsx route roles (items 29 and F-5):** branch `fix-airs-route-roles` (`b3992da8`, `ea79f514`) gives every airs route the roles its backend allows; no airs route is open to "General" after it. It changes `src/App.jsx`, outside the airs folder. *From the App.jsx owner:* review and merge.
-- [ ] **Talent Pool profile link:** branch `fix-talent-pool-profile-link` (`c0239ca2`) disables View Profile for roles that can't open a profile. *From you:* the go-ahead to merge it into lms_for_pms.
-- [ ] **Medium and Low findings** in the report were not part of the must-fix list; they wait until after launch unless you pick any now. The known issues that wait are listed in [known issues](known_issues.md).
-- [ ] **Leftovers from the fixes**, accepted as they are: bulk files staged before item 28 keep file names in their storage keys until the job or candidate is deleted; `logger.exception` tracebacks in the worker log are not scrubbed (covered by the worker-log retention item under 6.3); the monitoring stage timeline shows the error class instead of the message.
-- [ ] **Cleanup list** in [known issues](known_issues.md) (the unused `report_scheduled` column, the test-order dependence): small changes, any time, a migration only with approval.
+- [ ] **Teammate review** of the review report and the fix commits on RMe and lms_for_pms. *From the reviewer:* findings, if any, before the deploy.
+- [ ] **Deploy to the dev environment** (6.2) and **production setup** (6.3), below.
+
+Accepted and not blocking: the Medium and Low findings not on the must-fix list wait until after launch ([known issues](known_issues.md)); bulk files staged before item 28 keep file names in their storage keys until deleted; worker-log tracebacks are not scrubbed (covered by the worker-log retention item in 6.3); the monitoring stage timeline shows the error class instead of the message; the [cleanup list](known_issues.md) waits for a small change.
 
 ### 6.2 Deploy to the dev environment
 
