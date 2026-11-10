@@ -10,6 +10,26 @@ from kombu import Queue
 
 from app.core.config import settings
 
+# Review item 20. Redis has no real ack: a message a worker takes - to run it, to hold it for a retry
+# countdown, or reserved behind another task - returns to the queue once VISIBILITY_TIMEOUT_SECONDS
+# pass, and a second worker runs it too. So the time a worker can hold a message (the longest retry
+# countdown plus the longest run) must stay under the visibility timeout:
+#   MAX_RETRY_COUNTDOWN_SECONDS + TASK_TIME_LIMIT_SECONDS < VISIBILITY_TIMEOUT_SECONDS
+# (tests/core/test_task_timing.py checks it). The timeout was 300 s, under the 480 s retry countdowns
+# of the decision-pending and v2 policies; it is back at Celery's default. A worker killed outright
+# (no warm shutdown, which returns its unacked messages at once) now leaves its tasks parked for up
+# to an hour; the recovery sweeps' age limits are tied to this value so they never race the broker.
+VISIBILITY_TIMEOUT_SECONDS = 3600
+MAX_RETRY_COUNTDOWN_SECONDS = 1800
+TASK_SOFT_TIME_LIMIT_SECONDS = 1200     # SoftTimeLimitExceeded inside the task: its normal failure path
+TASK_TIME_LIMIT_SECONDS = 1500          # the worker process is killed
+
+
+def bounded_countdown(seconds: float) -> float:
+    """A retry countdown capped so the held message can never outlive the visibility timeout."""
+    return max(0.0, min(float(seconds), float(MAX_RETRY_COUNTDOWN_SECONDS)))
+
+
 celery_app = Celery(
     "airs",
     broker=settings.CELERY_BROKER_URL,
@@ -47,12 +67,16 @@ celery_app.conf.update(
     # stuck. Observed live: 4 resume tasks parked this way for 25-37
     # minutes with no way to tell they were still pending.
     #
-    # 300s trades a faster recovery for the constraint that no single task
-    # may run longer than this without risking a duplicate delivery. The
-    # longest stage here is AI_EXTRACTION, bounded by the Gemini client's
-    # own 120s timeout, so a whole pipeline attempt stays well inside 5
-    # minutes. Raise this if any task ever legitimately runs longer.
-    broker_transport_options={"visibility_timeout": 300},
+    # It was lowered to 300s for that faster recovery, but the clock also
+    # runs while a worker holds a retry countdown or a reserved task, and the
+    # decision-pending and v2 retries wait up to 480s - those ran twice
+    # (review item 20). Back at the default, with hard time limits that keep
+    # countdown + run under it; see VISIBILITY_TIMEOUT_SECONDS above. A warm
+    # shutdown still returns unacked messages at once, and the recovery
+    # sweeps (resume redispatch, stalled-task sweep) cover a hard kill.
+    broker_transport_options={"visibility_timeout": VISIBILITY_TIMEOUT_SECONDS},
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT_SECONDS,
+    task_time_limit=TASK_TIME_LIMIT_SECONDS,
     # Nothing reads Celery results (task state lives in celery_task_log),
     # so don't write a celery-task-meta key per task into the shared Redis.
     task_ignore_result=True,

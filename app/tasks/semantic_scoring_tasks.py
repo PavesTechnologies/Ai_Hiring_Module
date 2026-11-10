@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from celery.exceptions import Retry
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight, reset_for_redispatch
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
@@ -460,7 +460,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
                     "JD embedding not found, scheduling retry | campaign_candidate_id=%s jd_id=%s attempt=%s",
                     campaign_candidate_id, campaign.jd_id, self.request.retries + 1,
                 )
-                self.retry(countdown=_JD_EMBEDDING_RETRY_DELAY_SECONDS, max_retries=_JD_EMBEDDING_MAX_RETRIES)
+                self.retry(countdown=bounded_countdown(_JD_EMBEDDING_RETRY_DELAY_SECONDS), max_retries=_JD_EMBEDDING_MAX_RETRIES)
                 return
 
             campaign_candidate.semantic_score = None
@@ -559,7 +559,7 @@ def calculate_semantic_score_task(self, campaign_candidate_id: str) -> None:
                 "Semantic scoring transient failure, retrying | campaign_candidate_id=%s attempt=%s delay=%ss error=%s",
                 campaign_candidate_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=delay, max_retries=_SEMANTIC_SCORE_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_SEMANTIC_SCORE_RETRY_POLICY.max_attempts)
             return
 
         error_message = str(ex)

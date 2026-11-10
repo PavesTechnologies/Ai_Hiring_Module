@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.db.session import SessionLocal
 from app.enums.constants import ActionType, EntityType
 from app.models.async_tasks import FailureClassification, TaskStatus
@@ -166,7 +166,7 @@ def generate_jd_embedding(self, task_id: str, jd_id: str, force_regenerate: bool
                 "EMBED_JD transient failure, retrying | jd_id=%s attempt=%s delay=%ss error=%s",
                 jd_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=delay, max_retries=_EMBED_JD_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_EMBED_JD_RETRY_POLICY.max_attempts)
             return
 
         error_message = str(ex)

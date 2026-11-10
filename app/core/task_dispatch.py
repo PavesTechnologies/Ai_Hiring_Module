@@ -22,15 +22,17 @@ task types (resume embedding) deliberately don't redo on their own.
 import logging
 from datetime import datetime, timedelta, timezone
 
+from app.core.celery_app import VISIBILITY_TIMEOUT_SECONDS
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 
 logger = logging.getLogger(__name__)
 
 IN_FLIGHT_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.RETRY)
 
-# Longer than any task is legitimately held: today the longest retry countdown is 480 s (the decision-
-# pending and v2 policies) plus a run well under 10 minutes.
-IN_FLIGHT_STALE_AFTER = timedelta(minutes=45)
+# Longer than any message can be held (review item 20): past the broker's visibility timeout, which
+# itself exceeds the longest retry countdown plus the hard time limit - so the broker's own redelivery
+# always gets first refusal, and an older row's message is certainly gone.
+IN_FLIGHT_STALE_AFTER = timedelta(seconds=VISIBILITY_TIMEOUT_SECONDS) + timedelta(minutes=30)
 
 LOST_DISPATCH_MESSAGE = "Lost: handing the task to the queue failed ({error}). Safe to queue again."
 LOST_STALLED_MESSAGE = ("Lost: no worker held this task and it was untouched for over {minutes} minutes. "

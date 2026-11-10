@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.core.celery_app import bounded_countdown
 from app.models.async_tasks import FailureClassification
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import DEFAULT_POLICY, STAGE_POLICIES, compute_backoff_seconds
@@ -81,5 +82,5 @@ class RetryDriver:
 
         self.celery_task_log_service.mark_retry(self.task_log)
         delay = compute_backoff_seconds(policy, attempt_number)
-        celery_task.retry(exc=error.original, countdown=delay, max_retries=_CELERY_MAX_RETRIES_CEILING)
+        celery_task.retry(exc=error.original, countdown=bounded_countdown(delay), max_retries=_CELERY_MAX_RETRIES_CEILING)
         return True

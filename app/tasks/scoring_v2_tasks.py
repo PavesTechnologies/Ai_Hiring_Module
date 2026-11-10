@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.models.async_tasks import TaskStatus
@@ -122,7 +122,7 @@ def calculate_scoring_v2_task(self, campaign_candidate_id: str) -> None:
             delay = compute_backoff_seconds(_SCORING_V2_RETRY_POLICY, attempt_number)
             logger.warning("Scoring v2 pending/failed, retrying | campaign_candidate_id=%s attempt=%s delay=%ss: %s",
                            campaign_candidate_id, attempt_number, delay, ex)
-            self.retry(exc=ex, countdown=delay, max_retries=_SCORING_V2_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_SCORING_V2_RETRY_POLICY.max_attempts)
             return
         try:
             DeadLetterQueueRepository(db).create(

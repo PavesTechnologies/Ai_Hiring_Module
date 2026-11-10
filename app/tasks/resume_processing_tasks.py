@@ -58,11 +58,11 @@ logger = logging.getLogger(__name__)
 RESUME_DOCUMENT_PROCESSING_TASK_TYPE = "RESUME_DOCUMENT_PROCESSING"
 
 # How long a RUNNING/RETRY row must sit untouched before the recovery scan
-# treats it as orphaned. Several times the broker's own visibility_timeout
-# (300s, see celery_app.broker_transport_options) on purpose: Redis
-# redelivering the message itself is the preferred recovery, and this scan
-# should only ever act on tasks the broker is never going to bring back.
-STALLED_IN_FLIGHT_MINUTES = 15
+# treats it as orphaned. Longer than the broker's own visibility timeout
+# (celery_app.VISIBILITY_TIMEOUT_SECONDS) on purpose: Redis redelivering the
+# message itself is the preferred recovery, and this scan should only ever act
+# on tasks the broker is never going to bring back.
+STALLED_IN_FLIGHT_MINUTES = int(IN_FLIGHT_STALE_AFTER.total_seconds() // 60)   # review item 20
 
 # Resume.file_format (FileFormat) also allows PNG/JPEG for scanned/image
 # resumes — out of scope here, same as the rest of this pipeline: no OCR

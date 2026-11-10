@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.core.single_run import single_run
 from app.db.session import SessionLocal
@@ -401,7 +401,7 @@ def _retry_or_dead_letter(task, db, task_log_service, task_log, campaign_candida
         delay = compute_backoff_seconds(_DECISION_PENDING_RETRY_POLICY, attempt_number)
         logger.warning("Scoring decision pending, retrying | campaign_candidate_id=%s attempt=%s delay=%ss: %s",
                        campaign_candidate_id, attempt_number, delay, ex)
-        task.retry(exc=ex, countdown=delay, max_retries=_DECISION_PENDING_RETRY_POLICY.max_attempts)
+        task.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_DECISION_PENDING_RETRY_POLICY.max_attempts)
         return
     try:
         dead_letters = DeadLetterQueueRepository(db)

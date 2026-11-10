@@ -28,8 +28,8 @@ def _log(status, minutes_ago, *, started=True, **extra):
 @pytest.mark.parametrize("status, minutes_ago, expected", [
     (TaskStatus.QUEUED, 1, True),
     (TaskStatus.RUNNING, 30, True),
-    (TaskStatus.RETRY, 44, True),
-    (TaskStatus.QUEUED, 46, False),        # its message is gone
+    (TaskStatus.RETRY, 89, True),
+    (TaskStatus.QUEUED, 91, False),        # its message is gone (past the visibility timeout + 30 min)
     (TaskStatus.RUNNING, 600, False),
     (TaskStatus.FAILURE, 1, False),
     (TaskStatus.SUCCESS, 1, False),

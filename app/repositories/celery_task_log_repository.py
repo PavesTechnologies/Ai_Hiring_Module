@@ -119,8 +119,8 @@ class CeleryTaskLogRepository:
 
         - RUNNING with a dead worker. Redis has no server-side ack, so the
           message sits in the broker's "unacked" set until
-          visibility_timeout returns it. That is now 300s (see
-          celery_app.broker_transport_options), so the broker usually
+          visibility_timeout returns it (celery_app.VISIBILITY_TIMEOUT_SECONDS,
+          an hour), so the broker usually
           recovers these itself — this scan is the backstop for when the
           broker entry is gone entirely.
 

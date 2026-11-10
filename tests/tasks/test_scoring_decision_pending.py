@@ -111,7 +111,7 @@ def _log(status, hours_ago, *, completed=True):
     ([_log(TaskStatus.QUEUED, 0.2, completed=False)], "in_flight"),      # queued is never doubled
     # Review item 8: a row untouched for longer than any task is held has lost its message.
     ([_log(TaskStatus.QUEUED, 30, completed=False)], "requeue"),
-    ([_log(TaskStatus.RETRY, 1, completed=False)], "recent"),          # stale, but tried 1 h ago: waits
+    ([_log(TaskStatus.RETRY, 2, completed=False)], "recent"),          # stale, but tried 2 h ago: waits
 ])
 def test_recovery_action(logs, expected):
     from app.tasks.deterministic_scoring_tasks import recovery_action

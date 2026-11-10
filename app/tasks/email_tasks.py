@@ -5,7 +5,7 @@ from uuid import UUID
 
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.encryption_service import EncryptionService
 from app.db.session import SessionLocal
 from app.exceptions.email_exception import EmailDeliveryException
@@ -245,7 +245,7 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
                 "EMAIL_SEND transient failure, retrying | email_notification_id=%s attempt=%s delay=%ss error=%s",
                 email_notification_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=delay, max_retries=_EMAIL_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_EMAIL_RETRY_POLICY.max_attempts)
             return
 
         # T03: retries exhausted (or a permanent/business failure) -

@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from celery.exceptions import Retry
 
 from app.core.cache_invalidation import CacheInvalidator
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import (
     IN_FLIGHT_STATUSES, dispatch_or_mark_lost, is_in_flight, is_lost, reset_for_redispatch,
 )
@@ -299,7 +299,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
                 # Raises celery.exceptions.Retry - deliberately re-raised
                 # unchanged by the `except Retry: raise` clause below
                 # rather than being treated as a real embedding failure.
-                self.retry(countdown=countdown, max_retries=_CELERY_MAX_RETRIES_CEILING)
+                self.retry(countdown=bounded_countdown(countdown), max_retries=_CELERY_MAX_RETRIES_CEILING)
                 return
             try:
                 batch_size = _read_embedding_batch_size(config_repo)
@@ -335,7 +335,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
                     )
                    
                     embed_ex._embed_retry_already_handled = True
-                    self.retry(exc=embed_ex, countdown=delay, max_retries=_CELERY_MAX_RETRIES_CEILING)
+                    self.retry(exc=embed_ex, countdown=bounded_countdown(delay), max_retries=_CELERY_MAX_RETRIES_CEILING)
                     return
                 error_message = str(embed_ex)
                 _dead_letter_and_mark_dead(
@@ -427,7 +427,7 @@ def generate_resume_embedding_task(self, resume_id: str) -> None:
                 "EMBED_RESUME transient failure, retrying | resume_id=%s attempt=%s delay=%ss error=%s",
                 resume_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=delay, max_retries=_EMBED_RESUME_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_EMBED_RESUME_RETRY_POLICY.max_attempts)
             return
 
 

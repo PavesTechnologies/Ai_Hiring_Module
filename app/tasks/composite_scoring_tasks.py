@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from app.core.celery_app import celery_app
+from app.core.celery_app import bounded_countdown, celery_app
 from app.core.task_dispatch import dispatch_or_mark_lost, is_in_flight
 from app.db.session import SessionLocal
 from app.models.async_tasks import FailureClassification, TaskStatus
@@ -197,7 +197,7 @@ def calculate_composite_score_task(self, campaign_candidate_id: str, trigger_sou
                 "Composite scoring transient failure, retrying | campaign_candidate_id=%s attempt=%s delay=%ss error=%s",
                 campaign_candidate_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=delay, max_retries=_COMPOSITE_SCORE_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_COMPOSITE_SCORE_RETRY_POLICY.max_attempts)
             return
 
         # Retries exhausted (or a permanent failure, e.g. invalid scoring

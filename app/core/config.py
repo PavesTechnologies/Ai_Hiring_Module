@@ -64,9 +64,9 @@ class Settings(BaseSettings):
     # Pool override. Unset = solo on Windows (prefork can't run there),
     # prefork elsewhere. Set "threads" to run tasks in parallel on Windows.
     celery_worker_pool: str | None = None
-    # Tasks each worker process reserves ahead. Keep 1: with acks_late and
-    # the 300s visibility_timeout, reserved-but-waiting tasks can otherwise be
-    # redelivered and run twice.
+    # Tasks each worker process reserves ahead. Keep 1: with acks_late, a
+    # reserved-but-waiting task counts against the broker's visibility timeout
+    # (celery_app.VISIBILITY_TIMEOUT_SECONDS) and could be redelivered and run twice.
     celery_worker_prefetch_multiplier: int = 1
     # Worker log file (rotating). Unset = console only (containers log to
     # stdout). start-project.bat sets it for the local dev worker.
