@@ -163,6 +163,12 @@ def _ensure_local_user(user: TokenUser, db: Session) -> None:
     Provisions one from the token's own claims on first sight instead of
     requiring a manual sync step.
     """
+    if not (user.email or "").strip():
+        # A-M2: re-keying and the unique email both key on it - an empty email could take over
+        # another user's row. Refused, never created or re-keyed.
+        raise ForbiddenError("Your account has no email address in the identity service, so AIRS can't be used. "
+                             "Ask the identity service administrator to add one.")
+
     local = db.get(User, user.user_id)
     if local is not None:
         # A-M3: the local role mirrors the token on every request - a demoted user's role (and the
