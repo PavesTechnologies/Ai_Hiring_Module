@@ -1,6 +1,6 @@
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
 from app.repositories.interview_feedback_repository import InterviewFeedbackRepository
@@ -47,6 +47,7 @@ def request_interview_feedback_task(self):
         return queued_count
 
     except Exception as ex:
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         raise

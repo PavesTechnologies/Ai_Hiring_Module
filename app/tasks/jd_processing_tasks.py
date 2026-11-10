@@ -2,7 +2,7 @@ import logging
 from uuid import UUID
 
 from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 
 from app.models.async_tasks import DocumentType
 from app.repositories.audit_repository import AuditRepository
@@ -186,6 +186,7 @@ def process_jd_document(
             logger.exception("Failed to enqueue EMBED_JD after JD creation/reprocess for jd_id=%s", jd_id)
 
     except StageExecutionError as stage_exc:
+        rollback_quietly(db)   # review item 22: the session may be broken
         should_retry = False
         if retry_driver is not None:
             should_retry = retry_driver.handle_failure(

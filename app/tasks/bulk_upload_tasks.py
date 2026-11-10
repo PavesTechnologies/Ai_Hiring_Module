@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from app.core.celery_app import celery_app
 from app.core.encryption_service import EncryptionService
 from app.core.storage_service import StorageService, storage_safe_filename
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 from app.enums.constants import ActionType, EntityType
 from app.exceptions.bulk_upload_exceptions import MaxFilesExceededException
 from app.exceptions.campaign_exceptions import CampaignException
@@ -252,6 +252,7 @@ def extract_bulk_upload_zip(task_id: str, bulk_upload_job_id: str) -> None:
         task_log_service.mark_success(task_log, summary=summary)
 
     except Exception as ex:
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log, str(ex))
         if job is not None:
@@ -754,6 +755,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             logger.exception("Failed to enqueue deterministic scoring after resume %s parsed.", resume.id)
 
     except StageExecutionError as stage_exc:
+        rollback_quietly(db)   # review item 22: the session may be broken
         should_retry = False
         if retry_driver is not None:
             should_retry = retry_driver.handle_failure(
@@ -789,6 +791,7 @@ def parse_bulk_upload_file(self, task_id: str, bulk_upload_job_file_id: str) -> 
             raise stage_exc.original
 
     except CampaignException as exc:
+        rollback_quietly(db)   # review item 22: the session may be broken
         is_duplicate = exc.status_code == 409 and "already exists in this campaign" in exc.message
         if job_file is not None and job is not None:
             file_repo.update_status(job_file.id, BulkUploadFileStatus.FAILED)

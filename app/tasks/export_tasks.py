@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from app.core.celery_app import celery_app
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 from app.enums.constants import ActionType
 from app.models.async_tasks import CeleryTaskLog, TaskStatus
 from app.repositories.CampaignRepository import CampaignRepository
@@ -129,6 +129,7 @@ def generate_export_task(
         except Exception as exc:
             # The bytes were produced successfully; storage being unavailable is
             # a delivery failure, recorded as such rather than swallowed.
+            rollback_quietly(db)   # review item 22: the session may be broken
             logger.exception("Export generated but could not be stored: %s", object_path)
             task_log.status = TaskStatus.FAILURE
             task_log.error_message = f"Storage upload failed: {exc}"
@@ -166,6 +167,7 @@ def generate_export_task(
 
     except Exception as exc:
         logger.exception("Export task failed for campaign %s", campaign_id)
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log is not None:
             try:
                 task_log.status = TaskStatus.FAILURE

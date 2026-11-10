@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from app.core.celery_app import celery_app
 from app.core.task_dispatch import IN_FLIGHT_STALE_AFTER, LOST_STALLED_MESSAGE, dispatch_or_mark_lost
 from app.core.single_run import single_run
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 
 from app.models.async_tasks import DocumentType
 from app.models.candidates import FileFormat
@@ -509,6 +509,7 @@ def process_resume_document(
                 db.rollback()
 
     except StageExecutionError as stage_exc:
+        rollback_quietly(db)   # review item 22: the session may be broken
         should_retry = False
         if retry_driver is not None:
             should_retry = retry_driver.handle_failure(

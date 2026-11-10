@@ -1,6 +1,6 @@
 from app.core.celery_app import celery_app
 from app.core.single_run import single_run
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, rollback_quietly
 
 from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.audit_repository import AuditRepository
@@ -60,6 +60,7 @@ def auto_close_expired_campaigns():
 
     except Exception as ex:
 
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
                 str(ex),
@@ -115,6 +116,7 @@ def detect_stalled_candidates():
 
     except Exception as ex:
 
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
                 str(ex),
@@ -171,6 +173,7 @@ def evaluate_campaign_health_alerts():
 
     except Exception as ex:
 
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(task_log,
                 str(ex),
@@ -229,6 +232,7 @@ def evaluate_resubmission_alerts():
 
     except Exception as ex:
 
+        rollback_quietly(db)   # review item 22: the session may be broken
         if task_log:
             task_log_service.mark_failure(
                 task_log,
