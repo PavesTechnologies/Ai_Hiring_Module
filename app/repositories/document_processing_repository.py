@@ -207,6 +207,23 @@ class DocumentProcessingRepository:
         self.db.flush()
         return deleted
 
+    def delete_for_tasks(self, task_ids) -> int:
+        """
+        Candidate erasure (review item 13) - the stage rows and stage-failure rows of these tasks,
+        whatever their document_id. A parse that failed never linked its rows to the resume
+        (link_document_id runs only on success), and its rows can quote the resume (str(exc)), so
+        erasure finds them by the task ids of the candidate's own parses. A task parses one document.
+        Returns the stage rows deleted.
+        """
+        task_ids = [t for t in task_ids or () if t]
+        if not task_ids:
+            return 0
+        deleted = self.db.execute(delete(DocumentProcessingStageExecution).where(
+            DocumentProcessingStageExecution.task_id.in_(task_ids))).rowcount or 0
+        self.db.execute(delete(StageFailureLog).where(StageFailureLog.task_id.in_(task_ids)))
+        self.db.flush()
+        return deleted
+
     def commit(self) -> None:
         self.db.commit()
 

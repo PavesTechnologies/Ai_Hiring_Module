@@ -358,6 +358,14 @@ class CeleryTaskLogRepository:
         )
         return self.db.execute(stmt).scalar_one()
 
+    def get_task_ids_by_resume_ids(self, resume_ids: list[UUID]) -> list[str]:
+        """Candidate erasure (review item 13) - the task ids of every task logged against these resumes."""
+        if not resume_ids:
+            return []
+        return list(self.db.execute(
+            select(CeleryTaskLog.task_id).where(CeleryTaskLog.resume_id.in_(list(resume_ids)))
+        ).scalars())
+
     def delete_by_resume_id(self, resume_id: UUID) -> None:
         """Candidate erasure — removes celery_task_log rows tied to one resume version."""
         self.db.execute(delete(CeleryTaskLog).where(CeleryTaskLog.resume_id == resume_id))

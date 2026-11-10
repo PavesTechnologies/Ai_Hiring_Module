@@ -126,12 +126,17 @@ class CandidateErasureService:
             for path in held_files:
                 self._delete_resume_file(path)
 
+            # Review item 13: the task ids of their own parses - their resumes' task logs here, their
+            # bulk job files' below - read before those rows are deleted. A failed parse's stage rows
+            # are found only by these (they were never linked to a resume).
+            parse_task_ids = set(self.celery_task_log_repo.get_task_ids_by_resume_ids(erased_resume_ids))
+
             # Their bulk-upload file rows, their entries in stored zips, and
             # task-log / dead-letter rows that name them (EMAIL_SEND included).
-            traces = self._erase_upload_and_log_traces(candidate, resumes)
+            traces = self._erase_upload_and_log_traces(candidate, resumes, parse_task_ids)
             # Before the resumes' derived rows go: those rows are where the hash
             # of each resume's text is recorded.
-            traces.update(self._erase_processing_and_cache_traces(erased_resume_ids))
+            traces.update(self._erase_processing_and_cache_traces(erased_resume_ids, parse_task_ids))
 
             self.resume_repo.delete_embeddings_by_candidate(candidate_id)
             self.resume_repo.delete_candidate_skills_by_candidate(candidate_id)
@@ -293,7 +298,7 @@ class CandidateErasureService:
                 terms.append(value)
         return terms
 
-    def _erase_upload_and_log_traces(self, candidate, resumes) -> dict:
+    def _erase_upload_and_log_traces(self, candidate, resumes, parse_task_ids: set | None = None) -> dict:
         """
         What the row-by-row erasure misses: the bulk-upload job-file rows of
         the candidate's files (they carry the uploaded file names), the
@@ -314,6 +319,8 @@ class CandidateErasureService:
                         if f.storage_path in resume_paths or f.original_filename in file_names]
                 names_in_job = {f.original_filename for f in mine}
                 file_names |= names_in_job
+                if parse_task_ids is not None:
+                    parse_task_ids.update(t for t in (getattr(f, "task_id", None) for f in mine) if t)
                 for job_file in mine:
                     if job_file.storage_path not in resume_paths:      # e.g. a skipped duplicate's copy
                         self._delete_resume_file(job_file.storage_path)
@@ -339,13 +346,17 @@ class CandidateErasureService:
             "task_logs_naming_candidate_deleted": len(task_ids),
         }
 
-    def _erase_processing_and_cache_traces(self, resume_ids: list[UUID]) -> dict:
+    def _erase_processing_and_cache_traces(self, resume_ids: list[UUID], parse_task_ids=()) -> dict:
         """
         Rows keyed to the resumes without a foreign key: their processing-stage
         rows (and those tasks' stage-failure rows), and the parse cache's LLM
         extraction of their text - found by the text hashes each parse recorded
         on the resume (resumes.parse_text_hashes) and those its derived rows
         recorded. Does not commit.
+
+        Review item 13: also the stage and failure rows of their own parse tasks (parse_task_ids),
+        linked to the resume or not - a failed parse's rows never were, and their error text can
+        quote the resume.
         """
         from app.models.async_tasks import DocumentType
         stage_rows = cache_rows = 0
@@ -354,6 +365,7 @@ class CandidateErasureService:
             cache_rows = self.skill_detection_repo.delete_parse_cache_by_text_hashes(hashes)
         if self.document_processing_repo is not None:
             stage_rows = self.document_processing_repo.delete_for_documents(DocumentType.RESUME, resume_ids)
+            stage_rows += self.document_processing_repo.delete_for_tasks(sorted(parse_task_ids or ()))
         return {"processing_stage_rows_deleted": stage_rows, "parse_cache_entries_deleted": cache_rows}
 
     def _strip_zip(self, job_id: UUID, names: set[str]) -> str:

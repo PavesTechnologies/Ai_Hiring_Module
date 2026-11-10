@@ -39,6 +39,8 @@ def _service(resume_ids, **overrides):
     calls.detection.resume_text_hashes.return_value = {"h1", "h2"}
     calls.detection.delete_parse_cache_by_text_hashes.return_value = 3
     calls.processing.delete_for_documents.return_value = 9
+    calls.processing.delete_for_tasks.return_value = 0
+    calls.task_log.get_task_ids_by_resume_ids.return_value = []
     kwargs = dict(
         candidate_repo=calls.candidate, resume_repo=calls.resume, campaign_candidate_repo=calls.cc,
         consent_repo=MagicMock(), email_notification_repo=MagicMock(), celery_task_log_repo=calls.task_log,
