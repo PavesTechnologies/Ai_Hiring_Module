@@ -105,11 +105,19 @@ class CandidateErasureService:
         actor_id: str,
         actor_role: str | None,
         reason: str | None = None,
-    ) -> None:
+    ) -> dict:
+        """
+        Review item 14: the database erasure commits first; the stored files are deleted after it, so a
+        failure never leaves a candidate restored without their files. A file whose delete fails is
+        retried by compliance.delete_erased_files (dead-lettered if it keeps failing) and reported in a
+        follow-up audit entry and in the result: {"files_deleted", "files_pending_deletion"}.
+        """
         candidate = self.candidate_repo.get_by_id(candidate_id)
         if candidate is None:
             raise NotFoundError(f"Candidate {candidate_id} not found.")
 
+        self._files_after_commit: list[str] = []     # deleted once the erasure is committed
+        self._uploaded_this_run: list[str] = []      # rebuilt ZIPs - removed again if the erasure rolls back
         try:
             resumes = self.resume_repo.get_all_versions_by_candidate(candidate_id)
             campaign_candidates = self.campaign_candidate_repo.get_by_candidate_id(candidate_id)
@@ -198,12 +206,14 @@ class CandidateErasureService:
                     **traces,
                     "had_bulk_origin": had_bulk_origin,
                     "reason_provided": bool(reason),
+                    "files_to_delete": len(self._files_after_commit),
                 },
             )
 
             self.candidate_repo.commit()
         except Exception:
             self.candidate_repo.rollback()
+            self._remove_uploaded_this_run()
             raise
 
         # Cached resume/candidate views hold decrypted names and emails -
@@ -211,6 +221,44 @@ class CandidateErasureService:
         self.notifier.invalidator.resumes(erased_resume_ids)
         for campaign_id, campaign_candidate_id in removed:
             self.notifier.removed(campaign_id, campaign_candidate_id)
+
+        return self._delete_files_after_commit(candidate_id, actor_id, actor_role)
+
+    def _delete_files_after_commit(self, candidate_id: UUID, actor_id: str, actor_role: str | None) -> dict:
+        """Deletes the queued files; failures go to the retry task and a follow-up audit entry (counts only)."""
+        paths = list(dict.fromkeys(p for p in self._files_after_commit if p))
+        failed = []
+        for path in paths:
+            try:
+                self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, path)
+            except Exception as exc:
+                logger.warning("Erasure of candidate %s: a file delete failed (%s); retrying in the background.",
+                               candidate_id, type(exc).__name__)
+                failed.append(path)
+        if failed:
+            from app.tasks.compliance_tasks import queue_erased_file_deletes
+            db = getattr(self.celery_task_log_repo, "db", None)
+            retry_task_id = queue_erased_file_deletes(db, _RESUME_STORAGE_BUCKET, failed) if db is not None else None
+            try:
+                self.audit_service.log(
+                    actor_id=actor_id, actor_role=actor_role, action_type=ActionType.CANDIDATE_DATA_ERASED,
+                    entity_type=EntityType.CANDIDATE, entity_id=candidate_id,
+                    details={"phase": "file_cleanup", "files_deleted": len(paths) - len(failed),
+                             "files_not_deleted": len(failed), "retry_task_id": retry_task_id},
+                )
+                self.candidate_repo.commit()
+            except Exception:
+                logger.exception("Erasure of candidate %s: could not audit the pending file deletes.", candidate_id)
+                self.candidate_repo.rollback()
+        return {"files_deleted": len(paths) - len(failed), "files_pending_deletion": len(failed)}
+
+    def _remove_uploaded_this_run(self) -> None:
+        """The erasure rolled back: a ZIP rebuilt during it is not referenced by anything - remove it."""
+        for path in self._uploaded_this_run:
+            try:
+                self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, path)
+            except Exception:
+                logger.exception("Erasure rolled back: could not remove a rebuilt ZIP.")
 
     def request_erasure(
         self,
@@ -389,7 +437,7 @@ class CandidateErasureService:
             if len(kept) == len(archive.infolist()):
                 return "none"
             if not any(not entry.is_dir() for entry in kept):
-                self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, old_path)
+                self._delete_resume_file(old_path)              # after the commit (item 14)
                 job.zip_storage_path = None
                 return "deleted"
             buffer = io.BytesIO()
@@ -399,8 +447,9 @@ class CandidateErasureService:
             new_path = f"{old_path.rsplit('/', 1)[0]}/{uuid4()}.zip" if "/" in old_path else f"{uuid4()}.zip"
             self.storage_service.upload_file(bucket_name=_RESUME_STORAGE_BUCKET, file_path=new_path,
                                              file_content=buffer.getvalue(), content_type="application/zip")
+            self._uploaded_this_run.append(new_path)
             job.zip_storage_path = new_path
-            self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, old_path)
+            self._delete_resume_file(old_path)                  # after the commit (item 14)
             return "rebuilt"
         except Exception:
             logger.exception("Erasure: could not remove the candidate's files from bulk ZIP of job %s", job_id)
@@ -408,12 +457,9 @@ class CandidateErasureService:
 
     def _delete_resume_file(self, file_path: str) -> None:
         """
-        Best-effort, same convention as every other storage-cleanup call site
-        in this codebase (JDProcessingPipeline, bulk_upload_tasks) — a
-        transient storage-provider error must not block the legally-required
-        DB-side erasure, so it's logged, not raised.
+        Queues a stored file for deletion once the erasure has committed (review item 14): deleting it
+        earlier lost the file when a later step rolled the erasure back. A delete that fails then is
+        retried in the background and reported - never silently dropped.
         """
-        try:
-            self.storage_service.delete_file(_RESUME_STORAGE_BUCKET, file_path)
-        except Exception:
-            logger.exception("Failed to delete resume file '%s' from storage during candidate erasure.", file_path)
+        if file_path:
+            self._files_after_commit.append(file_path)

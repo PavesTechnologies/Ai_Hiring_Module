@@ -143,6 +143,7 @@ celery_app.conf.imports = (
     "app.tasks.export_tasks",
     "app.tasks.email_tasks",
     "app.tasks.email_health_tasks",
+    "app.tasks.compliance_tasks",
     "app.tasks.unknown_skill_reevaluation_tasks",
     "app.tasks.upload_decision_tasks",
 )

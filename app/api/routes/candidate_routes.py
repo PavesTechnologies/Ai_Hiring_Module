@@ -85,7 +85,7 @@ def get_candidate_campaign_history(
 
 @router.delete(
     "/{candidate_id}",
-    response_model=APIResponse[None],
+    response_model=APIResponse[dict],
     status_code=status.HTTP_200_OK,
     summary="Erase Candidate (GDPR-style right to erasure)",
     description=(
@@ -94,7 +94,9 @@ def get_candidate_campaign_history(
         "embeddings, pipeline/campaign history, consent, and email "
         "notifications - regardless of whether they came from an "
         "individual or a bulk ZIP upload. The only surviving trace is the "
-        "audit_log entry this call itself writes. HR_ADMIN only."
+        "audit_log entry this call itself writes. HR_ADMIN only. "
+        "data.files_pending_deletion > 0 means some stored files could not be "
+        "deleted yet: they are retried automatically and audited."
     ),
 )
 def erase_candidate(
@@ -103,14 +105,14 @@ def erase_candidate(
     service: CandidateErasureService = Depends(get_candidate_erasure_service),
     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
 ):
-    service.erase_candidate(
+    result = service.erase_candidate(
         candidate_id=candidate_id,
         actor_id=user.user_id,
         actor_role=authorising_role(user),
         reason=reason,
-    )
-
-    return APIResponse.ok(
-        data=None,
-        message="Candidate and all associated data erased successfully.",
-    )
+    ) or {}
+    pending = result.get("files_pending_deletion", 0)
+    message = ("Candidate and all associated data erased successfully." if not pending else
+               f"Candidate data erased. {pending} stored file(s) could not be deleted yet; "
+               "they are being retried automatically.")
+    return APIResponse.ok(data=result, message=message)
