@@ -15,6 +15,7 @@ from app.repositories.CampaignRepository import CampaignRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.config_repository import ConfigRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
@@ -36,7 +37,27 @@ EMAIL_SEND_TASK_TYPE = "EMAIL_SEND"
 # underlying RetryPolicy/compute_backoff_seconds + DeadLetterQueueRepository
 # + CeleryTaskLogService.mark_retry/mark_dead this codebase already uses
 # for retry-then-dead-letter handling elsewhere.
-_EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
+_EMAIL_RETRY_POLICY = RetryPolicy(max_attempts=4, base_delay_seconds=10, max_delay_seconds=120)
+
+# Review item 30: platform_config MAX_EMAIL_RETRY_COUNT (seeded 4) was never read - the code used a
+# hardcoded 3. Now the setting decides. Since item 7, a retry happens only when SES certainly did not
+# take the email, so a retry can never send it twice.
+_MAX_EMAIL_RETRY_COUNT_KEY = "MAX_EMAIL_RETRY_COUNT"
+
+
+def _email_retry_policy(db) -> RetryPolicy:
+    """The send's retry policy, with max_attempts from MAX_EMAIL_RETRY_COUNT (1..10; default 4)."""
+    try:
+        raw = ConfigRepository(db).get_configs_by_keys([_MAX_EMAIL_RETRY_COUNT_KEY]).get(_MAX_EMAIL_RETRY_COUNT_KEY)
+        attempts = int(raw) if raw is not None else _EMAIL_RETRY_POLICY.max_attempts
+    except Exception:
+        logger.warning("MAX_EMAIL_RETRY_COUNT unreadable - using %s.", _EMAIL_RETRY_POLICY.max_attempts)
+        attempts = _EMAIL_RETRY_POLICY.max_attempts
+    if not 1 <= attempts <= 10:
+        logger.warning("MAX_EMAIL_RETRY_COUNT=%s out of range - using %s.", attempts, _EMAIL_RETRY_POLICY.max_attempts)
+        attempts = _EMAIL_RETRY_POLICY.max_attempts
+    return RetryPolicy(max_attempts=attempts, base_delay_seconds=_EMAIL_RETRY_POLICY.base_delay_seconds,
+                       max_delay_seconds=_EMAIL_RETRY_POLICY.max_delay_seconds)
 
 
 def _not_sent(error: Exception) -> bool:
@@ -111,7 +132,9 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
     claimed = False         # this run moved the row QUEUED -> SENDING
     sent = False            # SES accepted the email (or log mode logged it)
     attempt_number = self.request.retries + 1
+    retry_policy = _EMAIL_RETRY_POLICY
     try:
+        retry_policy = _email_retry_policy(db)
         task_log_repo = CeleryTaskLogRepository(db)
         task_log_service = CeleryTaskLogService(task_log_repo)
         notification_repo = EmailNotificationRepository(db)
@@ -237,15 +260,15 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
             notification_repo.release_claim(notification.id)
 
         if (not outcome_unknown and classification != FailureClassification.PERMANENT
-                and attempt_number < _EMAIL_RETRY_POLICY.max_attempts):
+                and attempt_number < retry_policy.max_attempts):
             if task_log:
                 task_log_service.mark_retry(task_log)
-            delay = compute_backoff_seconds(_EMAIL_RETRY_POLICY, attempt_number)
+            delay = compute_backoff_seconds(retry_policy, attempt_number)
             logger.warning(
                 "EMAIL_SEND transient failure, retrying | email_notification_id=%s attempt=%s delay=%ss error=%s",
                 email_notification_id, attempt_number, delay, ex,
             )
-            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=_EMAIL_RETRY_POLICY.max_attempts)
+            self.retry(exc=ex, countdown=bounded_countdown(delay), max_retries=retry_policy.max_attempts)
             return
 
         # T03: retries exhausted (or a permanent/business failure) -
