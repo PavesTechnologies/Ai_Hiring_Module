@@ -1,5 +1,10 @@
+import functools
 import hashlib
+import hmac
+import os
 import uuid
+
+from dotenv import dotenv_values
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -7,6 +12,23 @@ from app.core.encryption import resolve_key_material
 from app.exceptions.resume_exceptions import EncryptionUnavailableException
 from app.models.config import EncryptionKey
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
+
+
+# P-M3: the key for email/phone lookup hashes. LOOKUP_HASH_KEY when set; otherwise derived from the
+# candidate-PII encryption key, so no new secret is needed. Rotating that key (or setting/changing
+# LOOKUP_HASH_KEY) changes every hash: re-hash the stored ones with scripts/rehash_candidate_lookups.py.
+LOOKUP_HASH_KEY_ENV = "LOOKUP_HASH_KEY"
+_LOOKUP_KEY_BASE_ALIAS = "candidate-pii-v1"
+_LOOKUP_KEY_CONTEXT = b"airs-lookup-hash-v1"
+
+
+@functools.lru_cache(maxsize=1)
+def lookup_hash_key() -> bytes:
+    raw = os.environ.get(LOOKUP_HASH_KEY_ENV) or dotenv_values(".env").get(LOOKUP_HASH_KEY_ENV)
+    if raw:
+        return raw.encode("utf-8")
+    base = resolve_key_material(_LOOKUP_KEY_BASE_ALIAS)
+    return hmac.new(base, _LOOKUP_KEY_CONTEXT, hashlib.sha256).digest()
 
 
 class DecryptionError(Exception):
@@ -62,9 +84,9 @@ class EncryptionService:
     @staticmethod
     def generate_hash(value: str) -> str:
         """
-        Deterministic MD5 hash of a normalized (trimmed, lowercased) value,
-        used for dedup lookups (email_hash/phone_hash) without ever
-        requiring decryption.
+        Deterministic keyed hash (HMAC-SHA256, hex) of a normalized (trimmed, lowercased) value, used
+        for dedup lookups (email_hash/phone_hash) without ever requiring decryption. Keyed (P-M3): an
+        unsalted MD5 of an email or phone number could be reversed by trying likely values.
         """
         normalized = value.strip().lower()
-        return hashlib.md5(normalized.encode("utf-8")).hexdigest()
+        return hmac.new(lookup_hash_key(), normalized.encode("utf-8"), hashlib.sha256).hexdigest()
