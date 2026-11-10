@@ -101,6 +101,7 @@ def test_sends_email_successfully_and_marks_notification_sent():
         )
         assert notification.status == EmailNotificationStatus.SENT
         assert notification.sent_at is not None
+        assert notification.provider_message_id == "ses-message-id"     # kept for checking delivery in SES
         h.notification_repo.commit.assert_called_once()
         h.dead_letter_queue_repo.create.assert_not_called()
 

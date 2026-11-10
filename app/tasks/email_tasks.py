@@ -232,6 +232,7 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         logged_only = str(message_id).startswith(LOG_ONLY_PREFIX)
         notification.status = EmailNotificationStatus.LOGGED if logged_only else EmailNotificationStatus.SENT
         notification.sent_at = datetime.now(timezone.utc)
+        notification.provider_message_id = str(message_id)[:255]
         notification_repo.update(notification)
         notification_repo.commit()
 

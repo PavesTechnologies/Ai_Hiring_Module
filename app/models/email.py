@@ -203,6 +203,8 @@ class EmailNotification(Base):
     # SENDING past STUCK_SENDING_AFTER shows in monitoring and in the stuck-send alert. NULL on rows
     # claimed before d7f9b1c3e5a8 (created_at stands in).
     sending_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The SES MessageId of the send (the log-only id under EMAIL_DELIVERY=log), for checking delivery in SES.
+    provider_message_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Epic 5 Step 2 - which round this notification is about, when it's
     # about one at all (NULL for CANDIDATE_REJECTED/CANDIDATE_SELECTED).
     # Exists specifically so INTERVIEW_SCHEDULED/RESCHEDULED/CANCELLED can
