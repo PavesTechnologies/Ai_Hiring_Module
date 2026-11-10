@@ -3,7 +3,6 @@ import uuid
 from app.db.session import SessionLocal
 from app.models.email import EmailTemplate, EmailTriggerEvent
 
-db = SessionLocal()
 
 # HTML template design fix: every EmailTemplate.body_template is now a full
 # HTML document built from the same card shell (gradient bar, header,
@@ -406,7 +405,14 @@ _TEMPLATES = [
     },
 ]
 
-try:
+
+def seed(db) -> dict:
+    """
+    Adds the active template of each trigger event that has none. An existing active template is never
+    changed (M-M3): HR may have edited its wording in the app, and a re-run must not overwrite that.
+    A template that differs from this file is reported, not touched. Commits. Returns counts.
+    """
+    counts = {"added": 0, "unchanged": 0, "edited_kept": 0}
     for template in _TEMPLATES:
         existing = (
             db.query(EmailTemplate)
@@ -418,23 +424,33 @@ try:
         )
         if existing:
             if existing.subject != template["subject"] or existing.body_template != template["body_template"]:
-                existing.subject = template["subject"]
-                existing.body_template = template["body_template"]
-                print(f"Updated active template for {template['trigger_event'].value}")
+                counts["edited_kept"] += 1
+                print(f"Kept the active template for {template['trigger_event'].value} as it is "
+                      "(it differs from the seed - edited in the app, or an older seed)")
             else:
+                counts["unchanged"] += 1
                 print(f"Active template already up to date for {template['trigger_event'].value}")
             continue
 
         db.add(EmailTemplate(id=uuid.uuid4(), **template))
+        counts["added"] += 1
         print(f"Added active template for {template['trigger_event'].value}")
-
     db.commit()
-    print("\nEmail templates seeded successfully")
+    return counts
 
-except Exception as e:
-    db.rollback()
-    print(f"Error seeding email templates: {e}")
-    raise
 
-finally:
-    db.close()
+def main() -> None:
+    db = SessionLocal()
+    try:
+        counts = seed(db)
+        print(f"\nEmail templates seeded successfully: {counts}")
+    except Exception as e:
+        db.rollback()
+        print(f"Error seeding email templates: {e}")
+        raise
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
