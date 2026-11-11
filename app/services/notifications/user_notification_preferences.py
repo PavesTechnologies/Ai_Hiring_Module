@@ -2,17 +2,11 @@ from app.models.email import EmailTriggerEvent
 from app.repositories.user_notification_preference_repository import UserNotificationPreferenceRepository
 
 """
-Epic 5 Step 3 - is_notification_enabled(), built ahead of any real
-caller. Of the 6 real EmailTriggerEvent values, the 5 with a live send
-path today (see candidate_notification_emails.py,
-candidate_rejection_email_service.py) all target a candidate or external
-interviewer, neither of which has a users.id row to hold a preference
-against - UPLOAD_PERMANENTLY_FAILED is the one trigger actually scoped
-for internal users but has no send path of its own yet (D11, unbuilt).
-Nothing calls this function today - see docs/known_issues.md's entry
-naming this "built ahead of need" shape, matching
-SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES. Any future internal-user-
-facing send path should check this before queuing.
+Epic 5 Step 3 - is_notification_enabled(): a user's opt-out from an email trigger event.
+queue_internal_user_emails (internal_user_emails.py) checks it before queuing each internal
+user's email (HR / ops alerts); candidate and interviewer emails have no users.id row to hold
+a preference, so they never consult it. Any new internal-user send path should go through
+queue_internal_user_emails or check this before queuing.
 """
 
 

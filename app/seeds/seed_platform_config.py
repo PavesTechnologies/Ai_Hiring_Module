@@ -340,12 +340,6 @@ try:
         # M12: Workflow & Interview Scheduling config
         PlatformConfig(
             id=uuid.uuid4(),
-            key="SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES",
-            value="30",
-            description="Minutes over which SHORTLISTED notifications are batched into a single email/digest before sending (M12)",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
             key="OAUTH_TOKEN_REFRESH_BUFFER_SECONDS",
             value="300",
             description="Seconds before an OAuth token's actual expiry at which it is proactively refreshed (M12 calendar/interview integrations)",
