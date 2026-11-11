@@ -1266,11 +1266,12 @@ class CampaignCandidateService:
         )
 
     def _scoring_v2_shadow(self, campaign_candidate) -> dict | None:
-        """Latest v2 result, summarised for the read-only shadow panel. Never used for decisions."""
+        """The core-skill detail of the latest acted-on result (HR_ADMIN panel, read only). Not latest(): a
+        candidate scoring version's shadow row can be newer, and it is never the candidate's result."""
         try:
             from app.repositories.scoring_result_repository import ScoringResultRepository
             from app.services.campaign.scoring_shadow_report_service import outcome_label
-            row = ScoringResultRepository(self.campaign_candidate_repo.db).latest(campaign_candidate.id, "v2")
+            row = ScoringResultRepository(self.campaign_candidate_repo.db).latest_acted_on(campaign_candidate.id)
             if row is None:
                 return None
             b = row.breakdown or {}
@@ -1302,7 +1303,7 @@ class CampaignCandidateService:
                 "scoring_config_version": row.scoring_config_version,
             }
         except Exception:
-            logger.exception("Could not build the v2 shadow panel | campaign_candidate_id=%s", campaign_candidate.id)
+            logger.exception("Could not build the core-skill panel | campaign_candidate_id=%s", campaign_candidate.id)
             return None
 
     def get_candidate_semantic(self, campaign_candidate_id: UUID) -> CandidateSemanticResponse:

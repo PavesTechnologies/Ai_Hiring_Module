@@ -641,8 +641,9 @@ class CandidateDeterministicResponse(BaseModel):
     # Set when this layer's task dead-lettered and it has no result yet -
     # lets the tab explain why it's empty and offer a DLQ retry.
     failure: LayerFailureResponse | None = None
-    # Scoring v2 shadow result (HR_ADMIN only; None otherwise or when v2
-    # hasn't run). Shown read-only, labelled "Shadow - not used for decisions".
+    # Core-skill detail of the latest acted-on scoring result (HR_ADMIN only;
+    # None otherwise or before scoring has run). Read only. The field keeps
+    # its historical name.
     scoring_v2_shadow: dict | None = None
 
     model_config = ConfigDict(

@@ -25,6 +25,16 @@ class ScoringResultRepository:
             .limit(1)
         ).scalar_one_or_none()
 
+    def latest_acted_on(self, campaign_candidate_id: UUID) -> CandidateScoringResult | None:
+        """The latest result the pipeline acted on - never a candidate (shadow) scoring version's row."""
+        return self.db.execute(
+            select(CandidateScoringResult)
+            .where(CandidateScoringResult.campaign_candidate_id == campaign_candidate_id,
+                   CandidateScoringResult.acted_on.is_(True))
+            .order_by(CandidateScoringResult.created_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
     def awaiting_full_scoring(self, limit: int = 50) -> list[CandidateScoringResult]:
         """Acted-on no-LLM results that held their candidate for review, oldest first (phase B)."""
         return list(self.db.execute(
