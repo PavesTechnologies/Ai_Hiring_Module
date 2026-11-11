@@ -8,6 +8,7 @@ The agreed order (2026-10-30):
 4. Phase 4: golden set and checks - **done** (2026-11-02)
 5. Retire v1 - **done** (2026-11-03)
 6. Go to production - **next**
+7. After launch - see the list at the end
 
 **Every phase is completed in dev on synthetic data. Only the finalised system goes to production.**
 
@@ -143,6 +144,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
 - [x] **Merged:** backend RMe `331b69f`, airs frontend lms_for_pms `f19edb6c`. Migrations applied to dev on the way, all additive and approved: `c5e7a9b1d3f6`, `d7f9b1c3e5a8`, `e8b0d2f4a6c8`, `f9c1e3a5b7d0`, `a1c3e5f7b9d2`, `b2d4f6a8c0e3` (head).
 - [x] **Final checks on merged RMe:** full suite 3,917 passed; golden set 60 cases, 0 failures, 0 changes, 0 LLM calls, full and no-LLM; e2e 4 of 4 drivers on the batch 5 code; frontend build passes; no email sent at any point.
 - [x] **Docs drafted for review:** the HR user guide and the operations runbook (Claude Docs).
+- [x] **Pre-deployment cleanup** (2026-11-11): the HR monitoring panel shown on the dashboard again; the resume review screen made read-only (its edits only ever reached the intake mock); unused code, scripts, settings and seeded config keys removed; "Clear override" and the hr_override flags removed; the HR core-skill panel reads the acted-on result; `MAX_AI_RETRY_COUNT` now sets the AI evaluation's retries; the 379 v1 scoring results deleted in dev. Migrations, approved: `c3e5a7b9d1f4` (two unused tables, `report_scheduled`) and `d4f6b8c0e2a5` (nine never-written columns, head).
 
 **Remaining before go-live:**
 
@@ -150,7 +152,7 @@ A checklist in order. Each item says what I do and what I need from you. Nothing
 - [ ] **Teammate review** of the review report and the fix commits on RMe and lms_for_pms. *From the reviewer:* findings, if any, before the deploy.
 - [ ] **Deploy to the dev environment** (6.2) and **production setup** (6.3), below.
 
-Accepted and not blocking: the Medium and Low findings not on the must-fix list wait until after launch ([known issues](known_issues.md)); bulk files staged before item 28 keep file names in their storage keys until deleted; worker-log tracebacks are not scrubbed (covered by the worker-log retention item in 6.3); the monitoring stage timeline shows the error class instead of the message; the [cleanup list](known_issues.md) waits for a small change.
+Accepted and not blocking: the Medium and Low findings not on the must-fix list wait until after launch ([known issues](known_issues.md)); bulk files staged before item 28 keep file names in their storage keys until deleted; worker-log tracebacks are not scrubbed (covered by the worker-log retention item in 6.3); the monitoring stage timeline shows the error class instead of the message.
 
 ### 6.2 Deploy to the dev environment
 
@@ -206,3 +208,10 @@ Accepted and not blocking: the Medium and Low findings not on the must-fix list 
 6. **Required, after enabling billing:** set `SCORING_V2_DAILY_LLM_CALL_CAP` per model, in the platform settings.
 
 On a fresh database, the migrations that add certification mappings, skill descriptions and the ITSM sense skip their rows, because they run before the skill catalogue exists. Step 3 supplies those rows.
+
+## 7. After launch
+
+Not needed for go-live; each needs its own plan and approval when it comes up.
+
+- [ ] **Correcting parsed resume data (audit, evidence, re-score).** The review screen is read-only and a wrong parse is corrected by re-parsing the resume. Editing the parsed data directly needs an endpoint that audits each change, keeps the skill evidence consistent with the edited text, and re-scores the candidate in every campaign the resume is in.
+- [ ] **Medium and Low review findings** not on the must-fix list ([known issues](known_issues.md)).
