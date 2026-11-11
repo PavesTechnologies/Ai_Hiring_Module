@@ -33,6 +33,9 @@ tests/
 tests/golden/runs/
 tests/golden/test_*.py
 docs/
+# The e2e drivers and stack definition never run in a deployed image.
+scripts/e2e/
+e2e/
 *.md
 !README.md
 

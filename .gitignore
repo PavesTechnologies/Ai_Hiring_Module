@@ -16,7 +16,7 @@ venv/
 htmlcov/
 
 # Celery
-celerybeat-schedule
+celerybeat-schedule*
 celerybeat.pid
 
 # Alembic
