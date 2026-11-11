@@ -23,8 +23,8 @@ router = APIRouter(prefix="/outcome-overrides", tags=["Outcome Overrides"])
     summary="The reason codes a move against the system's outcome needs",
     dependencies=[Security(require_roles(UserRole.HR_ADMIN, UserRole.RECRUITER, UserRole.HIRING_MANAGER))],
 )
-def list_reason_codes():
-    return APIResponse.ok(data=reason_code_options(), message="Override reason codes.")
+def list_reason_codes(db: Session = Depends(get_db)):
+    return APIResponse.ok(data=reason_code_options(db), message="Override reason codes.")
 
 
 @router.get(

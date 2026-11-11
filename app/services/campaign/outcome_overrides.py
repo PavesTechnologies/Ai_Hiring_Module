@@ -18,11 +18,13 @@ Both kinds need a reason code. Without one the move is refused with a 422 whose 
 codes (OVERRIDE_REASON_REQUIRED), so the screen can ask for one and send the move again.
 """
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.outcome_overrides import CandidateOutcomeOverride
+from app.models.outcome_overrides import CandidateOutcomeOverride, OverrideReasonCode
 from app.models.pipeline import PipelineStage
 from app.models.scoring_v2 import CandidateScoringResult
 
-REASON_CODES = {
+# The codes the override_reason_codes table started with (migration f6b8d0c2e4a9). HR admins edit them on
+# the Settings page; this list is only the fallback for a database without the table's rows.
+DEFAULT_REASON_CODES = {
     "SKILL_EVIDENCE_MISSED": "Skill evidence missed",
     "SKILL_EVIDENCE_WRONG": "Skill evidence wrong",
     "EXPERIENCE_JUDGEMENT": "Experience judgement",
@@ -71,8 +73,23 @@ def acted_on_result(db, campaign_candidate_id) -> CandidateScoringResult | None:
             .first())
 
 
-def reason_code_options() -> list[dict]:
-    return [{"code": code, "label": label} for code, label in REASON_CODES.items()]
+def reason_codes(db, *, active_only: bool = True) -> dict[str, str]:
+    """{code: label} in display order; retired codes only when active_only is False (labels for history)."""
+    rows = []
+    if db is not None:
+        try:
+            rows = list(db.query(OverrideReasonCode)
+                        .order_by(OverrideReasonCode.sort_order, OverrideReasonCode.code).all())
+        except Exception:                                   # table not migrated yet: the built-in list
+            rows = []
+    rows = [r for r in rows if isinstance(r, OverrideReasonCode)]
+    if not rows:
+        return dict(DEFAULT_REASON_CODES)
+    return {r.code: r.label for r in rows if r.is_active or not active_only}
+
+
+def reason_code_options(db) -> list[dict]:
+    return [{"code": code, "label": label} for code, label in reason_codes(db).items()]
 
 
 def _missing_core(breakdown: dict) -> list[str]:
@@ -99,7 +116,7 @@ def check_move(db, campaign_candidate, from_stage: PipelineStage, to_stage: Pipe
     """
     Before a person's stage move: the override row to record (not added yet), or None when the move
     doesn't go against the outcome. Raises a 422 (data.code OVERRIDE_REASON_REQUIRED) when it does
-    and no reason code was given, or OVERRIDE_REASON_UNKNOWN for a code not in REASON_CODES.
+    and no reason code was given, or OVERRIDE_REASON_UNKNOWN for a code that isn't active.
     """
     if actor_id is None:
         return None
@@ -117,10 +134,10 @@ def check_move(db, campaign_candidate, from_stage: PipelineStage, to_stage: Pipe
             f"This move {what} ({outcome}): choose a reason.", 422,
             data={"code": REQUIRED_CODE, "kind": kind, "direction": direction, "system_outcome": outcome,
                   "from_stage": from_stage.value, "to_stage": to_stage.value,
-                  "candidates_in_batch": candidates_in_batch, "reason_codes": reason_code_options()})
-    if reason_code not in REASON_CODES:
-        raise CampaignException(f"Unknown override reason code '{reason_code}'.", 422,
-                                data={"code": UNKNOWN_CODE, "reason_codes": reason_code_options()})
+                  "candidates_in_batch": candidates_in_batch, "reason_codes": reason_code_options(db)})
+    if reason_code not in reason_codes(db):
+        raise CampaignException(f"Unknown or retired override reason code '{reason_code}'.", 422,
+                                data={"code": UNKNOWN_CODE, "reason_codes": reason_code_options(db)})
     breakdown = result.breakdown or {}
     return CandidateOutcomeOverride(
         campaign_candidate_id=campaign_candidate.id, campaign_id=campaign_candidate.campaign_id,

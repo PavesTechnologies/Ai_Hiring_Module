@@ -31,7 +31,7 @@ class StageOverrideRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=1000)
     target_stage: Optional[str] = None   # defaults to the natural next stage
     # A move against the system's screening outcome (or resolving a HOLD) needs one of the
-    # outcome_overrides.REASON_CODES; without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
+    # active override reason codes (Settings); without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
     override_reason_code: Optional[str] = Field(default=None, max_length=40)
 
 

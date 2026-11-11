@@ -17,7 +17,7 @@ from sqlalchemy import func
 from app.models.campaigns import HiringCampaign
 from app.models.outcome_overrides import CandidateOutcomeOverride
 from app.models.scoring_v2 import CandidateScoringResult
-from app.services.campaign.outcome_overrides import KIND_OVERRIDE, KIND_REVIEW_DECISION, REASON_CODES
+from app.services.campaign.outcome_overrides import KIND_OVERRIDE, KIND_REVIEW_DECISION, reason_codes
 
 
 ALERT_THRESHOLD_KEY = "OVERRIDE_RATE_ALERT_THRESHOLD"
@@ -83,6 +83,7 @@ def override_report(db, *, campaign_id: UUID | None = None, since: datetime | No
     # Override rate: candidates overridden / candidates with a decided screening outcome (acted on).
     decided = _decided_counts(db, campaign_ids)
     threshold = alert_threshold(config_repository)
+    labels = reason_codes(db, active_only=False)              # retired codes still name past overrides
 
     return {
         "override_rate_alert_threshold": threshold,
@@ -91,10 +92,10 @@ def override_report(db, *, campaign_id: UUID | None = None, since: datetime | No
         "review_decisions": sum(1 for r in rows if r.kind == KIND_REVIEW_DECISION),
         "patterns": [
             {"kind": kind, "system_outcome": outcome, "direction": direction, "reason_code": code,
-             "reason": REASON_CODES.get(code, code), "count": count}
+             "reason": labels.get(code, code), "count": count}
             for (kind, outcome, direction, code), count in patterns.most_common(top)
         ],
-        "by_reason": [{"reason_code": code, "reason": REASON_CODES.get(code, code), "count": count}
+        "by_reason": [{"reason_code": code, "reason": labels.get(code, code), "count": count}
                       for code, count in Counter(r.reason_code for r in rows).most_common()],
         "by_failed_check": _counted(Counter(c for r in rows for c in (r.failed_checks or [])), top, "check"),
         "by_missing_core_skill": _counted(Counter(s for r in rows for s in (r.missing_core_skills or [])), top,

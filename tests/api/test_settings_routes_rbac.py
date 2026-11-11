@@ -4,7 +4,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.settings_routes import get_alert_settings_service, get_platform_settings_service
+from app.api.routes.settings_routes import (
+    get_alert_settings_service, get_platform_settings_service, get_reason_code_settings_service,
+)
 from app.db.session import get_db
 from app.enums.constants import API_PREFIX
 from app.services.settings.platform_settings import InvalidSetting
@@ -29,6 +31,7 @@ def client():
         app.dependency_overrides[get_db] = lambda: MagicMock()
         app.dependency_overrides[get_platform_settings_service] = lambda: service
         app.dependency_overrides[get_alert_settings_service] = lambda: service
+        app.dependency_overrides[get_reason_code_settings_service] = lambda: service
         yield TestClient(app, base_url=f"http://test{API_PREFIX}", client=("127.0.0.1", 50000),
                          raise_server_exceptions=False), service
     app.dependency_overrides.clear()
@@ -97,3 +100,23 @@ def test_hr_admin_sees_the_schedules(client):
     http, _ = client
     response = http.get("/settings/schedules", headers=_as("HR_ADMIN"))
     assert response.status_code == 200 and response.json()["data"]["jobs"]
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_reason_code_settings_are_hr_admin_only(client, role):
+    http, service = client
+    assert http.get("/settings/reason-codes", headers=_as(role)).status_code == 403
+    assert http.post("/settings/reason-codes", json={"code": "NEW_CODE", "label": "New"},
+                     headers=_as(role)).status_code == 403
+    assert http.patch("/settings/reason-codes/ROLE_FIT", json={"is_active": False}, headers=_as(role)).status_code == 403
+    service.create.assert_not_called()
+    service.update.assert_not_called()
+
+
+def test_hr_admin_changes_a_reason_code_as_themselves(client):
+    http, service = client
+    service.update.return_value = []
+    response = http.patch("/settings/reason-codes/ROLE_FIT", json={"is_active": False}, headers=_as("HR_ADMIN"))
+    assert response.status_code == 200
+    assert service.update.call_args.args == ("ROLE_FIT", {"is_active": False})
+    assert service.update.call_args.kwargs["actor_id"] == "hr_admin-1"

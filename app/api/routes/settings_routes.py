@@ -18,6 +18,7 @@ from app.services.audit_service import AuditService
 from app.services.settings.alert_settings import AlertSettingsService
 from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.platform_settings_service import PlatformSettingsService
+from app.services.settings.reason_code_settings import ReasonCodeSettingsService
 from app.services.settings.schedules import list_schedules
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -95,3 +96,30 @@ def set_alert_recipient(trigger_event: str, user_id: str, payload: dict = Body(.
 def get_schedules(user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
     from app.core.celery_app import celery_app
     return APIResponse.ok(data=list_schedules(celery_app))
+
+
+def get_reason_code_settings_service(db: Session = Depends(get_db)) -> ReasonCodeSettingsService:
+    return ReasonCodeSettingsService(db, AuditService(AuditRepository(db)))
+
+
+@router.get("/reason-codes", response_model=APIResponse[list], status_code=status.HTTP_200_OK,
+            summary="Every override reason code, retired ones included, with how often each was used")
+def list_reason_codes(service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
+                      user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.list())
+
+
+@router.post("/reason-codes", response_model=APIResponse[list], status_code=status.HTTP_201_CREATED,
+             summary="Add an override reason code (audited)")
+def add_reason_code(payload: dict = Body(...),
+                    service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
+                    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.create(payload, actor_id=user.user_id), message="Reason code added.")
+
+
+@router.patch("/reason-codes/{code}", response_model=APIResponse[list], status_code=status.HTTP_200_OK,
+              summary="Change a reason code's label, order, or retire/restore it (audited; never renamed)")
+def change_reason_code(code: str, payload: dict = Body(...),
+                       service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
+                       user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.update(code, payload, actor_id=user.user_id), message="Reason code saved.")

@@ -11,7 +11,7 @@ class BulkStageMoveRequest(BaseModel):
     # Spec requires a shared justification; every bulk move is auditable.
     reason: str = Field(..., min_length=10, max_length=1000)
     # A move against the system's screening outcome (or resolving a HOLD) needs one of the
-    # outcome_overrides.REASON_CODES; without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
+    # active override reason codes (Settings); without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
     override_reason_code: str | None = Field(default=None, max_length=40)
 
 
@@ -41,7 +41,7 @@ class SingleStageMoveRequest(BaseModel):
     # justification regardless of which transition it applies.
     reason: str | None = Field(default=None, min_length=10, max_length=1000)
     # A move against the system's screening outcome (or resolving a HOLD) needs one of the
-    # outcome_overrides.REASON_CODES; without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
+    # active override reason codes (Settings); without it the move is refused (422 OVERRIDE_REASON_REQUIRED).
     override_reason_code: str | None = Field(default=None, max_length=40)
 
     @field_validator("reason", mode="before")
@@ -63,7 +63,7 @@ class ManualRejectRequest(BaseModel):
     """M11-E04-S03-T03 — reject one candidate straight from the list."""
 
     reason: str = Field(..., min_length=10, max_length=1000)
-    # Rejecting a PASS, or a HOLD, needs one of the outcome_overrides.REASON_CODES (422 otherwise).
+    # Rejecting a PASS, or a HOLD, needs one of the active override reason codes (Settings) (422 otherwise).
     override_reason_code: str | None = Field(default=None, max_length=40)
 
 
