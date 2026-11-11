@@ -2,6 +2,7 @@ import uuid
 
 from app.db.session import SessionLocal
 from app.models.pipeline import AllowedTransition, PipelineStage
+from app.seeds.transition_role_rules import reconcile_existing, required_roles
 
 db = SessionLocal()
 
@@ -17,10 +18,10 @@ db = SessionLocal()
 # SHORTLISTED / INTERVIEW / SELECTED / HOLD / REJECTED / FRAUD_REVIEW by
 # default - except wherever previous_stage = HM_REVIEW, which flips
 # ownership to HIRING_MANAGER. FRAUD_REVIEW *resolution* is always
-# HIRING_MANAGER regardless of previous_stage. HR_ADMIN has no transition-
-# permission role anywhere in this table (removed 2026-08-31) - it retains
-# permissions elsewhere in the app (exports, campaign management, etc.),
-# just not here.
+# HIRING_MANAGER regardless of previous_stage. Since 2026-11-11 HR_ADMIN is
+# added to every RECRUITER-owned row and SYSTEM to every move automated
+# scoring makes - see app/seeds/transition_role_rules.py; the rows below
+# list each move's owner, the rule adds the rest.
 #
 # _TRANSITIONS entries are dicts keyed exactly like AllowedTransition's
 # columns; previous_stage omitted (or None) means the wildcard row.
@@ -923,6 +924,11 @@ _TRANSITIONS = [
     },
 ]
 
+def _label(transition) -> str:
+    previous = transition["previous_stage"].value if transition["previous_stage"] else "ANY"
+    return f"{previous} -> {transition['from_stage'].value} -> {transition['to_stage'].value}"
+
+
 try:
     for transition in _TRANSITIONS:
         existing = (
@@ -935,22 +941,20 @@ try:
             .first()
         )
         if existing:
-            print(
-                f"Transition already exists: "
-                f"{transition['previous_stage'].value if transition['previous_stage'] else 'ANY'} -> "
-                f"{transition['from_stage'].value} -> {transition['to_stage'].value}"
-            )
+            print(f"Transition already exists: {_label(transition)}")
             continue
 
-        db.add(AllowedTransition(id=uuid.uuid4(), **transition))
-        print(
-            f"Added transition: "
-            f"{transition['previous_stage'].value if transition['previous_stage'] else 'ANY'} -> "
-            f"{transition['from_stage'].value} -> {transition['to_stage'].value}"
-        )
+        roles = required_roles(transition["previous_stage"], transition["from_stage"], transition["to_stage"],
+                               transition["allowed_roles"])
+        db.add(AllowedTransition(id=uuid.uuid4(), **{**transition, "allowed_roles": roles}))
+        print(f"Added transition: {_label(transition)}")
+
+    # Existing rows (an older database) get the required roles added; nothing is ever removed.
+    for previous, from_stage, to_stage, added in reconcile_existing(db):
+        print(f"Roles added: {previous} -> {from_stage} -> {to_stage}: {', '.join(added)}")
 
     db.commit()
-    print("\nAllowed transitions seeded successfully")
+    print("Allowed transitions seeded successfully")
 
 except Exception as e:
     db.rollback()
