@@ -56,8 +56,7 @@ class CampaignCandidateAIEvaluationRepository:
         Resubmission (Epic 3 Phase C5): clears every AI evaluation field so
         the candidate is re-evaluated from scratch, same fields
         reset_for_resubmission used to null directly on campaign_candidates
-        before the AI evaluation split - prompt_version_id is untouched,
-        matching that method's original behavior.
+        before the AI evaluation split.
         """
         ai_evaluation.ai_ats_score = None
         ai_evaluation.ai_confidence = None

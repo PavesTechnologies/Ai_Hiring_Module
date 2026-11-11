@@ -14,7 +14,6 @@ from .education import EducationFieldRelation
 
 from .candidate_notes import CandidateNote
 
-from .ai_pipeline import PromptVersion
 from .llm_call_log import LLMCallLog
 
 from .prompt_template import PromptTemplate, PromptTemplateStatus

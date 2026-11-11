@@ -283,7 +283,6 @@ class ExportService:
             ("AI confidence", _v(row.ai_confidence)),
             ("AI recommendation", _v(row.ai_recommendation)),
             ("Pipeline stage", _v(row.pipeline_stage)),
-            ("Prompt version", _v(row.prompt_version_id)),
         ]))
 
         out.append(heading("Skill Match"))

@@ -258,7 +258,6 @@ class CampaignCandidateAIEvaluation(Base):
     ai_strengths: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ai_weaknesses: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     ai_response_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    prompt_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("prompt_versions.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

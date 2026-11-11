@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,19 +44,6 @@ class CircuitBreakerState(Base):
     last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_after: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class ApiRateLimitBucket(Base):
-    __tablename__ = "api_rate_limit_buckets"
-    __table_args__ = (UniqueConstraint("service_name", "window_start"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    service_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    window_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
-    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    request_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

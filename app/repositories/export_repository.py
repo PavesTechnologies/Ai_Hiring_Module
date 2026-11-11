@@ -67,7 +67,6 @@ class ExportRepository:
                 CampaignCandidateAIEvaluation.ai_strengths,
                 CampaignCandidateAIEvaluation.ai_weaknesses,
                 CampaignCandidateAIEvaluation.ai_evaluation_status,
-                CampaignCandidateAIEvaluation.prompt_version_id,
                 Resume.uploaded_by,
             )
             .outerjoin(
