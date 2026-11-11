@@ -20,6 +20,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications.email_rendering import render
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.jd_repository import JDRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -214,8 +215,10 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
             "job_title": job_title,
             **(notification.template_context or {}),
         }
-        subject = template.subject.format(**context)
-        body = template.body_template.format(**_html_escape_context(context))
+        # Plain {name} placeholders only (email_rendering.render): str.format would also evaluate attribute
+        # and index access in an edited template.
+        subject = render(template.subject, context)
+        body = render(template.body_template, _html_escape_context(context))
 
         # Review item 7: claim the row before calling SES. Exactly one run wins; a redelivered or
         # concurrent run finds it SENDING (or already SENT) and leaves it alone.
