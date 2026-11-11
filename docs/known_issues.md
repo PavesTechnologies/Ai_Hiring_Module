@@ -11,7 +11,7 @@ Open entries first; closed ones are kept below, under **Closed**, for the record
 
 Nothing reads these, or they only bite in an unusual run; they cost nothing today. Fix them in a small cleanup change (a migration each where schema is involved, with approval), not as part of feature work.
 
-- `hiring_campaigns.report_scheduled` (boolean, default false): in the schema since the initial migration; nothing in the backend or the airs frontend reads or writes it (checked 2026-11-03, retire v1 phase E).
+- Done 2026-11-11: `hiring_campaigns.report_scheduled`, the `prompt_versions` and `api_rate_limit_buckets` tables and nine never-written columns were dropped (migrations c3e5a7b9d1f4, d4f6b8c0e2a5); ten unread platform_config keys are no longer seeded.
 - **Test order dependence (found 2026-11-10, batch 4):** running `tests/services` before `tests/core` (e.g. `pytest tests/services tests/core`) fails `tests/core/test_celery_worker_logging.py::test_a_rotating_log_file` - something earlier in `tests/services` leaves logging state that test doesn't expect. It fails the same way on the commit before batch 4; the normal full-suite order (`pytest` with no paths) passes. Find the test that leaks the logging handler or config and isolate it.
 
 ## A resume parse can vary between runs (found 2026-10-30)
@@ -119,7 +119,8 @@ skill-curation pages.
 
 ## Rejected-candidates export: "HR Override" / "Override Reason" columns are always empty (found 2026-10-12)
 
-**Status:** open - documented only, no code change.
+**Status:** closed 2026-11-11 - the two columns were removed with "Clear override" and the hr_override flags
+(overrides go through stage moves with reason codes). Kept below for the record.
 
 `CampaignCandidateService.export_rejected_candidates` exports candidates
 currently at `pipeline_stage = REJECTED`, and `_to_export_row` fills
@@ -140,8 +141,9 @@ asserts today's behaviour.
 
 ## Epic 5: `MAX_EMAIL_RETRY_COUNT` (seeded, value 4) vs. the actual hardcoded retry cap (3)
 
-**Status:** open, discovered 2026-08-18 during Epic 5 Step 0's investigation.
-Real, minor inconsistency — not fixed as part of Step 2.
+**Status:** closed - review item 30 made the send read `MAX_EMAIL_RETRY_COUNT`
+(`_email_retry_policy`); `MAX_AI_RETRY_COUNT` was wired the same way on 2026-11-11.
+Kept below for the record.
 
 `seed_platform_config.py` seeds `MAX_EMAIL_RETRY_COUNT = "4"`, described as
 "Max attempts for a transient interview/notification email send failure
