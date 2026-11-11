@@ -280,7 +280,7 @@ try:
             id=uuid.uuid4(),
             key="MAX_AI_RETRY_COUNT",
             value="3",
-            description="Descriptive value for upload-failure notification copy (D11) - matches the real hardcoded retry_policy.py DEFAULT_POLICY.max_attempts; does not itself control retry behavior",
+            description="Attempts an AI evaluation gets on a transient failure (timeout, rate limit, network) before it is dead-lettered (1 to 10)",
         ),
         PlatformConfig(
             id=uuid.uuid4(),

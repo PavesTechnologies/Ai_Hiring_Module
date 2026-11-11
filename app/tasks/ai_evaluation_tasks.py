@@ -17,6 +17,7 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.campaign_candidate_ai_evaluation_repository import CampaignCandidateAIEvaluationRepository
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
+from app.repositories.config_repository import ConfigRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.interview_schedule_repository import InterviewScheduleRepository
 from app.repositories.jd_repository import JDRepository
@@ -55,6 +56,25 @@ _SCOREABLE_CAMPAIGN_STATUSES = {CampaignStatus.ACTIVE, CampaignStatus.PAUSED}
 # for (Gemini timeout/rate-limit/network failure), reused as-is rather than
 # inventing a third retry shape for screening.
 _AI_EVALUATION_RETRY_POLICY = RetryPolicy(max_attempts=3, base_delay_seconds=10, max_delay_seconds=120)
+# platform_config MAX_AI_RETRY_COUNT (seeded 3) was only descriptive; now it decides how many attempts a
+# transient AI evaluation failure gets before dead-lettering (2026-11-11, like item 30 for email).
+_MAX_AI_RETRY_COUNT_KEY = "MAX_AI_RETRY_COUNT"
+
+
+def _ai_evaluation_retry_policy(db) -> RetryPolicy:
+    """The AI evaluation's retry policy, with max_attempts from MAX_AI_RETRY_COUNT (1..10; default 3)."""
+    default = _AI_EVALUATION_RETRY_POLICY.max_attempts
+    try:
+        raw = ConfigRepository(db).get_configs_by_keys([_MAX_AI_RETRY_COUNT_KEY]).get(_MAX_AI_RETRY_COUNT_KEY)
+        attempts = int(raw) if raw is not None else default
+    except Exception:
+        logger.warning("MAX_AI_RETRY_COUNT unreadable - using %s.", default)
+        attempts = default
+    if not 1 <= attempts <= 10:
+        logger.warning("MAX_AI_RETRY_COUNT=%s out of range - using %s.", attempts, default)
+        attempts = default
+    return RetryPolicy(max_attempts=attempts, base_delay_seconds=_AI_EVALUATION_RETRY_POLICY.base_delay_seconds,
+                       max_delay_seconds=_AI_EVALUATION_RETRY_POLICY.max_delay_seconds)
 
 
 def _enqueue_ai_evaluation(
@@ -193,7 +213,9 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
     task_log = None
     task_id = self.request.id
     attempt_number = self.request.retries + 1
+    retry_policy = _AI_EVALUATION_RETRY_POLICY
     try:
+        retry_policy = _ai_evaluation_retry_policy(db)
         campaign_candidate_repo = CampaignCandidateRepository(db)
         campaign_repo = CampaignRepository(db)
         resume_repo = ResumeRepository(db)
@@ -387,15 +409,15 @@ def calculate_ai_evaluation_task(self, campaign_candidate_id: str) -> None:
         db.rollback()
         classification = classify(ex)
 
-        if classification != FailureClassification.PERMANENT and attempt_number < _AI_EVALUATION_RETRY_POLICY.max_attempts:
+        if classification != FailureClassification.PERMANENT and attempt_number < retry_policy.max_attempts:
             if task_log:
                 task_log_service.mark_retry(task_log)
-            delay = compute_backoff_seconds(_AI_EVALUATION_RETRY_POLICY, attempt_number)
+            delay = compute_backoff_seconds(retry_policy, attempt_number)
             logger.warning(
                 "AI evaluation transient failure, retrying | campaign_candidate_id=%s attempt=%s delay=%ss error=%s",
                 campaign_candidate_id, attempt_number, delay, safe_error(ex),
             )
-            self.retry(exc=SafeRetryError(safe_error(ex)), countdown=bounded_countdown(delay), max_retries=_AI_EVALUATION_RETRY_POLICY.max_attempts)
+            self.retry(exc=SafeRetryError(safe_error(ex)), countdown=bounded_countdown(delay), max_retries=retry_policy.max_attempts)
             return
 
         # Retries exhausted (or a permanent failure) - dead-letter, mark the
