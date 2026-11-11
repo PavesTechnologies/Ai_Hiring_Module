@@ -116,6 +116,11 @@ def authorising_role(user_or_roles, allowed=None) -> str | None:
     return next(iter(authorising_roles(user_or_roles, allowed)), None)
 
 
+def token_airs_roles(user: TokenUser) -> list[str]:
+    """Every AIRS role in the token, in its order, without labels such as "General"."""
+    return list(dict.fromkeys(r for r in (user.roles or []) if r in LocalUserRole.__members__))
+
+
 def _new_user_from_token(user: TokenUser) -> User:
     role_name = resolve_actor_role(user)
 
@@ -125,6 +130,7 @@ def _new_user_from_token(user: TokenUser) -> User:
         password_hash="EXTERNAL_AUTH",  # identity lives in the UMS, not here
         # No AIRS role in the token -> none here (A-M3); never a default RECRUITER.
         role=LocalUserRole[role_name] if role_name else None,
+        airs_roles=token_airs_roles(user),
         full_name=user.claims.get("name") or user.email,
         is_active=True,
     )
@@ -175,10 +181,12 @@ def _ensure_local_user(user: TokenUser, db: Session) -> None:
         # HR-admin alerts it brings) follows the identity service instead of staying as first seen.
         role_name = resolve_actor_role(user)
         role = LocalUserRole[role_name] if role_name else None
-        if local.role != role:
-            logger.info("Local role of user %s refreshed from the token: %s -> %s", user.user_id,
+        airs_roles = token_airs_roles(user)
+        if local.role != role or list(local.airs_roles or []) != airs_roles:
+            logger.info("Local roles of user %s refreshed from the token: %s -> %s", user.user_id,
                         getattr(local.role, "value", local.role), getattr(role, "value", role))
             local.role = role
+            local.airs_roles = airs_roles
             db.commit()
         return
 

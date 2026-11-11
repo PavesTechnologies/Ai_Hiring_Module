@@ -3,8 +3,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, func, text
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -38,6 +38,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # The token's AIRS role, refreshed on every AIRS request; NULL when the token has none (A-M3).
     role: Mapped[Optional[UserRole]] = mapped_column(SAEnum(UserRole, name="user_role_enum"), nullable=True)
+    # Every AIRS role the token holds (role above is only the first), refreshed with it - so a user whose
+    # token lists HR_ADMIN after another role still gets the HR-admin alerts (2026-11-11).
+    airs_roles: Mapped[list[str]] = mapped_column(ARRAY(String(32)), nullable=False, default=list,
+                                                  server_default=text("'{}'"))
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.identity import User, UserRole
@@ -24,5 +24,7 @@ class UserRepository:
         (unlike Candidate's encrypted PII columns), so no decryption step
         is needed before using it as an email recipient.
         """
-        stmt = select(User).where(User.role == role, User.is_active.is_(True))
+        role_value = getattr(role, "value", role)
+        stmt = select(User).where(or_(User.role == role, User.airs_roles.any(role_value)),
+                                  User.is_active.is_(True))
         return list(self.db.execute(stmt).scalars().all())

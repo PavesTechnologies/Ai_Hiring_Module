@@ -28,7 +28,7 @@ def test_a_new_user_without_an_airs_role_gets_none():
     (None, ["HIRING_MANAGER"], UserRole.HIRING_MANAGER),        # granted one
 ])
 def test_the_local_role_follows_the_token(before, roles, after):
-    local = SimpleNamespace(role=before)
+    local = SimpleNamespace(role=before, airs_roles=[before.value] if before else [])
     db = MagicMock()
     db.get.return_value = local
     rbac._ensure_local_user(_token(roles), db)
@@ -38,13 +38,13 @@ def test_the_local_role_follows_the_token(before, roles, after):
 
 def test_an_unchanged_role_writes_nothing():
     db = MagicMock()
-    db.get.return_value = SimpleNamespace(role=UserRole.RECRUITER)
+    db.get.return_value = SimpleNamespace(role=UserRole.RECRUITER, airs_roles=["RECRUITER"])
     rbac._ensure_local_user(_token(["RECRUITER"]), db)
     db.commit.assert_not_called()
 
 
 def test_a_refused_request_still_refreshes_the_role(monkeypatch):
-    local = SimpleNamespace(role=UserRole.HR_ADMIN)
+    local = SimpleNamespace(role=UserRole.HR_ADMIN, airs_roles=["HR_ADMIN"])
     db = MagicMock()
     db.get.return_value = local
     monkeypatch.setattr(rbac, "_get_payload", lambda request: {})
@@ -53,3 +53,21 @@ def test_a_refused_request_still_refreshes_the_role(monkeypatch):
     with pytest.raises(ForbiddenError):
         check(request=MagicMock(), db=db)
     assert local.role == UserRole.RECRUITER          # an ex-admin no longer counts as one
+
+
+def test_every_airs_role_in_the_token_is_kept_not_only_the_first():
+    """2026-11-11: an HR admin whose token lists another role first still counts as an HR admin for alerts."""
+    token = _token(["General", "RECRUITER", "HR_ADMIN", "RECRUITER"])
+    assert rbac.token_airs_roles(token) == ["RECRUITER", "HR_ADMIN"]
+    new = rbac._new_user_from_token(token)
+    assert (new.role, new.airs_roles) == (UserRole.RECRUITER, ["RECRUITER", "HR_ADMIN"])
+
+
+def test_a_secondary_role_change_is_refreshed_too():
+    local = SimpleNamespace(role=UserRole.RECRUITER, airs_roles=["RECRUITER"])
+    db = MagicMock()
+    db.get.return_value = local
+    rbac._ensure_local_user(_token(["RECRUITER", "HR_ADMIN"]), db)
+    assert (local.role, local.airs_roles) == (UserRole.RECRUITER, ["RECRUITER", "HR_ADMIN"])
+    db.commit.assert_called_once()
+
