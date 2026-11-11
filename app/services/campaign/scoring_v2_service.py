@@ -10,9 +10,10 @@ phase C/D; a campaign trying a candidate version also has it scored - stored, ne
 (scoring_v2_tasks). The version's configuration and model are used, and recorded on the result.
 
 LLM budget: platform_config SCORING_V2_DAILY_LLM_CALL_CAP caps the core
-confirmation calls per day (counted from today's stored v2 results). When
-the next confirmation would exceed it, v2 is skipped for that candidate and
-stored as NOT_RUN; v1 is never affected.
+confirmation calls per day, per model (counted from today's stored results). When
+the next confirmation would exceed it the outcome is NOT_RUN; the acted-on scoring
+then falls back to the no-LLM scoring and holds the candidate for full scoring
+(llm_fallback), while a candidate version's shadow row is stored as NOT_RUN.
 
 Outcomes beyond PASS / REJECT: PENDING when the confirmation couldn't run
 (quota, provider down, backup failing too) - the caller retries it; it is

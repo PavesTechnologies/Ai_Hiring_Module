@@ -136,6 +136,15 @@ CHANGE_MANAGEMENT_SENSES = [
 ]
 
 
+BLOCKLIST_DESCRIPTION = ("(written term -> catalogue skill) matches never accepted from any source, e.g. a fuzzy "
+                         "match known to be wrong.")
+DAILY_CAP_DESCRIPTION = (
+    "Maximum core-confirmation LLM calls per day (UTC), per model (a number, or {\"default\": n, \"<model>\": n}). "
+    "When reached, candidates are scored without the LLM vote and held for review until full scoring can run; a "
+    "candidate scoring version being tried is stored as 'not run'. Each confirmation needing the LLM costs 3 calls "
+    "(3 votes), more on invalid-output retries.")
+
+
 def seed(db) -> None:
     from app.models.config import PlatformConfig
     from app.models.scoring_v2 import SkillScanTerm, SkillSense
@@ -154,19 +163,19 @@ def seed(db) -> None:
             capabilities.value = json.dumps(rules, indent=1)
             print(f"Updated config: {LLM_MODEL_CAPABILITIES_KEY} (Anthropic temperature off until verified)")
 
-    if db.query(PlatformConfig).filter(PlatformConfig.key == MATCH_BLOCKLIST_KEY).first() is None:
+    blocklist = db.query(PlatformConfig).filter(PlatformConfig.key == MATCH_BLOCKLIST_KEY).first()
+    if blocklist is not None and blocklist.description != BLOCKLIST_DESCRIPTION:
+        blocklist.description = BLOCKLIST_DESCRIPTION               # the code owns the description
+    if blocklist is None:
         db.add(PlatformConfig(
             id=uuid.uuid4(), key=MATCH_BLOCKLIST_KEY, value=json.dumps(MATCH_BLOCKLIST, indent=1),
-            description="Scoring v2 only: (written term -> catalogue skill) matches never accepted from any "
-                        "source, e.g. a fuzzy match known to be wrong. v1 matching is not affected.",
+            description=BLOCKLIST_DESCRIPTION,
         ))
         print(f"Added config: {MATCH_BLOCKLIST_KEY}")
 
     for key, value, description in (
         (DAILY_LLM_CALL_CAP_KEY, str(DEFAULT_DAILY_LLM_CALL_CAP),
-         "Scoring v2: maximum core-confirmation LLM calls per day (UTC), across all shadow / v2 campaigns. "
-         "When reached, v2 is skipped for further candidates that day and shown as 'not run'; v1 is never "
-         "affected. Each confirmation needing the LLM costs 3 calls (3 votes), more on invalid-output retries."),
+         DAILY_CAP_DESCRIPTION),
         (LLM_MODEL_PRICES_KEY, json.dumps(DEFAULT_LLM_MODEL_PRICES, indent=1),
          "LLM list prices per model (USD per 1M input / output tokens), for the monitoring view's cost "
          "estimates. Each model's source records where the price came from; HR_ADMIN edits them."),
@@ -174,9 +183,12 @@ def seed(db) -> None:
          "Fairness report: groups with fewer candidates than this are not shown (no group points to a few "
          "people). HR_ADMIN edits it; at least 2."),
     ):
-        if db.query(PlatformConfig).filter(PlatformConfig.key == key).first() is None:
+        existing = db.query(PlatformConfig).filter(PlatformConfig.key == key).first()
+        if existing is None:
             db.add(PlatformConfig(id=uuid.uuid4(), key=key, value=value, description=description))
             print(f"Added config: {key}")
+        elif existing.description != description:
+            existing.description = description                     # the value stays HR_ADMIN's
 
     # The current scoring version (retire v1, phases D/E): the only source of scoring configuration -
     # weights, multipliers, recognition, component weights, near-miss margins, paraphrase and evidence
