@@ -242,15 +242,6 @@ def test_failure_reason_is_null_when_candidate_has_no_rejection():
     assert result.summary.failure_reasons == []
 
 
-def test_contribution_percentage_is_null_when_configured_weight_is_zero():
-    service = make_service()
-
-    assert service._contribution_percentage(10.0, 0.0) is None
-    assert service._contribution_percentage(10.0, None) is None
-    assert service._contribution_percentage(None, 50.0) is None
-    assert service._contribution_percentage(25.0, 50.0) == 50.0
-
-
 def test_detailed_validation_status_uses_skipped_not_not_required():
     service = make_service()
 

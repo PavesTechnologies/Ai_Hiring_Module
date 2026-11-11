@@ -766,17 +766,6 @@ class CampaignCandidateRepository:
 
         return self.db.execute(stmt).unique().all()
 
-    def get_candidate_ids_by_campaign(self, campaign_id: UUID) -> set[UUID]:
-        """
-        Bare candidate_ids already added to a campaign - used by Talent
-        Pool search to exclude already-added candidates when an HR_ADMIN is
-        browsing to add people to a specific campaign. Deliberately not
-        get_all_by_campaign's full Candidate/Resume/ai_evaluation join -
-        only the id set is needed here.
-        """
-        stmt = select(CampaignCandidate.candidate_id).where(CampaignCandidate.campaign_id == campaign_id)
-        return set(self.db.execute(stmt).scalars().all())
-
     def get_ids_by_campaign(
         self,
         campaign_id: UUID,

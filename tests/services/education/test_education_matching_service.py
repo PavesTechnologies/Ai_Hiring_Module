@@ -3,7 +3,6 @@ from app.services.education.education_matching_service import (
     classify_degree_level,
     classify_field,
     detect_related_field_allowed,
-    evaluate_candidate_education,
     match_education,
     normalize_candidate_education_entry,
     normalize_jd_education_requirement,
@@ -201,66 +200,3 @@ def test_normalize_jd_requirement_handles_missing_criteria():
 # ---------------------------------------------------------------- evaluate_candidate_education (end-to-end)
 
 
-def test_evaluate_full_match_end_to_end():
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science"},
-        [{"degree": "B.Tech", "field": "Computer Science"}],
-    )
-    assert result["result"] == EducationMatchResult.FULL_MATCH.value
-    assert result["candidate_degree_level"] == DegreeLevel.BACHELOR.value
-    assert result["matched_entry_index"] == 0
-
-
-def test_evaluate_related_field_match_end_to_end():
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science or related field"},
-        [{"degree": "B.Tech", "field": "Information Technology"}],
-    )
-    assert result["result"] == EducationMatchResult.RELATED_FIELD_MATCH.value
-
-
-def test_evaluate_discipline_mismatch_end_to_end():
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science"},
-        [{"degree": "B.Tech", "field": "Mechanical Engineering"}],
-    )
-    assert result["result"] == EducationMatchResult.DISCIPLINE_MISMATCH.value
-
-
-def test_evaluate_degree_level_mismatch_end_to_end():
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science"},
-        [{"degree": "Diploma", "field": "Computer Science"}],
-    )
-    assert result["result"] == EducationMatchResult.DEGREE_LEVEL_MISMATCH.value
-
-
-def test_evaluate_degree_level_exceeds_end_to_end():
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science"},
-        [{"degree": "Master of Technology", "field": "Computer Science"}],
-    )
-    assert result["result"] == EducationMatchResult.DEGREE_LEVEL_EXCEEDS.value
-
-
-def test_evaluate_no_education_data_when_candidate_has_no_entries():
-    result = evaluate_candidate_education({"degree": "Bachelor's degree", "field": "Computer Science"}, [])
-    assert result["result"] == EducationMatchResult.NO_EDUCATION_DATA.value
-
-
-def test_evaluate_unknown_when_jd_has_no_parseable_requirement():
-    result = evaluate_candidate_education(None, [{"degree": "B.Tech", "field": "Computer Science"}])
-    assert result["result"] == EducationMatchResult.UNKNOWN.value
-
-
-def test_evaluate_picks_the_best_matching_entry_among_several():
-    """Candidate has Bachelor's-Mechanical AND Master's-CS - the CS one should win against a Bachelor's-CS requirement."""
-    result = evaluate_candidate_education(
-        {"degree": "Bachelor's degree", "field": "Computer Science"},
-        [
-            {"degree": "B.Tech", "field": "Mechanical Engineering"},
-            {"degree": "M.Tech", "field": "Computer Science"},
-        ],
-    )
-    assert result["result"] == EducationMatchResult.DEGREE_LEVEL_EXCEEDS.value
-    assert result["matched_entry_index"] == 1

@@ -166,9 +166,6 @@ class UploadDecisionService:
             available_resolutions=list(NEW_FILE_RESOLUTIONS),
         )
 
-    def candidate_display_name(self, candidate_id: UUID) -> str | None:
-        return self._candidate_name(candidate_id)
-
     # --- audit (upload time) --------------------------------------------------
     def log_duplicate_skipped(self, cc, *, filename: str | None, file_hash: str, actor_id: str | None,
                               actor_role: str | None, bulk_upload_job_id: UUID | None = None,

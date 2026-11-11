@@ -69,8 +69,3 @@ def get_jwks_key(kid: str | None) -> dict[str, Any]:
     raise RuntimeError(f"No RS256 key found for kid={kid!r}")
 
 
-def preload_jwks() -> None:
-    """Eagerly fetch OIDC discovery and signing keys at startup."""
-    with _lock:
-        _fetch_discovery()
-        _fetch_keys()

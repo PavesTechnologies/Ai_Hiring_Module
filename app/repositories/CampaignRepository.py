@@ -240,44 +240,6 @@ class CampaignRepository:
             or 0
         )
 
-    def get_overdue_review_count(self, campaign_id: UUID, sla_days: int) -> int:
-        """
-        candidates currently in HM_REVIEW whose most recent transition
-        into that stage is older than sla_days, with no decision since.
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
-
-        latest_entry = (select(CampaignCandidateStageHistory.campaign_candidate_id,
-                func.max(CampaignCandidateStageHistory.changed_at).label("entered_at"),
-            )
-            .where(CampaignCandidateStageHistory.to_stage == PipelineStage.HM_REVIEW)
-            .group_by(CampaignCandidateStageHistory.campaign_candidate_id)
-            .subquery()
-        )
-
-        stmt = (select(func.count(CampaignCandidate.id))
-            .join(latest_entry, latest_entry.c.campaign_candidate_id == CampaignCandidate.id)
-            .where(CampaignCandidate.campaign_id == campaign_id,
-                CampaignCandidate.pipeline_stage == PipelineStage.HM_REVIEW,
-                latest_entry.c.entered_at <= cutoff,
-            )
-        )
-        return self.db.execute(stmt).scalar() or 0
-    def is_pipeline_stalled(self, campaign_id: UUID, stale_days: int) -> bool:
-        """
-        True if the campaign has candidates but none have been added
-        in the last stale_days days.
-        """
-        latest_added_at = (self.db.query(func.max(CampaignCandidate.created_at))
-            .filter(CampaignCandidate.campaign_id == campaign_id)
-            .scalar()
-        )
-        if latest_added_at is None:
-            return False
-
-        cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
-        return latest_added_at <= cutoff
-
     def get_candidate_counts(self, campaign_ids: list[UUID]) -> dict[UUID, int]:
         """Batch campaign_id -> candidate count, for list/dashboard endpoints - avoids get_candidate_count per row."""
         if not campaign_ids:
@@ -976,24 +938,6 @@ class CampaignRepository:
         else:
             return 0
         return self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar() or 0
-
-    def count_dlq_chain(self, entry: DeadLetterQueue) -> int:
-        """
-        replay-limit guard: how many times has this same piece of work
-        already dead-lettered? Every failed replay produces a NEW dlq row for
-        the same (task_type, entity), so the chain length IS the attempt count.
-        """
-        conditions = [DeadLetterQueue.task_type == entry.task_type]
-        if entry.campaign_candidate_id is not None:
-            conditions.append(DeadLetterQueue.campaign_candidate_id == entry.campaign_candidate_id
-            )
-        elif entry.resume_id is not None:
-            conditions.append(DeadLetterQueue.resume_id == entry.resume_id)
-        else:
-            return 1  # unlinkable entry — no chain to count
-        return (self.db.query(func.count(DeadLetterQueue.id)).filter(*conditions).scalar()
-            or 1
-        )
 
     # ── Stalled candidates ─────────────────────────────────────────
 

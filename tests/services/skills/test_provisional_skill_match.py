@@ -7,7 +7,7 @@ whole list items. v1 reads text rebuilt from the stored parse.
 from uuid import uuid4
 
 from app.services.skills.provisional_skill_match import (
-    PROVISIONAL_CREDIT, ProvisionalTerm, parsed_json_text, scan_provisional,
+    PROVISIONAL_CREDIT, ProvisionalTerm, scan_provisional,
 )
 from app.services.skills.resume_skill_scanner import POLICY_EXCLUDE, POLICY_REQUIRE_CUE, ScanTermRule, term_key
 
@@ -61,19 +61,3 @@ def test_a_plain_word_counts_only_as_a_whole_list_item():
     assert term.unknown_skill_id in scan_provisional(as_list_item, [term], {})
 
 
-def test_v1_text_puts_each_listed_skill_on_its_own_line():
-    text = parsed_json_text({
-        "skills": ["Storytelling", "Python"], "certifications": ["PMP"],
-        "summary": "Transformation lead.", "inferred_skills": [{"skill": "Change Management", "evidence": "led change"}],
-        "work_experience": [{"title": "Programme Manager", "description": "Ran agentic workflows.\nScaled teams."}],
-        "projects": [{"name": "Atlas", "description": "Claims bot", "tech": ["LangChain"]}],
-    })
-    lines = text.splitlines()
-    assert "Storytelling" in lines and "LangChain" in lines and "Scaled teams." in lines
-    term = _term("Storytelling")
-    assert term.unknown_skill_id in scan_provisional(text, [term], {})
-
-
-def test_v1_text_is_empty_for_a_missing_parse():
-    assert parsed_json_text(None) == ""
-    assert scan_provisional(parsed_json_text(None), [_term("Agentic Workflows")], {}) == {}

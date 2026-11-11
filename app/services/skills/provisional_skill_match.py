@@ -48,35 +48,3 @@ def scan_provisional(text: str, terms: list[ProvisionalTerm],
     return found
 
 
-def parsed_json_text(parsed_json: dict | None) -> str:
-    """
-    Text for v1 provisional matching, from the stored parse. Each listed
-    skill / certification / project technology goes on its own line, so it
-    is a whole list item to the scanner; free text keeps its own lines.
-    """
-    parsed = parsed_json if isinstance(parsed_json, dict) else {}
-    lines: list[str] = []
-
-    def add(value):
-        if isinstance(value, str) and value.strip():
-            lines.extend(part for part in value.splitlines() if part.strip())
-
-    for key in ("skills", "soft_skills", "certifications"):
-        for item in parsed.get(key) or []:
-            add(item)
-    for item in parsed.get("inferred_skills") or []:
-        if isinstance(item, dict):
-            add(item.get("skill"))
-            add(item.get("evidence"))
-    add(parsed.get("summary"))
-    for entry in parsed.get("work_experience") or []:
-        if isinstance(entry, dict):
-            add(entry.get("title"))
-            add(entry.get("description"))
-    for project in parsed.get("projects") or []:
-        if isinstance(project, dict):
-            add(project.get("name"))
-            add(project.get("description"))
-            for tech in project.get("tech") or []:
-                add(tech)
-    return "\n".join(lines)

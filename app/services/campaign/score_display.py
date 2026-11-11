@@ -69,7 +69,3 @@ def describe_education_gap(education_result: dict | None) -> tuple[str | None, s
     return level_gap, field_gap
 
 
-def _format_years(value: float) -> str:
-    """4.0 -> '4', 2.5 -> '2.5' - matches the ticket's example wording."""
-    rounded = round(value, 1)
-    return str(int(rounded)) if rounded == int(rounded) else str(rounded)

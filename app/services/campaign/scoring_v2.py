@@ -181,16 +181,6 @@ def merge_config(configured: dict | None) -> dict:
     return merged
 
 
-def parse_config(raw: str | None) -> dict:
-    if not raw:
-        return merge_config(None)
-    try:
-        value = json.loads(raw)
-    except ValueError:
-        return merge_config(None)
-    return merge_config(value if isinstance(value, dict) else None)
-
-
 def allowed_missing_core(core_skill_count: int, max_missing_core_skills: int, max_missing_core_pct: float | None) -> int:
     """
     How many CORE skills a candidate may miss and still pass: the campaign's

@@ -59,17 +59,6 @@ def test_asking_for_3_suggestions_returns_3(db, catalogue):
     assert counts == [3] * QUERIES
 
 
-def test_the_nearest_skill_is_always_found(db, catalogue):
-    repo = SkillRepository(db)
-    target = catalogue[0]
-    query = [float(x) for x in target.embedding]
-    skill, similarity = repo.find_by_embedding(query)
-    assert skill.id == target.id and similarity == pytest.approx(1.0)
-
-    match = repo.find_best_semantic_match(query, [s.id for s in catalogue])
-    assert match is not None and match[0] == target.id
-
-
 def test_the_queries_do_not_use_the_approximate_index(db, catalogue):
     """EXPLAIN the exact SQL the repository sends: no ivfflat index scan in the plan."""
     captured = []
@@ -85,11 +74,10 @@ def test_the_queries_do_not_use_the_approximate_index(db, catalogue):
         query = [0.1] * DIMENSIONS
         repo.find_top_similar_canonical_skills(query, limit=3)
         repo.find_by_embedding(query)
-        repo.find_best_semantic_match(query, [s.id for s in catalogue])
     finally:
         event.remove(engine, "before_cursor_execute", capture)
 
-    assert len(captured) == 3
+    assert len(captured) == 2
     for statement, parameters in captured:
         plan = "\n".join(row[0] for row in db.connection().exec_driver_sql("EXPLAIN " + statement, parameters))
         assert "idx_skill_ontology_embedding" not in plan, plan

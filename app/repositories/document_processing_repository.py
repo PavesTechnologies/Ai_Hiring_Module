@@ -88,22 +88,6 @@ class DocumentProcessingRepository:
         self.db.refresh(execution)
         return execution
 
-    def get_latest_attempt_number(self, task_id: str, stage: ProcessingStage) -> int:
-        """
-        Retry hook: the highest attempt_number recorded for this (task_id,
-        stage) pair, or 0 if the stage has never run. Not called by any
-        current code path — available for a future retry driver.
-        """
-        latest = (
-            self.db.query(func.max(DocumentProcessingStageExecution.attempt_number))
-            .filter(
-                DocumentProcessingStageExecution.task_id == task_id,
-                DocumentProcessingStageExecution.stage == stage,
-            )
-            .scalar()
-        )
-        return latest or 0
-
     def get_by_task_id(self, task_id: str) -> list[DocumentProcessingStageExecution]:
         return (
             self.db.query(DocumentProcessingStageExecution)

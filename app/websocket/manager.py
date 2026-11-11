@@ -75,8 +75,4 @@ class ConnectionManager:
     def has_connections(self, channel: str) -> bool:
         return bool(self.connections.get(channel))
 
-    def connection_count(self, channel: str) -> int:
-        return len(self.connections.get(channel, set()))
-
-
 manager = ConnectionManager()

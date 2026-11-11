@@ -9,7 +9,6 @@ database, no email.
 import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -43,13 +42,6 @@ def test_is_recruiters_campaign(campaign, user_id, expected):
 
 def test_the_query_form_is_assigned_or_creator():
     _is_the_shared_definition(_sql(recruiter_campaign_ids("rec-1")))
-
-
-def test_interview_scope_check_uses_it():
-    db = MagicMock()
-    db.execute.return_value.first.return_value = (uuid4(),)
-    assert DashboardRepository(db).is_campaign_accessible_to_recruiter("rec-1", uuid4()) is True
-    _is_the_shared_definition(_sql(db.execute.call_args.args[0]))
 
 
 def test_dashboard_scoping_uses_it():

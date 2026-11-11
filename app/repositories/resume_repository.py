@@ -128,39 +128,6 @@ class ResumeRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
-    def get_by_skill_match(self, canonical_skill_id: UUID | None, raw_text_pattern: str) -> list[Resume]:
-        """
-        M13-E01 S02 (Talent Pool Search) - every resume with a
-        candidate_skills row matching either the resolved canonical skill
-        or the raw extracted text pattern (caller passes an already
-        LIKE-escaped '%...%' pattern). Unfiltered by eligibility -
-        TalentPoolService applies ResumeSelectionService's own eligibility
-        predicate afterward, so this stays a plain data lookup, never a
-        second eligibility implementation. Most recent first, so a
-        candidate matched on more than one resume version consistently
-        surfaces their newest one.
-        """
-        conditions = [CandidateSkill.raw_extracted_text.ilike(raw_text_pattern, escape="\\")]
-        if canonical_skill_id is not None:
-            conditions.append(CandidateSkill.canonical_skill_id == canonical_skill_id)
-        stmt = (
-            select(Resume)
-            .join(CandidateSkill, CandidateSkill.resume_id == Resume.id)
-            .where(or_(*conditions))
-            .order_by(Resume.created_at.desc())
-            .distinct()
-        )
-        return list(self.db.execute(stmt).scalars().all())
-
-    def get_all_parsed(self) -> list[Resume]:
-        """M13-E01 S02 (Talent Pool Search) - every PARSED resume, the base set when the search has no skill filter."""
-        stmt = (
-            select(Resume)
-            .where(Resume.parse_status == ParseStatus.PARSED)
-            .order_by(Resume.created_at.desc())
-        )
-        return list(self.db.execute(stmt).scalars().all())
-
     # ------------------------------------------------------------------
     # Talent Pool Normal Search — fully database-level filtering
     # ------------------------------------------------------------------
@@ -956,20 +923,6 @@ class ResumeRepository:
         """
         stmt = select(ResumeEmbedding).where(ResumeEmbedding.candidate_id == candidate_id)
         return list(self.db.execute(stmt).scalars().all())
-
-    def get_cosine_similarity(self, resume_embedding_id: UUID, target_vector: list[float]) -> float | None:
-        """
-        M08-E02: cosine similarity between one resume_embeddings row and any
-        other embedding vector (a JD's, in Semantic Matching's case),
-        computed by pgvector itself (Vector.cosine_distance, the same
-        comparator SkillRepository's semantic-match queries already use) -
-        never a manual Python dot-product/norm calculation. Returns
-        1 - cosine_distance, or None if resume_embedding_id doesn't exist.
-        """
-        distance = ResumeEmbedding.embedding.cosine_distance(target_vector)
-        stmt = select(distance).where(ResumeEmbedding.id == resume_embedding_id)
-        result = self.db.execute(stmt).scalar_one_or_none()
-        return None if result is None else 1.0 - result
 
     def compute_semantic_similarity(self, resume_id: UUID, jd_id: UUID) -> float | None:
         """

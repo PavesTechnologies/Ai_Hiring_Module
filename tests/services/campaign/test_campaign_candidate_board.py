@@ -3,14 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
-from app.exceptions.campaign_exceptions import CampaignException
-from app.exceptions.pipeline_transition_exceptions import (
-    InvalidPipelineTransitionException,
-    PipelineTransitionReasonRequiredException,
-)
-from app.models.pipeline import PipelineStage, TransitionSource
+from app.models.pipeline import PipelineStage
 from app.schemas.campaign.campaign_candidate_schema import CampaignCandidateResponse
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 
@@ -135,102 +128,6 @@ def test_get_campaign_board_response_carries_campaign_id():
 # move_pipeline_stage
 # ----------------------------------------------------------------------
 
-def test_move_pipeline_stage_raises_not_found_when_candidate_missing():
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = None
-    service = make_service(campaign_candidate_repo=campaign_candidate_repo)
-
-    with pytest.raises(CampaignException) as exc_info:
-        service.move_pipeline_stage(uuid4(), PipelineStage.SHORTLISTED, actor_id="user-1")
-
-    assert exc_info.value.status_code == 404
-
-
-def test_move_pipeline_stage_delegates_to_pipeline_transition_service():
-    cc = _campaign_candidate()
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    candidate_repo = MagicMock()
-    candidate_repo.get_by_id.return_value = None
-    resume_repo = MagicMock()
-    resume_repo.get_by_id.return_value = None
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo,
-        pipeline_transition_service=pipeline_transition_service,
-        candidate_repo=candidate_repo, resume_repo=resume_repo,
-    )
-
-    service.move_pipeline_stage(
-        cc.id, PipelineStage.SHORTLISTED, actor_id="user-1", actor_role="HR_ADMIN", reason="promoted",
-    )
-
-    pipeline_transition_service.transition_stage.assert_called_once_with(
-        cc, to_stage=PipelineStage.SHORTLISTED, changed_by="user-1", actor_role="HR_ADMIN",
-        reason="promoted", source=TransitionSource.MANUAL,
-    )
-    campaign_candidate_repo.commit.assert_called_once()
-
-
-def test_move_pipeline_stage_rolls_back_and_raises_409_on_invalid_transition():
-    cc = _campaign_candidate()
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    pipeline_transition_service.transition_stage.side_effect = InvalidPipelineTransitionException(
-        "SCREENING", "SELECTED",
-    )
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-    )
-
-    with pytest.raises(CampaignException) as exc_info:
-        service.move_pipeline_stage(cc.id, PipelineStage.SELECTED, actor_id="user-1")
-
-    assert exc_info.value.status_code == 409
-    campaign_candidate_repo.rollback.assert_called_once()
-    campaign_candidate_repo.commit.assert_not_called()
-
-
-def test_move_pipeline_stage_rolls_back_and_raises_400_when_reason_required():
-    cc = _campaign_candidate()
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    pipeline_transition_service.transition_stage.side_effect = PipelineTransitionReasonRequiredException(
-        "INTERVIEW", "REJECTED",
-    )
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-    )
-
-    with pytest.raises(CampaignException) as exc_info:
-        service.move_pipeline_stage(cc.id, PipelineStage.REJECTED, actor_id="user-1")
-
-    assert exc_info.value.status_code == 400
-    campaign_candidate_repo.rollback.assert_called_once()
-
-
-def test_move_pipeline_stage_returns_updated_candidate_response():
-    cc = _campaign_candidate(pipeline_stage=PipelineStage.SHORTLISTED)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    candidate_repo = MagicMock()
-    candidate_repo.get_by_id.return_value = None
-    resume_repo = MagicMock()
-    resume_repo.get_by_id.return_value = None
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-        candidate_repo=candidate_repo, resume_repo=resume_repo,
-    )
-
-    result = service.move_pipeline_stage(cc.id, PipelineStage.SHORTLISTED, actor_id="user-1")
-
-    assert result.campaign_candidate_id == cc.id
-    assert result.pipeline_stage == PipelineStage.SHORTLISTED
-
-
 # ----------------------------------------------------------------------
 # M12 follow-up - CANDIDATE_SELECTED email is no longer queued
 # automatically from any stage-move path, including move_pipeline_stage.
@@ -239,27 +136,6 @@ def test_move_pipeline_stage_returns_updated_candidate_response():
 # test_campaign_candidate_send_selection_email.py.
 # ----------------------------------------------------------------------
 
-@pytest.mark.parametrize("target_stage", [PipelineStage.SELECTED, PipelineStage.SHORTLISTED])
-def test_move_pipeline_stage_never_queues_a_selected_email(target_stage):
-    cc = _campaign_candidate()
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    candidate_repo = MagicMock()
-    candidate_repo.get_by_id.return_value = None
-    resume_repo = MagicMock()
-    resume_repo.get_by_id.return_value = None
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-        candidate_repo=candidate_repo, resume_repo=resume_repo,
-    )
-
-    with patch("app.services.campaign.campaign_candidate_service.queue_candidate_selected_email") as mock_queue:
-        service.move_pipeline_stage(cc.id, target_stage, actor_id="user-1")
-
-    mock_queue.assert_not_called()
-
-
 # ----------------------------------------------------------------------
 # Epic 5 follow-up - manual re-score trigger's enqueue half (the cascade-
 # cancel half lives inside transition_stage() itself, tested in
@@ -267,47 +143,3 @@ def test_move_pipeline_stage_never_queues_a_selected_email(target_stage):
 # entirely in this file's tests, matching its existing convention).
 # ----------------------------------------------------------------------
 
-def test_move_pipeline_stage_enqueues_rescore_after_commit_when_target_is_screening_from_hold():
-    cc = _campaign_candidate(pipeline_stage=PipelineStage.HOLD)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-    )
-
-    with patch("app.services.campaign.campaign_candidate_service.enqueue_manual_rescore") as mock_rescore:
-        service.move_pipeline_stage(cc.id, PipelineStage.SCREENING, actor_id="user-1")
-
-    mock_rescore.assert_called_once_with(campaign_candidate_repo.db, cc)
-
-
-def test_move_pipeline_stage_never_enqueues_rescore_from_uploaded():
-    """The automated resume-upload path - must never get this hook."""
-    cc = _campaign_candidate(pipeline_stage=PipelineStage.UPLOADED)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-    )
-
-    with patch("app.services.campaign.campaign_candidate_service.enqueue_manual_rescore") as mock_rescore:
-        service.move_pipeline_stage(cc.id, PipelineStage.SCREENING, actor_id="user-1")
-
-    mock_rescore.assert_not_called()
-
-
-def test_move_pipeline_stage_never_enqueues_rescore_for_other_target_stages():
-    cc = _campaign_candidate(pipeline_stage=PipelineStage.HOLD)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    pipeline_transition_service = MagicMock()
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, pipeline_transition_service=pipeline_transition_service,
-    )
-
-    with patch("app.services.campaign.campaign_candidate_service.enqueue_manual_rescore") as mock_rescore:
-        service.move_pipeline_stage(cc.id, PipelineStage.SHORTLISTED, actor_id="user-1")
-
-    mock_rescore.assert_not_called()

@@ -173,14 +173,6 @@ class CampaignAccess:
         self.require_campaign_candidate(user, note.campaign_candidate_id)
         return note
 
-    def require_interview(self, user, interview_id: UUID):
-        from app.models.interview import InterviewSchedule
-        schedule = self._get(InterviewSchedule, interview_id)
-        if schedule is None:
-            raise CampaignException("Interview not found.", 404)
-        self.require_campaign_candidate(user, schedule.campaign_candidate_id)
-        return schedule
-
     def require_upload_decision(self, user, decision_id: UUID):
         from app.models.upload_decisions import UploadDecision
         decision = self._get(UploadDecision, decision_id)

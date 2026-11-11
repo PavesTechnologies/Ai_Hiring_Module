@@ -212,18 +212,6 @@ class DashboardRepository:
         from_created = select(HiringCampaign.id).where(HiringCampaign.created_by == user_id)
         return from_resumes.union(from_bulk, from_created).subquery()
 
-    def is_campaign_accessible_to_recruiter(self, user_id: str, campaign_id: UUID) -> bool:
-        """
-        Whether this is one of the recruiter's campaigns (assigned recruiter
-        or creator) - the interview calendar and interview scope check. See
-        app/repositories/recruiter_campaigns.py.
-        """
-        stmt = select(HiringCampaign.id).where(
-            HiringCampaign.id == campaign_id,
-            HiringCampaign.id.in_(select(self._recruiter_campaign_ids(user_id))),
-        ).limit(1)
-        return self.db.execute(stmt).first() is not None
-
     # ── HR_ADMIN summary ────────────────────────────────────
 
     def get_hr_admin_metrics(

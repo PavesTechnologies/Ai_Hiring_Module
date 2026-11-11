@@ -89,18 +89,3 @@ class CandidateRejectionEmailService:
             )
         return notification
 
-    @staticmethod
-    def render_content(
-        subject_template: str,
-        body_template: str,
-        *,
-        candidate_full_name: str,
-        job_title: str,
-    ) -> tuple[str, str]:
-        """
-        Only ever substitutes candidate_name/job_title - the template
-        itself (seeded, admin-controlled) is the sole source of any other
-        wording, so nothing rejection-specific can be introduced here.
-        """
-        context = {"candidate_name": candidate_full_name, "job_title": job_title}
-        return subject_template.format(**context), body_template.format(**context)

@@ -109,16 +109,13 @@ from app.services.campaign.layer_failure import (
     LAYER_SEMANTIC,
     get_layer_failures,
 )
-from app.services.campaign.manual_candidate_rescore import enqueue_manual_rescore
 from app.services.campaign.outcome_override_report import campaign_override_rate
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
-from app.tasks.ai_evaluation_tasks import _enqueue_ai_evaluation
 from app.tasks.email_tasks import send_candidate_email_task
-from app.tasks.semantic_scoring_tasks import _enqueue_semantic_scoring
 from app.services.resume.file_validation_service import FileValidationService
 from app.tasks.resume_processing_tasks import process_resume_document
 from app.utils.excel_export import ExcelExport
@@ -313,37 +310,6 @@ class CampaignCandidateService:
         # default - only the DI provider supplies it (delete_campaign_candidate
         # closes the removed candidate's pending decisions).
         self.upload_decision_service = upload_decision_service
-
-    def check_no_existing_campaign_membership(
-        self,
-        campaign_id: UUID,
-        candidate_email: str,
-    ) -> None:
-        """
-        Fast, non-authoritative pre-check for ResumeIntakeService.upload_resume
-        to call BEFORE any file upload / candidate / resume creation happens —
-        create_campaign_candidate's own identical check further down only
-        runs after all of that has already been committed, so a rejection
-        there used to leave an orphaned Resume row behind on every "already
-        in this campaign" upload attempt. Not a substitute for that
-        locked, race-safe check, which remains the source of truth for the
-        actual insert.
-        """
-        if self.encryption_service is None or self.candidate_repo is None:
-            return
-
-        email_hash = self.encryption_service.generate_hash(candidate_email)
-        candidate = self.candidate_repo.get_by_email_hash(email_hash)
-        if candidate is None:
-            return
-
-        existing = self.campaign_candidate_repo.get_by_campaign_and_candidate(campaign_id, candidate.id)
-        if existing:
-            raise CampaignException(
-                "Candidate already exists in this campaign.",
-                409,
-                data=self._build_resubmission_info(existing),
-            )
 
     def create_campaign_candidate(
         self,
@@ -639,70 +605,6 @@ class CampaignCandidateService:
             new_resume_id=new_resume.id,
             task_id=task_id,
         )
-
-    def move_pipeline_stage(
-        self,
-        campaign_candidate_id: UUID,
-        to_stage: PipelineStage,
-        actor_id: str,
-        actor_role: str | None = None,
-        reason: str | None = None,
-    ) -> CampaignCandidateResponse:
-        """
-        Pipeline Board drag-and-drop - moves one candidate to an arbitrary
-        target stage. Entirely backed by the existing, already-validated
-        PipelineTransitionService (checks allowed_transitions for the
-        from/to pair, actor_role, and requires_reason; writes stage
-        history and the audit entry) - the exact same engine
-        update_resume_for_resubmission already uses above, just with a
-        caller-supplied to_stage instead of a hardcoded one. No new
-        transition logic, no new validation rules.
-        """
-        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
-        if campaign_candidate is None:
-            raise CampaignException("Campaign candidate not found.", 404)
-
-        from_stage = campaign_candidate.pipeline_stage
-
-        try:
-            self.pipeline_transition_service.transition_stage(
-                campaign_candidate,
-                to_stage=to_stage,
-                changed_by=actor_id,
-                actor_role=actor_role,
-                reason=reason,
-                source=TransitionSource.MANUAL,
-            )
-            self.campaign_candidate_repo.commit()
-            # Selection email is no longer sent automatically here - see
-            # send_selection_email below (manual send button, matching
-            # the "Send Rejection Email" precedent).
-            # Epic 5 follow-up - manual re-score trigger, post-commit
-            # (see manual_candidate_rescore.py). Never fires for the
-            # automated UPLOADED->SCREENING path.
-            if to_stage == PipelineStage.SCREENING and from_stage != PipelineStage.UPLOADED:
-                enqueue_manual_rescore(self.campaign_candidate_repo.db, campaign_candidate)
-        except InvalidPipelineTransitionException as exc:
-            self.campaign_candidate_repo.rollback()
-            raise CampaignException(str(exc), 409) from exc
-        except PipelineTransitionReasonRequiredException as exc:
-            self.campaign_candidate_repo.rollback()
-            raise CampaignException(str(exc), 400) from exc
-        except Exception:
-            self.campaign_candidate_repo.rollback()
-            raise
-
-        CandidateChangeNotifier().stage_changed(campaign_candidate.campaign_id, campaign_candidate)
-
-        candidate = (
-            self.candidate_repo.get_by_id(campaign_candidate.candidate_id)
-            if self.candidate_repo is not None else None
-        )
-        resume = (
-            self.resume_repo.get_by_id(campaign_candidate.resume_id)
-            if self.resume_repo is not None else None
-        )
-        return self._to_campaign_candidate_response(campaign_candidate, candidate, resume)
 
     def get_candidate_campaign_history(self, candidate_id: UUID) -> CandidateCampaignHistoryResponse:
         """
@@ -1846,17 +1748,6 @@ class CampaignCandidateService:
         label = _SKILL_MATCH_TIER_LABELS.get(match_type, "a related skill")
         return f"Matched via {label} '{candidate_skill}'." if candidate_skill else f"Matched via {label}."
 
-    @staticmethod
-    def _contribution_percentage(contribution: float | None, configured_weight: float | None) -> float | None:
-        if contribution is None or not configured_weight:
-            return None
-        return round((contribution / configured_weight) * 100, 2)
-
-    @staticmethod
-    def _config_float(config_values: dict, key: str) -> float | None:
-        raw = config_values.get(key)
-        return float(raw) if raw is not None else None
-
     # ------------------------------------------------------------------
     # M07-E03 S03 T02: Rejection History (read-only)
     # ------------------------------------------------------------------
@@ -2448,63 +2339,6 @@ class CampaignCandidateService:
             failed=failed,
             detail=f"Queued {len(queued)} rejection email(s), {len(failed)} failed.",
         )
-
-    def _queue_post_override_evaluation(self, campaign_candidate: CampaignCandidate) -> None:
-        """
-        Story 543: routes on whether a semantic_score already exists -
-        never queues AI_EVALUATE ahead of semantic scoring, mirroring the
-        same PASS-gates-AI_EVALUATE ordering
-        calculate_semantic_score_task's own auto-trigger enforces
-        (app.tasks.semantic_scoring_tasks._score_and_persist_semantic's
-        post-commit call to app.tasks.ai_evaluation_tasks._enqueue_ai_evaluation).
-        Deferred/HR-override path only: unlike that call, the
-        "semantic_score already set" branch below still only writes a
-        bookkeeping celery_task_log row via _queue_task_log_if_not_duplicate
-        rather than actually dispatching calculate_ai_evaluation_task -
-        the override flow itself is out of scope for now.
-        - semantic_score already set (candidate was rejected AT the
-          semantic layer, or was re-scored since) -> AI_EVALUATE is queued
-          immediately, since semantic has already run.
-        - semantic_score missing (a deterministic-layer override, or any
-          candidate whose semantic score was never computed) -> SEMANTIC_SCORE
-          is enqueued instead; AI_EVALUATE is queued automatically once that
-          later passes (same shared pass-path as the normal pipeline), never
-          queued upfront here.
-        """
-        if self.celery_task_log_service is None:
-            return
-        try:
-            if campaign_candidate.semantic_score is not None:
-                _enqueue_ai_evaluation(campaign_candidate, self.celery_task_log_service)
-                return
-
-            # M08-E02: reuses the exact same enqueue/idempotency helper
-            # calculate_deterministic_score_task's own auto-trigger uses
-            # (app.tasks.semantic_scoring_tasks._enqueue_semantic_scoring) -
-            # never a second/independent implementation of "how do I queue
-            # semantic scoring for this candidate."
-            if self.resume_repo is not None:
-                campaign = (
-                    self.campaign_repo.get_by_id(campaign_candidate.campaign_id)
-                    if self.campaign_repo is not None else None
-                )
-                jd_id = campaign.jd_id if campaign is not None else None
-                _enqueue_semantic_scoring(
-                    campaign_candidate, self.celery_task_log_service, self.resume_repo, jd_id=jd_id,
-                )
-
-            # M10-E01: an HR override is NOT a composite-score trigger. It
-            # only restarts the remaining scoring pipeline (re-queued above:
-            # AI_EVALUATE + semantic scoring) - composite_score is
-            # (re)computed only once that pipeline's AI evaluation step
-            # eventually completes, or on a campaign weight change. Never
-            # enqueue composite scoring directly from here.
-        except Exception:
-            logger.exception(
-                "Failed to queue post-override evaluation tasks for campaign_candidate_id=%s",
-                campaign_candidate.id,
-            )
-
 
     # ------------------------------------------------------------------
     # M07-E03 S04 T03: override rows (the Override Report itself was retired 2026-11-02)

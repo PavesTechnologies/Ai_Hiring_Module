@@ -1,5 +1,4 @@
 import re
-import unicodedata
 
 from pathlib import Path
 
@@ -20,25 +19,6 @@ def _key_ref(file_path) -> str:
     path = str(file_path or "")
     head, _, last = path.rpartition("/")
     return path if _ID_LIKE.match(last) else f"{head}/<file>" if head else "<file>"
-
-
-def storage_safe_filename(filename: str) -> str:
-    """
-    A user-supplied file name made safe for a Supabase Storage object key.
-    Supabase rejects keys with characters like [ ] { } # % or non-ASCII
-    ("Invalid key"), and job-board exports routinely use them - e.g. Naukri's
-    "Name[24y_0m].pdf". Accents are folded to ASCII, anything else outside
-    letters/digits/. _ - becomes "_", the extension is kept (lower-cased) so
-    the file type still reads from the key. Only for the key - always keep
-    the original name separately for display.
-    """
-    name = unicodedata.normalize("NFKD", filename or "").encode("ascii", "ignore").decode("ascii")
-    stem, dot, ext = name.rpartition(".")
-    if not dot:
-        stem, ext = name, ""
-    stem = _UNSAFE_KEY_CHARS.sub("_", stem).strip("._-")[:_MAX_KEY_STEM] or "file"
-    ext = _UNSAFE_KEY_CHARS.sub("", ext).lower()
-    return f"{stem}.{ext}" if ext else stem
 
 
 class StorageService:

@@ -133,17 +133,3 @@ def test_allow_resend_still_returns_none_when_no_active_template():
     email_notification_repo.create_unless_duplicate.assert_not_called()
 
 
-def test_render_content_only_substitutes_candidate_name_and_job_title():
-    subject, body = CandidateRejectionEmailService.render_content(
-        "Update on your application for {job_title}",
-        "Dear {candidate_name}, thank you for applying to {job_title}.",
-        candidate_full_name="Jane Doe",
-        job_title="Senior Backend Engineer",
-    )
-
-    assert subject == "Update on your application for Senior Backend Engineer"
-    assert body == "Dear Jane Doe, thank you for applying to Senior Backend Engineer."
-    # Structurally cannot contain rejection internals - neither input
-    # parameter carries anything but display-safe strings.
-    for leaked_term in ("missing", "gap", "score", "threshold"):
-        assert leaked_term not in body.lower()

@@ -13,16 +13,6 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in version.split("."))
 
 
-def _version_at_least(current: str, minimum: str) -> bool:
-    try:
-        return _version_tuple(current) >= _version_tuple(minimum)
-    except (ValueError, AttributeError):
-        # Non-numeric version strings — fall back to a lexicographic
-        # comparison rather than raising, since this only gates a
-        # true/false adequacy check.
-        return current >= minimum
-
-
 class ConsentService:
     def __init__(self, consent_repo: ConsentRepository, config_repo: ConfigRepository):
         self.consent_repo = consent_repo
@@ -72,5 +62,3 @@ class ConsentService:
 
         return all_jurisdictions.get(jurisdiction) or all_jurisdictions.get("GLOBAL", {})
 
-    def _min_acceptable_version(self, jurisdiction: str) -> str | None:
-        return self._jurisdiction_config(jurisdiction).get("min_acceptable_consent_version")

@@ -66,7 +66,6 @@ def test_every_resource_reaches_its_campaign():
             (access.require_campaign_candidate, w.cc_a, w.cc_b),
             (access.require_bulk_job, w.job_a, w.job_b),
             (access.require_note, w.note_a, w.note_b),
-            (access.require_interview, w.interview_a, w.interview_b),
             (access.require_upload_decision, w.decision_a, w.decision_b),
             (access.require_resume, w.resume_a, w.resume_b),
             (access.require_candidate, w.candidate_a, w.candidate_b),
@@ -85,7 +84,7 @@ def test_a_missing_resource_is_404_before_access_is_judged():
         access = CampaignAccess(db=None)
         hr = user("hr-1", "HR_ADMIN")
         for check in (access.require_campaign, access.require_campaign_candidate, access.require_resume,
-                      access.require_bulk_job, access.require_note, access.require_interview):
+                      access.require_bulk_job, access.require_note):
             _raises(404, check, hr, uuid4())
 
 

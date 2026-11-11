@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 from app.services.campaign.scoring_v2 import (
-    DEFAULT_CONFIG, EvidenceInput, JDSkillInput, ScoringInputs, config_version, merge_config, parse_config,
+    DEFAULT_CONFIG, EvidenceInput, JDSkillInput, ScoringInputs, config_version, merge_config,
     score_v2,
 )
 
@@ -47,6 +47,12 @@ def _entry(result, name):
 
 # --- A: core weighted x2 in the score ------------------------------------
 
+def test_config_version_changes_with_config_and_defaults_are_todays_values():
+    assert DEFAULT_CONFIG["hierarchy_multipliers"] == {"EXACT": 1.0, "CHILD": 0.7, "GRANDCHILD": 0.5, "SIBLING": 0.4, "SEMANTIC": 0.2}
+    assert DEFAULT_CONFIG["importance_weights"]["core"] == 2.0
+    assert config_version({"c": merge_config(None)}) != config_version({"c": merge_config({"preferred_share": 0.2})})
+
+
 def test_core_skills_are_scored_at_double_weight():
     result = _score([_ev(CORE_A), _ev(SUP_C)], _confirm(A="CONFIRMED", B="NOT_FOUND"), allowed=1)
     # weights: core 2+2, supporting 1+1 = 6; matched: core A (2) + supporting C (1) = 3 -> 50
@@ -85,13 +91,6 @@ def test_configured_multipliers_and_weights_are_used():
     tuned = _score([_ev(CHILD_OF_A)], jd=[_skill(CORE_A, "Program Management")], hierarchy=hierarchy,
                    config={"hierarchy_multipliers": {"CHILD": 0.9}})
     assert default["required_skill_score"] == 70.0 and tuned["required_skill_score"] == 90.0
-
-
-def test_config_version_changes_with_config_and_defaults_are_todays_values():
-    assert DEFAULT_CONFIG["hierarchy_multipliers"] == {"EXACT": 1.0, "CHILD": 0.7, "GRANDCHILD": 0.5, "SIBLING": 0.4, "SEMANTIC": 0.2}
-    assert DEFAULT_CONFIG["importance_weights"]["core"] == 2.0
-    assert parse_config("not json") == merge_config(None)
-    assert config_version({"c": merge_config(None)}) != config_version({"c": merge_config({"preferred_share": 0.2})})
 
 
 # --- confirmation statuses -----------------------------------------------
