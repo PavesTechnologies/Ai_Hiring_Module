@@ -245,3 +245,7 @@ API_PREFIX = "/airs"
 # moment CompositeScoringService's formula itself changes; never hardcode
 # "v1" (or any other version string) anywhere else in the codebase.
 COMPOSITE_SCORE_FORMULA_VERSION = "v1"
+
+# platform_config MIN_CANDIDATES_FOR_ANALYTICS when the row is missing: the seeded value, and the one
+# default every reader uses (two readers used to disagree, 10 and 20).
+DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS = 10

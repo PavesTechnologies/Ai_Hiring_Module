@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from app.services.campaign_access import acting_user, can_access_campaign
 from app.core.encryption_service import DecryptionError, EncryptionService
 from app.core.storage_service import StorageService
-from app.enums.constants import ActionType, DEFAULT_PAGE_SIZE, EntityType, MAX_PAGE_SIZE
+from app.enums.constants import ActionType, DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS, DEFAULT_PAGE_SIZE, EntityType, MAX_PAGE_SIZE
 from app.exception_handler.exceptions import NotFoundError
 from app.exceptions.campaign_exceptions import CampaignException
 from app.exceptions.pipeline_transition_exceptions import (
@@ -149,7 +149,6 @@ _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
 
 # M07-E03 S05: Deterministic Rejection Analytics
 _MIN_CANDIDATES_FOR_ANALYTICS_KEY = "MIN_CANDIDATES_FOR_ANALYTICS"
-_DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS = 20
 # Reuses the exact same platform_config key deterministic_scoring_tasks.py
 # already reads for scoring (never a second, S05-local key).
 _EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
@@ -2432,10 +2431,10 @@ class CampaignCandidateService:
 
     def _get_min_candidates_for_analytics(self) -> int:
         if self.config_repo is None:
-            return _DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
+            return DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
         configs = self.config_repo.get_configs_by_keys([_MIN_CANDIDATES_FOR_ANALYTICS_KEY])
         raw = configs.get(_MIN_CANDIDATES_FOR_ANALYTICS_KEY)
-        return int(raw) if raw is not None else _DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
+        return int(raw) if raw is not None else DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS
 
     def _build_calibration_recommendations(
         self,

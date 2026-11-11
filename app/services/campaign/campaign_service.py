@@ -21,7 +21,7 @@ from app.repositories.resume_repository import ResumeRepository
 from sqlalchemy.orm import Session
 
 from app.core.encryption_service import EncryptionService
-from app.enums.constants import ActionType, COMPOSITE_SCORE_FORMULA_VERSION, EntityType, UserRole
+from app.enums.constants import ActionType, COMPOSITE_SCORE_FORMULA_VERSION, DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS, EntityType, UserRole
 from app.exceptions.campaign_exceptions import CampaignException
 from app.models.campaign_weight_preset import CampaignWeightPreset
 from app.models.campaigns import CampaignStatus, CampaignWeightConfigurationHistory, HiringCampaign
@@ -2188,7 +2188,7 @@ class CampaignService:
             "AI_HIGH_REJECTION_THRESHOLD",
             "MIN_CANDIDATES_FOR_ANALYTICS",
         ])
-        min_candidates = int(configs.get("MIN_CANDIDATES_FOR_ANALYTICS", "10"))
+        min_candidates = int(configs.get("MIN_CANDIDATES_FOR_ANALYTICS") or DEFAULT_MIN_CANDIDATES_FOR_ANALYTICS)
         analytics_ready = total_candidates >= min_candidates
 
         recommendations: list[RejectionRecommendation] = []

@@ -244,7 +244,7 @@ def test_recommendations_empty_below_min_candidates_threshold():
     campaign_repo = MagicMock()
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_candidate_count.return_value = 5  # below default MIN_CANDIDATES_FOR_ANALYTICS (20)
+    campaign_candidate_repo.get_candidate_count.return_value = 5  # below default MIN_CANDIDATES_FOR_ANALYTICS (10)
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
@@ -255,7 +255,7 @@ def test_recommendations_empty_below_min_candidates_threshold():
 
     analytics = service.get_campaign_rejection_analytics(campaign.id)
 
-    assert analytics.min_candidates_for_analytics == 20
+    assert analytics.min_candidates_for_analytics == 10
     assert analytics.recommendations == []
 
 
