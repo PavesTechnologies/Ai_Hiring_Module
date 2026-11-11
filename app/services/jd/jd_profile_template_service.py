@@ -17,9 +17,12 @@ from app.repositories.jd_profile_template_repository import JDProfileTemplateRep
 from app.schemas.jd_profile_template import JDProfileTemplateUpdate
 from app.services.campaign.score_out_of_date import mark_campaigns_out_of_date
 from app.services.jd.jd_profile_templates import EVIDENCE_SECTION_OPTIONS, REQUIRED_EVIDENCE_SECTIONS
+from app.services.settings.audit_values import audited_changes
 
 _SCORING_FIELDS = ("internship_credit_pct", "experience_tolerance_years", "evidence_sections",
                    "listed_only_can_confirm")
+# Typed by HR: the audit records that they changed, never their text.
+_TEXT_FIELDS = ("label", "description")
 
 
 def template_entity_id(key: str) -> uuid.UUID:
@@ -75,7 +78,7 @@ class JDProfileTemplateService:
             }
             if not after["label"]:
                 raise UnprocessableError("A template needs a name.")
-            changes = {f: {"before": before[f], "after": after[f]} for f in after if before[f] != after[f]}
+            changes = audited_changes(before, after, text_fields=_TEXT_FIELDS)
             if not changes:
                 return template, False, 0
 

@@ -53,6 +53,21 @@ def validate_prices(payload: dict) -> dict:
     return {"currency": "USD", "unit": "per 1M tokens", "models": models}
 
 
+def price_changes(before: dict, after: dict) -> dict:
+    """The audit details for a price change: model names and numbers only - a source note records only that
+    it changed (it is typed text)."""
+    from app.services.settings.audit_values import audited_changes
+    old, new = before.get("models") or {}, after.get("models") or {}
+    changed = {}
+    for model in sorted(set(old) & set(new)):
+        fields = audited_changes(old[model], new[model], text_fields=("source",))
+        fields.update({k: {"changed": True} for k in ("source",) if k in old[model] and k not in new[model]})
+        if fields:
+            changed[model] = fields
+    return {"models_added": sorted(set(new) - set(old)), "models_removed": sorted(set(old) - set(new)),
+            "models_changed": changed}
+
+
 def load_prices(config_repository) -> dict:
     raw = config_repository.get_configs_by_keys([LLM_MODEL_PRICES_KEY]).get(LLM_MODEL_PRICES_KEY)
     try:

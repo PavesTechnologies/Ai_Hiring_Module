@@ -21,7 +21,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.schemas.response import APIResponse
 from app.services.audit_service import AuditService
 from app.services.monitoring.fairness_report import MIN_GROUP_SIZE_KEY, fairness_report, min_group_size
-from app.services.monitoring.llm_prices import LLM_MODEL_PRICES_KEY, InvalidPrices, load_prices, validate_prices
+from app.services.monitoring.llm_prices import LLM_MODEL_PRICES_KEY, InvalidPrices, load_prices, price_changes, validate_prices
 from app.services.monitoring.monitoring_service import monitoring_summary
 from app.services.notifications.stuck_sends import StuckEmailError, list_stuck, resolve_stuck
 
@@ -89,7 +89,7 @@ def put_llm_prices(
         actor_id=user.user_id, actor_role=UserRole.HR_ADMIN.value,
         action_type=ActionType.PLATFORM_CONFIG_UPDATED.value, entity_type=EntityType.PLATFORM_CONFIG.value,
         entity_id=_PLATFORM_CONFIG_AUDIT_ENTITY_ID, campaign_id=None,
-        details={"title": "LLM list prices updated", "before": before, "after": prices},
+        details={"title": "LLM list prices updated", **price_changes(before, prices)},
     )
     db.commit()
     return APIResponse.ok(data=load_prices(repo), message="LLM prices saved.")

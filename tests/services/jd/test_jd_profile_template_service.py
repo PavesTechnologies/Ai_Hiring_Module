@@ -81,6 +81,14 @@ def test_an_education_or_label_change_marks_nothing():
     assert set(audit.log.call_args.kwargs["details"]["changes"]) == {"education_requirement", "label"}
 
 
+def test_a_typed_label_is_audited_as_changed_never_as_text():
+    repo = FakeRepo(_fresher())
+    (_, changed, _), audit, _ = _update(repo, _request(label="Graduate trainee"))
+    assert changed
+    assert audit.log.call_args.kwargs["details"]["changes"] == {"label": {"changed": True}}
+    assert "Graduate trainee" not in str(audit.log.call_args.kwargs["details"])
+
+
 def test_no_change_is_not_audited():
     repo = FakeRepo(_fresher())
     (_, changed, _), audit, _ = _update(repo, _request(evidence_sections=["PROJECTS", "SKILLS", "EXPERIENCE", "SUMMARY"]))

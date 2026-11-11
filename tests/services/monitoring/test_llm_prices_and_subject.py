@@ -70,3 +70,17 @@ def test_unreadable_stored_prices_mean_no_prices():
     repo = MagicMock()
     repo.get_configs_by_keys.return_value = {"LLM_MODEL_PRICES": "not json"}
     assert load_prices(repo)["models"] == {}
+
+
+def test_a_price_change_is_audited_with_numbers_and_never_the_source_text():
+    from app.services.monitoring.llm_prices import price_changes
+    before = {"models": {"m1": {"input": 0.25, "output": 1.5, "source": "old page"},
+                         "m2": {"input": 1.0, "output": 2.0}}}
+    after = {"models": {"m1": {"input": 0.30, "output": 1.5, "source": "new page"},
+                        "m3": {"input": 0.1, "output": 0.2, "source": "x"}}}
+    details = price_changes(before, after)
+    assert details == {"models_added": ["m3"], "models_removed": ["m2"],
+                       "models_changed": {"m1": {"input": {"before": 0.25, "after": 0.30},
+                                                 "source": {"changed": True}}}}
+    assert "page" not in str(details)
+
