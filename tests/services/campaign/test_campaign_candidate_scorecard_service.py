@@ -55,23 +55,6 @@ def _reject(candidate, source=DecisionSource.DETERMINISTIC, reason="Missing requ
     return candidate
 
 
-def _override(candidate, to_stage, override_reason="HR approved"):
-    """An HR override (RESET): moves the candidate off REJECTED and keeps the original rejection in decision_details."""
-    original_source, original_reason, original_at = candidate.decision_source, candidate.decision_reason, candidate.decision_at
-    candidate.pipeline_stage = to_stage
-    candidate.decision_type = DecisionType.RESET
-    candidate.decision_source = DecisionSource.RECRUITER
-    candidate.decision_reason = override_reason
-    candidate.decision_at = datetime.now(timezone.utc)
-    candidate.decision_details = {
-        "overridden_decision_type": DecisionType.REJECTED.value,
-        "overridden_decision_source": original_source.value,
-        "overridden_decision_reason": original_reason,
-        "overridden_decision_at": original_at.isoformat(),
-    }
-    return original_reason, original_at
-
-
 def _rejection_row(reason, source=DecisionSource.DETERMINISTIC):
     """A to_stage=REJECTED stage-history row (the rejection record since candidate_rejections was removed)."""
     return SimpleNamespace(id=uuid4(), to_stage=PipelineStage.REJECTED, changed_at=datetime.now(timezone.utc),
@@ -126,8 +109,6 @@ def test_scorecard_banner_present_for_deterministic_rejection():
     assert scorecard.rejection_layer == DecisionSource.DETERMINISTIC
     assert scorecard.rejection_reason == candidate.decision_reason
     assert scorecard.rejected_at == candidate.decision_at
-    assert scorecard.is_overridden is False
-    assert scorecard.status is None
 
 
 def test_scorecard_banner_absent_when_rejection_layer_is_not_deterministic():
@@ -149,41 +130,6 @@ def test_scorecard_banner_absent_when_pipeline_stage_is_not_rejected():
 
     assert scorecard.has_rejection is False
     assert scorecard.rejection_reason is None
-
-
-def test_scorecard_reports_overridden_status_while_preserving_original_reason():
-    candidate = _reject(_make_campaign_candidate(),
-                        reason="Insufficient experience: 2 years provided, minimum 4 years required (gap: 2 years).")
-    original_reason, original_at = _override(candidate, to_stage=PipelineStage.UPLOADED)
-    service = make_service(campaign_candidate_repo=_repo_returning(candidate))
-
-    scorecard = service.get_campaign_candidate_scorecard(candidate.id)
-
-    assert scorecard.is_overridden is True
-    assert scorecard.status == "Overridden — Previously Rejected"
-    # Original rejection reason/timestamp must be preserved, never rewritten by the override.
-    assert scorecard.rejection_reason == original_reason
-    assert scorecard.rejected_at == original_at
-
-
-def test_scorecard_preserves_rejection_reason_after_a_real_override_moves_stage_off_rejected():
-    """
-    An applied override moves pipeline_stage off REJECTED: has_rejection reflects
-    "currently REJECTED" (False), but is_overridden/status/rejection_reason/
-    rejected_at/rejection_layer still describe the original deterministic rejection.
-    """
-    candidate = _reject(_make_campaign_candidate(), reason="Missing required skills: AWS.")
-    original_reason, original_at = _override(candidate, to_stage=PipelineStage.SCREENING)
-    service = make_service(campaign_candidate_repo=_repo_returning(candidate))
-
-    scorecard = service.get_campaign_candidate_scorecard(candidate.id)
-
-    assert scorecard.has_rejection is False  # not currently in the REJECTED stage
-    assert scorecard.is_overridden is True
-    assert scorecard.status == "Overridden — Previously Rejected"
-    assert scorecard.rejection_reason == original_reason
-    assert scorecard.rejected_at == original_at
-    assert scorecard.rejection_layer == DecisionSource.DETERMINISTIC
 
 
 def test_scorecard_score_breakdown_read_from_campaign_candidate_not_rejection_snapshot():
@@ -308,8 +254,7 @@ def test_export_rejected_candidates_writes_rows_and_logs_audit(monkeypatch):
     assert "2.5 years provided, 4 years required" in row["experience_gap"]
     assert row["education_gap"] == ""
     # A rejected candidate's current decision is the rejection, so no override.
-    assert row["hr_override"] is False
-    assert row["override_reason"] == ""
+    assert "hr_override" not in row and "override_reason" not in row
 
     # Never exports PII.
     for forbidden in ("candidate_name", "email", "phone", "resume"):

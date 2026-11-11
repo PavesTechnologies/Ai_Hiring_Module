@@ -203,8 +203,6 @@ class ResumeParsedJsonResponse(BaseModel):
     # Pipeline state (header badge, override panel logic) - read straight
     # off the CampaignCandidate row, never recalculated.
     pipeline_stage: str
-    hr_override: bool = False
-    override_reason: str | None = None
     decision_type: str | None = None
     decision_source: str | None = None
     decision_reason: str | None = None

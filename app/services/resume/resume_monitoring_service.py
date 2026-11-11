@@ -8,7 +8,7 @@ from app.core.storage_service import StorageService
 from app.exceptions.storage_exception import StorageException
 from app.exception_handler.exceptions import BadRequestError, NotFoundError
 from app.models.candidates import ParseStatus
-from app.models.pipeline import CampaignCandidate, DecisionType
+from app.models.pipeline import CampaignCandidate
 from app.repositories.campaign_candidate_repository import CampaignCandidateRepository
 from app.repositories.candidate_repository import CandidateRepository
 from app.repositories.celery_task_log_repository import CeleryTaskLogRepository
@@ -569,7 +569,6 @@ class ResumeMonitoringService:
             )
 
         candidate = self.candidate_repository.get_by_id(campaign_candidate.candidate_id)
-        is_overridden = getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET
 
         return ResumeParsedJsonResponse(
             resume_id=resume.id,
@@ -588,8 +587,6 @@ class ResumeMonitoringService:
             email=self._decrypt_candidate_field(candidate, "email_encrypted"),
             phone=self._decrypt_candidate_field(candidate, "phone_encrypted"),
             pipeline_stage=campaign_candidate.pipeline_stage.value,
-            hr_override=is_overridden,
-            override_reason=campaign_candidate.decision_reason if is_overridden else None,
             decision_type=(
                 campaign_candidate.decision_type.value if campaign_candidate.decision_type else None
             ),

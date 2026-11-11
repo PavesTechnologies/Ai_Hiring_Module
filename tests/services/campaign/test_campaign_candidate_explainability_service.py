@@ -377,58 +377,6 @@ def test_ranking_details_reuses_derive_ranking_status_verbatim():
     assert result.ranking_status == "FAILED"
 
 
-def test_ranking_details_includes_hr_override_state():
-    hr_override_at = datetime.now(timezone.utc)
-    cc = _make_campaign_candidate(
-        hr_override=True, hr_override_by="hr-1", hr_override_reason="Mistaken rejection",
-        hr_override_at=hr_override_at,
-    )
-    campaign = _make_campaign(cc.campaign_id)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    campaign_repo = MagicMock()
-    campaign_repo.get_by_id.return_value = campaign
-    history_repo = MagicMock()
-    history_repo.get_by_campaign_candidate_id.return_value = []
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, campaign_repo=campaign_repo,
-        composite_score_history_repo=history_repo,
-    )
-
-    result = service.get_candidate_ranking_details(cc.id)
-
-    assert result.hr_override is True
-    assert result.hr_override_by == "hr-1"
-    assert result.hr_override_reason == "Mistaken rejection"
-    assert result.hr_override_at == hr_override_at
-
-
-def test_ranking_details_missing_hr_override_defaults_gracefully():
-    """Legacy SimpleNamespace fixtures without hr_override fields must not crash (getattr-guarded)."""
-    campaign_id = uuid4()
-    cc = SimpleNamespace(
-        id=uuid4(), campaign_id=campaign_id, composite_score=70.0, deterministic_score=80.0,
-        semantic_score=0.7, effective_ai_score=60.0, ai_evaluation_status=AIEvaluationStatus.COMPLETED,
-    )
-    campaign = _make_campaign(campaign_id)
-    campaign_candidate_repo = MagicMock()
-    campaign_candidate_repo.get_by_id.return_value = cc
-    campaign_repo = MagicMock()
-    campaign_repo.get_by_id.return_value = campaign
-    history_repo = MagicMock()
-    history_repo.get_by_campaign_candidate_id.return_value = []
-    service = make_service(
-        campaign_candidate_repo=campaign_candidate_repo, campaign_repo=campaign_repo,
-        composite_score_history_repo=history_repo,
-    )
-
-    result = service.get_candidate_ranking_details(cc.id)
-
-    assert result.hr_override is False
-    assert result.hr_override_by is None
-    assert result.composite_score_computed_at is None
-
-
 def test_ranking_details_never_writes_audit_entry():
     cc = _make_campaign_candidate()
     campaign = _make_campaign(cc.campaign_id)

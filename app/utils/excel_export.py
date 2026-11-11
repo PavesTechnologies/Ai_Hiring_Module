@@ -222,8 +222,6 @@ class ExcelExport:
             "Missing Mandatory Skills",
             "Experience Gap",
             "Education Gap",
-            "HR Override",
-            "Override Reason",
         ])
 
         for cell in ws[1]:
@@ -243,8 +241,6 @@ class ExcelExport:
                 row["missing_mandatory_skills"],
                 row["experience_gap"],
                 row["education_gap"],
-                "Yes" if row["hr_override"] else "No",
-                row["override_reason"],
             ])
 
         ws.auto_filter.ref = ws.dimensions
@@ -842,12 +838,10 @@ class ExcelExport:
         return output
 
     @staticmethod
-    def export_deterministic_rejection_summary(campaign_summary_rows, skill_gap_rows, override_log_rows):
+    def export_deterministic_rejection_summary(campaign_summary_rows, skill_gap_rows):
         """
         M07-E03 S05 T03: platform-wide deterministic rejection summary -
-        3 sheets in one workbook (Campaign Summary, Skill Gap Analysis,
-        Override Log). Never includes candidate name/email/phone/resume -
-        only the opaque candidate_uuid on the Override Log sheet.
+        2 sheets in one workbook (Campaign Summary, Skill Gap Analysis). No candidate details.
         """
         wb = Workbook()
         wb.remove(wb.active)
@@ -860,8 +854,6 @@ class ExcelExport:
                 "Deterministic Rejections",
                 "Rejection Rate (%)",
                 "Top Rejection Reason",
-                "Override Count",
-                "Override Rate (%)",
             ],
             campaign_summary_rows,
             [
@@ -870,8 +862,6 @@ class ExcelExport:
                 "deterministic_rejections",
                 "rejection_rate",
                 "top_rejection_reason",
-                "override_count",
-                "override_rate",
             ],
         )
 
@@ -892,28 +882,6 @@ class ExcelExport:
             ],
         )
 
-        ExcelExport._write_sheet(
-            wb.create_sheet("Override Log"),
-            [
-                "Campaign Name",
-                "Candidate UUID",
-                "Rejection Reason",
-                "Override Reason",
-                "Override By",
-                "Override Timestamp",
-                "Current Pipeline Stage",
-            ],
-            override_log_rows,
-            [
-                "campaign_name",
-                "candidate_uuid",
-                "rejection_reason",
-                "override_reason",
-                "override_by",
-                "override_timestamp",
-                "current_pipeline_stage",
-            ],
-        )
 
         output = BytesIO()
         wb.save(output)

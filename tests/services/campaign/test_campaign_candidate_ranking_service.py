@@ -159,7 +159,7 @@ def test_ranking_status_and_flags_populated_on_each_item():
     campaign_repo.get_by_id.return_value = _make_campaign()
     cc = _make_campaign_candidate(
         composite_score=None, ai_evaluation_status=AIEvaluationStatus.FAILED,
-        is_fraud_flagged=True, hr_override=True, ai_recommendation=AIRecommendation.HOLD,
+        is_fraud_flagged=True, ai_recommendation=AIRecommendation.HOLD,
     )
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_ranked_by_campaign.return_value = ([(cc, None, None)], 1)
@@ -170,7 +170,6 @@ def test_ranking_status_and_flags_populated_on_each_item():
     item = result.items[0]
     assert item.ranking_status == "FAILED"
     assert item.is_fraud_flagged is True
-    assert item.hr_override is True
     assert item.ai_recommendation == AIRecommendation.HOLD
 
 
@@ -186,14 +185,14 @@ def test_passes_all_filters_through_to_repository():
         campaign_id, page=2, page_size=15, sort_by="semantic_score", sort_order="asc",
         pipeline_stage=PipelineStage.SHORTLISTED, composite_score_min=10, composite_score_max=90,
         ai_recommendation=AIRecommendation.SHORTLIST, ai_evaluation_status=AIEvaluationStatus.COMPLETED,
-        include_pending=False, include_rejected=False, include_fraud=False, hr_override=True,
+        include_pending=False, include_rejected=False, include_fraud=False,
     )
 
     campaign_candidate_repo.get_ranked_by_campaign.assert_called_once_with(
         campaign_id, page=2, page_size=15, sort_by="semantic_score", sort_order="asc",
         pipeline_stage=PipelineStage.SHORTLISTED, composite_score_min=10, composite_score_max=90,
         ai_recommendation=AIRecommendation.SHORTLIST, ai_evaluation_status=AIEvaluationStatus.COMPLETED,
-        include_pending=False, include_rejected=False, include_fraud=False, hr_override=True,
+        include_pending=False, include_rejected=False, include_fraud=False,
         candidate_name=None,
     )
 

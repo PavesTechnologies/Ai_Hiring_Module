@@ -71,7 +71,6 @@ class CampaignCandidateResponse(BaseModel):
     # caller that builds this response without passing them (e.g. the
     # scorecard/detail responses) is unaffected.
     is_fraud_flagged: bool = False
-    hr_override: bool = False
     ai_recommendation: AIRecommendation | None = None
 
     # Where this candidate's pipeline decision currently stands - read
@@ -236,10 +235,6 @@ class CandidateRankingDetailsResponse(BaseModel):
     formula_version: str | None = None
     ranking_status: RankingStatus
     composite_score_computed_at: datetime | None = None
-    hr_override: bool = False
-    hr_override_by: str | None = None
-    hr_override_reason: str | None = None
-    hr_override_at: datetime | None = None
 
 
 class CandidateCompositeResponse(BaseModel):
@@ -836,14 +831,6 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
     rejected_at: datetime | None = None
     score_breakdown: dict | None = None
 
-    # Present regardless of has_rejection - hr_override can in principle
-    # be set independently of this story's DETERMINISTIC-only banner scope.
-    is_overridden: bool = False
-    # "Overridden — Previously Rejected" when is_overridden, else None -
-    # the original rejection_reason/rejected_at above are preserved
-    # unchanged either way, never overwritten by the override.
-    status: str | None = None
-
     # New, additive field: a UI-friendly restructuring of the existing
     # score_breakdown above - score_breakdown itself is untouched/unchanged
     # for any existing consumer. None until scoring has actually run.
@@ -858,7 +845,6 @@ class CandidateRejectionHistoryEntryResponse(BaseModel):
     rejection_layer: DecisionSource
     rejection_reason: str
     rejected_at: datetime
-    hr_override: bool
     # 1-indexed, oldest=1 - position among this candidate's own rejection
     # history, not a stored column (candidate_rejections has no such
     # field); computed purely from rejected_at ordering.
@@ -890,18 +876,6 @@ class RejectAtInterviewRequest(BaseModel):
             raise ValueError(f"decision_reason must be 500 words or fewer (got {word_count}).")
         return value
 
-
-class OverrideReportRow(BaseModel):
-    """T03: one HR override event - never includes candidate name/email/phone/resume."""
-
-    campaign_id: UUID
-    campaign_name: str
-    candidate_uuid: UUID
-    original_rejection_reason: str | None = None
-    override_reason: str
-    hr_full_name: str | None = None
-    override_timestamp: datetime
-    current_pipeline_stage: PipelineStage
 
     model_config = ConfigDict(from_attributes=True,
     )

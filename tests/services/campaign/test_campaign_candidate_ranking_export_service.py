@@ -165,7 +165,7 @@ def test_passes_every_filter_through_to_get_ranked_by_campaign_unchanged():
         sort_by="semantic_score", sort_order="asc", pipeline_stage=PipelineStage.SHORTLISTED,
         composite_score_min=10, composite_score_max=90, ai_recommendation=AIRecommendation.SHORTLIST,
         ai_evaluation_status=AIEvaluationStatus.COMPLETED, include_pending=False, include_rejected=False,
-        include_fraud=False, hr_override=True,
+        include_fraud=False,
     )
 
     call = campaign_candidate_repo.get_ranked_by_campaign.call_args
@@ -179,7 +179,7 @@ def test_passes_every_filter_through_to_get_ranked_by_campaign_unchanged():
     assert call.kwargs["include_pending"] is False
     assert call.kwargs["include_rejected"] is False
     assert call.kwargs["include_fraud"] is False
-    assert call.kwargs["hr_override"] is True
+    assert "hr_override" not in call.kwargs
 
 
 # ----------------------------------------------------------------------

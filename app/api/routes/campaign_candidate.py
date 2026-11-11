@@ -118,9 +118,6 @@ def get_campaign_candidates(
     include_pending: bool = Query(default=True, description="If false, excludes candidates with no composite_score yet."),
     include_rejected: bool = Query(default=True, description="If false, excludes REJECTED-stage candidates."),
     include_fraud: bool = Query(default=True, description="If false, excludes fraud-flagged candidates."),
-    hr_override: bool | None = Query(
-        default=None, description="If set, filters to only overridden (true) or only non-overridden (false) candidates.",
-    ),
     candidate_name: str | None = Query(
         default=None,
         description="Partial, case-insensitive search by candidate name (matched against this campaign_candidate's resume).",
@@ -147,7 +144,6 @@ def get_campaign_candidates(
         include_pending=include_pending,
         include_rejected=include_rejected,
         include_fraud=include_fraud,
-        hr_override=hr_override,
         candidate_name=candidate_name,
     )
 
@@ -217,9 +213,6 @@ def export_ranked_campaign_candidates(
     include_pending: bool = Query(default=True, description="If false, excludes candidates with no composite_score yet."),
     include_rejected: bool = Query(default=True, description="If false, excludes REJECTED-stage candidates."),
     include_fraud: bool = Query(default=True, description="If false, excludes fraud-flagged candidates."),
-    hr_override: bool | None = Query(
-        default=None, description="If set, filters to only overridden (true) or only non-overridden (false) candidates.",
-    ),
     service: CampaignCandidateService = Depends(
         get_campaign_candidate_service,
     ),
@@ -239,7 +232,6 @@ def export_ranked_campaign_candidates(
         include_pending=include_pending,
         include_rejected=include_rejected,
         include_fraud=include_fraud,
-        hr_override=hr_override,
     )
 
 

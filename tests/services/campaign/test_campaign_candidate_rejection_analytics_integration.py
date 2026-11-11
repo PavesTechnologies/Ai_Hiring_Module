@@ -39,7 +39,6 @@ def test_breakdown_classification_matches_export_top_rejection_reason_for_the_sa
 
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 20
-    campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
 
     # 3 SKILLS_ONLY, 1 EXPERIENCE_ONLY - SKILLS_ONLY should dominate both

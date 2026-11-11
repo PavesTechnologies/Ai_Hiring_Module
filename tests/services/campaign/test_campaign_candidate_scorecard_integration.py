@@ -131,8 +131,6 @@ def test_export_rejected_candidates_produces_a_real_readable_workbook():
         "Missing Mandatory Skills",
         "Experience Gap",
         "Education Gap",
-        "HR Override",
-        "Override Reason",
     ]
 
     data_row = [cell.value for cell in sheet[2]]

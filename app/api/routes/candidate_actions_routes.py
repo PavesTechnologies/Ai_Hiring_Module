@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, Security, status
 from app.dependencies.candidate_actions import (
     get_bulk_stage_move_service,
     get_candidate_note_service,
-    get_override_revert_service,
 )
 from app.middleware.rbac import TokenUser, authorising_role, authorising_roles, require_roles
 from app.models.identity import UserRole
@@ -34,14 +33,9 @@ from app.schemas.campaign.candidate_note_schema import (
     CandidateNoteResponse,
     CandidateNoteUpdateRequest,
 )
-from app.schemas.campaign.override_revert_schema import (
-    OverrideRevertRequest,
-    OverrideRevertResultResponse,
-)
 from app.schemas.response import APIResponse
 from app.services.campaign.bulk_stage_move_service import BulkStageMoveService
 from app.services.campaign.candidate_note_service import CandidateNoteService
-from app.services.campaign.override_revert_service import OverrideRevertService
 
 router = APIRouter(prefix="/candidate-actions", tags=["Candidate Actions"])
 
@@ -284,29 +278,3 @@ def candidate_note_counts(
     counts = service.note_counts(request.campaign_candidate_ids)
     return APIResponse.ok(data=CandidateNoteCountsResponse(counts=counts))
 
-
-@router.post(
-    "/candidates/{campaign_candidate_id}/clear-override",
-    response_model=APIResponse[OverrideRevertResultResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Clear an HR override and restore the automated decision",
-    description=(
-        "Reverses an HR override, restoring the deterministic or semantic "
-        "decision it replaced (read back from decision_details, never recomputed). Only "
-        "available while the candidate is still in SCREENING, i.e. before the override has "
-        "produced a new outcome. HR_ADMIN only."
-    ),
-)
-def clear_override(
-    campaign_candidate_id: UUID,
-    request: OverrideRevertRequest,
-    service: OverrideRevertService = Depends(get_override_revert_service),
-    user: TokenUser = Security(require_roles(UserRole.HR_ADMIN)),
-):
-    result = service.revert_override(
-        campaign_candidate_id=campaign_candidate_id,
-        reason=request.reason,
-        actor_id=user.user_id,
-        actor_role=UserRole.HR_ADMIN.value,
-    )
-    return APIResponse.ok(data=result, message=result.detail)

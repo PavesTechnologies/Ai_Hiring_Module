@@ -16,7 +16,6 @@ from app.models.pipeline import (
     CampaignCandidate,
     CampaignCandidateAIEvaluation,
     CampaignCandidateStageHistory,
-    DecisionType,
     PipelineStage,
     StageTransitionLog,
     TransitionSource,
@@ -715,30 +714,6 @@ class CampaignCandidateRepository:
             .all()
         )
 
-    def get_overridden(
-        self,
-        campaign_id: UUID | None = None,
-        date_from=None,
-        date_to=None,
-    ) -> list[CampaignCandidate]:
-        """
-        M07-E03 S04 T03: every campaign_candidate currently in the RESET
-        (HR override) decision state, optionally scoped to one campaign
-        and/or a decision_at date range - backs the Override Report's
-        rows, weekly trend and per-campaign alert, all of which call this
-        with different filter combinations rather than each running their
-        own query.
-        """
-        stmt = select(CampaignCandidate).where(CampaignCandidate.decision_type == DecisionType.RESET)
-        if campaign_id is not None:
-            stmt = stmt.where(CampaignCandidate.campaign_id == campaign_id)
-        if date_from is not None:
-            stmt = stmt.where(CampaignCandidate.decision_at >= date_from)
-        if date_to is not None:
-            stmt = stmt.where(CampaignCandidate.decision_at <= date_to)
-        stmt = stmt.order_by(CampaignCandidate.decision_at.desc())
-        return self.db.execute(stmt).scalars().all()
-
     def get_all_by_campaign(
         self,
         campaign_id: UUID,
@@ -808,7 +783,6 @@ class CampaignCandidateRepository:
         include_pending: bool = True,
         include_rejected: bool = True,
         include_fraud: bool = True,
-        hr_override: bool | None = None,
         candidate_name: str | None = None,
     ) -> tuple[list, int]:
         """
@@ -867,11 +841,6 @@ class CampaignCandidateRepository:
             filters.append(CampaignCandidate.pipeline_stage != PipelineStage.REJECTED)
         if not include_fraud:
             filters.append(CampaignCandidate.is_fraud_flagged.is_(False))
-        if hr_override is not None:
-            if hr_override:
-                filters.append(CampaignCandidate.decision_type == DecisionType.RESET)
-            else:
-                filters.append(CampaignCandidate.decision_type.is_distinct_from(DecisionType.RESET))
         if candidate_name is not None:
             # full_name is encrypted on Candidate - matched instead against
             # this campaign_candidate's own resume's parsed_json->>'full_name'

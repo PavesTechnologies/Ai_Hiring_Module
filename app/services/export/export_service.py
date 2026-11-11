@@ -7,7 +7,6 @@ from openpyxl import Workbook
 
 from app.enums.constants import EntityType
 from app.exceptions.campaign_exceptions import CampaignException
-from app.models.pipeline import DecisionType
 from app.repositories.export_repository import ExportRepository
 from app.utils.excel_export import ExcelExport
 from app.utils.pdf_export import (
@@ -21,13 +20,13 @@ DEFAULT_EXPORT_ASYNC_THRESHOLD = 500
 _CANDIDATE_HEADERS = [
     "Rank", "Candidate ID", "Composite", "Deterministic", "Semantic %",
     "Effective AI", "ATS", "AI Confidence", "AI Recommendation", "Stage",
-    "HR Override", "Partial Score", "Days in Stage", "Submitted",
+    "Partial Score", "Days in Stage", "Submitted",
     "Days Since Submission", "Uploaded By", "Recruiter Notes",
 ]
 _CANDIDATE_KEYS = [
     "rank", "candidate_id", "composite", "deterministic", "semantic",
     "effective_ai", "ats", "ai_confidence", "ai_recommendation", "stage",
-    "hr_override", "partial_score", "days_in_stage", "submitted",
+    "partial_score", "days_in_stage", "submitted",
     "days_since_submission", "uploaded_by", "recruiter_notes",
 ]
 
@@ -179,7 +178,6 @@ class ExportService:
                 "ai_confidence": _v(r.ai_confidence),
                 "ai_recommendation": _v(r.ai_recommendation),
                 "stage": _v(r.pipeline_stage),
-                "hr_override": "YES" if r.decision_type == DecisionType.RESET else "NO",
                 # "partial" = scored without a completed AI evaluation, so the
                 # composite rests on fewer layers than a full one.
                 "partial_score": "YES" if (
@@ -210,12 +208,12 @@ class ExportService:
         ws = wb.create_sheet("Rejected Candidates")
         headers = [
             "Candidate ID", "Attempt", "Rejection Layer", "Rejection Reason",
-            "Rejected At", "Source", "HR Override", "Missing Skills",
+            "Rejected At", "Source", "Missing Skills",
             "Experience Gap", "Education Gap",
         ]
         keys = [
             "candidate_id", "attempt", "layer", "reason", "rejected_at",
-            "source", "hr_override", "missing_skills", "experience_gap", "education_gap",
+            "source", "missing_skills", "experience_gap", "education_gap",
         ]
         data = []
         attempts: dict[str, int] = {}
@@ -238,7 +236,6 @@ class ExportService:
                 "reason": r.change_reason or r.decision_reason or "",
                 "rejected_at": _dt(r.rejected_at),
                 "source": _v(r.transition_source),
-                "hr_override": "YES" if r.decision_type == DecisionType.RESET else "NO",
                 "missing_skills": ", ".join(str(m) for m in missing) if isinstance(missing, list) else str(missing),
                 "experience_gap": str(details.get("experience_gap", "")),
                 "education_gap": str(details.get("education_gap", "")),
@@ -324,7 +321,6 @@ class ExportService:
             ("Decided by layer", _v(row.decision_source)),
             ("Reason", row.decision_reason or "—"),
             ("Decided at", _dt(row.decision_at)),
-            ("HR override in force", "YES" if row.decision_type == DecisionType.RESET else "NO"),
         ]))
 
         out.append(heading("Activity Timeline"))

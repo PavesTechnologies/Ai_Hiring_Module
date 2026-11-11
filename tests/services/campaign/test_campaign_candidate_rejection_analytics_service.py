@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -8,7 +7,6 @@ import pytest
 from app.exceptions.campaign_exceptions import CampaignException
 from app.schemas.campaign.campaign_candidate_schema import (
     CampaignRejectionAnalyticsResponse,
-    OverrideReportRow,
 )
 from app.services.campaign.campaign_candidate_service import CampaignCandidateService
 from tests.v2_breakdowns import with_v2_checks
@@ -247,7 +245,6 @@ def test_recommendations_empty_below_min_candidates_threshold():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 5  # below default MIN_CANDIDATES_FOR_ANALYTICS (20)
-    campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
 
@@ -291,7 +288,6 @@ def _make_gated_harness(rejections, total_candidates=25):
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = total_candidates
-    campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
@@ -341,7 +337,6 @@ def test_rule1_threshold_read_from_config_not_hardcoded():
     campaign_repo.get_by_id.return_value = campaign
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 25
-    campaign_candidate_repo.get_overridden.return_value = []
     campaign_candidate_repo.get_rejected_by_campaign.return_value = []
     campaign_repo.get_deterministic_rejection_details.return_value = [(r, campaign.id) for r in rejections]
     config_repo = MagicMock()
@@ -438,7 +433,7 @@ def test_rule3_does_not_recommend_when_override_rate_below_threshold(monkeypatch
 # T03 - Platform-wide Export
 # ----------------------------------------------------------------------
 
-def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_workbook(monkeypatch):
+def test_export_deterministic_rejection_summary_produces_a_real_two_sheet_workbook(monkeypatch):
     import asyncio
     import io
 
@@ -449,7 +444,6 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
     campaign_repo.get_all_campaigns.return_value = [campaign]
     campaign_candidate_repo = MagicMock()
     campaign_candidate_repo.get_candidate_count.return_value = 10
-    campaign_candidate_repo.get_overridden.return_value = [1]  # 1 override, date-scoped
     skill_id = uuid4()
     rejections = [
         _make_rejection(mandatory_skills=[_missing_skill("Python", skill_id)]) for _ in range(2)
@@ -466,18 +460,6 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
         audit_service=audit_service,
     )
 
-    override_row = OverrideReportRow(
-        campaign_id=campaign.id,
-        campaign_name=campaign.name,
-        candidate_uuid=uuid4(),
-        original_rejection_reason="Missing required skills: Python.",
-        override_reason="HR approved manually",
-        hr_full_name="Jordan HR",
-        override_timestamp=datetime.now(timezone.utc),
-        current_pipeline_stage="SCREENING",
-    )
-    monkeypatch.setattr(service, "_override_log_rows", lambda date_from=None, date_to=None: [override_row])
-
     response = service.export_deterministic_rejection_summary(
         date_from=None, date_to=None, actor_id="hr-1", actor_role="HR_ADMIN",
     )
@@ -491,19 +473,18 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
     body = asyncio.run(_drain())
     workbook = openpyxl.load_workbook(io.BytesIO(body))
 
-    assert workbook.sheetnames == ["Campaign Summary", "Skill Gap Analysis", "Override Log"]
+    assert workbook.sheetnames == ["Campaign Summary", "Skill Gap Analysis"]   # no Override Log since RESET is gone
 
     summary_sheet = workbook["Campaign Summary"]
     assert [c.value for c in summary_sheet[1]] == [
         "Campaign Name", "Total Candidates", "Deterministic Rejections",
-        "Rejection Rate (%)", "Top Rejection Reason", "Override Count", "Override Rate (%)",
+        "Rejection Rate (%)", "Top Rejection Reason",
     ]
     summary_row = [c.value for c in summary_sheet[2]]
     assert summary_row[0] == "Backend Engineer"
     assert summary_row[1] == 10
     assert summary_row[2] == 2
     assert summary_row[4] == "Missing Skills Only"
-    assert summary_row[5] == 1
 
     skill_sheet = workbook["Skill Gap Analysis"]
     assert [c.value for c in skill_sheet[1]] == [
@@ -513,16 +494,6 @@ def test_export_deterministic_rejection_summary_produces_a_real_three_sheet_work
     assert skill_row[0] == "Python"
     assert skill_row[1] == 4
     assert skill_row[2] == 2
-
-    override_sheet = workbook["Override Log"]
-    assert [c.value for c in override_sheet[1]] == [
-        "Campaign Name", "Candidate UUID", "Rejection Reason", "Override Reason",
-        "Override By", "Override Timestamp", "Current Pipeline Stage",
-    ]
-    override_row_values = [c.value for c in override_sheet[2]]
-    assert override_row_values[0] == "Backend Engineer"
-    assert override_row_values[3] == "HR approved manually"
-    assert override_row_values[4] == "Jordan HR"
 
     # Never exports PII.
     for sheet in workbook.worksheets:

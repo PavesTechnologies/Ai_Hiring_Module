@@ -26,7 +26,6 @@ from app.models.pipeline import (
     AIRecommendation,
     CampaignCandidate,
     DecisionSource,
-    DecisionType,
     PipelineStage,
     TransitionSource,
 )
@@ -79,7 +78,6 @@ from app.schemas.campaign.campaign_candidate_schema import (
     MandatorySkillBreakdownItem,
     MissingMandatorySkillItem,
     MissingSkillOccurrence,
-    OverrideReportRow,
     PreferredSkillBreakdownItem,
     RejectionBreakdownEntry,
     ScoreCalculationDetail,
@@ -744,7 +742,6 @@ class CampaignCandidateService:
         include_pending: bool = True,
         include_rejected: bool = True,
         include_fraud: bool = True,
-        hr_override: bool | None = None,
         candidate_name: str | None = None,
     ) -> RankedCampaignCandidatesResponse:
         """
@@ -787,7 +784,6 @@ class CampaignCandidateService:
             include_pending=include_pending,
             include_rejected=include_rejected,
             include_fraud=include_fraud,
-            hr_override=hr_override,
             candidate_name=candidate_name,
         )
 
@@ -984,11 +980,6 @@ class CampaignCandidateService:
         history_rows = self.composite_score_history_repo.get_by_campaign_candidate_id(campaign_candidate_id)
         formula_version = history_rows[0].formula_version if history_rows else None
         ai_evaluation = self._ai_evaluation(campaign_candidate)
-        is_overridden = (
-            getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET
-            or getattr(campaign_candidate, "hr_override", False)
-        )
-
         return CandidateRankingDetailsResponse(
             campaign_candidate_id=campaign_candidate.id,
             composite_score=(
@@ -1015,22 +1006,6 @@ class CampaignCandidateService:
             formula_version=formula_version,
             ranking_status=self._derive_ranking_status(campaign_candidate),
             composite_score_computed_at=getattr(campaign_candidate, "composite_score_computed_at", None),
-            hr_override=is_overridden,
-            hr_override_by=(
-                getattr(campaign_candidate, "decision_by_user_id", None)
-                or getattr(campaign_candidate, "hr_override_by", None)
-                if is_overridden else None
-            ),
-            hr_override_reason=(
-                getattr(campaign_candidate, "decision_reason", None)
-                or getattr(campaign_candidate, "hr_override_reason", None)
-                if is_overridden else None
-            ),
-            hr_override_at=(
-                getattr(campaign_candidate, "decision_at", None)
-                or getattr(campaign_candidate, "hr_override_at", None)
-                if is_overridden else None
-            ),
         )
 
     def get_candidate_composite(self, campaign_candidate_id: UUID) -> CandidateCompositeResponse:
@@ -1101,7 +1076,6 @@ class CampaignCandidateService:
             # pre-M10-E03 test fixtures build bare SimpleNamespace objects
             # that predate them.
             is_fraud_flagged=getattr(campaign_candidate, "is_fraud_flagged", False),
-            hr_override=getattr(campaign_candidate, "decision_type", None) == DecisionType.RESET,
             ai_recommendation=ai_evaluation.ai_recommendation if ai_evaluation else None,
             decision_type=getattr(campaign_candidate, "decision_type", None),
             decision_source=getattr(campaign_candidate, "decision_source", None),
@@ -1439,40 +1413,18 @@ class CampaignCandidateService:
         )
 
     def _build_rejection_banner(self, campaign_candidate: CampaignCandidate) -> dict:
-        is_overridden = campaign_candidate.decision_type == DecisionType.RESET
         has_rejection = False
         rejection_layer = None
         rejection_reason = None
         rejected_at = None
 
-        # M07-E03 S04: a real override (S04 T02) moves pipeline_stage away
-        # from REJECTED, so the lookup must still run for an overridden
-        # candidate - otherwise "preserving original rejection_reason and
-        # rejected_at" (this story's own S03 T01 requirement) would go
-        # unmet the moment an override actually happens. has_rejection
-        # itself stays scoped to "currently REJECTED" - only the
-        # reason/timestamp/layer are preserved once overridden.
-        #
-        # Currently REJECTED: the candidate's own decision_* fields ARE the
-        # latest rejection (no lookup needed anymore). Overridden: the
-        # rejection being preserved lives in decision_details (captured by
-        # StageTransitionService.apply_hr_override before it overwrote
-        # decision_*  with the RESET decision) - decision_* itself now
-        # describes the override, not the original rejection.
+        # Currently REJECTED: the candidate's own decision_* fields ARE the latest rejection.
         if campaign_candidate.pipeline_stage == PipelineStage.REJECTED:
             if campaign_candidate.decision_source == _SCORECARD_BANNER_DECISION_SOURCE:
                 has_rejection = True
                 rejection_layer = campaign_candidate.decision_source
                 rejection_reason = campaign_candidate.decision_reason
                 rejected_at = campaign_candidate.decision_at
-        elif is_overridden:
-            details = campaign_candidate.decision_details or {}
-            overridden_source = details.get("overridden_decision_source")
-            if overridden_source == _SCORECARD_BANNER_DECISION_SOURCE.value:
-                rejection_layer = DecisionSource(overridden_source)
-                rejection_reason = details.get("overridden_decision_reason")
-                overridden_at = details.get("overridden_decision_at")
-                rejected_at = datetime.fromisoformat(overridden_at) if overridden_at else None
 
         return {
             "has_rejection": has_rejection,
@@ -1480,8 +1432,6 @@ class CampaignCandidateService:
             "rejection_reason": rejection_reason,
             "rejected_at": rejected_at,
             "score_breakdown": campaign_candidate.deterministic_breakdown,
-            "is_overridden": is_overridden,
-            "status": "Overridden — Previously Rejected" if is_overridden else None,
         }
 
     # ------------------------------------------------------------------
@@ -1775,7 +1725,6 @@ class CampaignCandidateService:
         rejection_rows = [row for row in history_rows if row.to_stage == PipelineStage.REJECTED]
         rejection_rows.reverse()  # oldest-first -> newest-first, matching the old ordering
         total = len(rejection_rows)
-        is_overridden = campaign_candidate.decision_type == DecisionType.RESET
 
         entries = []
         for index, row in enumerate(rejection_rows):
@@ -1786,7 +1735,6 @@ class CampaignCandidateService:
                 rejection_layer=DecisionSource(decision_source) if decision_source else DecisionSource.SYSTEM,
                 rejection_reason=snapshot.get("decision_reason") or "",
                 rejected_at=row.changed_at,
-                hr_override=is_overridden,
                 evaluation_round=total - index,  # oldest=1, newest=total
                 current_status=(index == 0),
             ))
@@ -1811,7 +1759,6 @@ class CampaignCandidateService:
         include_pending: bool = True,
         include_rejected: bool = True,
         include_fraud: bool = True,
-        hr_override: bool | None = None,
     ) -> StreamingResponse:
         """
         M10-E03 Phase 3: exports the campaign's COMPLETE filtered/sorted
@@ -1853,7 +1800,6 @@ class CampaignCandidateService:
             include_pending=include_pending,
             include_rejected=include_rejected,
             include_fraud=include_fraud,
-            hr_override=hr_override,
         )
 
         _, total = self.campaign_candidate_repo.get_ranked_by_campaign(campaign_id, page=1, page_size=1, **filters)
@@ -1999,12 +1945,7 @@ class CampaignCandidateService:
         computed and stored, never recalculated.
 
         Every row here is currently pipeline_stage == REJECTED (from
-        get_rejected_by_campaign), which can never simultaneously be
-        decision_type == RESET (an override always moves pipeline_stage
-        away from REJECTED) - so decision_* IS the current rejection, read
-        directly with no separate lookup, and hr_override/override_reason
-        always evaluate to their "not overridden" values here, matching
-        the pre-refactor behavior exactly.
+        get_rejected_by_campaign), so decision_* IS the current rejection.
         """
         breakdown = campaign_candidate.deterministic_breakdown or {}
 
@@ -2020,8 +1961,6 @@ class CampaignCandidateService:
             "missing_mandatory_skills": self._missing_mandatory_skills_display(breakdown),
             "experience_gap": self._experience_gap_display(breakdown),
             "education_gap": self._education_gap_display(breakdown),
-            "hr_override": campaign_candidate.decision_type == DecisionType.RESET,
-            "override_reason": campaign_candidate.decision_reason if campaign_candidate.decision_type == DecisionType.RESET else "",
         }
 
     @staticmethod
@@ -2340,67 +2279,12 @@ class CampaignCandidateService:
             detail=f"Queued {len(queued)} rejection email(s), {len(failed)} failed.",
         )
 
-    # ------------------------------------------------------------------
-    # M07-E03 S04 T03: override rows (the Override Report itself was retired 2026-11-02)
-    # ------------------------------------------------------------------
-
-    def _override_log_rows(self, date_from: datetime | None, date_to: datetime | None) -> list[OverrideReportRow]:
-        """
-        HR overrides of a rejection (REJECTED -> SCREENING), for the deterministic-rejection summary
-        export's Override Log sheet. The Override Report that used to show these was retired on
-        2026-11-02: moves against the system's outcome are now recorded with reason codes
-        (candidate_outcome_overrides, GET /outcome-overrides/report), and the override-rate alert
-        comes from there.
-        """
-        overridden = self.campaign_candidate_repo.get_overridden(campaign_id=None, date_from=date_from, date_to=date_to)
-        campaign_cache: dict[UUID, HiringCampaign | None] = {}
-        # Reuses CampaignRepository.get_hiring_manager_names - a generic user_id -> full_name lookup.
-        hr_names = self.campaign_repo.get_hiring_manager_names(
-            [cc.decision_by_user_id for cc in overridden if cc.decision_by_user_id])
-        return [self._to_override_report_row(cc, self._get_campaign_cached(cc.campaign_id, campaign_cache), hr_names)
-                for cc in overridden]
-
     def _get_campaign_cached(
         self, campaign_id: UUID, campaign_cache: dict[UUID, HiringCampaign | None],
     ) -> HiringCampaign | None:
         if campaign_id not in campaign_cache:
             campaign_cache[campaign_id] = self.campaign_repo.get_by_id(campaign_id)
         return campaign_cache[campaign_id]
-
-    def _to_override_report_row(
-        self,
-        campaign_candidate: CampaignCandidate,
-        campaign: HiringCampaign | None,
-        hr_names: dict[str, str],
-    ) -> OverrideReportRow:
-        # The ORIGINAL (oldest) rejection reason, not the one captured in
-        # decision_details (which only holds the immediately-preceding
-        # decision) - candidate_rejections is gone, so this reads the
-        # candidate's own stage history ascending and takes the first
-        # to_stage=REJECTED transition's decision_reason, matching the old
-        # "oldest = original (newest-first list)" convention exactly.
-        original_reason = None
-        history_rows = self.campaign_candidate_repo.get_stage_history_by_campaign_candidate_id(
-            campaign_candidate.id,
-        )
-        first_rejection = next((row for row in history_rows if row.to_stage == PipelineStage.REJECTED), None)
-        if first_rejection is not None:
-            original_reason = (first_rejection.scores_snapshot or {}).get("decision_reason")
-
-        return OverrideReportRow(
-            campaign_id=campaign_candidate.campaign_id,
-            campaign_name=campaign.name if campaign is not None else "",
-            candidate_uuid=campaign_candidate.candidate_id,
-            original_rejection_reason=original_reason,
-            override_reason=campaign_candidate.decision_reason or "",
-            hr_full_name=hr_names.get(campaign_candidate.decision_by_user_id),
-            override_timestamp=campaign_candidate.decision_at,
-            current_pipeline_stage=campaign_candidate.pipeline_stage,
-        )
-
-    # ------------------------------------------------------------------
-    # M07-E03 S05 T01/T02: Campaign Rejection Analytics + JD Calibration
-    # ------------------------------------------------------------------
 
     def get_campaign_rejection_analytics(self, campaign_id: UUID) -> CampaignRejectionAnalyticsResponse:
         """
@@ -2661,10 +2545,8 @@ class CampaignCandidateService:
         actor_role: str | None,
     ) -> StreamingResponse:
         """
-        Reuses ExcelExport (no new XLSX engine) and AuditService. 3 sheets:
-        Campaign Summary, Skill Gap Analysis, Override Log. Never includes
-        candidate name/email/phone/resume - only the opaque candidate_uuid
-        on the Override Log sheet.
+        Reuses ExcelExport (no new XLSX engine) and AuditService. 2 sheets:
+        Campaign Summary and Skill Gap Analysis. No candidate details.
         """
         campaigns = self.campaign_repo.get_all_campaigns(show_closed=True)
 
@@ -2683,11 +2565,7 @@ class CampaignCandidateService:
         all_rejections = [rejection for rejections in rejections_by_campaign.values() for rejection in rejections]
         skill_gap_rows = self._build_skill_gap_rows(all_rejections)
 
-        override_log_rows = [self._to_override_log_row(row) for row in self._override_log_rows(date_from, date_to)]
-
-        excel_file = ExcelExport.export_deterministic_rejection_summary(
-            campaign_summary_rows, skill_gap_rows, override_log_rows,
-        )
+        excel_file = ExcelExport.export_deterministic_rejection_summary(campaign_summary_rows, skill_gap_rows)
         filename = f"deterministic_rejection_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
         self.audit_service.log(
@@ -2700,7 +2578,6 @@ class CampaignCandidateService:
             details={
                 "campaign_count": len(campaign_summary_rows),
                 "skill_count": len(skill_gap_rows),
-                "override_count": len(override_log_rows),
             },
         )
 
@@ -2736,26 +2613,12 @@ class CampaignCandidateService:
         top_category = max(category_counts, key=category_counts.get) if category_counts else None
         top_rejection_reason = _BREAKDOWN_CATEGORY_DISPLAY.get(top_category, "") if top_category else ""
 
-        # Date-scoped together with deterministic_rejections above, so this
-        # column stays internally consistent with the rest of THIS report's
-        # row - a deliberately different denominator convention from
-        # _compute_rule3_override_rate's all-time one, which matches the
-        # recruiter-overrides report's alert.
-        override_count = len(
-            self.campaign_candidate_repo.get_overridden(campaign_id=campaign.id, date_from=date_from, date_to=date_to)
-        )
-        override_rate = (
-            round(override_count / deterministic_rejections * 100, 2) if deterministic_rejections else 0.0
-        )
-
         return {
             "campaign_name": campaign.name,
             "total_candidates": total_candidates,
             "deterministic_rejections": deterministic_rejections,
             "rejection_rate": rejection_rate,
             "top_rejection_reason": top_rejection_reason,
-            "override_count": override_count,
-            "override_rate": override_rate,
         }
 
     def _build_skill_gap_rows(self, all_rejections: list[dict]) -> list[dict]:
@@ -2779,18 +2642,6 @@ class CampaignCandidateService:
             }
             for entry in aggregated
         ]
-
-    @staticmethod
-    def _to_override_log_row(row: OverrideReportRow) -> dict:
-        return {
-            "campaign_name": row.campaign_name,
-            "candidate_uuid": str(row.candidate_uuid),
-            "rejection_reason": row.original_rejection_reason or "",
-            "override_reason": row.override_reason,
-            "override_by": row.hr_full_name or "",
-            "override_timestamp": row.override_timestamp,
-            "current_pipeline_stage": row.current_pipeline_stage.value,
-        }
 
     def delete_campaign_candidate(
         self,

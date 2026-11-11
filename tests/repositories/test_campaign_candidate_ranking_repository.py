@@ -129,11 +129,10 @@ def test_filters_combine_with_and():
 @pytest.mark.parametrize("kwargs, expected_sql", [
     ({"ai_recommendation": AIRecommendation.SHORTLIST}, "ai_recommendation = 'SHORTLIST'"),
     ({"ai_evaluation_status": AIEvaluationStatus.COMPLETED}, "ai_evaluation_status = 'COMPLETED'"),
-    ({"hr_override": True}, "decision_type = 'RESET'"),
 ])
 def test_ai_and_override_filters_use_the_ai_evaluation_join_and_decision_type(kwargs, expected_sql):
-    """These filters work again: AI fields via the outer-joined ai_evaluation row,
-    hr_override via decision_type (they used to raise while the columns were gone)."""
+    """These filters work again: AI fields via the outer-joined ai_evaluation row
+    (they used to raise while the columns were gone)."""
     repo, db = _make_repo([_count_result(0), _rows_result([])])
 
     repo.get_ranked_by_campaign(uuid4(), page=1, page_size=20, **kwargs)
