@@ -6,10 +6,8 @@ from app.schemas.user_notification_preference_schema import NotificationPreferen
 class UserNotificationPreferenceService:
     """
     Epic 5 Step 3 - minimal read/write for a user's own notification
-    preferences. Ready-but-unconsumed: no send path checks
-    is_notification_enabled() yet (see that function's own docstring and
-    docs/known_issues.md) - this class only manages the preference rows
-    themselves.
+    preferences. queue_internal_user_emails honours them through
+    is_notification_enabled(); this class only manages the preference rows.
     """
 
     def __init__(self, user_notification_preference_repo: UserNotificationPreferenceRepository):

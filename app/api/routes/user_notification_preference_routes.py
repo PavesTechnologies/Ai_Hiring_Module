@@ -21,8 +21,8 @@ router = APIRouter(tags=["User Notification Preferences"])
         "Epic 5 Step 3 - lists every known trigger event with its "
         "effective enabled state (default-on: an event with no explicit "
         "row is enabled). Any authenticated user manages only their own "
-        "preferences. Ready-but-unconsumed today - no send path checks "
-        "these yet (see is_notification_enabled()'s own docstring)."
+        "preferences. Internal-user emails (HR / ops alerts) skip a user "
+        "who opted out of that event."
     ),
 )
 def get_my_notification_preferences(

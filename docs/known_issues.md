@@ -162,41 +162,11 @@ for Epic 5 Step 2's recipient-model widening.
 
 ## Epic 5: real, built infrastructure with zero current callers - not bugs, deliberately forward-scoped
 
-**Status:** informational, not a defect. Naming the pattern explicitly
-because it's now happened twice with the same shape, and whoever picks up
-the feature each of these is actually waiting on should know the
-groundwork already exists rather than re-discovering or re-building it.
-
-- **`SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES`** (seeded platform
-  config, M12) - describes batching `SHORTLISTED` notifications into a
-  digest. No `SHORTLISTED` trigger event exists in `EmailTriggerEvent`,
-  and no digest/batching mechanism exists anywhere in this codebase.
-  Waiting on: whatever eventually decides shortlist notifications should
-  exist at all, and in digest form specifically.
-- **`user_notification_preferences`** (table + `is_notification_enabled()`
-  helper + minimal `GET`/`PUT /users/me/notification-preferences` API,
-  Epic 5 Step 3) - fully built and tested, but nothing calls
-  `is_notification_enabled()` yet. Confirmed during Step 3's own
-  investigation: of the 6 real `EmailTriggerEvent` values, the 5 with a
-  live send path today (`CANDIDATE_REJECTED`, `INTERVIEW_SCHEDULED`/
-  `RESCHEDULED`/`CANCELLED`, `CANDIDATE_SELECTED`) all target a candidate
-  or an external interviewer - neither has a `users.id` row to hold a
-  preference against. `UPLOAD_PERMANENTLY_FAILED` is the one trigger
-  event actually scoped for internal users (the uploader + all active
-  HR_ADMIN), but it has zero send path of its own (see the
-  `UPLOAD_PERMANENTLY_FAILED`-precedent comment in `app/models/email.py`
-  - that's D11, still unbuilt). Waiting on: D11 (or any other future
-  internal-user-facing trigger). Whoever builds that should know this
-  table and helper are already sitting there ready, not something to
-  design from scratch.
-
-Both were deliberately NOT forced into a fake integration just to prove
-they're wired - an honest "built, not yet consumed" beats a contrived
-caller that would need undoing later. If a third instance of this same
-shape turns up, it's worth asking whether trigger-event infrastructure is
-systematically being scoped ahead of the features that will use it, or
-whether that's simply an accurate reflection of this epic's own staged
-build order.
+**Status:** closed 2026-11-11. `SHORTLIST_NOTIFICATION_BATCH_WINDOW_MINUTES` is no longer seeded (nothing
+read it; no shortlist digest exists). `user_notification_preferences` is consumed:
+`queue_internal_user_emails` skips a user who opted out before queuing each internal-user email (HR / ops
+alerts). No airs screen manages the preferences yet; the API (`GET`/`PUT /users/me/notification-preferences`)
+does.
 
 ---
 

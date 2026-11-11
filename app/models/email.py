@@ -219,15 +219,11 @@ class UserNotificationPreference(Base):
     """
     Epic 5 Step 3 - minimal, opt-out preference: an unlisted (user_id,
     trigger_event) pair means enabled, so this table only ever needs rows
-    for explicit opt-outs (is_enabled=False in practice). Built ahead of
-    any real caller - of the 6 real EmailTriggerEvent values, the 5 with
-    a live send path today all target a candidate or external
-    interviewer, neither of which has a users.id row to hold a
-    preference against; UPLOAD_PERMANENTLY_FAILED is the one trigger
-    actually scoped for internal users but has no send path of its own
-    yet (D11, unbuilt). See is_notification_enabled() in
-    app/services/notifications/user_notification_preferences.py and
-    docs/known_issues.md's entry naming this "built ahead of need" shape.
+    for explicit opt-outs (is_enabled=False in practice). Checked for
+    internal-user emails only (queue_internal_user_emails, through
+    is_notification_enabled() in
+    app/services/notifications/user_notification_preferences.py):
+    candidates and external interviewers have no users.id row.
     """
     __tablename__ = "user_notification_preferences"
     __table_args__ = (
