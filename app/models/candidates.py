@@ -77,7 +77,6 @@ class Resume(Base):
     parse_confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(4, 3), nullable=True)
     parser_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     page_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    parse_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     ocr_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     uploaded_by: Mapped[str] = mapped_column(String(255), ForeignKey("users.id"), nullable=False)
     # Bulk ZIP Upload (M05-E02) — NULL for every individual (M05-E01) upload;
