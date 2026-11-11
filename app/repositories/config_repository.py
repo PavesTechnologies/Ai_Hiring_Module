@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,48 +12,9 @@ class ConfigRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    # def get_configs_by_keys(
-    #     self,
-    #     keys: list[str],
-    # ) -> dict[str, str]:
-
-    #     stmt = (
-    #         select(PlatformConfig)
-    #         .where(PlatformConfig.key.in_(keys))
-    #     )
-
-    #     result = self.db.execute(stmt)
-
-    #     configs = result.scalars().all()
-
-    #     return {
-    #         config.key: config.value
-    #         for config in configs
-    #     }
-    
-    def get_configs_by_keys(
-        self,
-        keys: list[str],
-    ) -> dict[str, str]:
-
-        stmt = (
-            select(PlatformConfig)
-            .where(PlatformConfig.key.in_(keys))
-        )
-
-        result = self.db.execute(stmt)
-
-        configs = result.scalars().all()
-
-        print("Requested Keys:", keys)
-
-        for config in configs:
-            print(config.key, config.value)
-
-        return {
-            config.key: config.value
-            for config in configs
-        }
+    def get_configs_by_keys(self, keys: list[str]) -> dict[str, str]:
+        rows = self.db.execute(select(PlatformConfig).where(PlatformConfig.key.in_(keys))).scalars().all()
+        return {row.key: row.value for row in rows}
 
     def update_configs(
         self,
@@ -76,6 +38,20 @@ class ConfigRepository:
         self.db.flush()
 
         return {row.key: row.value for row in rows}
+
+    def upsert_configs(self, updates: dict[str, str], updated_by: str, descriptions: dict[str, str]) -> None:
+        """Set each key's value, creating the row (with its description) when the key was never seeded."""
+        now = datetime.now(timezone.utc)
+        rows = {row.key: row for row in self.db.execute(
+            select(PlatformConfig).where(PlatformConfig.key.in_(updates.keys()))).scalars().all()}
+        for key, value in updates.items():
+            row = rows.get(key)
+            if row is None:
+                self.db.add(PlatformConfig(id=uuid.uuid4(), key=key, value=value, description=descriptions.get(key),
+                                           updated_by=updated_by, updated_at=now))
+            else:
+                row.value, row.updated_by, row.updated_at = value, updated_by, now
+        self.db.flush()
 
     def commit(self) -> None:
         self.db.commit()
