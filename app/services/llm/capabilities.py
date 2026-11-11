@@ -91,7 +91,7 @@ DEFAULT_CAPABILITY_RULES: list[dict] = [
         "provider": "GROQ", "model_pattern": "*",
         "supports_temperature": True, "structured_output": "json_object", "max_output_tokens": 16000,
         "source": "Groq OpenAI-compatible API temperature. json_object mode and 16000 "
-                  "max_completion_tokens: current adapter values (GROQ_MAX_COMPLETION_TOKENS).",
+                  "max_completion_tokens: current adapter values.",
     },
 ]
 

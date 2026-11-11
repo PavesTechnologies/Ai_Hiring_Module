@@ -82,7 +82,6 @@ class Settings(BaseSettings):
     aws_access_key_id: SecretStr = SecretStr("")
     aws_secret_access_key: SecretStr = SecretStr("")
     aws_region: str = "ap-south-1"
-    aws_s3_bucket: str = ""
 
     # AWS SES (M07-E03 S02 T02) — reuses the same AWS credentials/region
     # above; only the verified sender address is SES-specific.
@@ -98,9 +97,7 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL:str
-    SUPABASE_PUBLISHABLE_KEY:SecretStr
     SUPABASE_SECRET_KEY:SecretStr
-    SUPABASE_JWKS_URL:str
 
     # AI / Embeddings
     gemini_api_key: SecretStr = SecretStr("")
@@ -135,15 +132,6 @@ class Settings(BaseSettings):
     # The Settings "Check" button's test call - short, since an admin is
     # waiting on it and it only sends a one-line prompt.
     llm_verify_timeout_seconds: float = 30.0
-    # Output budget for Groq JSON calls. Groq's default completion limit is
-    # far too small for a long resume's extraction JSON (and reasoning
-    # models such as gpt-oss spend part of it thinking), which surfaces as
-    # 400 json_validate_failed "max completion tokens reached". Same order
-    # as AnthropicProvider's 16000.
-    groq_max_completion_tokens: int = 16000
-
-    # Encryption
-    candidate_pii_key: SecretStr = SecretStr("")
 
     # Microsoft Teams calendar integration (M12) — delegated OAuth,
     # Calendars.ReadWrite/OnlineMeetings.ReadWrite/offline_access/User.Read.

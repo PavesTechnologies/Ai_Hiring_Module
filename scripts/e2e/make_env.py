@@ -38,8 +38,8 @@ def main() -> None:
         "REDIS_HOST=redis", "REDIS_PORT=6379", "REDIS_PASSWORD=",
         "EMAIL_DELIVERY=log", "STORAGE_BACKEND=local", "LOCAL_STORAGE_DIR=/data/storage",
         "AWS_ACCESS_KEY_ID=", "AWS_SECRET_ACCESS_KEY=", "SES_FROM_EMAIL=e2e@example.invalid",
-        "SUPABASE_URL=https://storage.e2e.invalid", "SUPABASE_PUBLISHABLE_KEY=e2e-placeholder",
-        "SUPABASE_SECRET_KEY=e2e-placeholder", "SUPABASE_JWKS_URL=https://auth.e2e.invalid/jwks",
+        "SUPABASE_URL=https://storage.e2e.invalid",
+        "SUPABASE_SECRET_KEY=e2e-placeholder",
         "UMS_URL=https://ums.e2e.invalid", "CORS_ORIGINS=http://localhost:5173",
         "FRONTEND_BASE_URL=http://localhost:5173",
     ]

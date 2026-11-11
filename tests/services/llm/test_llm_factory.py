@@ -302,7 +302,7 @@ def test_groq_sends_an_output_token_budget():
 
     assert provider.generate_json("p", _OkSchema) == {"ok": True}
     kwargs = provider.client.chat.completions.create.call_args.kwargs
-    assert kwargs["max_completion_tokens"] == factory.settings.groq_max_completion_tokens
+    assert kwargs["max_completion_tokens"] == 16000          # the Groq capability's output budget
 
 
 def test_groq_json_validate_failed_is_bad_output_so_the_backup_can_run():

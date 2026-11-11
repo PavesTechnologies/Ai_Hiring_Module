@@ -36,7 +36,7 @@ require_env() {
     local missing=()
     local var
     for var in DB_USER DB_PASSWORD DB_HOST DB_NAME \
-               SUPABASE_URL SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY SUPABASE_JWKS_URL \
+               SUPABASE_URL SUPABASE_SECRET_KEY \
                UMS_URL CORS_ORIGINS; do
         if [ -z "${!var:-}" ]; then
             missing+=("${var}")

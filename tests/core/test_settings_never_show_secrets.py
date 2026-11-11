@@ -9,7 +9,7 @@ from app.core.config import Settings
 
 SECRET_FIELDS = (
     "db_password", "redis_password", "aws_access_key_id", "aws_secret_access_key",
-    "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "gemini_api_key", "candidate_pii_key",
+    "SUPABASE_SECRET_KEY", "gemini_api_key",
     "microsoft_client_secret", "google_client_secret", "oauth_state_signing_key", "feedback_token_signing_key",
 )
 SENTINELS = {name: f"SENTINEL{i:02d}x{name[-4:]}" for i, name in enumerate(SECRET_FIELDS)}
