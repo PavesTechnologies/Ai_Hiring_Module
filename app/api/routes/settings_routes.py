@@ -15,8 +15,10 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.config_repository import ConfigRepository
 from app.schemas.response import APIResponse
 from app.services.audit_service import AuditService
+from app.services.settings.alert_settings import AlertSettingsService
 from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.platform_settings_service import PlatformSettingsService
+from app.services.settings.schedules import list_schedules
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -65,3 +67,31 @@ def save_platform_settings(payload: dict = Body(...),
         raise _invalid(exc)
     message = "Settings saved." if result["changed"] else "Nothing changed."
     return APIResponse.ok(data=result, message=message)
+
+
+def get_alert_settings_service(db: Session = Depends(get_db)) -> AlertSettingsService:
+    return AlertSettingsService(db, AuditService(AuditRepository(db)))
+
+
+@router.get("/alerts", response_model=APIResponse[list], status_code=status.HTTP_200_OK,
+            summary="The internal alerts and who receives each (every active HR admin unless opted out)")
+def list_alerts(service: AlertSettingsService = Depends(get_alert_settings_service),
+                user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.list())
+
+
+@router.put("/alerts/{trigger_event}/recipients/{user_id}", response_model=APIResponse[list],
+            status_code=status.HTTP_200_OK, summary="Switch one HR admin on or off for one alert (audited)")
+def set_alert_recipient(trigger_event: str, user_id: str, payload: dict = Body(...),
+                        service: AlertSettingsService = Depends(get_alert_settings_service),
+                        user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    enabled = payload.get("enabled") if isinstance(payload, dict) else None
+    return APIResponse.ok(data=service.set_recipient(trigger_event, user_id, enabled, actor_id=user.user_id),
+                          message="Alert recipients saved.")
+
+
+@router.get("/schedules", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="The scheduled jobs and when they run (read-only)")
+def get_schedules(user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    from app.core.celery_app import celery_app
+    return APIResponse.ok(data=list_schedules(celery_app))

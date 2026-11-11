@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.settings_routes import get_platform_settings_service
+from app.api.routes.settings_routes import get_alert_settings_service, get_platform_settings_service
 from app.db.session import get_db
 from app.enums.constants import API_PREFIX
 from app.services.settings.platform_settings import InvalidSetting
@@ -23,10 +23,12 @@ def client():
     service.list.return_value = []
     service.preview.return_value = {"changes": [], "warnings": []}
     service.save.return_value = {"changed": ["SCREENING_SLA_HOURS"], "settings": []}
+    service.set_recipient.return_value = []
     with patch("app.middleware.jwt_middleware.decode_token", _decode), \
             patch("app.middleware.rbac._ensure_local_user"):
         app.dependency_overrides[get_db] = lambda: MagicMock()
         app.dependency_overrides[get_platform_settings_service] = lambda: service
+        app.dependency_overrides[get_alert_settings_service] = lambda: service
         yield TestClient(app, base_url=f"http://test{API_PREFIX}", client=("127.0.0.1", 50000),
                          raise_server_exceptions=False), service
     app.dependency_overrides.clear()
@@ -70,3 +72,28 @@ def test_a_body_without_values_is_refused(client):
     http, service = client
     assert http.put("/settings/platform", json={"SCREENING_SLA_HOURS": 24}, headers=_as("HR_ADMIN")).status_code == 422
     service.save.assert_not_called()
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_alerts_and_schedules_are_hr_admin_only(client, role):
+    http, service = client
+    assert http.get("/settings/alerts", headers=_as(role)).status_code == 403
+    assert http.put("/settings/alerts/EMAIL_SEND_STUCK_ALERT/recipients/u1", json={"enabled": False},
+                    headers=_as(role)).status_code == 403
+    assert http.get("/settings/schedules", headers=_as(role)).status_code == 403
+    service.set_recipient.assert_not_called()
+
+
+def test_hr_admin_switches_a_recipient_as_themselves(client):
+    http, service = client
+    response = http.put("/settings/alerts/EMAIL_SEND_STUCK_ALERT/recipients/u1", json={"enabled": False},
+                        headers=_as("HR_ADMIN"))
+    assert response.status_code == 200
+    assert service.set_recipient.call_args.args == ("EMAIL_SEND_STUCK_ALERT", "u1", False)
+    assert service.set_recipient.call_args.kwargs["actor_id"] == "hr_admin-1"
+
+
+def test_hr_admin_sees_the_schedules(client):
+    http, _ = client
+    response = http.get("/settings/schedules", headers=_as("HR_ADMIN"))
+    assert response.status_code == 200 and response.json()["data"]["jobs"]
