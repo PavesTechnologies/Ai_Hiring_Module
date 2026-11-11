@@ -16,6 +16,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.schemas.response import APIResponse
 from app.services.audit_service import AuditService
 from app.services.settings.alert_settings import AlertSettingsService
+from app.services.settings.email_template_settings import EmailTemplateSettingsService
 from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.platform_settings_service import PlatformSettingsService
 from app.services.settings.reason_code_settings import ReasonCodeSettingsService
@@ -123,3 +124,49 @@ def change_reason_code(code: str, payload: dict = Body(...),
                        service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
                        user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
     return APIResponse.ok(data=service.update(code, payload, actor_id=user.user_id), message="Reason code saved.")
+
+
+def get_email_template_settings_service(db: Session = Depends(get_db)) -> EmailTemplateSettingsService:
+    return EmailTemplateSettingsService(db, AuditService(AuditRepository(db)))
+
+
+@router.get("/email-templates", response_model=APIResponse[list], status_code=status.HTTP_200_OK,
+            summary="Every email the system sends, with its template in use")
+def list_email_templates(service: EmailTemplateSettingsService = Depends(get_email_template_settings_service),
+                         user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.list())
+
+
+@router.get("/email-templates/{trigger_event}", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="One email's template in use, its versions and the placeholders its sender supplies")
+def get_email_template(trigger_event: str,
+                       service: EmailTemplateSettingsService = Depends(get_email_template_settings_service),
+                       user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.get(trigger_event))
+
+
+@router.post("/email-templates/{trigger_event}/preview", response_model=APIResponse[dict],
+             status_code=status.HTTP_200_OK, summary="Render a template with made-up sample values (sends nothing)")
+def preview_email_template(trigger_event: str, payload: dict = Body(...),
+                           service: EmailTemplateSettingsService = Depends(get_email_template_settings_service),
+                           user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.preview(trigger_event, payload))
+
+
+@router.put("/email-templates/{trigger_event}", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Save a new version of an email template (audited)")
+def save_email_template(trigger_event: str, payload: dict = Body(...),
+                        service: EmailTemplateSettingsService = Depends(get_email_template_settings_service),
+                        user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    result = service.save(trigger_event, payload, actor_id=user.user_id)
+    return APIResponse.ok(data=result, message="Template saved as a new version." if result["changed"]
+                          else "Nothing changed.")
+
+
+@router.post("/email-templates/{trigger_event}/versions/{template_id}/restore", response_model=APIResponse[dict],
+             status_code=status.HTTP_200_OK, summary="Use an older version again, saved as a new version (audited)")
+def restore_email_template(trigger_event: str, template_id: str,
+                           service: EmailTemplateSettingsService = Depends(get_email_template_settings_service),
+                           user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.restore(trigger_event, template_id, actor_id=user.user_id),
+                          message="Version restored.")

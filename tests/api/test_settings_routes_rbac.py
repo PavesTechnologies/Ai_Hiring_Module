@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes.settings_routes import (
-    get_alert_settings_service, get_platform_settings_service, get_reason_code_settings_service,
+    get_alert_settings_service, get_email_template_settings_service, get_platform_settings_service,
+    get_reason_code_settings_service,
 )
 from app.db.session import get_db
 from app.enums.constants import API_PREFIX
@@ -32,6 +33,7 @@ def client():
         app.dependency_overrides[get_platform_settings_service] = lambda: service
         app.dependency_overrides[get_alert_settings_service] = lambda: service
         app.dependency_overrides[get_reason_code_settings_service] = lambda: service
+        app.dependency_overrides[get_email_template_settings_service] = lambda: service
         yield TestClient(app, base_url=f"http://test{API_PREFIX}", client=("127.0.0.1", 50000),
                          raise_server_exceptions=False), service
     app.dependency_overrides.clear()
@@ -120,3 +122,28 @@ def test_hr_admin_changes_a_reason_code_as_themselves(client):
     assert response.status_code == 200
     assert service.update.call_args.args == ("ROLE_FIT", {"is_active": False})
     assert service.update.call_args.kwargs["actor_id"] == "hr_admin-1"
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_email_template_settings_are_hr_admin_only(client, role):
+    http, service = client
+    body = {"name": "n", "subject": "s", "body": "b"}
+    assert http.get("/settings/email-templates", headers=_as(role)).status_code == 403
+    assert http.get("/settings/email-templates/CANDIDATE_REJECTED", headers=_as(role)).status_code == 403
+    assert http.post("/settings/email-templates/CANDIDATE_REJECTED/preview", json=body,
+                     headers=_as(role)).status_code == 403
+    assert http.put("/settings/email-templates/CANDIDATE_REJECTED", json=body, headers=_as(role)).status_code == 403
+    assert http.post("/settings/email-templates/CANDIDATE_REJECTED/versions/x/restore",
+                     headers=_as(role)).status_code == 403
+    service.save.assert_not_called()
+    service.restore.assert_not_called()
+
+
+def test_hr_admin_saves_a_template_as_themselves(client):
+    http, service = client
+    service.save.return_value = {"changed": True}
+    body = {"name": "n", "subject": "s", "body": "b"}
+    response = http.put("/settings/email-templates/CANDIDATE_REJECTED", json=body, headers=_as("HR_ADMIN"))
+    assert response.status_code == 200
+    assert service.save.call_args.args == ("CANDIDATE_REJECTED", body)
+    assert service.save.call_args.kwargs["actor_id"] == "hr_admin-1"
