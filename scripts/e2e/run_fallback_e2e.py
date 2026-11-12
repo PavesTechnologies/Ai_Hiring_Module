@@ -363,7 +363,8 @@ def run() -> None:  # noqa: C901 - one linear scenario
 
     report.check(8, "no email: no SES client created in this process", True)
     REPORT.write_text(json.dumps({"checks": report.rows, "steps": steps}, indent=1, default=str), "utf-8")
-    print(f"report: {REPORT}")
+    print(f"{sum(r['result'] == 'PASS' for r in report.rows)}/{len(report.rows)} fallback checks passed. "
+          f"Report: {REPORT}")
     db.close()
     if any(r["result"] == "FAIL" for r in report.rows):
         raise SystemExit(1)

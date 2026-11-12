@@ -53,9 +53,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File e2e/e2e.ps1 test
 ```
 
 The stack is isolated: its own Postgres, Redis and worker, a stub LLM, and email that is only ever
-logged (`e2e/README.md`). Each driver prints a `[PASS]` or `[FAIL]` line per check; most also end
-with an `n/n checks passed` line. The run then counts the emails the worker would have sent, and it
-fails if that count isn't 0. A failing check blocks the merge like a failing test.
+logged (`e2e/README.md`). Each driver prints a `[PASS]` or `[FAIL]` line per check and ends with an
+`n/n ... checks passed` line. The run then counts the emails the worker would have sent, and it fails
+if that count isn't 0. A failing check blocks the merge like a failing test.
 
 In a git worktree:
 
@@ -73,8 +73,8 @@ Each merge is reported with:
 - **Golden:** cases, changes against the accepted run, failures and LLM calls, for the full and the
   no-LLM run, plus whether a run was accepted.
 - **Full suite:** the pytest summary line, e.g. `4086 passed`.
-- **E2E:** either "not needed" with the reason (no path above touched), or one line per driver, with
-  its checks passed out of its checks run:
+- **E2E:** either "not needed" with the reason (no path above touched), or each driver's
+  `n/n checks passed` line:
 
   ```
   reparse           12/12 checks passed
