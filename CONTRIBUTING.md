@@ -6,6 +6,32 @@ Nothing merges until every check below passes. Merges are fast-forwards, made on
 asked for, and never pushed as part of the routine. No check may send email: keep `EMAIL_DELIVERY=log`
 in `.env`.
 
+### Working in a git worktree: the `.env` file
+
+`.env` is git-ignored, so a new worktree has none, and the settings won't load without it: golden and
+the full suite fail with "Field required" errors. Point the worktree at the main checkout's `.env`
+with `AIRS_ENV_FILE` rather than copying it. The settings, the encryption-key loaders and the test
+setup all read the file it names (`app/core/env_file.py`). The real environment still comes first, and
+a path that doesn't exist is refused rather than skipped.
+
+```
+# Git Bash
+export AIRS_ENV_FILE=C:/Ai_Hiring_Module/.env
+# PowerShell
+$env:AIRS_ENV_FILE = "C:\Ai_Hiring_Module\.env"
+```
+
+Set it in the shell that runs the checks, for every command run from the worktree.
+
+If a copy is unavoidable (for a tool that only reads `./.env`):
+
+- never commit it: `.env` is in `.gitignore`, so never force-add it;
+- delete it yourself when you remove the worktree, and check it's gone. `git worktree remove` deletes
+  ignored files too, but a worktree folder deleted by hand, or left behind, keeps the copy: a secret on
+  disk.
+
+The e2e stack never reads `.env`. It uses `e2e/.env.e2e`, made by `scripts/e2e/make_env.py`.
+
 ### 1. Golden set
 
 ```
