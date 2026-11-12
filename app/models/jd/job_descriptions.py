@@ -6,7 +6,7 @@ from typing import Optional
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean, DateTime, Enum as SAEnum, ForeignKey, Index,
-    Integer, Numeric, SmallInteger, String, Text, func, text,
+    Integer, Numeric, SmallInteger, String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -156,9 +156,11 @@ class JDCalibrationVersion(Base):
 
 class JDEmbedding(Base):
     __tablename__ = "jd_embeddings"
+    # One per JD and model version (settings phase 4): a re-embed adds the new model's beside the old.
+    __table_args__ = (UniqueConstraint("jd_id", "embedding_model_version_id", name="uq_jd_embeddings_jd_model_version"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), unique=True, nullable=False)
+    jd_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("job_descriptions.id"), nullable=False)
     embedding: Mapped[list] = mapped_column(Vector(384), nullable=False)
     embedding_model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("embedding_model_versions.id"), nullable=False)
     input_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)

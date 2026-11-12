@@ -367,11 +367,13 @@ class JDRepository:
         self.db.refresh(jd_embedding)
         return jd_embedding
 
-    def get_embedding_by_jd_id(self, jd_id: UUID) -> JDEmbedding | None:
-
+    def get_embedding_by_jd_id(self, jd_id: UUID, embedding_model_version_id: UUID | None = None) -> JDEmbedding | None:
+        """The JD's embedding from this model version; None = the active one (settings phase 4)."""
+        from app.repositories.embedding_model_version_repository import active_version_id_sql
+        version = embedding_model_version_id if embedding_model_version_id is not None else active_version_id_sql()
         return (
             self.db.query(JDEmbedding)
-            .filter(JDEmbedding.jd_id == jd_id)
+            .filter(JDEmbedding.jd_id == jd_id, JDEmbedding.embedding_model_version_id == version)
             .first()
         )
 
@@ -411,7 +413,7 @@ class JDRepository:
             self.db.refresh(jd_embedding)
             return jd_embedding, True
         except IntegrityError:
-            existing = self.get_embedding_by_jd_id(jd_id)
+            existing = self.get_embedding_by_jd_id(jd_id, embedding_model_version_id)
             return existing, False
 
     def replace_jd_embedding(
@@ -422,7 +424,7 @@ class JDRepository:
         content_hash: str,
     ) -> JDEmbedding:
        
-        existing = self.get_embedding_by_jd_id(jd_id)
+        existing = self.get_embedding_by_jd_id(jd_id, embedding_model_version_id)
         if existing is None:
             jd_embedding, _ = self.create_jd_embedding_idempotent(
                 jd_id=jd_id,

@@ -5,6 +5,7 @@ from sqlalchemy import and_, case, delete, func, nullslast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager, joinedload, lazyload
 
+from app.repositories.embedding_model_version_repository import active_version_id_sql
 from app.models.campaigns import HiringCampaign
 from app.models.candidates import Candidate, Resume
 from app.models.embeddings import ResumeEmbedding
@@ -1032,6 +1033,7 @@ class CampaignCandidateRepository:
             self.db.query(CampaignCandidate)
             .join(ResumeEmbedding, ResumeEmbedding.resume_id == CampaignCandidate.resume_id)
             .filter(
+                ResumeEmbedding.embedding_model_version_id == active_version_id_sql(),     # one row per candidate
                 CampaignCandidate.deterministic_passed.is_(True),
                 CampaignCandidate.semantic_score.is_(None),
                 CampaignCandidate.pipeline_stage.in_([PipelineStage.SCREENING, PipelineStage.HOLD]),

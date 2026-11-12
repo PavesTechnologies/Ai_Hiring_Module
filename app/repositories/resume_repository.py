@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.repositories.embedding_model_version_repository import active_version_id_sql
 from app.models.candidates import Candidate, ParseAttemptStatus, ParseStatus, Resume, ResumeParseAttempt
 from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
 from app.models.jd.job_descriptions import JDEmbedding
@@ -162,6 +163,7 @@ class ResumeRepository:
             .join(ResumeEmbedding, ResumeEmbedding.resume_id == Resume.id)
             .where(
                 Resume.parse_status == ParseStatus.PARSED,
+                ResumeEmbedding.embedding_model_version_id == active_version_id_sql(),     # one row per resume
                 ResumeEmbedding.is_talent_pool_eligible.is_(True),
                 Resume.created_at >= freshness_cutoff,
             )
@@ -908,9 +910,11 @@ class ResumeRepository:
             skills_by_resume_id.setdefault(resume_id, []).append(canonical_name)
         return skills_by_resume_id
 
-    def get_embedding(self, resume_id: UUID) -> ResumeEmbedding | None:
-        """Read counterpart to create_resume_embedding — monitoring-only, no writes."""
-        stmt = select(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id)
+    def get_embedding(self, resume_id: UUID, embedding_model_version_id: UUID | None = None) -> ResumeEmbedding | None:
+        """The resume's embedding from this model version; None = the active one (settings phase 4)."""
+        version = embedding_model_version_id if embedding_model_version_id is not None else active_version_id_sql()
+        stmt = select(ResumeEmbedding).where(ResumeEmbedding.resume_id == resume_id,
+                                             ResumeEmbedding.embedding_model_version_id == version)
         return self.db.execute(stmt).scalars().first()
 
     def get_embeddings_by_candidate(self, candidate_id: UUID) -> list[ResumeEmbedding]:
@@ -936,10 +940,10 @@ class ResumeRepository:
         index, which only helps "find the closest among many."
         embedding_model_version_id is required to match as part of the same
         query - a mismatch (or either row not existing) returns None rather
-        than a meaningless cross-version distance. resume_embeddings'
-        (resume_id, embedding_model_version_id) uniqueness constraint means
-        this equality-filtered join can return at most one row even when a
-        resume has embeddings under more than one model version.
+        than a meaningless cross-version distance. Settings phase 4: only the
+        active model version's pair - while a re-embed builds a new model's
+        embeddings beside the old, both the resume and the JD can have two, and
+        scoring stays on the active one until the new version is activated.
         """
         similarity = ResumeEmbedding.embedding.cosine_distance(JDEmbedding.embedding)
         stmt = (
@@ -949,6 +953,7 @@ class ResumeRepository:
                 ResumeEmbedding.resume_id == resume_id,
                 JDEmbedding.jd_id == jd_id,
                 ResumeEmbedding.embedding_model_version_id == JDEmbedding.embedding_model_version_id,
+                ResumeEmbedding.embedding_model_version_id == active_version_id_sql(),
             )
         )
         result = self.db.execute(stmt).scalar_one_or_none()

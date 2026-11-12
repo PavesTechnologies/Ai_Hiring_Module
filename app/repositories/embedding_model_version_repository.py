@@ -7,6 +7,18 @@ from app.enums.constants import EMBEDDING_DIM
 from app.models.embeddings import EmbeddingModelVersion
 
 
+
+def active_version_id_sql():
+    """
+    The active embedding model version's id, as a SQL scalar subquery (settings phase 4). Embeddings are kept
+    per (item, model version) so a re-embed can build a new model's beside the old; every lookup takes the
+    version scoring uses - the active one, until a re-embed completes and the new version is activated.
+    """
+    from sqlalchemy import select
+    # At most one active row (uq_embedding_model_versions_active), so no LIMIT is needed.
+    return select(EmbeddingModelVersion.id).where(EmbeddingModelVersion.is_active.is_(True)).scalar_subquery()
+
+
 class EmbeddingModelVersionRepository:
     """
     Single source of truth for "which embedding model is active" — every

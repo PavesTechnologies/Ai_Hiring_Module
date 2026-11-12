@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Index, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +34,9 @@ class EmbeddingModelVersion(Base):
 
 class ResumeEmbedding(Base):
     __tablename__ = "resume_embeddings"
+    # One per resume and model version (settings phase 4): a re-embed adds the new model's beside the old.
+    __table_args__ = (UniqueConstraint("resume_id", "embedding_model_version_id",
+                                       name="uq_resume_embeddings_resume_model_version"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     resume_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
