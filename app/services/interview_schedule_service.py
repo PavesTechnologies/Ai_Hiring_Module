@@ -28,6 +28,8 @@ from app.services.audit_service import AuditService
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.microsoft_calendar_service import MicrosoftCalendarService
 from app.services.notifications.candidate_notification_emails import (
+    NO_START_TIME_MESSAGE,
+    interview_email_blocked,
     queue_interview_cancelled_email,
     queue_interview_rescheduled_email,
     queue_interview_scheduled_email,
@@ -690,6 +692,9 @@ class InterviewScheduleService:
 
         if schedule.status == InterviewStatus.CANCELLED:
             raise CampaignException("Interview is already cancelled.", 409)
+        if interview_email_blocked(schedule):
+            # The cancellation email needs the round's date and time; refused before anything changes.
+            raise CampaignException(NO_START_TIME_MESSAGE, 422, data={"code": "INTERVIEW_NOT_SCHEDULED"})
 
         cancelled_start_at = schedule.start_at
         status_before = schedule.status

@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
 from app.models.interview import InterviewPlatform
 from app.services.notifications import candidate_notification_emails as mod
@@ -354,3 +356,24 @@ def test_queue_candidate_selected_email_allow_resend_skips_the_dedup_check():
 
         notification_repo.create_unless_duplicate.assert_called_once()
         mock_task.apply_async.assert_called_once()
+
+
+# ----------------------------------------------------------------------
+# 2026-11-12: no candidate interview email for a round without a start time (it would fail on its missing
+# date and time and be dead-lettered) - never queued, never dispatched.
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("queue", [mod.queue_interview_scheduled_email, mod.queue_interview_rescheduled_email,
+                                   mod.queue_interview_cancelled_email])
+def test_an_interview_email_is_never_queued_for_a_round_without_a_start_time(queue):
+    notification_repo, template_repo = _patched()
+    with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo),          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo),          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+        queue(MagicMock(), _campaign_candidate(), _schedule(start_at=None, end_at=None), [_interviewer()])
+    notification_repo.create_unless_duplicate.assert_not_called()
+    mock_task.apply_async.assert_not_called()
+
+
+def test_interview_email_blocked_only_without_a_start_time():
+    assert mod.interview_email_blocked(_schedule(start_at=None)) is True
+    assert mod.interview_email_blocked(_schedule()) is False

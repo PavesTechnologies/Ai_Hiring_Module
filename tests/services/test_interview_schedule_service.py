@@ -2258,3 +2258,20 @@ def test_campaign_calendar_recruiter_check_is_assigned_recruiter_or_creator():
         service._authorize_campaign_access(campaign, "rec-9", ["RECRUITER"])
     assert exc.value.status_code == 403
 
+
+def test_cancel_of_a_round_without_a_date_and_time_is_refused_with_a_clear_message():
+    """2026-11-12: its cancellation email would have no date or time and fail into dead letters - the cancel is
+    refused before anything changes, and no email is queued."""
+    schedule = _make_schedule(status=InterviewStatus.PENDING, start_at=None, end_at=None)
+    service, cc_repo, campaign_repo, repo, audit_service, _ = _make_env(schedule=schedule)
+    with patch("app.services.interview_schedule_service.queue_interview_cancelled_email") as queue_email:
+        with pytest.raises(CampaignException) as exc_info:
+            service.cancel(schedule.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"],
+                           request=CancelInterviewRequest(reason="candidate withdrew"))
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.data["code"] == "INTERVIEW_NOT_SCHEDULED"
+    assert "no date and time yet" in exc_info.value.message
+    assert schedule.status == InterviewStatus.PENDING
+    repo.commit.assert_not_called()
+    audit_service.log.assert_not_called()
+    queue_email.assert_not_called()

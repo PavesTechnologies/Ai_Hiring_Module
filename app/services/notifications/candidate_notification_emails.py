@@ -113,6 +113,17 @@ def _interview_email_context(schedule, interviewers: list) -> dict | None:
     }
 
 
+INTERVIEW_EVENTS = frozenset({EmailTriggerEvent.INTERVIEW_SCHEDULED, EmailTriggerEvent.INTERVIEW_RESCHEDULED,
+                              EmailTriggerEvent.INTERVIEW_CANCELLED})
+NO_START_TIME_MESSAGE = ("This interview round has no date and time yet, so no interview email can be sent for it. "
+                         "Schedule the round first.")
+
+
+def interview_email_blocked(schedule) -> bool:
+    """A candidate interview email needs the round's date and time (its template does): none without one."""
+    return schedule is None or schedule.start_at is None
+
+
 def _queue_and_dispatch(
     db, *, campaign_candidate, trigger_event: EmailTriggerEvent, schedule=None, interviewers=None,
     allow_resend: bool = False,
@@ -135,6 +146,12 @@ def _queue_and_dispatch(
     callers which must stay dedup-guarded.
     """
     campaign_candidate_id = None
+    if trigger_event in INTERVIEW_EVENTS and interview_email_blocked(schedule):
+        # Never queued: the email would fail on its missing date and time and be dead-lettered (2026-11-12).
+        # Callers refuse the action first (interview_schedule_service.cancel); this is the safety net.
+        logger.warning("%s email not queued: the round has no start time | campaign_candidate_id=%s",
+                       trigger_event.value, getattr(campaign_candidate, "id", None))
+        return
     try:
         candidate_id = campaign_candidate.candidate_id
         campaign_candidate_id = campaign_candidate.id
