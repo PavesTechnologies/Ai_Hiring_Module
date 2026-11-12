@@ -311,3 +311,26 @@ def save_llm_capabilities(payload: dict = Body(...), service: LLMSettingsService
                           user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
     return APIResponse.ok(data=service.save_capabilities(payload, actor_id=user.user_id),
                           message="Capability map saved.")
+
+
+
+@router.get("/embeddings", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="The active embedding model and its embeddings (view only - the model switch comes after launch)")
+def embedding_overview(db: Session = Depends(get_db), user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    from sqlalchemy import func, select
+    from app.models.embeddings import EmbeddingModelVersion, ResumeEmbedding
+    from app.models.jd.job_descriptions import JDEmbedding
+    active = db.execute(select(EmbeddingModelVersion).where(EmbeddingModelVersion.is_active.is_(True))).scalars().first()
+    if active is None:
+        return APIResponse.ok(data={"active": None})
+
+    def count(model):
+        return int(db.execute(select(func.count()).select_from(model)
+                              .where(model.embedding_model_version_id == active.id)).scalar() or 0)
+    return APIResponse.ok(data={
+        "active": {"model_name": active.model_name, "model_version": active.model_version,
+                   "vector_dimensions": active.vector_dimensions, "distance_metric": active.distance_metric,
+                   "activated_at": active.activated_at.isoformat() if active.activated_at else None},
+        "resume_embeddings": count(ResumeEmbedding), "jd_embeddings": count(JDEmbedding),
+        "switchable": False,
+    })

@@ -214,3 +214,10 @@ def test_llm_settings_are_hr_admin_only(client, role):
                          ("put", "/settings/llm/capabilities")]:
         kwargs = {} if method == "get" else {"json": {}}
         assert getattr(http, method)(path, headers=_as(role), **kwargs).status_code == 403, path
+
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_the_embedding_overview_is_hr_admin_only(client, role):
+    http, _ = client
+    assert http.get("/settings/embeddings", headers=_as(role)).status_code == 403
