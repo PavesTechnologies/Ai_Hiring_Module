@@ -554,6 +554,10 @@ def run(args) -> int:
         return 2
     accepted_file = accepted_path(args.no_llm)
     accepted = json.loads(accepted_file.read_text(encoding="utf-8")) if accepted_file.exists() else {}
+    # An app run compares with the current scoring version's baseline in the database (the run that passed
+    # when it was promoted); the repository's accepted run stays the baseline for code changes (CI).
+    if getattr(args, "accepted_override", None) is not None:
+        accepted = args.accepted_override
     cache = json.loads(VOTE_CACHE.read_text(encoding="utf-8")) if VOTE_CACHE.exists() else {}
     started = datetime.datetime.now(datetime.timezone.utc)
     engine.echo = False
@@ -677,6 +681,7 @@ def run(args) -> int:
     if holder is not None:                            # a run started from the app (golden_version_runs)
         holder.update(summary_for_app(results, failed, failed_pairs, changes, misses, calls, stopped,
                                       total=len(cases)))
+        holder["_results"] = {"run_at": started.isoformat(), "cases": results}   # a baseline, if promoted
     report_path = ("(not written)" if getattr(args, "no_report", False)
                    else write_report(run_record, failed, pairs, changes, accepted, misses, args, votes.new))
     print(f"\n{len(results)} cases | expectation failures {len(failed)} | counterfactual pairs failing "

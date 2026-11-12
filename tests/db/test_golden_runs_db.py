@@ -143,3 +143,66 @@ def test_the_budget_keeps_the_reserve_for_candidates():
             patch.object(gr, "reserved_calls", return_value=100):
         assert gr.budget_problem(db, version, 50) is None                    # 250 + 50 + 100 = 400
         assert gr.budget_problem(db, version, 51) == gr.STOP_RESERVE
+
+
+# --- 2026-11-12: no email and no dispatch during an in-app run; baselines in the database -----------------------
+
+def test_nothing_can_be_dispatched_or_emailed_during_a_run_and_everything_is_back_after():
+    from celery.app.task import Task
+    from app.repositories.email_notification_repository import EmailNotificationRepository
+    from app.services.notifications.ses_email_client import SESEmailClient
+    before = (Task.apply_async, EmailNotificationRepository.create, SESEmailClient.send_email)
+    with gr.no_email_and_no_dispatch():
+        for call in (lambda: Task.apply_async(MagicMock()), lambda: Task.delay(MagicMock()),
+                     lambda: EmailNotificationRepository(MagicMock()).create(MagicMock()),
+                     lambda: EmailNotificationRepository(MagicMock()).create_unless_duplicate(MagicMock()),
+                     lambda: SESEmailClient.send_email(MagicMock(), to_address="x", subject="s", body_text="b")):
+            with pytest.raises(gr.EmailOrDispatchDuringGoldenRun):
+                call()
+    assert (Task.apply_async, EmailNotificationRepository.create, SESEmailClient.send_email) == before
+
+
+def test_a_run_that_tries_to_queue_anything_ends_in_error(db):  # noqa: F811
+    from celery.app.task import Task
+    version = _version(db)
+    run = _start(db, version, gr.KIND_ESTIMATE)
+
+    def runner(args):
+        Task.apply_async(MagicMock())                       # e.g. an email task
+    gr.execute(db, str(run.id), runner=runner)
+    db.refresh(run)
+    assert (run.status, run.stop_reason) == ("ERROR", "EmailOrDispatchDuringGoldenRun")
+
+
+def test_promotion_makes_the_passing_run_the_baseline_later_runs_compare_with(db):  # noqa: F811
+    from app.services.campaign.scoring_versions import ScoringVersionService, current_version
+    version = _version(db)
+    gr.execute(db, str(_start(db, version, gr.KIND_ESTIMATE).id), runner=_runner([GOOD]))
+    baseline_cases = {"S1": {"outcome": "PASS"}}
+    with patch.object(gr, "budget_problem", return_value=None):
+        run = _start(db, version, gr.KIND_RUN)
+        gr.execute(db, str(run.id), runner=_runner([{**GOOD, "_results": {"cases": baseline_cases}},
+                                                     {**GOOD, "_results": {"cases": baseline_cases}}]))
+    db.refresh(run)
+    assert run.results["llm"]["cases"] == baseline_cases and "_results" not in run.summary["llm"]
+    ScoringVersionService(db, MagicMock()).promote(version.id, actor_id=None, actor_role="HR_ADMIN")
+    assert current_version(db).golden_baseline_run_id == run.id
+    accepted, source = gr.baseline_for_comparison(db, "llm")
+    assert accepted == {"cases": baseline_cases} and source == f"baseline:{run.id}"
+
+    other = _version(db)
+    estimate = _start(db, other, gr.KIND_ESTIMATE)
+    runner = _runner([GOOD])
+    gr.execute(db, str(estimate.id), runner=runner)
+    assert runner.calls[0].accepted_override == {"cases": baseline_cases}
+    db.refresh(estimate)
+    assert estimate.summary["estimate"]["compared_with"] == f"baseline:{run.id}"
+
+
+def test_without_a_baseline_the_repository_run_is_used(db):  # noqa: F811
+    from app.services.campaign.scoring_versions import current_version
+    current = current_version(db)
+    current.golden_baseline_run_id = None
+    db.flush()
+    assert gr.baseline_for_comparison(db, "llm") == (None, "repository")
+

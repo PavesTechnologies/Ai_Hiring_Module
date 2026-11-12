@@ -14,6 +14,7 @@ Golden-set runs for a scoring version, from the Settings page (settings phase 3,
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -193,6 +194,41 @@ class GoldenRunService:
         return run_view(run)
 
 
+class EmailOrDispatchDuringGoldenRun(RuntimeError):
+    """Raised if anything tries to queue an email or a task during an in-app golden run."""
+
+
+@contextlib.contextmanager
+def no_email_and_no_dispatch():
+    """
+    During an in-app golden run (approved 2026-11-12, besides the always-rolled-back transaction): no task can
+    be dispatched (as in tests), no email notification can be created and the mail client can't send. Anything
+    that tries raises, so the run ends in ERROR instead of reaching a candidate. The worker runs one task per
+    process, so this only covers the run itself.
+    """
+    from unittest.mock import patch
+    from celery.app.task import Task
+    from app.repositories.email_notification_repository import EmailNotificationRepository
+    from app.services.notifications.ses_email_client import SESEmailClient
+
+    def refuse(*_args, **_kwargs):
+        raise EmailOrDispatchDuringGoldenRun("blocked during a golden run")
+    with patch.object(Task, "apply_async", refuse), patch.object(Task, "delay", refuse),             patch.object(EmailNotificationRepository, "create", refuse),             patch.object(EmailNotificationRepository, "create_unless_duplicate", refuse),             patch.object(SESEmailClient, "send_email", refuse):
+        yield
+
+
+def baseline_for_comparison(db, mode: str):
+    """(accepted run dict, where it came from) for an in-app run: the current version's baseline in the database,
+    or None (the runner then uses the repository's accepted run)."""
+    from app.services.campaign.scoring_versions import current_version
+    version = current_version(db)
+    baseline = db.get(ScoringVersionGoldenRun, version.golden_baseline_run_id)         if version is not None and version.golden_baseline_run_id else None
+    cases = ((baseline.results or {}).get(mode) or {}) if baseline is not None else {}
+    if not cases:
+        return None, "repository"
+    return cases, f"baseline:{baseline.id}"
+
+
 def execute(db, run_id: str, runner=None) -> None:
     """The worker's side: run the estimate or the run, and record its result. runner: scripts.golden.run.run."""
     run = db.get(ScoringVersionGoldenRun, UUID(run_id))
@@ -208,20 +244,28 @@ def execute(db, run_id: str, runner=None) -> None:
             run.status, run.stop_reason = "STOPPED", "CONFIGURATION_CHANGED"
         elif run.kind == KIND_ESTIMATE:
             holder: dict = {}
-            runner(_args(version, holder, cache_only=True))
+            accepted, source = baseline_for_comparison(db, "llm")
+            with no_email_and_no_dispatch():
+                runner(_args(version, holder, cache_only=True, accepted=accepted))
+            holder.pop("_results", None)
             run.expected_llm_calls = int(holder.get("expected_llm_calls") or 0)
-            run.summary = {"estimate": holder}
+            run.summary = {"estimate": {**holder, "compared_with": source}}
             run.status = "ESTIMATED"
         else:
             def guard(case):
                 return budget_problem(db, version, CASE_ALLOWANCE)
             full: dict = {}
-            runner(_args(version, full, guard=guard))
             no_llm: dict = {}
-            if not full.get("stopped"):
-                runner(_args(version, no_llm, no_llm=True))
+            accepted, source = baseline_for_comparison(db, "llm")
+            accepted_no_llm, source_no_llm = baseline_for_comparison(db, "no_llm")
+            with no_email_and_no_dispatch():
+                runner(_args(version, full, guard=guard, accepted=accepted))
+                if not full.get("stopped"):
+                    runner(_args(version, no_llm, no_llm=True, accepted=accepted_no_llm))
+            run.results = {"llm": full.pop("_results", None), "no_llm": no_llm.pop("_results", None)}
             run.llm_calls = int(full.get("llm_calls") or 0) + int(no_llm.get("llm_calls") or 0)
-            run.summary = {"llm": full, "no_llm": no_llm}
+            run.summary = {"llm": {**full, "compared_with": source},
+                           "no_llm": {**no_llm, "compared_with": source_no_llm} if no_llm else no_llm}
             if full.get("stopped"):
                 run.status, run.stop_reason = "STOPPED", full["stopped"]
             else:
@@ -237,7 +281,7 @@ def execute(db, run_id: str, runner=None) -> None:
     db.commit()
 
 
-def _args(version, holder, *, cache_only=False, no_llm=False, guard=None):
+def _args(version, holder, *, cache_only=False, no_llm=False, guard=None, accepted=None):
     return SimpleNamespace(only=None, cache_only=cache_only, no_llm=no_llm, dev_cache=False, accept=False,
                            accept_run=None, scoring_version_id=str(version.id), guard=guard,
-                           result_holder=holder, no_report=True)
+                           result_holder=holder, no_report=True, accepted_override=accepted)

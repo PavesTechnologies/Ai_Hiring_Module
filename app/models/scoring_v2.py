@@ -227,6 +227,11 @@ class ScoringVersion(Base):
     activated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Settings phase 3: the passing golden run it was promoted with - in-app golden checks compare with the
+    # current version's (the repository's accepted run stays the baseline for code changes).
+    golden_baseline_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scoring_version_golden_runs.id", use_alter=True,
+                                       name="fk_scoring_versions_golden_baseline_run"), nullable=True)
 
 
 class ScoringVersionGoldenRun(Base):
@@ -254,6 +259,9 @@ class ScoringVersionGoldenRun(Base):
     llm_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     stop_reason: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # A RUN's full per-case results by mode ({"llm": {...}, "no_llm": {...}}): the baseline once promoted.
+    # Synthetic golden cases only.
+    results: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     requested_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

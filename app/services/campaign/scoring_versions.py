@@ -203,6 +203,7 @@ class ScoringVersionService:
             previous.status, previous.retired_at = STATUS_RETIRED, now
             self.db.flush()                     # the one-current index: retire before activating
         version.status, version.activated_at, version.activated_by = STATUS_CURRENT, now, actor_id
+        version.golden_baseline_run_id = golden.id     # in-app golden checks compare with it from now on
         trying = self.db.execute(select(HiringCampaign).where(
             HiringCampaign.candidate_scoring_version_id == version.id)).scalars().all()
         for campaign in trying:
