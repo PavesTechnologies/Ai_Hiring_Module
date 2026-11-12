@@ -37,6 +37,7 @@ from app.services.audit_service import AuditService
 from app.services.cache_service import CacheService
 from app.services.llm.base import LLMError, LLMErrorReason, LLMProviderName
 from app.services.llm.call_log import llm_call_source
+from app.services.llm.capabilities import load_capability_rules
 from app.services.llm.factory import AI_PROVIDER_KEY_PURPOSE, build_provider
 from app.services.llm.model_selection import (
     LLMPurpose,
@@ -616,17 +617,19 @@ class AIProviderConfigService:
         logger.exception(log_message)
         raise ServiceUnavailableError(_SAVE_FAILED)
 
-    @staticmethod
-    def _verify_with_key(provider_key: str, model_name: str, api_key: str) -> VerifyResponse:
+    def _verify_with_key(self, provider_key: str, model_name: str, api_key: str) -> VerifyResponse:
         mismatch = _key_mismatch_message(provider_key, api_key)
         if mismatch:
             return VerifyResponse(verified=False, message=mismatch, error_code=KEY_PROVIDER_MISMATCH)
 
         started = time.monotonic()
         try:
+            # Settings phase 4: the check uses the capability map scoring will use (platform_config
+            # LLM_MODEL_CAPABILITIES), not the code defaults - a model that passes here works when used.
             provider = build_provider(
                 provider_key, api_key, model_name,
                 timeout_seconds=settings.llm_verify_timeout_seconds,
+                capability_rules=load_capability_rules(getattr(self.repository, "db", None)),
             )
             with llm_call_source("settings_check"):
                 result = provider.generate_json(_VERIFY_PROMPT, _VerifySchema)

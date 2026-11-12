@@ -759,3 +759,15 @@ def test_any_other_check_failure_still_blocks_saving(error, code):
     assert err.value.status_code == 422 and code in err.value.detail
     repo.create.assert_not_called()
 
+
+def test_the_check_uses_the_capability_map_scoring_will_use():
+    """Settings phase 4: the stored LLM_MODEL_CAPABILITIES, not the code defaults - a model passes the check
+    exactly when it would work in scoring."""
+    service, *_ = _make_service()
+    stored = [{"provider": "GOOGLE", "model_pattern": "gemini-*", "supports_temperature": False,
+               "structured_output": "json_schema", "max_output_tokens": 1000, "source": "test"}]
+    with patch("app.services.ai_provider_config_service.load_capability_rules", return_value=stored) as rules,             patch(_BUILD, side_effect=RuntimeError("stop")) as build:
+        service.verify(VerifyRequest(provider="GOOGLE", model_name="gemini-3.8-flash", api_key="k"))
+    assert build.call_args.kwargs["capability_rules"] == stored
+    rules.assert_called_once()
+
