@@ -20,6 +20,7 @@ def main() -> None:
         install()
         print("e2e worker: stub LLM installed (no network LLM calls)")
     _e2e_scoring_switches()
+    _drop_working_directory_from_path()
     celery_app.worker_main(["worker", "--loglevel=info", "--pool=solo", "--concurrency=1"])
 
 
@@ -46,6 +47,24 @@ def _e2e_scoring_switches() -> None:
 
     tasks._run_scoring_v2 = run_scoring_v2
     print("e2e worker: retry backoff in seconds; last-attempt fallback switchable (e2e_stub_mode.json)")
+
+
+def _drop_working_directory_from_path() -> None:
+    """
+    The celery command puts the working directory on sys.path only while it loads the app, then takes it off
+    again (celery.utils.imports.cwd_in_path); `python -m` here would leave it on for good. Taken off, so a task
+    that imports something outside app/ (the golden runner) runs as it does in a real worker - it fails here
+    unless it puts the project root on the path itself (app/services/settings/golden_runs.golden_runner).
+    The scripts modules this worker loaded itself (scripts.e2e.*) are unloaded as well: a real worker never
+    imports scripts, and Python keeps a namespace package's search path once found, so with them loaded
+    scripts.golden would still resolve. The stub keeps working - its functions are already installed.
+    """
+    import sys
+    root = os.path.realpath(os.getcwd())
+    sys.path[:] = [p for p in sys.path if p not in ("", ".") and os.path.realpath(p) != root]
+    for name in [m for m in sys.modules if m == "scripts" or m.startswith("scripts.")]:
+        del sys.modules[name]
+    print("e2e worker: working directory off sys.path and scripts unloaded, as under the celery command")
 
 
 if __name__ == "__main__":

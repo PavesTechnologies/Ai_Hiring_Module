@@ -37,6 +37,8 @@ x-app: &app
     - ../scripts:/app/scripts:ro
     - ../alembic:/app/alembic:ro
     - ../tests/fixtures:/app/tests/fixtures:ro
+    # The current golden set (the image's copy is from its build) - the golden estimate check reads it.
+    - ../tests/golden:/app/tests/golden:ro
     - e2e_storage:/data/storage
   depends_on:
     postgres:

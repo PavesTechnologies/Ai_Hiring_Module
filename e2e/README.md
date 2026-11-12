@@ -99,6 +99,20 @@ D5. promotion (audited): candidate -> current, the old one retired, the campaign
 
 Report: `/data/storage/e2e_scoring_versions_report.json`.
 
+Then `scripts/e2e/run_golden_estimate_e2e.py` (Settings > Scoring): a golden estimate started from the API
+and run by the stack's own worker, not a fake runner. The e2e worker takes the working directory off
+`sys.path` and unloads the `scripts` modules it loaded itself before it starts, as under the `celery`
+command, so a task importing the golden runner from `scripts/` fails here as it would in a real worker
+(checked: with the import fix taken out, G2 ends as ERROR ModuleNotFoundError). The current golden set is
+mounted from `tests/golden`.
+
+G1. HR starts an estimate (202, queued); a recruiter gets 403
+G2. the worker finishes it as ESTIMATED (not ERROR, not left running), every golden case scored
+G3. no LLM call (llm_call_log unchanged)
+G4. no email
+
+Report: `/data/storage/e2e_golden_estimate_report.json`.
+
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
 
