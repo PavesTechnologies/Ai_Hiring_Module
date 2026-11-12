@@ -84,7 +84,7 @@ def upgrade() -> None:
     op.execute("""
         insert into scoring_versions (label, configuration, status, note, activated_at)
         select 'v2 baseline', value::jsonb, 'current',
-               'Created by migration e1a3c5e7f9b2 from platform_config SCORING_V2_CONFIG.', now()
+               'Original scoring configuration (created at setup)', now()
         from platform_config
         where key = 'SCORING_V2_CONFIG' and value is not null
           and value ~ '^\\s*\\{' and jsonb_typeof(value::jsonb) = 'object'

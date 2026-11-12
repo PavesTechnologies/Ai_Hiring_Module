@@ -180,7 +180,7 @@ def seed(db) -> None:
         db.add(ScoringVersion(
             id=uuid.uuid4(), label="v2 baseline", status="current",
             configuration=json.loads(json.dumps(SCORING_V2_DEFAULT_CONFIG)),
-            note="Created by the scoring seed: today's scoring configuration.",
+            note="Original scoring configuration (created at setup)",
             activated_at=datetime.now(timezone.utc),
         ))
         print("Added scoring version: v2 baseline (current)")
