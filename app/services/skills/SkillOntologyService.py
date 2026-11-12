@@ -330,6 +330,7 @@ class SkillOntologyService:
                 )
 
             self.repository.update_skill(skill)
+            self._mark_out_of_date([skill.id], "The catalogue skill '%s'" % skill.canonical_name)
             self.repository.commit()
             self._invalidate_skill_caches(skill.id)
             logger.info("Skill updated | skill_id=%s fields_changed=%s", skill.id, list(before.keys()))
@@ -509,6 +510,7 @@ class SkillOntologyService:
                 },
             )
 
+            self._mark_out_of_date([skill.id], "The catalogue skill '%s'" % skill.canonical_name)
             self.repository.commit()
             self._invalidate_skill_caches(skill.id)
             logger.info(
@@ -628,6 +630,11 @@ class SkillOntologyService:
             self._cleanup_temp_file(tmp_path)
 
         return self._validate_rows(skills)
+
+    def _mark_out_of_date(self, skill_ids, what: str) -> int:
+        """Settings phase 3: stamp scored candidates of live campaigns whose JD uses these skills out of date."""
+        from app.services.settings.reference_impact import mark_after_edit
+        return mark_after_edit(self.db, "skill", what, skill_ids=list(skill_ids))
 
     def bulk_import(self, file: UploadFile, *, updated_by: str, actor_role: str | None) -> BulkImportResponse:
         """
@@ -779,6 +786,7 @@ class SkillOntologyService:
         failures: list[BulkImportFailureResponse] = []
         failed_rows_detail: list[dict] = []
         new_active_skill_ids: list[UUID] = []
+        updated_skill_ids: list[UUID] = []       # settings phase 3: their campaigns are marked
 
         try:
             existing_by_name = self.repository.get_all_canonical_names()
@@ -849,6 +857,7 @@ class SkillOntologyService:
                                 existing_skill, skill, cleaned_aliases, parent_skill_id,
                                 updated_by=updated_by, actor_role=actor_role,
                             )
+                            updated_skill_ids.append(existing_skill.id)
                             updated += 1
                         else:
                             new_skill = SkillOntology(
@@ -882,6 +891,7 @@ class SkillOntologyService:
                     })
                     logger.exception("Bulk import row failed | row=%s reason=%s", row_number, reason)
 
+            self._mark_out_of_date(updated_skill_ids, "Catalogue skills (bulk import)")
             self.repository.commit()
             self._invalidate_skill_caches()
         except Exception:

@@ -7,6 +7,7 @@ pairs for a JD's role domain when its education is mandatory
 """
 from uuid import UUID
 
+from app.services.settings.reference_impact import mark_after_edit
 from app.enums.constants import ActionType, EntityType
 from app.enums.education import EducationField, RoleDomain
 from app.exception_handler.exceptions import ConflictError, NotFoundError, UnprocessableError
@@ -60,10 +61,14 @@ class EducationFieldFamilyService:
                 field_a=field_a, field_b=field_b, role_domain=role_domain,
                 note=(note or "").strip() or None, created_by=actor_id,
             ))
+            # Settings phase 3: scored candidates of live campaigns this pair can change are stamped out of date.
+            marked = mark_after_edit(self.repository.db, "education_relation", "A related education field pair",
+                                     role_domain=role_domain)
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.EDUCATION_FIELD_RELATION_ADDED,
                 entity_type=EntityType.EDUCATION_FIELD_RELATION, entity_id=relation.id,
-                details={"field_a": field_a, "field_b": field_b, "role_domain": role_domain, "note_provided": bool(relation.note)},
+                details={"field_a": field_a, "field_b": field_b, "role_domain": role_domain, "note_provided": bool(relation.note),
+                         "candidates_marked_out_of_date": marked},
             )
             self.repository.commit()
         except Exception:
@@ -79,6 +84,9 @@ class EducationFieldFamilyService:
             details = {"field_a": relation.field_a, "field_b": relation.field_b,
                        "role_domain": relation.role_domain, "note_provided": bool(relation.note)}
             self.repository.delete(relation)
+            details["candidates_marked_out_of_date"] = mark_after_edit(
+                self.repository.db, "education_relation", "A related education field pair",
+                role_domain=details["role_domain"])
             self.audit_service.log(
                 actor_id=actor_id, actor_role=actor_role, action_type=ActionType.EDUCATION_FIELD_RELATION_REMOVED,
                 entity_type=EntityType.EDUCATION_FIELD_RELATION, entity_id=relation_id, details=details,

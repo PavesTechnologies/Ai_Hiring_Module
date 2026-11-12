@@ -19,6 +19,7 @@ from app.services.settings.alert_settings import AlertSettingsService
 from app.services.settings.email_template_settings import EmailTemplateSettingsService
 from app.services.settings.golden_runs import GoldenRunService, budget_view
 from app.services.settings.platform_settings import InvalidSetting
+from app.services.settings.reference_impact import KINDS as REFERENCE_KINDS, impact as reference_impact
 from app.services.settings.platform_settings_service import PlatformSettingsService
 from app.services.settings.reason_code_settings import ReasonCodeSettingsService
 from app.services.settings.schedules import list_schedules
@@ -233,3 +234,19 @@ def start_golden_run(version_id: str, payload: dict = Body(...), db: Session = D
     kind = payload.get("kind") if isinstance(payload, dict) else None
     run = GoldenRunService(db).start(version_id, kind, actor_id=user.user_id)
     return APIResponse.ok(data=run, message="Estimate started." if kind == "ESTIMATE" else "Golden run started.")
+
+
+@router.post("/reference-impact", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+             summary="Before a reference-data edit: the live campaigns it affects and the scored candidates "
+                     "it will mark out of date")
+def preview_reference_impact(payload: dict = Body(...), db: Session = Depends(get_db),
+                             user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    kind = payload.get("kind") if isinstance(payload, dict) else None
+    if kind not in REFERENCE_KINDS:
+        raise CampaignException(f"kind must be one of {', '.join(REFERENCE_KINDS)}.", 422)
+    target = {k: payload.get(k) for k in ("skill_ids", "certification_id", "role_domain", "template_key")
+              if payload.get(k) is not None}
+    try:
+        return APIResponse.ok(data=reference_impact(db, kind, **target))
+    except (ValueError, TypeError):
+        raise CampaignException("Give the skill, certification, role domain or template the edit is about.", 422)

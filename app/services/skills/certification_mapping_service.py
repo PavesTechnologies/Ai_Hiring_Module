@@ -149,11 +149,17 @@ class CertificationMappingService:
             raise
         return certification
 
+    def _mark(self, skill_ids) -> int:
+        """Settings phase 3: stamp scored candidates of live campaigns whose JD uses these skills out of date."""
+        from app.services.settings.reference_impact import mark_after_edit
+        return mark_after_edit(self.repository.db, "skill", "A certification mapping", skill_ids=list(skill_ids))
+
     def remove_certification(self, certification_id: UUID, *, actor_id: str, actor_role: str | None) -> None:
         try:
             certification = self._certification(certification_id)
             details = {"name": certification.name, "name_variants": list(certification.name_variants or []),
                        "skills": [str(s.canonical_skill_id) for s in certification.skills]}
+            details["candidates_marked_out_of_date"] = self._mark(details["skills"])   # before the mappings go
             self.repository.delete(certification)
             self._audit(ActionType.CERTIFICATION_REMOVED, certification_id, actor_id, actor_role, details)
             self.repository.commit()
@@ -179,7 +185,8 @@ class CertificationMappingService:
                 sense_key=sense_key or None, created_by=actor_id))
             self._audit(ActionType.CERTIFICATION_SKILL_ADDED, certification.id, actor_id, actor_role,
                         {"certification": certification.name, "skill": skill.canonical_name,
-                         "canonical_skill_id": str(canonical_skill_id), "sense_key": sense_key or None})
+                         "canonical_skill_id": str(canonical_skill_id), "sense_key": sense_key or None,
+                         "candidates_marked_out_of_date": self._mark([canonical_skill_id])})
             self.repository.commit()
         except Exception:
             self.repository.rollback()
@@ -198,7 +205,8 @@ class CertificationMappingService:
             self._audit(ActionType.CERTIFICATION_SKILL_REMOVED, certification.id, actor_id, actor_role,
                         {"certification": certification.name,
                          "skill": getattr(skill, "canonical_name", str(canonical_skill_id)),
-                         "canonical_skill_id": str(canonical_skill_id), "sense_key": row.sense_key})
+                         "canonical_skill_id": str(canonical_skill_id), "sense_key": row.sense_key,
+                         "candidates_marked_out_of_date": self._mark([canonical_skill_id])})
             self.repository.commit()
         except Exception:
             self.repository.rollback()

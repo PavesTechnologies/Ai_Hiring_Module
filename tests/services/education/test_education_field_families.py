@@ -192,3 +192,22 @@ def test_removing_a_missing_pair_is_not_found():
 
 def test_ordered_pair():
     assert ordered_pair("B", "A") == ("A", "B") and ordered_pair("A", "B") == ("A", "B")
+
+
+def test_adding_or_removing_a_pair_marks_the_affected_candidates_out_of_date():
+    """Settings phase 3: scored candidates of live campaigns with that role domain are stamped; the audit counts them."""
+    from unittest.mock import patch
+    from types import SimpleNamespace as NS
+    module = "app.services.education.education_field_family_service.mark_after_edit"
+    service, repository, audit = _service()
+    with patch(module, return_value=4) as mark:
+        service.add(field_1="DATA_SCIENCE", field_2="STATISTICS", role_domain="DATA", note=None, actor_id="hr",
+                    actor_role="HR_ADMIN")
+    assert mark.call_args.args[1] == "education_relation" and mark.call_args.kwargs["role_domain"] == "DATA"
+    assert audit.log.call_args.kwargs["details"]["candidates_marked_out_of_date"] == 4
+    repository.get.return_value = NS(field_a="DATA_SCIENCE", field_b="STATISTICS", role_domain="DATA", note=None)
+    with patch(module, return_value=2) as mark:
+        service.remove("rel-1", actor_id="hr", actor_role="HR_ADMIN")
+    assert mark.call_args.kwargs["role_domain"] == "DATA"
+    assert audit.log.call_args.kwargs["details"]["candidates_marked_out_of_date"] == 2
+
