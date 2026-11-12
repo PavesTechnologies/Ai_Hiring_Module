@@ -139,6 +139,8 @@ class GoldenRunService:
 
     def runs(self, version_id) -> dict:
         version = self._version(version_id)
+        self._close_lost_runs()
+        self.db.commit()                        # a lost run shows as timed out, and the panel offers a new one
         rows = (self.db.query(ScoringVersionGoldenRun)
                 .filter(ScoringVersionGoldenRun.scoring_version_id == version.id)
                 .order_by(ScoringVersionGoldenRun.created_at.desc()).limit(20).all())
@@ -161,14 +163,20 @@ class GoldenRunService:
             return PURPOSE_REFERENCE
         raise CampaignException("A retired version can't be run.", 422)
 
-    def _refuse_if_busy(self):
-        now = datetime.now(timezone.utc)
+    def _close_lost_runs(self) -> list:
+        """Runs still QUEUED / RUNNING after RUN_TIMEOUT are closed as ERROR (TIMED_OUT); the rest are returned."""
+        now, active = datetime.now(timezone.utc), []
         for run in self.db.query(ScoringVersionGoldenRun).filter(ScoringVersionGoldenRun.status.in_(ACTIVE)).all():
             if (run.started_at or run.created_at) < now - RUN_TIMEOUT:
                 run.status, run.stop_reason, run.finished_at = "ERROR", "TIMED_OUT", now
-                continue
-            raise CampaignException("A golden run is already in progress. Wait for it to finish.", 409)
+            else:
+                active.append(run)
         self.db.flush()
+        return active
+
+    def _refuse_if_busy(self):
+        if self._close_lost_runs():
+            raise CampaignException("A golden run is already in progress. Wait for it to finish.", 409)
 
     def start(self, version_id, kind: str, *, actor_id: str | None) -> dict:
         version = self._version(version_id)
@@ -230,24 +238,41 @@ def baseline_for_comparison(db, mode: str):
     or None (the runner then uses the repository's accepted run)."""
     from app.services.campaign.scoring_versions import current_version
     version = current_version(db)
-    baseline = db.get(ScoringVersionGoldenRun, version.golden_baseline_run_id)         if version is not None and version.golden_baseline_run_id else None
+    baseline = (db.get(ScoringVersionGoldenRun, version.golden_baseline_run_id)
+                if version is not None and version.golden_baseline_run_id else None)
     cases = ((baseline.results or {}).get(mode) or {}) if baseline is not None else {}
     if not cases:
         return None, "repository"
     return cases, f"baseline:{baseline.id}"
 
 
+def golden_runner():
+    """
+    scripts.golden.run.run, importable from the worker. The celery command doesn't put the project root on
+    sys.path (python -m does), so `scripts` - outside the app package - wasn't found in the worker and every run
+    failed on import (2026-11-12). The root is added when missing; the image ships scripts/ and tests/golden/.
+    """
+    import sys
+    from pathlib import Path
+    root = str(Path(__file__).resolve().parents[3])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from scripts.golden.run import run
+    return run
+
+
 def execute(db, run_id: str, runner=None) -> None:
-    """The worker's side: run the estimate or the run, and record its result. runner: scripts.golden.run.run."""
+    """The worker's side: run the estimate or the run, and record its result - always a final status, whatever
+    fails. runner: scripts.golden.run.run (golden_runner())."""
     run = db.get(ScoringVersionGoldenRun, UUID(run_id))
     if run is None or run.status != "QUEUED":
         return
     version = db.get(ScoringVersion, run.scoring_version_id)
     run.status, run.started_at = "RUNNING", datetime.now(timezone.utc)
     db.commit()
-    if runner is None:
-        from scripts.golden.run import run as runner
     try:
+        if runner is None:
+            runner = golden_runner()
         if config_hash(version) != run.config_hash:
             run.status, run.stop_reason = "STOPPED", "CONFIGURATION_CHANGED"
         elif run.kind == KIND_ESTIMATE:

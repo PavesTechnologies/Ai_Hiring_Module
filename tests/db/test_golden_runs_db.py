@@ -234,3 +234,36 @@ def test_a_recent_run_still_blocks(db):  # noqa: F811
         gr.GoldenRunService(db).start(version.id, gr.KIND_ESTIMATE, actor_id=None)
     assert exc.value.status_code == 409
 
+
+# --- 2026-11-12: the worker couldn't import the runner, and the failure left the run RUNNING -------------------
+
+def test_the_runner_imports_without_the_project_root_on_sys_path(monkeypatch):
+    """Celery puts the working directory on sys.path only while it loads the app (celery.utils.imports.cwd_in_path),
+    so `scripts` - outside the app package - wasn't importable when a run started in the worker."""
+    import sys
+    from pathlib import Path
+    root = str(Path(gr.__file__).resolve().parents[3])
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p not in ("", ".", root)
+                                      and Path(p or ".").resolve() != Path(root)])
+    for name in [m for m in sys.modules if m == "scripts" or m.startswith("scripts.")]:
+        monkeypatch.delitem(sys.modules, name)
+    assert callable(gr.golden_runner())
+
+
+def test_any_failure_while_preparing_the_run_is_recorded_never_left_running(db):  # noqa: F811
+    version = _version(db)
+    run = _start(db, version, gr.KIND_ESTIMATE)
+    with patch.object(gr, "golden_runner", side_effect=ModuleNotFoundError("No module named 'scripts'")):
+        gr.execute(db, str(run.id))
+    db.refresh(run)
+    assert (run.status, run.stop_reason) == ("ERROR", "ModuleNotFoundError") and run.finished_at is not None
+
+
+def test_opening_the_runs_list_closes_a_lost_run(db):  # noqa: F811
+    version = _version(db)
+    lost = _start(db, version, gr.KIND_ESTIMATE)
+    lost.status, lost.started_at = "RUNNING", datetime.now(timezone.utc) - timedelta(hours=2)
+    db.flush()
+    listing = gr.GoldenRunService(db).runs(version.id)
+    assert listing["runs"][0]["status"] == "ERROR" and listing["runs"][0]["stop_reason"] == "TIMED_OUT"
+
