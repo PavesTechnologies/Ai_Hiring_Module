@@ -166,10 +166,9 @@ app.openapi = custom_openapi  # type: ignore[method-assign]
 @app.on_event("startup")
 def sync_embedding_model_version() -> None:
     """
-    Mirrors settings.embedding_model (.env) into the active
-    embedding_model_versions row on every boot, so EMBEDDING_MODEL is the
-    only place anyone needs to change the model — the DB row it drives can
-    never be missing or drift out of sync with it.
+    Makes sure an active embedding model version exists: on a fresh database, EMBEDDING_MODEL (.env) seeds
+    it. After that the database decides (settings phase 4) - a model change is a planned action on the
+    Settings page, never an .env edit.
     """
     db = SessionLocal()
     try:

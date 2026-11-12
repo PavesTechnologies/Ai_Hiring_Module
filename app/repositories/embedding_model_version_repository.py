@@ -1,10 +1,12 @@
+import logging
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.enums.constants import EMBEDDING_DIM
 from app.models.embeddings import EmbeddingModelVersion
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -42,30 +44,22 @@ class EmbeddingModelVersionRepository:
 
     def sync_active_from_settings(self, model_name: str) -> EmbeddingModelVersion:
         """
-        settings.embedding_model (EMBEDDING_MODEL in .env) is the one place
-        a human declares the model — this mirrors that into the DB row at
-        app startup so the two can never drift and the active row can never
-        simply be missing. A no-op if the active row already matches. If
-        .env now names a different model, the old row is deprecated rather
-        than overwritten in place — resume/JD embeddings already generated
-        under it keep a FK that still correctly describes what produced
-        them — and a new active row is created for the new model.
+        Settings phase 4: the database decides the embedding model. settings.embedding_model (EMBEDDING_MODEL
+        in .env) only seeds the first version on a fresh database; once a version is active, .env never
+        replaces it - a model change is a planned action on the Settings page (a re-embed builds the new
+        model's embeddings beside the old, then the new version is activated). A different .env value is only
+        logged.
         """
         current = (
             self.db.query(EmbeddingModelVersion)
             .filter(EmbeddingModelVersion.is_active.is_(True))
             .first()
         )
-        if current and current.model_name == model_name:
+        if current is not None:
+            if current.model_name != model_name:
+                logger.warning("EMBEDDING_MODEL=%s differs from the active embedding model %s, which is kept: "
+                               "change the model on the Settings page.", model_name, current.model_name)
             return current
-
-        if current:
-            current.is_active = False
-            current.deprecated_at = datetime.now(timezone.utc)
-            # Flushed separately from the insert below: uq_embedding_model_versions_active
-            # only allows one is_active=TRUE row at a time, and an UPDATE/INSERT
-            # in the same flush batch has no guaranteed ordering against it.
-            self.db.flush()
 
         new_version = EmbeddingModelVersion(
             id=uuid.uuid4(),
