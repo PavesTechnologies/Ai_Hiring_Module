@@ -41,6 +41,10 @@ class AlertSettingsService:
         return sorted(self.users.get_active_by_role(UserRole.HR_ADMIN),
                       key=lambda u: ((u.full_name or "").lower(), u.email or ""))
 
+    def _enabled(self, user_id: str, trigger_event) -> bool:
+        pref = self.preferences.get_by_user_id_and_trigger_event(user_id, trigger_event)
+        return pref is None or pref.is_enabled
+
     def list(self) -> list[dict]:
         admins = self._hr_admins()
         result = []
@@ -65,8 +69,17 @@ class AlertSettingsService:
             raise CampaignException("Unknown alert.", 404)
         if not isinstance(enabled, bool):
             raise CampaignException('Send {"enabled": true} or {"enabled": false}.', 422)
-        if user_id not in {u.id for u in self._hr_admins()}:
+        admins = self._hr_admins()
+        if user_id not in {u.id for u in admins}:
             raise CampaignException("Only active HR admins receive these alerts.", 422)
+        if enabled is False:
+            # Never leave an alert with nobody to receive it (approved 2026-11-12).
+            receiving = [u for u in admins if (u.email or "").strip() and self._enabled(u.id, alert["trigger_event"])]
+            if [u.id for u in receiving] == [user_id]:
+                raise CampaignException(
+                    f"{receiving[0].full_name or receiving[0].email} is the only HR admin receiving "
+                    f"\"{alert['label']}\". Switch another HR admin on first, so the alert still reaches someone.",
+                    422, data={"code": "LAST_ALERT_RECIPIENT"})
         try:
             pref = self.preferences.get_by_user_id_and_trigger_event(user_id, alert["trigger_event"])
             before = pref is None or pref.is_enabled

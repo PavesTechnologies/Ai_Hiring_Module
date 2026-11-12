@@ -28,6 +28,7 @@ def _service(admins, prefs=None):
 
 _ANN = SimpleNamespace(id="u1", full_name="Ann", email="ann@example.invalid")
 _BOB = SimpleNamespace(id="u2", full_name="Bob", email="")
+_CY = SimpleNamespace(id="u3", full_name="Cy", email="cy@example.invalid")
 
 
 def test_every_active_hr_admin_receives_unless_opted_out():
@@ -42,7 +43,7 @@ def test_every_active_hr_admin_receives_unless_opted_out():
 
 
 def test_switching_a_recipient_off_is_saved_and_audited_with_ids_only():
-    service, preferences, audit = _service([_ANN])
+    service, preferences, audit = _service([_ANN, _CY])
     service.set_recipient("EMAIL_SEND_STUCK_ALERT", "u1", False, actor_id="hr-9")
     preferences.upsert.assert_called_once()
     assert preferences.upsert.call_args.args[0] == "u1" and preferences.upsert.call_args.args[2] is False
@@ -75,6 +76,31 @@ def test_bad_requests_are_refused(trigger, user_id, enabled, status):
 
 def test_the_listed_alerts_are_the_ones_sent_to_hr_admins():
     assert {a["trigger_event"].value for a in ALERTS} == {"EMAIL_SEND_STUCK_ALERT", "EMBEDDING_HEALTH_ALERT"}
+
+
+def test_the_last_recipient_of_an_alert_cant_be_switched_off():
+    service, preferences, audit = _service([_ANN, _BOB, _CY], {("u3", "EMAIL_SEND_STUCK_ALERT"): False})
+    with pytest.raises(CampaignException) as exc:
+        service.set_recipient("EMAIL_SEND_STUCK_ALERT", "u1", False, actor_id="hr-9")
+    assert exc.value.status_code == 422 and exc.value.data["code"] == "LAST_ALERT_RECIPIENT"
+    assert "Ann is the only HR admin receiving" in exc.value.message
+    preferences.upsert.assert_not_called()
+    audit.log.assert_not_called()
+
+
+def test_someone_who_cant_receive_doesnt_count_as_another_recipient():
+    """Bob has no email address: switching Ann off would still leave nobody."""
+    service, preferences, _ = _service([_ANN, _BOB])
+    with pytest.raises(CampaignException):
+        service.set_recipient("EMAIL_SEND_STUCK_ALERT", "u1", False, actor_id="hr-9")
+    service.set_recipient("EMAIL_SEND_STUCK_ALERT", "u2", False, actor_id="hr-9")      # Bob himself: allowed
+    preferences.upsert.assert_called_once()
+
+
+def test_switching_someone_on_is_never_blocked():
+    service, preferences, _ = _service([_ANN], {("u1", "EMAIL_SEND_STUCK_ALERT"): False})
+    service.set_recipient("EMAIL_SEND_STUCK_ALERT", "u1", True, actor_id="hr-9")
+    preferences.upsert.assert_called_once()
 
 
 @pytest.mark.parametrize("schedule, words", [
