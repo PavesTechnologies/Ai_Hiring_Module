@@ -91,3 +91,18 @@ def test_a_version_summary_shows_every_setting_it_scores_with():
     effective = version_summary(version)["effective_configuration"]
     assert effective["score_threshold_rejects"] is True and effective["validation"]["equivalent_experience_years"] == 8.0
     assert "evidence" not in effective
+
+
+MOVED_KEYS = ("EXPERIENCE_TOLERANCE_YEARS", "EQUIVALENT_EXPERIENCE_YEARS", "DETERMINISTIC_SCORE_REJECTS",
+              "SCORING_V2_MATCH_BLOCKLIST")
+
+
+def test_no_seed_writes_the_moved_settings():
+    """They live in the scoring version now (dev's rows deleted 2026-11-12); a seed must not bring them back."""
+    from pathlib import Path
+    seeds = Path(__file__).resolve().parents[3] / "app" / "seeds"
+    for path in seeds.rglob("*"):
+        if path.suffix in (".py", ".json"):
+            text = path.read_text(encoding="utf-8")
+            assert not [k for k in MOVED_KEYS if k in text], path
+
