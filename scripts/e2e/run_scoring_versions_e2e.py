@@ -13,8 +13,11 @@ model (a version's own model goes to the real provider, which this stack must ne
       on, and their decision (stage, results acted on) is untouched
   D3  a new upload: the current version decides (result tagged with it), the candidate one shadows it
   D4  the shadow report compares the two by label
-  D5  promotion (audited): the candidate becomes current, the old one retired, the campaign stops
-      shadowing; the next decision is tagged with the promoted version
+  D5  promotion needs a passing golden run (refused with GOLDEN_RUN_REQUIRED without one); with a PASSED
+      run recorded for its exact configuration (e2e data - a real golden run of a weight change would
+      not pass, and the run path is checked by run_golden_estimate_e2e), promotion (audited): the
+      candidate becomes current, the old one retired, the campaign stops shadowing; the next decision is
+      tagged with the promoted version
   D6  no email
 
 Report: /data/storage/e2e_scoring_versions_report.json
@@ -178,7 +181,19 @@ def run() -> None:  # noqa: C901 - one linear scenario
                  and all(r["candidate_outcome"] != "NOT_SCORED" and r["current_outcome"] != "NOT_SCORED" for r in rows),
                  f"HTTP {shadow_report.status_code}; {steps['D4']}")
 
-    # D5 - promote
+    # D5 - promote: refused without a passing golden run, then allowed with one for its exact configuration
+    refused_promote = client.post(f"/scoring-versions/{version_id}/promote", headers=hr)
+    refused_code = ((refused_promote.json().get("data") or {}).get("code")
+                    if refused_promote.headers.get("content-type", "").startswith("application/json") else None)
+    from app.models.scoring_v2 import ScoringVersionGoldenRun
+    from app.services.settings.golden_runs import KIND_RUN, GoldenRunService, config_hash
+    candidate_version = db.get(ScoringVersion, version_id)
+    now = datetime.now(timezone.utc)
+    db.add(ScoringVersionGoldenRun(
+        scoring_version_id=version_id, config_hash=config_hash(candidate_version),
+        purpose=GoldenRunService(db)._purpose(candidate_version), kind=KIND_RUN, status="PASSED", llm_calls=0,
+        summary={"e2e": "recorded by run_scoring_versions_e2e"}, started_at=now, finished_at=now))
+    db.commit()
     t = datetime.now(timezone.utc)
     promoted = client.post(f"/scoring-versions/{version_id}/promote", headers=hr)
     db.expire_all()
@@ -190,12 +205,14 @@ def run() -> None:  # noqa: C901 - one linear scenario
     acted_third = [r for r in results(third.id) if r.acted_on]
     queued_shadow = list(db.execute(select(CeleryTaskLog).where(
         CeleryTaskLog.campaign_candidate_id == third.id, CeleryTaskLog.task_type == "SCORING_V2")).scalars())
-    steps["D5"] = {"promote": promoted.status_code, "old": old.status, "new": new.status,
+    steps["D5"] = {"refused": [refused_promote.status_code, refused_code],
+                   "promote": promoted.status_code, "old": old.status, "new": new.status,
                    "audit": [(a.action_type.value, (a.detail or {}).get("change")) for a in audit],
                    "acted_third": [row_view(r) for r in acted_third], "shadow_tasks_third": len(queued_shadow)}
-    report.check(5, "promotion (audited): candidate -> current, old retired, campaign stops shadowing; "
-                    "the next decision is tagged with it",
-                 promoted.status_code == 200 and (old.status, new.status) == ("retired", "current")
+    report.check(5, "promotion needs a passing golden run; with one (audited): candidate -> current, old "
+                    "retired, campaign stops shadowing; the next decision is tagged with it",
+                 refused_promote.status_code == 422 and refused_code == "GOLDEN_RUN_REQUIRED"
+                 and promoted.status_code == 200 and (old.status, new.status) == ("retired", "current")
                  and campaign_after.candidate_scoring_version_id is None
                  and any(change == "promoted" for _, change in steps["D5"]["audit"])
                  and bool(acted_third) and acted_third[-1].scoring_version_id == version_id and not queued_shadow
