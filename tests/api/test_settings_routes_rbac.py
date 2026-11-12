@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.settings_routes import (
     get_alert_settings_service, get_email_template_settings_service, get_platform_settings_service,
-    get_reason_code_settings_service,
+    get_reason_code_settings_service, get_transition_settings_service,
 )
 from app.db.session import get_db
 from app.enums.constants import API_PREFIX
@@ -34,6 +34,7 @@ def client():
         app.dependency_overrides[get_alert_settings_service] = lambda: service
         app.dependency_overrides[get_reason_code_settings_service] = lambda: service
         app.dependency_overrides[get_email_template_settings_service] = lambda: service
+        app.dependency_overrides[get_transition_settings_service] = lambda: service
         yield TestClient(app, base_url=f"http://test{API_PREFIX}", client=("127.0.0.1", 50000),
                          raise_server_exceptions=False), service
     app.dependency_overrides.clear()
@@ -147,3 +148,23 @@ def test_hr_admin_saves_a_template_as_themselves(client):
     assert response.status_code == 200
     assert service.save.call_args.args == ("CANDIDATE_REJECTED", body)
     assert service.save.call_args.kwargs["actor_id"] == "hr_admin-1"
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_transition_settings_are_hr_admin_only(client, role):
+    http, service = client
+    body = {"changes": [{"op": "remove", "id": "x"}]}
+    assert http.get("/settings/transitions", headers=_as(role)).status_code == 403
+    assert http.post("/settings/transitions/preview", json=body, headers=_as(role)).status_code == 403
+    assert http.put("/settings/transitions", json=body, headers=_as(role)).status_code == 403
+    service.save.assert_not_called()
+
+
+def test_hr_admin_saves_transitions_as_themselves(client):
+    http, service = client
+    service.save.return_value = {"changed": 1}
+    body = {"changes": [{"op": "update", "id": "x", "requires_reason": True}]}
+    assert http.put("/settings/transitions", json=body, headers=_as("HR_ADMIN")).status_code == 200
+    assert service.save.call_args.args == (body["changes"],)
+    assert service.save.call_args.kwargs["actor_id"] == "hr_admin-1"
+    assert http.put("/settings/transitions", json={"op": "remove"}, headers=_as("HR_ADMIN")).status_code == 422

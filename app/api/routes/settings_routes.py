@@ -21,6 +21,7 @@ from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.platform_settings_service import PlatformSettingsService
 from app.services.settings.reason_code_settings import ReasonCodeSettingsService
 from app.services.settings.schedules import list_schedules
+from app.services.settings.transition_settings import TransitionSettingsService
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -170,3 +171,38 @@ def restore_email_template(trigger_event: str, template_id: str,
                            user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
     return APIResponse.ok(data=service.restore(trigger_event, template_id, actor_id=user.user_id),
                           message="Version restored.")
+
+
+def get_transition_settings_service(db: Session = Depends(get_db)) -> TransitionSettingsService:
+    return TransitionSettingsService(db, AuditService(AuditRepository(db)))
+
+
+def _changes(payload) -> list:
+    changes = payload.get("changes") if isinstance(payload, dict) else None
+    if not isinstance(changes, list):
+        raise CampaignException('Send {"changes": [...]}.', 422)
+    return changes
+
+
+@router.get("/transitions", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="The stage moves, who may make each, and which are protected")
+def list_transitions(service: TransitionSettingsService = Depends(get_transition_settings_service),
+                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.list())
+
+
+@router.post("/transitions/preview", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+             summary="Check a batch of stage-move changes against the pipeline rules, without saving")
+def preview_transitions(payload: dict = Body(...),
+                        service: TransitionSettingsService = Depends(get_transition_settings_service),
+                        user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.preview(_changes(payload)))
+
+
+@router.put("/transitions", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Save a batch of stage-move changes (all or nothing; audited)")
+def save_transitions(payload: dict = Body(...),
+                     service: TransitionSettingsService = Depends(get_transition_settings_service),
+                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    result = service.save(_changes(payload), actor_id=user.user_id)
+    return APIResponse.ok(data=result, message="Stage moves saved." if result["changed"] else "Nothing changed.")
