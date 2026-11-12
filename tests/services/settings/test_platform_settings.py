@@ -51,7 +51,7 @@ def test_defaults_sit_inside_their_ranges():
 def test_scoring_llm_and_consent_keys_are_not_editable_here():
     for key in ("EXPERIENCE_TOLERANCE_YEARS", "EQUIVALENT_EXPERIENCE_YEARS", "DETERMINISTIC_SCORE_REJECTS",
                 "SCORING_V2_MATCH_BLOCKLIST", "CAMPAIGN_WEIGHT_AI", "SCORING_V2_DAILY_LLM_CALL_CAP",
-                "MAX_AI_RETRY_COUNT", "LLM_MODEL_CAPABILITIES", "CONSENT_VERSION", "JURISDICTION_CONSENT_CONFIG",
+                "JD_EMBEDDING_MAX_CHARS", "LLM_MODEL_CAPABILITIES", "CONSENT_VERSION", "JURISDICTION_CONSENT_CONFIG",
                 "DEADLINE_CHECK_INTERVAL_HOURS"):
         assert key not in BY_KEY
 
@@ -123,3 +123,13 @@ def test_a_failed_save_rolls_back():
     with pytest.raises(RuntimeError):
         service.save({"SCREENING_SLA_HOURS": 24}, actor_id="hr-1")
     assert repo.rolled_back and not repo.committed
+
+
+def test_the_embedding_retry_waits_must_not_be_reversed():
+    """Settings phase 4: checked on the values as they would be after saving."""
+    service, repo, audit = _service({"EMBED_RETRY_BASE_DELAY_SECONDS": "30"})
+    with pytest.raises(InvalidSetting) as exc:
+        service.save({"EMBED_RETRY_MAX_DELAY_SECONDS": 20}, actor_id="hr-1")
+    assert "EMBED_RETRY_MAX_DELAY_SECONDS" in exc.value.problems and repo.upserts == []
+    assert service.preview({"EMBED_RETRY_MAX_DELAY_SECONDS": 60})["changes"][0]["after"] == 60
+

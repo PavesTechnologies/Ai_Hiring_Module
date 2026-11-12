@@ -204,3 +204,13 @@ def test_scoring_config_gives_defaults_and_ranges_without_the_shared_evidence(cl
     assert "evidence" not in data["defaults"] and "evidence" not in data["schema"]
     assert data["schema"]["validation"]["experience_tolerance_years"] == {"type": "number", "min": 0, "max": 10}
     assert data["defaults"]["validation"]["equivalent_experience_years"] == 8.0
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_llm_settings_are_hr_admin_only(client, role):
+    http, _ = client
+    for method, path in [("get", "/settings/llm/caps"), ("post", "/settings/llm/caps/preview"), ("put", "/settings/llm/caps"),
+                         ("get", "/settings/llm/capabilities"), ("post", "/settings/llm/capabilities/preview"),
+                         ("put", "/settings/llm/capabilities")]:
+        kwargs = {} if method == "get" else {"json": {}}
+        assert getattr(http, method)(path, headers=_as(role), **kwargs).status_code == 403, path

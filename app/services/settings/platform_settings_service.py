@@ -5,7 +5,8 @@ from app.enums.constants import ActionType, EntityType, UserRole
 from app.repositories.config_repository import ConfigRepository
 from app.services.settings.audit_values import audited_changes
 from app.services.settings.platform_settings import (
-    BY_KEY, GROUP_ORDER, REGISTRY, parse_stored, stored_text, validate, warnings_for,
+    BY_KEY, GROUP_ORDER, REGISTRY, InvalidSetting, cross_field_problems, parse_stored, stored_text, validate,
+    warnings_for,
 )
 
 PLATFORM_CONFIG_AUDIT_ENTITY_ID = UUID("00000000-0000-0000-0000-000000000000")
@@ -37,17 +38,23 @@ class PlatformSettingsService:
             groups.append({"group": group, "settings": items})
         return groups
 
-    def preview(self, values: dict) -> dict:
-        """What saving would change (before -> after), and any warnings. Saves nothing."""
+    def _checked(self, values: dict) -> tuple[dict, dict]:
         clean = validate(values)
         current = {k: v for k, (v, _) in self._effective().items()}
+        problems = cross_field_problems({**current, **clean})
+        if problems:
+            raise InvalidSetting(problems)
+        return clean, current
+
+    def preview(self, values: dict) -> dict:
+        """What saving would change (before -> after), and any warnings. Saves nothing."""
+        clean, current = self._checked(values)
         changes = [{"key": k, "label": BY_KEY[k].label, "unit": BY_KEY[k].unit, "before": current[k], "after": v}
                    for k, v in clean.items() if current[k] != v]
         return {"changes": changes, "warnings": warnings_for(clean)}
 
     def save(self, values: dict, *, actor_id: str) -> dict:
-        clean = validate(values)
-        current = {k: v for k, (v, _) in self._effective().items()}
+        clean, current = self._checked(values)
         changed = {k: v for k, v in clean.items() if current[k] != v}
         if not changed:
             return {"changed": [], "settings": self.list()}

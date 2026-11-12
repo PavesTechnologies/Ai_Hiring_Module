@@ -31,9 +31,10 @@ class Setting:
     warn_text: str = ""
 
 
-UPLOADS, ALERTS, ANALYTICS, SKILLS, OPERATIONS = (
-    "Uploads", "Alerts and SLAs", "Analytics and fairness", "Skill catalogue", "Exports, links and retries")
-GROUP_ORDER = (UPLOADS, ALERTS, ANALYTICS, SKILLS, OPERATIONS)
+UPLOADS, ALERTS, ANALYTICS, SKILLS, OPERATIONS, AI = (
+    "Uploads", "Alerts and SLAs", "Analytics and fairness", "Skill catalogue", "Exports, links and retries",
+    "AI and embeddings")
+GROUP_ORDER = (UPLOADS, ALERTS, ANALYTICS, SKILLS, OPERATIONS, AI)
 
 REGISTRY: tuple[Setting, ...] = (
     Setting("RESUME_MAX_SIZE_MB", UPLOADS, "Largest resume file", "Uploads above this are refused.",
@@ -126,6 +127,24 @@ REGISTRY: tuple[Setting, ...] = (
     Setting("GOLDEN_RUN_RESERVED_CALLS", OPERATIONS, "Golden runs: calls kept for candidates",
             "A golden run for a scoring version starts and continues only while this many of today's LLM calls (or "
             "more, if real scoring used more yesterday) stay free for real candidates.", "int", 0, 10000, 100, "calls"),
+    # Settings phase 4: retries and embedding job settings. JD_EMBEDDING_MAX_CHARS is not here: it changes the
+    # JD vectors (semantic scores) and needs a re-embed; the circuit-breaker threshold applies only when its row
+    # is first created, so editing it would change nothing.
+    Setting("MAX_AI_RETRY_COUNT", AI, "AI evaluation attempts",
+            "Attempts an AI evaluation gets on a timeout, rate limit or network error before it is dead-lettered.",
+            "int", 1, 10, 3, "attempts"),
+    Setting("MAX_EMBED_RETRY_COUNT", AI, "Embedding attempts",
+            "Attempts a resume embedding gets on a passing failure before it is dead-lettered.", "int", 1, 10, 4,
+            "attempts"),
+    Setting("EMBED_RETRY_BASE_DELAY_SECONDS", AI, "Embedding retry: first wait",
+            "Wait before the first embedding retry; each later retry waits longer.", "int", 1, 600, 30, "seconds"),
+    Setting("EMBED_RETRY_MAX_DELAY_SECONDS", AI, "Embedding retry: longest wait",
+            "The longest wait between embedding retries.", "int", 10, 3600, 240, "seconds"),
+    Setting("EMBEDDING_BATCH_SIZE", AI, "Embedding batch size",
+            "Texts embedded per batch. Larger is faster but uses more memory.", "int", 1, 256, 32, "texts"),
+    Setting("EMBEDDING_REINDEX_THRESHOLD", AI, "Rebuild the search index after",
+            "Resume embeddings added before the dashboard suggests rebuilding the vector index.",
+            "int", 1000, 1000000, 50000, "embeddings"),
     Setting("OAUTH_TOKEN_REFRESH_BUFFER_SECONDS", OPERATIONS, "Calendar token refresh",
             "Refresh a calendar connection's token this long before it expires.", "int", 30, 3600, 300, "seconds"),
 )
@@ -176,6 +195,14 @@ def validate(values: dict) -> dict[str, int | float]:
     if problems:
         raise InvalidSetting(problems)
     return clean
+
+
+def cross_field_problems(values: dict) -> dict[str, str]:
+    """Rules across settings, on the values as they would be after saving."""
+    base, longest = values.get("EMBED_RETRY_BASE_DELAY_SECONDS"), values.get("EMBED_RETRY_MAX_DELAY_SECONDS")
+    if base is not None and longest is not None and longest < base:
+        return {"EMBED_RETRY_MAX_DELAY_SECONDS": "The longest wait can not be shorter than the first wait."}
+    return {}
 
 
 def warnings_for(clean: dict) -> list[dict]:

@@ -18,6 +18,7 @@ from app.services.audit_service import AuditService
 from app.services.settings.alert_settings import AlertSettingsService
 from app.services.settings.email_template_settings import EmailTemplateSettingsService
 from app.services.settings.golden_runs import GoldenRunService, budget_view
+from app.services.settings.llm_settings import LLMSettingsService
 from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.reference_impact import KINDS as REFERENCE_KINDS, impact as reference_impact
 from app.services.settings.platform_settings_service import PlatformSettingsService
@@ -262,3 +263,51 @@ def scoring_config(db: Session = Depends(get_db), user: TokenUser = Security(req
     return APIResponse.ok(data={"defaults": {k: v for k, v in DEFAULT_CONFIG.items() if k not in SHARED_KEYS},
                                 "schema": schema_description(),
                                 "current_version_id": str(version.id) if version else None})
+
+
+def get_llm_settings_service(db: Session = Depends(get_db)) -> LLMSettingsService:
+    return LLMSettingsService(db, AuditService(AuditRepository(db)))
+
+
+@router.get("/llm/caps", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Daily LLM call caps (default and per model)")
+def get_llm_caps(service: LLMSettingsService = Depends(get_llm_settings_service),
+                 user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.caps())
+
+
+@router.post("/llm/caps/preview", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+             summary="Check daily LLM call caps: before/after and warnings, without saving")
+def preview_llm_caps(payload: dict = Body(...), service: LLMSettingsService = Depends(get_llm_settings_service),
+                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.preview_caps(payload))
+
+
+@router.put("/llm/caps", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Save daily LLM call caps (audited)")
+def save_llm_caps(payload: dict = Body(...), service: LLMSettingsService = Depends(get_llm_settings_service),
+                  user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.save_caps(payload, actor_id=user.user_id), message="Caps saved.")
+
+
+@router.get("/llm/capabilities", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="The model capability map, the providers' output modes and the assigned models")
+def get_llm_capabilities(service: LLMSettingsService = Depends(get_llm_settings_service),
+                         user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.capabilities())
+
+
+@router.post("/llm/capabilities/preview", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+             summary="Check a capability map: rules added, removed, changed, without saving")
+def preview_llm_capabilities(payload: dict = Body(...),
+                             service: LLMSettingsService = Depends(get_llm_settings_service),
+                             user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.preview_capabilities(payload))
+
+
+@router.put("/llm/capabilities", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Save the model capability map (audited)")
+def save_llm_capabilities(payload: dict = Body(...), service: LLMSettingsService = Depends(get_llm_settings_service),
+                          user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=service.save_capabilities(payload, actor_id=user.user_id),
+                          message="Capability map saved.")
