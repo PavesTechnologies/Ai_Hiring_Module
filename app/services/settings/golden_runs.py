@@ -209,11 +209,11 @@ def no_email_and_no_dispatch():
     from unittest.mock import patch
     from celery.app.task import Task
     from app.repositories.email_notification_repository import EmailNotificationRepository
-    from app.services.notifications.ses_email_client import SESEmailClient
 
     def refuse(*_args, **_kwargs):
         raise EmailOrDispatchDuringGoldenRun("blocked during a golden run")
-    with patch.object(Task, "apply_async", refuse), patch.object(Task, "delay", refuse),             patch.object(EmailNotificationRepository, "create", refuse),             patch.object(EmailNotificationRepository, "create_unless_duplicate", refuse),             patch.object(SESEmailClient, "send_email", refuse):
+    with patch.object(Task, "apply_async", refuse), patch.object(Task, "delay", refuse),             patch.object(EmailNotificationRepository, "create", refuse),             patch.object(EmailNotificationRepository, "create_unless_duplicate", refuse),             patch("app.services.notifications.ses_email_client.SESEmailClient.send_email", refuse):
+        # (by path, not imported: only the send task may use the mail client - tests/tasks/test_one_email_path)
         yield
 
 
