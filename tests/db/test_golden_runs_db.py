@@ -10,6 +10,14 @@ from app.models.scoring_v2 import ScoringVersion, ScoringVersionGoldenRun
 from app.services.settings import golden_runs as gr
 from tests.db.test_campaign_candidate_delete_scored import db  # noqa: F401 - fixture
 
+@pytest.fixture(autouse=True)
+def _no_live_run_in_progress(db):  # noqa: F811
+    """Runs started from the app in dev must not block these tests: set aside inside the rolled-back transaction."""
+    db.query(ScoringVersionGoldenRun).filter(ScoringVersionGoldenRun.status.in_(gr.ACTIVE)).update(
+        {ScoringVersionGoldenRun.status: "ERROR"}, synchronize_session=False)
+    db.flush()
+
+
 GOOD = {"cases": 60, "cases_scored": 60, "expectation_failures": [], "pair_failures": [], "cache_misses": [],
         "changed_vs_accepted": ["S1"], "expected_llm_calls": 0, "llm_calls": 6, "stopped": None, "outcomes": {}}
 
@@ -205,4 +213,24 @@ def test_without_a_baseline_the_repository_run_is_used(db):  # noqa: F811
     current.golden_baseline_run_id = None
     db.flush()
     assert gr.baseline_for_comparison(db, "llm") == (None, "repository")
+
+
+def test_a_lost_run_stops_blocking_after_an_hour_and_is_closed_as_timed_out(db):  # noqa: F811
+    version = _version(db)
+    lost = _start(db, version, gr.KIND_ESTIMATE)
+    lost.status, lost.started_at = "RUNNING", datetime.now(timezone.utc) - timedelta(hours=2)
+    db.flush()
+    _start(db, version, gr.KIND_ESTIMATE)                                  # not refused
+    db.refresh(lost)
+    assert (lost.status, lost.stop_reason) == ("ERROR", "TIMED_OUT")
+
+
+def test_a_recent_run_still_blocks(db):  # noqa: F811
+    version = _version(db)
+    recent = _start(db, version, gr.KIND_ESTIMATE)
+    recent.status, recent.started_at = "RUNNING", datetime.now(timezone.utc) - timedelta(minutes=5)
+    db.flush()
+    with pytest.raises(CampaignException) as exc:
+        gr.GoldenRunService(db).start(version.id, gr.KIND_ESTIMATE, actor_id=None)
+    assert exc.value.status_code == 409
 

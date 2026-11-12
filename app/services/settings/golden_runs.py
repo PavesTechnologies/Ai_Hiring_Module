@@ -35,6 +35,9 @@ PURPOSE_PROMOTION, PURPOSE_REFERENCE = "PROMOTION", "REFERENCE_CHECK"
 KIND_ESTIMATE, KIND_RUN = "ESTIMATE", "RUN"
 STOP_RESERVE, STOP_AWAITING = "DAILY_LIMIT_RESERVE", "CANDIDATES_AWAITING_FULL_SCORING"
 ESTIMATE_VALID_FOR = timedelta(hours=6)
+# A run still QUEUED / RUNNING after this long was lost (its worker stopped): it no longer blocks new runs and
+# is closed as ERROR (TIMED_OUT) when the next one starts. A real run takes minutes.
+RUN_TIMEOUT = timedelta(hours=1)
 
 
 def config_hash(version: ScoringVersion) -> str:
@@ -159,8 +162,13 @@ class GoldenRunService:
         raise CampaignException("A retired version can't be run.", 422)
 
     def _refuse_if_busy(self):
-        if self.db.query(ScoringVersionGoldenRun).filter(ScoringVersionGoldenRun.status.in_(ACTIVE)).count():
+        now = datetime.now(timezone.utc)
+        for run in self.db.query(ScoringVersionGoldenRun).filter(ScoringVersionGoldenRun.status.in_(ACTIVE)).all():
+            if (run.started_at or run.created_at) < now - RUN_TIMEOUT:
+                run.status, run.stop_reason, run.finished_at = "ERROR", "TIMED_OUT", now
+                continue
             raise CampaignException("A golden run is already in progress. Wait for it to finish.", 409)
+        self.db.flush()
 
     def start(self, version_id, kind: str, *, actor_id: str | None) -> dict:
         version = self._version(version_id)
