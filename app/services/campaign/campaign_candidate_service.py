@@ -151,7 +151,6 @@ _DEFAULT_OVERRIDE_RATE_ALERT_THRESHOLD = 20.0
 _MIN_CANDIDATES_FOR_ANALYTICS_KEY = "MIN_CANDIDATES_FOR_ANALYTICS"
 # Reuses the exact same platform_config key deterministic_scoring_tasks.py
 # already reads for scoring (never a second, S05-local key).
-_EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
 
 # The 7 mandatory-skill/experience/education failure-combination buckets,
 # in the exact order this story lists them.
@@ -2514,9 +2513,9 @@ class CampaignCandidateService:
 
         current_tolerance = None
         if self.config_repo is not None:
-            raw = self.config_repo.get_configs_by_keys([_EXPERIENCE_TOLERANCE_YEARS_KEY]).get(
-                _EXPERIENCE_TOLERANCE_YEARS_KEY,
-            )
+            # The current scoring version's experience tolerance (platform_config until settings phase 3).
+            from app.services.campaign.validation_inputs import validation_settings
+            raw = validation_settings(self.config_repo.db).get("experience_tolerance_years")
             current_tolerance = float(raw) if raw is not None else None
 
         return current_min_years, current_tolerance

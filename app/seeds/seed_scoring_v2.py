@@ -13,8 +13,6 @@ is missing, never overwrites an edited row.
   SCORING_V2_DAILY_LLM_CALL_CAP (v2 confirmation calls per day)
 - skill_pattern_rules: wording patterns -> DERIVED evidence (AI near governance),
   and implied-skill rules (GitHub / GitLab / Bitbucket -> Git)
-- platform_config SCORING_V2_MATCH_BLOCKLIST: known wrong matches v2 never
-  accepts from any source (v1 is not affected)
 - platform_config LLM_MODEL_PRICES: list prices per model for the monitoring
   view's cost estimates
 - platform_config FAIRNESS_MIN_GROUP_SIZE: the fairness report's smallest shown group
@@ -23,7 +21,6 @@ import json
 from datetime import datetime, timezone
 import uuid
 
-from app.repositories.skill_detection_repository import MATCH_BLOCKLIST_KEY
 from app.services.campaign.scoring_v2 import DEFAULT_CONFIG as SCORING_V2_DEFAULT_CONFIG
 from app.services.campaign.scoring_v2_service import DAILY_LLM_CALL_CAP_KEY, DEFAULT_DAILY_LLM_CALL_CAP
 from app.services.monitoring.llm_prices import DEFAULT_LLM_MODEL_PRICES, LLM_MODEL_PRICES_KEY
@@ -63,10 +60,6 @@ SCAN_TERMS = [
     ("S3", POLICY_ALLOW, [], "Two characters, but unambiguous as written (case-sensitive)."),
 ]
 
-MATCH_BLOCKLIST = [
-    {"term": "IT governance", "skill": "AI Governance",
-     "note": "v1 fuzzy tier matches it (ratio >= 85); IT governance is a different discipline."},
-]
 
 # The 2026-10-01 seed sent temperature to every Anthropic model; temperature
 # is now off until verified. Only that untouched seeded rule is updated.
@@ -136,8 +129,6 @@ CHANGE_MANAGEMENT_SENSES = [
 ]
 
 
-BLOCKLIST_DESCRIPTION = ("(written term -> catalogue skill) matches never accepted from any source, e.g. a fuzzy "
-                         "match known to be wrong.")
 DAILY_CAP_DESCRIPTION = (
     "Maximum core-confirmation LLM calls per day (UTC), per model (a number, or {\"default\": n, \"<model>\": n}). "
     "When reached, candidates are scored without the LLM vote and held for review until full scoring can run; a "
@@ -162,16 +153,6 @@ def seed(db) -> None:
         if changed:
             capabilities.value = json.dumps(rules, indent=1)
             print(f"Updated config: {LLM_MODEL_CAPABILITIES_KEY} (Anthropic temperature off until verified)")
-
-    blocklist = db.query(PlatformConfig).filter(PlatformConfig.key == MATCH_BLOCKLIST_KEY).first()
-    if blocklist is not None and blocklist.description != BLOCKLIST_DESCRIPTION:
-        blocklist.description = BLOCKLIST_DESCRIPTION               # the code owns the description
-    if blocklist is None:
-        db.add(PlatformConfig(
-            id=uuid.uuid4(), key=MATCH_BLOCKLIST_KEY, value=json.dumps(MATCH_BLOCKLIST, indent=1),
-            description=BLOCKLIST_DESCRIPTION,
-        ))
-        print(f"Added config: {MATCH_BLOCKLIST_KEY}")
 
     for key, value, description in (
         (DAILY_LLM_CALL_CAP_KEY, str(DEFAULT_DAILY_LLM_CALL_CAP),

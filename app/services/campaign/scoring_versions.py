@@ -35,7 +35,8 @@ def current_version(db) -> ScoringVersion | None:
 
 
 def version_config(version: ScoringVersion) -> dict:
-    return merge_config(version.configuration if isinstance(version.configuration, dict) else None)
+    configuration = getattr(version, "configuration", None)
+    return merge_config(configuration if isinstance(configuration, dict) else None)
 
 
 def provider_resolver_for(db, version: ScoringVersion | None, default_resolver):
@@ -72,6 +73,11 @@ def validate_configuration(configuration) -> dict:
         raise CampaignException(
             f"{', '.join(shared)} can't differ between scoring versions: evidence detection is shared by all "
             "of them (change it in code, proved by the golden set).", 422, data={"shared_keys": shared})
+    # Settings phase 3: every nested value checked against its type and range.
+    from app.services.campaign.scoring_config_schema import configuration_problems
+    problems = configuration_problems(configuration)
+    if problems:
+        raise CampaignException("The scoring configuration has invalid values.", 422, data={"problems": problems})
     return configuration
 
 

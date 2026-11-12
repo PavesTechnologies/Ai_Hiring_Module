@@ -223,7 +223,7 @@ def build_evidence(
     """
     blocked: (term_key, canonical_skill_id) pairs never accepted from any
     source - known wrong matches such as "IT governance" -> AI Governance
-    (platform_config SCORING_V2_MATCH_BLOCKLIST).
+    (the current scoring version's match_blocklist).
     rules: evidence rules (qualifier lines, work verbs); roles: the parsed
     work history, to label experience excerpts with their job title and
     company.

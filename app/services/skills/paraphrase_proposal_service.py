@@ -15,7 +15,7 @@ most max_lines per skill); each skill's vote decides.
 
 A line is never proposed when:
   - it is already quoted as evidence for that skill;
-  - it holds a term blocklisted for that skill (SCORING_V2_MATCH_BLOCKLIST,
+  - it holds a term blocklisted for that skill (the scoring version's match_blocklist,
     e.g. "IT governance" for AI Governance) - paraphrase can't route around
     the blocklist;
   - its own cue words definitely put it in another sense than the JD's

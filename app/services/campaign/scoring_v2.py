@@ -78,6 +78,20 @@ DEFAULT_CONFIG: dict = {
     # evidence ("currently learning"), and the verbs that make an exact
     # experience match auto-confirm (work) or go to the vote (not work).
     "evidence": copy.deepcopy(DEFAULT_EVIDENCE_RULES),
+    # Settings phase 3 (2026-11-12): four engine settings moved here from platform_config, with the values
+    # they had, so they change only through a scoring version (shadow / golden first, then promotion).
+    # validation: the experience tolerance (years under the JD minimum still accepted, before the JD's own
+    # calibration tolerance) and the years of experience that substitute for a degree (None: never).
+    "validation": {"experience_tolerance_years": 0.0, "equivalent_experience_years": 8.0},
+    # A score under the threshold rejects (False: the score only ranks; hard requirements still reject).
+    "score_threshold_rejects": False,
+    # Written term -> catalogue skill matches never accepted, from any source. Part of evidence detection,
+    # which every version shares: a golden run for a version applies its list, a campaign's shadow trial
+    # can't, and promotion applies it to everyone.
+    "match_blocklist": [
+        {"term": "IT governance", "skill": "AI Governance",
+         "note": "A fuzzy match takes it (ratio >= 85); IT governance is a different discipline."},
+    ],
 }
 
 STATUS_CONFIRMED = "CONFIRMED"

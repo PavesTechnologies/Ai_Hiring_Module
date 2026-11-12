@@ -79,16 +79,9 @@ DEFAULT_DAILY_LLM_CALL_CAP = 300
 # filtered out good candidates before semantic/AI evaluation ever saw them.
 # Hard requirements still reject: too many missing CORE skills, required-
 # skill coverage, experience and education. The score still ranks and feeds
-# the composite. Set platform_config DETERMINISTIC_SCORE_REJECTS=true to
-# restore score-threshold rejection.
-DETERMINISTIC_SCORE_REJECTS_KEY = "DETERMINISTIC_SCORE_REJECTS"
+# the composite. The scoring version's score_threshold_rejects (settings
+# phase 3; platform_config DETERMINISTIC_SCORE_REJECTS before) turns it on.
 
-
-def score_threshold_rejects(config_repository) -> bool:
-    if config_repository is None:
-        return False
-    value = config_repository.get_configs_by_keys([DETERMINISTIC_SCORE_REJECTS_KEY]).get(DETERMINISTIC_SCORE_REJECTS_KEY)
-    return isinstance(value, str) and value.strip().lower() in ("true", "1", "yes")
 
 def load_mandatory_skill_hierarchy(skill_ontology_repository, mandatory_skill_ids: list) -> dict:
     """
@@ -524,7 +517,7 @@ class ScoringV2Service:
                 "max_missing_core_pct": float(campaign.max_missing_core_pct)
                 if getattr(campaign, "max_missing_core_pct", None) is not None else None,
             },
-            "score_threshold_rejects_config": score_threshold_rejects(self.config_repository),
+            "score_threshold_rejects_config": bool(config.get("score_threshold_rejects")),
             "detection_version": current_version,
             "confirmation_prompt_version": PROMPT_VERSION,
         }

@@ -64,7 +64,6 @@ def _score(service, paraphrase_effect, llm_fallback):
             patch.object(svc.ScoringV2Service, "_no_llm_confirmations", return_value={}), \
             patch.object(svc.ScoringV2Service, "provisional_inputs", return_value=[]), \
             patch.object(svc, "jd_paraphrase_sections", return_value=["EXPERIENCE"]), \
-            patch.object(svc, "score_threshold_rejects", return_value=True), \
             patch.object(svc, "load_mandatory_skill_hierarchy", return_value={}), \
             patch.object(svc, "score_v2", return_value={"outcome": "REJECT", "deterministic_passed": False}), \
             patch.object(svc, "apply_unavailable_outcome", unavailable), \
@@ -125,7 +124,6 @@ def test_score_records_the_row_it_saved_and_resets_it_each_call():
             patch.object(svc.ScoringV2Service, "_paraphrase_round", return_value=({"ran": False, "llm_calls": 0}, [])), \
             patch.object(svc.ScoringV2Service, "provisional_inputs", return_value=[]), \
             patch.object(svc, "jd_paraphrase_sections", return_value=[]), \
-            patch.object(svc, "score_threshold_rejects", return_value=True), \
             patch.object(svc, "load_mandatory_skill_hierarchy", return_value={}), \
             patch.object(svc, "score_v2", side_effect=lambda *a: dict(breakdown)), \
             patch.object(svc, "ScoringResultRepository", return_value=repo):

@@ -129,19 +129,6 @@ try:
             value="3",
             description="Number of days before a campaign deadline at which it is flagged as deadline_soon",
         ),
-        # M07-E02: Experience & Education Validation config
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="EXPERIENCE_TOLERANCE_YEARS",
-            value="0.0",
-            description="Years a candidate's total experience may fall short of a JD's min_experience_years and still pass",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="EQUIVALENT_EXPERIENCE_YEARS",
-            value="8.0",
-            description="Total years of experience that substitute for an insufficient/missing degree in education validation",
-        ),
         PlatformConfig(
             id=uuid.uuid4(),
             key="OVERRIDE_RATE_ALERT_THRESHOLD",
@@ -225,14 +212,6 @@ try:
             key="MAX_DLQ_REPLAYS_PER_TASK",
             value="3",
             description="Maximum times a dead-lettered task chain may be replayed before further replays are blocked (M04-E04-S03-T02 infinite-loop guard)",
-        ),
-        PlatformConfig(
-            id=uuid.uuid4(),
-            key="DETERMINISTIC_SCORE_REJECTS",
-            value="false",
-            description="When true, a deterministic score below the campaign threshold rejects the candidate on its own. "
-                        "When false (default), only hard requirements reject (too many missing core skills, skill "
-                        "coverage, experience, education); the score still ranks candidates.",
         ),
         PlatformConfig(
             id=uuid.uuid4(),

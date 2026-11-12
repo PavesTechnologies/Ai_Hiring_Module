@@ -1,8 +1,8 @@
 {
- "accepted_on": "2026-11-11",
- "run_at": "2026-11-11T08:09:42.703163+00:00",
+ "accepted_on": "2026-11-12",
+ "run_at": "2026-11-12T05:58:43.820289+00:00",
  "mode": "llm",
- "fingerprint": "4a2cd780931ee3d301822e2f4ebc6bdc0dbbfbca4be23a7e044e59a612899400",
+ "fingerprint": "41a0f58ba3dc1c988bf89488fa72d2215fd69d8215c21dfbe3ab2960c92a2ef0",
  "llm": {
   "calls": 0,
   "input_tokens": 0,
@@ -99,7 +99,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F2": {
    "outcome": "HOLD",
@@ -182,7 +182,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F3": {
    "outcome": "PASS",
@@ -266,7 +266,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F4": {
    "outcome": "HOLD",
@@ -352,7 +352,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F5": {
    "outcome": "PASS",
@@ -433,7 +433,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F6": {
    "outcome": "REJECT",
@@ -497,7 +497,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F7": {
    "outcome": "HOLD",
@@ -573,7 +573,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "F8": {
    "outcome": "HOLD",
@@ -659,7 +659,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D1": {
    "outcome": "PASS",
@@ -737,7 +737,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D2": {
    "outcome": "PASS",
@@ -828,7 +828,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D3": {
    "outcome": "PASS",
@@ -926,7 +926,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D4": {
    "outcome": "REJECT",
@@ -992,7 +992,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D5": {
    "outcome": "HOLD",
@@ -1067,7 +1067,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D6": {
    "outcome": "REJECT",
@@ -1129,7 +1129,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D7": {
    "outcome": "HOLD",
@@ -1199,7 +1199,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "D8": {
    "outcome": "REJECT",
@@ -1288,7 +1288,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H1": {
    "outcome": "REJECT",
@@ -1350,7 +1350,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H2": {
    "outcome": "REJECT",
@@ -1432,7 +1432,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H3": {
    "outcome": "REJECT",
@@ -1514,7 +1514,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H4": {
    "outcome": "REJECT",
@@ -1586,7 +1586,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H5": {
    "outcome": "REJECT",
@@ -1660,7 +1660,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H6": {
    "outcome": "REJECT",
@@ -1747,7 +1747,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H7": {
    "outcome": "REJECT",
@@ -1815,7 +1815,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H8": {
    "outcome": "HOLD",
@@ -1894,7 +1894,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H9": {
    "outcome": "REJECT",
@@ -1978,7 +1978,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "H10": {
    "outcome": "REJECT",
@@ -2040,7 +2040,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S1": {
    "outcome": "PASS",
@@ -2128,7 +2128,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S2": {
    "outcome": "HOLD",
@@ -2207,7 +2207,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S3": {
    "outcome": "HOLD",
@@ -2285,7 +2285,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S4": {
    "outcome": "REJECT",
@@ -2357,7 +2357,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S5": {
    "outcome": "REJECT",
@@ -2443,7 +2443,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S6": {
    "outcome": "REJECT",
@@ -2524,7 +2524,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S7": {
    "outcome": "PASS",
@@ -2622,7 +2622,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "S8": {
    "outcome": "REJECT",
@@ -2686,7 +2686,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-F1-0": {
    "outcome": "PASS",
@@ -2769,7 +2769,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-F1-2": {
    "outcome": "PASS",
@@ -2852,7 +2852,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-F1-3": {
    "outcome": "PASS",
@@ -2935,7 +2935,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-F1-4": {
    "outcome": "PASS",
@@ -3018,7 +3018,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-S2-0": {
    "outcome": "HOLD",
@@ -3097,7 +3097,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-S2-1": {
    "outcome": "HOLD",
@@ -3176,7 +3176,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-S2-2": {
    "outcome": "HOLD",
@@ -3255,7 +3255,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-S2-3": {
    "outcome": "HOLD",
@@ -3334,7 +3334,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-NAME-S2-4": {
    "outcome": "HOLD",
@@ -3413,7 +3413,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-S7-0": {
    "outcome": "PASS",
@@ -3511,7 +3511,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-S7-1": {
    "outcome": "PASS",
@@ -3609,7 +3609,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-S7-2": {
    "outcome": "PASS",
@@ -3707,7 +3707,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-D1-0": {
    "outcome": "PASS",
@@ -3785,7 +3785,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-D1-1": {
    "outcome": "PASS",
@@ -3863,7 +3863,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-D1-2": {
    "outcome": "PASS",
@@ -3941,7 +3941,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-S2-1": {
    "outcome": "REJECT",
@@ -4020,7 +4020,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-GAP-S2-2": {
    "outcome": "REJECT",
@@ -4099,7 +4099,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-D1-0": {
    "outcome": "PASS",
@@ -4177,7 +4177,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-D1-2": {
    "outcome": "PASS",
@@ -4255,7 +4255,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-D1-3": {
    "outcome": "PASS",
@@ -4333,7 +4333,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-D1-4": {
    "outcome": "PASS",
@@ -4411,7 +4411,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-F3-0": {
    "outcome": "PASS",
@@ -4495,7 +4495,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-F3-2": {
    "outcome": "PASS",
@@ -4579,7 +4579,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-F3-3": {
    "outcome": "PASS",
@@ -4663,7 +4663,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "CF-REGION-F3-4": {
    "outcome": "PASS",
@@ -4747,7 +4747,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "19e7c1e597e1353c"
+   "scoring_config_version": "fa0a5a8b1941db95"
   },
   "ONE-SPLIT": {
    "outcome": "HOLD",
@@ -4790,7 +4790,7 @@
    },
    "llm_calls": 0,
    "problem": null,
-   "scoring_config_version": "2be7f7963f105fb3"
+   "scoring_config_version": "04f72bbf46c119d4"
   }
  }
 }

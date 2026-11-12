@@ -1,5 +1,4 @@
 """Scoring v2 skill detection storage: scan rules, senses, resume evidence, parse cache, core confirmations."""
-import json
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -16,7 +15,6 @@ from app.services.skills.skill_sense_resolver import SenseDef
 
 logger = logging.getLogger(__name__)
 
-MATCH_BLOCKLIST_KEY = "SCORING_V2_MATCH_BLOCKLIST"
 
 
 class SkillDetectionRepository:
@@ -74,18 +72,12 @@ class SkillDetectionRepository:
         return evidence if isinstance(evidence, dict) else None
 
     def load_match_blocklist(self) -> list[dict]:
-        """platform_config SCORING_V2_MATCH_BLOCKLIST - a JSON list of {"term", "skill", "note"}."""
-        from app.models.config import PlatformConfig
-        row = self.db.execute(
-            select(PlatformConfig).where(PlatformConfig.key == MATCH_BLOCKLIST_KEY)
-        ).scalar_one_or_none()
-        if row is None:
-            return []
-        try:
-            entries = json.loads(row.value)
-        except ValueError:
-            logger.error("%s is not valid JSON - no v2 match blocklist applied.", MATCH_BLOCKLIST_KEY)
-            return []
+        """The current scoring version's match_blocklist - a list of {"term", "skill", "note"} (settings
+        phase 3; platform_config SCORING_V2_MATCH_BLOCKLIST before)."""
+        from app.services.campaign.scoring_v2 import merge_config
+        from app.services.campaign.scoring_versions import current_version, version_config
+        version = current_version(self.db)
+        entries = (version_config(version) if version is not None else merge_config(None)).get("match_blocklist")
         return entries if isinstance(entries, list) else []
 
     # --- evidence -------------------------------------------------------

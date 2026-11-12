@@ -11,15 +11,27 @@ from app.services.jd.jd_calibration_rules import (
 )
 from app.services.resume.work_experience_duration import experience_years_for_scoring
 
-_EXPERIENCE_TOLERANCE_YEARS_KEY = "EXPERIENCE_TOLERANCE_YEARS"
-_EQUIVALENT_EXPERIENCE_YEARS_KEY = "EQUIVALENT_EXPERIENCE_YEARS"
 
 
-def build_validation_inputs(config_repo, job_description, resume):
+def validation_settings(db, config: dict | None = None) -> dict:
+    """The scoring version's validation section: config (a merged version configuration) or the current one's."""
+    if config is None:
+        from app.services.campaign.scoring_v2 import merge_config
+        from app.services.campaign.scoring_versions import current_version, version_config
+        version = current_version(db)
+        config = version_config(version) if version is not None else merge_config(None)
+    return config["validation"]
+
+
+def build_validation_inputs(config_repo, job_description, resume, *, config: dict | None = None):
     """
     (experience_result, education_result, domain_result) for a
     resume against a JD - the deterministic layer's non-skill inputs, shared
     by the scoring tasks, the golden runner and the comparison scripts.
+
+    config: the merged configuration of the scoring version scoring this resume (a candidate version's own
+    for its shadow row or golden run); None = the current version's. Its validation section holds the
+    experience tolerance and the degree-substitute years (platform_config until settings phase 3).
     """
     parsed_json = resume.parsed_json or {}
     # Same "JSON is the single source of truth" preference as
@@ -38,14 +50,11 @@ def build_validation_inputs(config_repo, job_description, resume):
     required_degree_text = (job_description.education_criteria or {}).get("degree")
     jd_extracted_education = (job_description.extracted_json or {}).get("education")
 
-    weight_configs = config_repo.get_configs_by_keys([
-        _EXPERIENCE_TOLERANCE_YEARS_KEY,
-        _EQUIVALENT_EXPERIENCE_YEARS_KEY,
-    ])
+    settings = validation_settings(config_repo.db, config)
+    equivalent = settings.get("equivalent_experience_years")
     validation_service = ExperienceEducationValidationService(
-        experience_tolerance_years=float(weight_configs.get(_EXPERIENCE_TOLERANCE_YEARS_KEY, 0.0)),
-        equivalent_experience_years=float(weight_configs[_EQUIVALENT_EXPERIENCE_YEARS_KEY])
-        if weight_configs.get(_EQUIVALENT_EXPERIENCE_YEARS_KEY) is not None else None,
+        experience_tolerance_years=float(settings.get("experience_tolerance_years") or 0.0),
+        equivalent_experience_years=float(equivalent) if equivalent is not None else None,
     )
  
     min_experience_years = (
