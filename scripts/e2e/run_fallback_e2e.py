@@ -99,7 +99,7 @@ def run() -> None:  # noqa: C901 - one linear scenario
     from app.models.llm_call_log import LLMCallLog
     from app.models.pipeline import CampaignCandidate, CampaignCandidateStageHistory, PipelineStage
     from app.models.scoring_v2 import CandidateScoringResult
-    from app.services.campaign.outcome_overrides import REASON_CODES
+    from app.services.campaign.outcome_overrides import reason_codes
     from app.tasks.deterministic_scoring_tasks import calculate_deterministic_score_task, recover_undecided_candidates
     from app.tasks.full_scoring_tasks import complete_full_scoring_scan
     from scripts.e2e.stub_llm import set_mode
@@ -343,7 +343,7 @@ def run() -> None:  # noqa: C901 - one linear scenario
     set_config(CAP_KEY, 0)
     d_cc, _ = upload(campaign_d, "F4")
     wait_for(lambda: settled(d_cc.id), "the second capped candidate to settle")
-    code = next(iter(REASON_CODES))
+    code = next(iter(reason_codes(db)))
     move = client.post(f"/candidate-actions/campaigns/{campaign_d.id}/candidates/{d_cc.id}/stage-move",
                        json={"target_stage": "SHORTLISTED", "reason": "E2E: recruiter reviewed the candidate",
                              "override_reason_code": code}, headers=recruiter)
