@@ -5,11 +5,12 @@ import os
 os.environ["EMAIL_DELIVERY"] = "log"
 
 # P-M3: lookup hashes are keyed. Without any key material (CI without .env), tests get a fixed key; with
-# a local .env they use the real derivation, so tests against the dev database match its stored hashes.
+# a local .env (or the file AIRS_ENV_FILE names) they use the real derivation, so tests against the dev database match its stored hashes.
 def _has_lookup_key_material() -> bool:
     from dotenv import dotenv_values
+    from app.core.env_file import env_file_path
     names = ("LOOKUP_HASH_KEY", "ENCRYPTION_KEY_CANDIDATE_PII_V1")
-    return any(os.environ.get(n) for n in names) or any(dotenv_values(".env").get(n) for n in names)
+    return any(os.environ.get(n) for n in names) or any(dotenv_values(env_file_path()).get(n) for n in names)
 
 
 if not _has_lookup_key_material():

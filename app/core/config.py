@@ -2,6 +2,8 @@ from pydantic import SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 from sqlalchemy.engine import URL
 
+from app.core.env_file import env_file_path
+
 
 def _split_cors_origins(value: str) -> list[str]:
     value = value.strip()
@@ -285,7 +287,8 @@ class Settings(BaseSettings):
 
     # Secrets are SecretStr (masked in repr, str and dumps); hide_input_in_errors keeps a failing
     # validator from echoing the raw inputs, secrets included, in its error message.
-    model_config = {"env_file": ".env", "case_sensitive": False, "extra": "ignore", "hide_input_in_errors": True}
+    # env_file: .env, or the file AIRS_ENV_FILE names (a git worktree using the main checkout's; app/core/env_file.py).
+    model_config = {"env_file": env_file_path(), "case_sensitive": False, "extra": "ignore", "hide_input_in_errors": True}
 
 
 settings = Settings()

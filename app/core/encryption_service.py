@@ -9,6 +9,7 @@ from dotenv import dotenv_values
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.encryption import resolve_key_material
+from app.core.env_file import env_file_path
 from app.exceptions.resume_exceptions import EncryptionUnavailableException
 from app.models.config import EncryptionKey
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
@@ -24,7 +25,7 @@ _LOOKUP_KEY_CONTEXT = b"airs-lookup-hash-v1"
 
 @functools.lru_cache(maxsize=1)
 def lookup_hash_key() -> bytes:
-    raw = os.environ.get(LOOKUP_HASH_KEY_ENV) or dotenv_values(".env").get(LOOKUP_HASH_KEY_ENV)
+    raw = os.environ.get(LOOKUP_HASH_KEY_ENV) or dotenv_values(env_file_path()).get(LOOKUP_HASH_KEY_ENV)
     if raw:
         return raw.encode("utf-8")
     base = resolve_key_material(_LOOKUP_KEY_BASE_ALIAS)
