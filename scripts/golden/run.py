@@ -217,6 +217,10 @@ class GoldenVotes:
         # any other model (a backup after a rate limit) is reported - and re-asked when wanted.
         self.main_model: str | None = None
         self.other_model_hits: list[dict] = []
+        # Settings phase 3, a run for one scoring version: only votes its own model gave count as cached
+        # (require_model), and detection uses its match blocklist (detection is otherwise the current version's).
+        self.require_model: str | None = None
+        self.blocklist: list | None = None
 
     def __getattr__(self, name):
         return getattr(self._repo, name)
@@ -233,9 +237,14 @@ class GoldenVotes:
                 return entry, key
         return None, None
 
+    def load_match_blocklist(self):
+        return self.blocklist if self.blocklist is not None else self._repo.load_match_blocklist()
+
     def get_confirmation(self, cache_key: str):
         scoped = self._scoped(cache_key)
         entry, _ = self._lookup(cache_key)
+        if entry is not None and self.require_model and entry.get("model") != self.require_model:
+            entry = None                                 # the version's model hasn't answered this one
         for older in self.legacy.get(cache_key, []) if entry is None else []:
             entry, old_key = self._lookup(older)
             if entry is not None:                    # cached before natural keys: move it to its natural key
@@ -274,7 +283,8 @@ class GoldenVotes:
 
 # --- one case -----------------------------------------------------------------------------------
 
-def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, no_llm: bool = False) -> dict:
+def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, no_llm: bool = False,
+               version=None, version_config=None) -> dict:
     from app.services.campaign import scoring_v2_service
     from app.services.skills.evidence_rules import roles_of
     from app.services.skills.skill_evidence_service import LLMSkillMatch, ParseInfo, job_titles_of, text_hash
@@ -285,7 +295,7 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, n
     cc, resume, skills = world.candidate(case, frozen, campaign)
     parsed = frozen["parsed_json"] or {}
     with contextlib.redirect_stdout(io.StringIO()):
-        experience, education, domain = build_validation_inputs(config_repo, jd, resume)
+        experience, education, domain = build_validation_inputs(config_repo, jd, resume, config=version_config)
     parse = frozen.get("parse") or {}
     records = evidence_service.detect(
         resume.id, text=frozen["redacted_text"], persist=False,
@@ -303,7 +313,8 @@ def score_case(world: World, case: dict, v2, config_repo, evidence_service, *, n
         breakdown = v2.score(campaign=campaign, campaign_candidate=cc, job_description=jd, resume=resume,
                              experience_result=experience, education_result=education, domain_result=domain,
                              acted_on=False, use_llm=True, persist=False, evidence_records=records,
-                             use_confirmation_cache=True, llm_fallback="always" if no_llm else "never")
+                             use_confirmation_cache=True, llm_fallback="always" if no_llm else "never",
+                             scoring_version=version)
     return summarise(breakdown, records, experience, education, domain, ongoing=has_ongoing_role(parsed))
 
 
@@ -513,7 +524,10 @@ def run(args) -> int:
     import logging
     logging.disable(logging.WARNING)
     from app.core.config import settings
-    if settings.email_delivery != "log":
+    # From the command line a run needs EMAIL_DELIVERY=log. A run started from the app (result_holder) is safe
+    # in any environment: it scores with persist=False inside a transaction that is always rolled back, so it
+    # moves no candidate and queues no email.
+    if settings.email_delivery != "log" and getattr(args, "result_holder", None) is None:
         print("EMAIL_DELIVERY must be log - refusing to run.")
         return 2
     import app.models  # noqa: F401
@@ -547,6 +561,7 @@ def run(args) -> int:
     outer = connection.begin()
     db = Session(bind=connection, join_transaction_mode="create_savepoint")
     results, problems, misses = {}, {}, []
+    stopped = None
     try:
         config_repo = ConfigRepository(db)
         v2 = ScoringV2Service(db, SkillRepository(db), config_repo, cache_service=CacheService(get_redis_client()),
@@ -554,6 +569,18 @@ def run(args) -> int:
         names, legacy_keys = SkillNames(db), {}
         votes = GoldenVotes(v2.detection_repository, cache, dev_cache=args.dev_cache, names=names, legacy=legacy_keys)
         votes.main_model = getattr(v2.provider_resolver(), "model", None)
+        version, tested_config = None, None
+        if getattr(args, "scoring_version_id", None):
+            from app.models.scoring_v2 import ScoringVersion
+            from app.services.campaign.scoring_versions import version_config
+            version = db.get(ScoringVersion, uuid.UUID(str(args.scoring_version_id)))
+            if version is None:
+                print("unknown scoring version:", args.scoring_version_id)
+                return 2
+            tested_config = version_config(version)
+            votes.blocklist = tested_config.get("match_blocklist") or []
+            if version.model:
+                votes.main_model = votes.require_model = version.model
         v2.detection_repository = votes
         world = World(db, golden)
         original_confirm = confirmation.CoreSkillConfirmationService.confirm
@@ -590,10 +617,17 @@ def run(args) -> int:
                 stack.enter_context(p)
             stack.enter_context(llm_call_source(LLM_SOURCE))
             stack.enter_context(llm_call_context(LLM_SOURCE))       # apart from app usage in monitoring
+            guard = getattr(args, "guard", None)
             for case in cases:
+                stop = guard(case) if guard else None
+                if stop:
+                    stopped = stop
+                    print(f"stopped before {case['id']}: {stop}")
+                    break
                 votes.case_id = case["id"]
                 with db.begin_nested():
-                    result = score_case(world, case, v2, config_repo, v2.evidence_service, no_llm=args.no_llm)
+                    result = score_case(world, case, v2, config_repo, v2.evidence_service, no_llm=args.no_llm,
+                                        version=version, version_config=tested_config)
                 results[case["id"]] = result
                 if args.cache_only and result["outcome"] == "PENDING":
                     misses.append(case["id"])
@@ -639,7 +673,12 @@ def run(args) -> int:
     }
     failed_pairs = [p for p in pairs if p["differences"] and p["varies"] != "control"]
     failed = {cid: p for cid, p in problems.items() if p}
-    report_path = write_report(run_record, failed, pairs, changes, accepted, misses, args, votes.new)
+    holder = getattr(args, "result_holder", None)
+    if holder is not None:                            # a run started from the app (golden_version_runs)
+        holder.update(summary_for_app(results, failed, failed_pairs, changes, misses, calls, stopped,
+                                      total=len(cases)))
+    report_path = ("(not written)" if getattr(args, "no_report", False)
+                   else write_report(run_record, failed, pairs, changes, accepted, misses, args, votes.new))
     print(f"\n{len(results)} cases | expectation failures {len(failed)} | counterfactual pairs failing "
           f"{len(failed_pairs)} of {len([p for p in pairs if p['varies'] != 'control'])} | changed since accepted "
           f"{len([c for c in changes.values() if c])} ({len([c for c in changes.values() if only_calendar(c)])} "
@@ -658,7 +697,28 @@ def run(args) -> int:
     if args.no_llm and calls:
         print(f"a --no-llm run made {calls} LLM call(s)")
         return 1
-    return 1 if failed or failed_pairs or misses else 0
+    return 1 if failed or failed_pairs or misses or stopped else 0
+
+
+VOTES_PER_CONFIRMATION = 3          # each core skill the model confirms gets 3 votes
+
+
+def summary_for_app(results, failed, failed_pairs, changes, misses, calls, stopped, *, total) -> dict:
+    """What the app stores for a run: counts, case ids, check names - synthetic cases, no free text."""
+    expected = sum(
+        VOTES_PER_CONFIRMATION * sum(1 for s in results[cid]["skills"].values()
+                                     if s.get("reason") not in ("auto_exact_scan", "listed_only"))
+        for cid in misses if cid in results)
+    return {
+        "cases": total, "cases_scored": len(results),
+        "expectation_failures": [{"case": cid, "problems": len(p)} for cid, p in sorted(failed.items())],
+        "pair_failures": [{"case": p["case"], "compare_with": p["compare_with"]} for p in failed_pairs],
+        "changed_vs_accepted": sorted(cid for cid, c in changes.items() if c and not only_calendar(c)),
+        "cache_misses": sorted(misses), "expected_llm_calls": expected, "llm_calls": int(calls or 0),
+        "stopped": stopped,
+        "outcomes": {cid: {"outcome": r["outcome"], "core": r["core"], "score": r["score"]}
+                     for cid, r in sorted(results.items())},
+    }
 
 
 def accept(run_record: dict) -> None:
@@ -757,6 +817,8 @@ def main(argv=None) -> int:
     parser.add_argument("--dev-cache", action="store_true", help="on a golden-cache miss, reuse dev's cached votes")
     parser.add_argument("--accept", action="store_true", help="accept this run (whole set only)")
     parser.add_argument("--accept-run", metavar="RUN_JSON", help="accept a run already reviewed, as it was")
+    parser.add_argument("--scoring-version", dest="scoring_version_id", metavar="ID",
+                        help="score with this scoring version (its configuration, model and blocklist)")
     args = parser.parse_args(argv)
     if args.accept_run:
         return accept_saved_run(Path(args.accept_run))

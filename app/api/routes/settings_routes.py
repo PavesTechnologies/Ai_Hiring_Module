@@ -17,6 +17,7 @@ from app.schemas.response import APIResponse
 from app.services.audit_service import AuditService
 from app.services.settings.alert_settings import AlertSettingsService
 from app.services.settings.email_template_settings import EmailTemplateSettingsService
+from app.services.settings.golden_runs import GoldenRunService, budget_view
 from app.services.settings.platform_settings import InvalidSetting
 from app.services.settings.platform_settings_service import PlatformSettingsService
 from app.services.settings.reason_code_settings import ReasonCodeSettingsService
@@ -206,3 +207,29 @@ def save_transitions(payload: dict = Body(...),
                      user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
     result = service.save(_changes(payload), actor_id=user.user_id)
     return APIResponse.ok(data=result, message="Stage moves saved." if result["changed"] else "Nothing changed.")
+
+
+@router.get("/scoring-versions/{version_id}/golden-runs", response_model=APIResponse[dict],
+            status_code=status.HTTP_200_OK,
+            summary="A scoring version's golden runs, its configuration hash and the run that allows promotion")
+def list_golden_runs(version_id: str, db: Session = Depends(get_db),
+                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    return APIResponse.ok(data=GoldenRunService(db).runs(version_id))
+
+
+@router.get("/scoring-versions/{version_id}/golden-runs/budget", response_model=APIResponse[dict],
+            status_code=status.HTTP_200_OK, summary="Today's LLM calls, the cap and the reserve for a run")
+def golden_run_budget(version_id: str, needed: int = 0, db: Session = Depends(get_db),
+                      user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    service = GoldenRunService(db)
+    return APIResponse.ok(data=budget_view(db, service._version(version_id), max(needed, 0)))
+
+
+@router.post("/scoring-versions/{version_id}/golden-runs", response_model=APIResponse[dict],
+             status_code=status.HTTP_202_ACCEPTED,
+             summary="Start an estimate (no LLM call) or a golden run (full and no-LLM) for a scoring version")
+def start_golden_run(version_id: str, payload: dict = Body(...), db: Session = Depends(get_db),
+                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    kind = payload.get("kind") if isinstance(payload, dict) else None
+    run = GoldenRunService(db).start(version_id, kind, actor_id=user.user_id)
+    return APIResponse.ok(data=run, message="Estimate started." if kind == "ESTIMATE" else "Golden run started.")

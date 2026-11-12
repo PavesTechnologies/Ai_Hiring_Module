@@ -168,3 +168,24 @@ def test_hr_admin_saves_transitions_as_themselves(client):
     assert service.save.call_args.args == (body["changes"],)
     assert service.save.call_args.kwargs["actor_id"] == "hr_admin-1"
     assert http.put("/settings/transitions", json={"op": "remove"}, headers=_as("HR_ADMIN")).status_code == 422
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_golden_runs_are_hr_admin_only(client, role):
+    http, _ = client
+    with patch("app.api.routes.settings_routes.GoldenRunService") as service:
+        assert http.get("/settings/scoring-versions/v1/golden-runs", headers=_as(role)).status_code == 403
+        assert http.get("/settings/scoring-versions/v1/golden-runs/budget", headers=_as(role)).status_code == 403
+        assert http.post("/settings/scoring-versions/v1/golden-runs", json={"kind": "ESTIMATE"},
+                         headers=_as(role)).status_code == 403
+    service.return_value.start.assert_not_called()
+
+
+def test_hr_admin_starts_a_golden_run_as_themselves(client):
+    http, _ = client
+    with patch("app.api.routes.settings_routes.GoldenRunService") as service:
+        service.return_value.start.return_value = {"id": "r1", "status": "QUEUED"}
+        response = http.post("/settings/scoring-versions/v1/golden-runs", json={"kind": "RUN"}, headers=_as("HR_ADMIN"))
+    assert response.status_code == 202
+    assert service.return_value.start.call_args.args == ("v1", "RUN")
+    assert service.return_value.start.call_args.kwargs["actor_id"] == "hr_admin-1"

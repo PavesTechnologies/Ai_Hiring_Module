@@ -146,6 +146,7 @@ celery_app.conf.imports = (
     "app.tasks.compliance_tasks",
     "app.tasks.unknown_skill_reevaluation_tasks",
     "app.tasks.upload_decision_tasks",
+    "app.tasks.golden_run_tasks",
 )
 
 

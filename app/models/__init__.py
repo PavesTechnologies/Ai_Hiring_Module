@@ -70,6 +70,7 @@ from .scoring_v2 import (
     SkillPatternRule,
     ScoringShadowRanking,
     ScoringVersion,
+    ScoringVersionGoldenRun,
 )
 
 from .email import (

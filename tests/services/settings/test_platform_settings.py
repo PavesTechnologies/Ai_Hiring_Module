@@ -38,7 +38,7 @@ def _service(stored=None):
 def test_every_registered_setting_is_read_by_the_code():
     """A setting HR can edit that nothing reads would change nothing."""
     source = "\n".join(p.read_text(encoding="utf-8") for p in APP.rglob("*.py")
-                       if "seeds" not in p.parts and "settings" not in p.parts)
+                       if "seeds" not in p.parts and p.name != "platform_settings.py")
     unread = [s.key for s in REGISTRY if not re.search(r"\b" + s.key + r"\b", source)]
     assert unread == []
 

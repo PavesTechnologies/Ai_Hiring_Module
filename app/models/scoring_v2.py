@@ -229,6 +229,37 @@ class ScoringVersion(Base):
     retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ScoringVersionGoldenRun(Base):
+    """
+    A golden-set run (or its estimate) for one scoring version, started from the Settings page (settings
+    phase 3). config_hash is the version's exact configuration and model when it ran: promotion needs a
+    PASSED run with the hash the version has now. summary holds counts, case ids and check names only - the
+    golden cases are synthetic, and no free text is stored.
+    """
+
+    __tablename__ = "scoring_version_golden_runs"
+    __table_args__ = (Index("idx_golden_runs_version_created", "scoring_version_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    scoring_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("scoring_versions.id"), nullable=False)
+    config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # PROMOTION (a candidate version) or REFERENCE_CHECK (the current version after reference-data edits).
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+    # ESTIMATE (cache-only pass, no LLM call) or RUN (full and no-LLM).
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    # QUEUED, RUNNING, PASSED, FAILED, STOPPED, ERROR (an estimate ends ESTIMATED or ERROR).
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="QUEUED", server_default=text("'QUEUED'"))
+    expected_llm_calls: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    llm_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stop_reason: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    requested_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ResumeParseVersion(Base):
     """
     A resume's previous parse, kept when it is re-parsed - with what

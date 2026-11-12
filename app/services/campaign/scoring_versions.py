@@ -188,6 +188,13 @@ class ScoringVersionService:
         version = self._get(version_id)
         if version.status != STATUS_CANDIDATE:
             raise CampaignException(f"Only a candidate version can be promoted (this one is {version.status}).", 409)
+        # Settings phase 3: a PASSED golden run for exactly this configuration and model is required.
+        from app.services.settings.golden_runs import GoldenRunService
+        golden = GoldenRunService(self.db).passing_run(version)
+        if golden is None:
+            raise CampaignException(
+                "Run the golden set for this version first: promotion needs a passing run for its exact "
+                "configuration and model.", 422, data={"code": "GOLDEN_RUN_REQUIRED"})
         now = datetime.now(timezone.utc)
         previous = current_version(self.db)
         if previous is not None:
@@ -201,7 +208,8 @@ class ScoringVersionService:
         self._audit(version, "promoted", actor_id, actor_role,
                     previous_current_id=str(previous.id) if previous else None,
                     previous_current_label=previous.label if previous else None,
-                    campaigns_stopped_trying=len(trying))
+                    campaigns_stopped_trying=len(trying), golden_run_id=str(golden.id),
+                    golden_llm_calls=golden.llm_calls)
         self.db.commit()
         logger.info("Scoring version promoted | version=%s previous=%s", version.label,
                     previous.label if previous else None)

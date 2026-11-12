@@ -123,6 +123,9 @@ REGISTRY: tuple[Setting, ...] = (
             "int", 1, 10, 4, "attempts"),
     Setting("SCORING_DECISION_RECOVERY_HOURS", OPERATIONS, "Undecided candidate recovery",
             "A candidate still undecided after scoring for this long is picked up again.", "float", 1, 72, 6, "hours"),
+    Setting("GOLDEN_RUN_RESERVED_CALLS", OPERATIONS, "Golden runs: calls kept for candidates",
+            "A golden run for a scoring version starts and continues only while this many of today's LLM calls (or "
+            "more, if real scoring used more yesterday) stay free for real candidates.", "int", 0, 10000, 100, "calls"),
     Setting("OAUTH_TOKEN_REFRESH_BUFFER_SECONDS", OPERATIONS, "Calendar token refresh",
             "Refresh a calendar connection's token this long before it expires.", "int", 30, 3600, 300, "seconds"),
 )
