@@ -85,6 +85,8 @@ def version_summary(version: ScoringVersion, campaigns: list[dict] | None = None
     return {
         "id": str(version.id), "label": version.label, "status": version.status, "model": version.model,
         "configuration": version.configuration or {}, "note": version.note,
+        # Settings phase 3: every setting the version scores with (defaults filled in; evidence is shared).
+        "effective_configuration": {k: v for k, v in version_config(version).items() if k not in SHARED_KEYS},
         "created_at": version.created_at, "activated_at": version.activated_at, "retired_at": version.retired_at,
         "campaigns_trying": campaigns or [],
     }

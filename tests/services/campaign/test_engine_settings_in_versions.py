@@ -82,3 +82,12 @@ def test_invalid_values_are_refused_with_every_problem(configuration, problem):
 def test_a_valid_partial_configuration_is_accepted():
     assert validate_configuration({"validation": {"equivalent_experience_years": None},
                                    "score_threshold_rejects": True}) is not None
+
+
+def test_a_version_summary_shows_every_setting_it_scores_with():
+    from app.services.campaign.scoring_versions import version_summary
+    version = SimpleNamespace(id="v", label="x", status="candidate", model=None, note=None, created_at=None,
+                              activated_at=None, retired_at=None, configuration={"score_threshold_rejects": True})
+    effective = version_summary(version)["effective_configuration"]
+    assert effective["score_threshold_rejects"] is True and effective["validation"]["equivalent_experience_years"] == 8.0
+    assert "evidence" not in effective

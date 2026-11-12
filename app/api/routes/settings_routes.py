@@ -250,3 +250,15 @@ def preview_reference_impact(payload: dict = Body(...), db: Session = Depends(ge
         return APIResponse.ok(data=reference_impact(db, kind, **target))
     except (ValueError, TypeError):
         raise CampaignException("Give the skill, certification, role domain or template the edit is about.", 422)
+
+
+@router.get("/scoring-config", response_model=APIResponse[dict], status_code=status.HTTP_200_OK,
+            summary="Scoring configuration defaults and each setting's type and range, for the version editor")
+def scoring_config(db: Session = Depends(get_db), user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
+    from app.services.campaign.scoring_config_schema import schema_description
+    from app.services.campaign.scoring_v2 import DEFAULT_CONFIG
+    from app.services.campaign.scoring_versions import SHARED_KEYS, current_version
+    version = current_version(db)
+    return APIResponse.ok(data={"defaults": {k: v for k, v in DEFAULT_CONFIG.items() if k not in SHARED_KEYS},
+                                "schema": schema_description(),
+                                "current_version_id": str(version.id) if version else None})

@@ -63,6 +63,21 @@ def _check(rule, value, path, problems):
                 problems.append(f"{path}[{i}].note: up to 300 characters.")
 
 
+def _describe(rule) -> dict:
+    kind = rule[0]
+    if kind in ("number", "number_or_none", "int"):
+        return {"type": kind, "min": rule[1], "max": rule[2]}
+    if kind == "sections":
+        return {"type": "sections", "options": list(EVIDENCE_SECTION_OPTIONS)}
+    return {"type": kind}
+
+
+def schema_description() -> dict:
+    """SCHEMA for the Settings page's version editor: {section: {key: {type, min?, max?, options?}} | {type}}."""
+    return {section: ({key: _describe(r) for key, r in rule.items()} if isinstance(rule, dict) else _describe(rule))
+            for section, rule in SCHEMA.items()}
+
+
 def configuration_problems(configuration: dict) -> list[str]:
     """Every problem with these sections' values (unknown top-level keys are checked by the caller)."""
     problems = []

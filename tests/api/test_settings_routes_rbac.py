@@ -189,3 +189,18 @@ def test_hr_admin_starts_a_golden_run_as_themselves(client):
     assert response.status_code == 202
     assert service.return_value.start.call_args.args == ("v1", "RUN")
     assert service.return_value.start.call_args.kwargs["actor_id"] == "hr_admin-1"
+
+
+@pytest.mark.parametrize("role", ["RECRUITER", "HIRING_MANAGER"])
+def test_scoring_config_is_hr_admin_only(client, role):
+    http, _ = client
+    assert http.get("/settings/scoring-config", headers=_as(role)).status_code == 403
+
+
+def test_scoring_config_gives_defaults_and_ranges_without_the_shared_evidence(client):
+    http, _ = client
+    with patch("app.services.campaign.scoring_versions.current_version", return_value=None):
+        data = http.get("/settings/scoring-config", headers=_as("HR_ADMIN")).json()["data"]
+    assert "evidence" not in data["defaults"] and "evidence" not in data["schema"]
+    assert data["schema"]["validation"]["experience_tolerance_years"] == {"type": "number", "min": 0, "max": 10}
+    assert data["defaults"]["validation"]["equivalent_experience_years"] == 8.0
