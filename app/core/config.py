@@ -4,6 +4,10 @@ from sqlalchemy.engine import URL
 
 from app.core.env_file import env_file_path
 
+EMAIL_DELIVERY_MODES = {"log", "smtp", "ses"}
+# The only hosts EMAIL_DELIVERY=smtp may use: a Mailpit on this machine or the compose service `mailpit`.
+SMTP_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "mailpit"}
+
 
 def _split_cors_origins(value: str) -> list[str]:
     value = value.strip()
@@ -88,9 +92,16 @@ class Settings(BaseSettings):
     # AWS SES (M07-E03 S02 T02) — reuses the same AWS credentials/region
     # above; only the verified sender address is SES-specific.
     ses_from_email: str = ""
+    # EMAIL_DELIVERY=smtp: a LOCAL Mailpit only (the dev docker-compose `mailpit` service, the e2e stack).
+    # The host must be one of SMTP_LOCAL_HOSTS, and there is no login and no TLS, so it can never be a real
+    # relay: nothing leaves the machine; Mailpit catches every message.
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
     # "log" (default) only logs each email and never creates an SES client;
-    # "ses" sends through AWS SES and needs SES_FROM_EMAIL. Anything else is
-    # refused at startup, so a missing or misspelt value can never send.
+    # "smtp" hands it to a local Mailpit (above); "ses" sends through AWS SES
+    # and needs SES_FROM_EMAIL. Anything else is refused at startup, so a
+    # missing or misspelt value can never send. APP_ENV=production allows
+    # only "ses".
     email_delivery: str = "log"
     # "supabase" (default) or "local" - files under local_storage_dir, for
     # isolated local stacks that must never touch the real bucket.
@@ -206,9 +217,18 @@ class Settings(BaseSettings):
     @classmethod
     def parse_email_delivery(cls, value: str | None) -> str:
         mode = (value or "log").strip().lower()
-        if mode not in {"log", "ses"}:
-            raise ValueError(f"EMAIL_DELIVERY must be 'log' or 'ses', not {value!r}")
+        if mode not in EMAIL_DELIVERY_MODES:
+            raise ValueError(f"EMAIL_DELIVERY must be 'log', 'smtp' or 'ses', not {value!r}")
         return mode
+
+    @field_validator("email_delivery")
+    @classmethod
+    def smtp_only_to_a_local_mailpit(cls, value: str, info: ValidationInfo) -> str:
+        host = (info.data.get("smtp_host") or "").strip().lower()
+        if value == "smtp" and host not in SMTP_LOCAL_HOSTS:
+            raise ValueError("EMAIL_DELIVERY=smtp is for a local Mailpit only: SMTP_HOST must be one of "
+                             + ", ".join(sorted(SMTP_LOCAL_HOSTS)))
+        return value
 
     # Cross-field checks are field validators on the later-declared field, reading the earlier one
     # from info.data: a model validator's error would carry every raw input, secrets included.
@@ -217,6 +237,14 @@ class Settings(BaseSettings):
     def production_needs_a_jwt_issuer(cls, value: str, info: ValidationInfo) -> str:
         if value.strip().lower() in {"production", "prod"} and not (info.data.get("jwt_issuer") or "").strip():
             raise ValueError("APP_ENV=production needs JWT_ISSUER (the production UMS issuer URL)")
+        return value
+
+    @field_validator("app_env")
+    @classmethod
+    def production_sends_only_through_ses(cls, value: str, info: ValidationInfo) -> str:
+        delivery = info.data.get("email_delivery")
+        if value.strip().lower() in {"production", "prod"} and delivery is not None and delivery != "ses":
+            raise ValueError("APP_ENV=production needs EMAIL_DELIVERY=ses: log and smtp are for local use only")
         return value
 
     @field_validator("email_delivery")

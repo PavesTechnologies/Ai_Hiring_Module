@@ -2,7 +2,8 @@
 One email path: every email is an email_notifications row sent by notifications.send_candidate_email,
 so it is recorded and governed by EMAIL_DELIVERY.
 
-- Only app/tasks/email_tasks.py uses the SES client; nothing in app/ creates an SES client itself.
+- Only app/tasks/email_tasks.py uses the SES client; nothing in app/ creates an SES client itself or
+  talks SMTP (EMAIL_DELIVERY=smtp, a local Mailpit, goes through the same sender).
 - Internal users (e.g. HR_ADMINs for the embedding health alert) are INTERNAL_USER notifications.
 - With EMAIL_DELIVERY=log a notification ends LOGGED, never SENT.
 """
@@ -46,6 +47,21 @@ def test_nothing_else_creates_an_ses_client():
                     and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value in ("ses", "sesv2")):
                 makers.append(path.relative_to(ROOT).as_posix())
     assert sorted(set(makers)) == [CLIENT]
+
+
+def test_only_the_sender_uses_smtp():
+    """EMAIL_DELIVERY=smtp (a local Mailpit) goes through the same sender as SES - nothing else talks SMTP."""
+    users = []
+    for path in _app_modules():
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8-sig"))):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            if any(n.split(".")[0] in ("smtplib", "aiosmtplib") for n in names):
+                users.append(path.relative_to(ROOT).as_posix())
+    assert sorted(set(users)) == [CLIENT]
 
 
 # --- the send task -------------------------------------------------------------------------

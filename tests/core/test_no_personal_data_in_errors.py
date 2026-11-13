@@ -44,12 +44,12 @@ def test_a_validation_error_never_quotes_its_input():
 def test_the_ses_client_keeps_the_recipient_out_of_its_message_and_log(caplog):
     from app.services.notifications import ses_email_client as mod
     client = mod.SESEmailClient()
-    with patch.object(mod, "email_delivery_is_log", return_value=False), \
+    with patch.object(mod, "delivery_mode", return_value="ses"), \
             patch.object(client, "_get_client", return_value=MagicMock(send_email=MagicMock(side_effect=_ses_error()))):
         with pytest.raises(EmailDeliveryException) as caught:
             client.send_email(to_address=EMAIL, subject="Hi Jane", body_text="b")
     assert EMAIL not in str(caught.value) and caught.value.original is not None
-    with patch.object(mod, "email_delivery_is_log", return_value=True), caplog.at_level(logging.WARNING):
+    with patch.object(mod, "delivery_mode", return_value="log"), caplog.at_level(logging.WARNING):
         client.send_email(to_address=EMAIL, subject="Interview for Jane Example", body_text="b")
     assert "EMAIL NOT SENT" in caplog.text and EMAIL not in caplog.text and "Jane" not in caplog.text
 

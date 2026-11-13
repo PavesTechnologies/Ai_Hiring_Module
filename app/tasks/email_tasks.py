@@ -26,7 +26,7 @@ from app.repositories.jd_repository import JDRepository
 from app.services.celery_task_log_service import CeleryTaskLogService
 from app.services.document_processing.error_classifier import classify
 from app.services.document_processing.retry_policy import RetryPolicy, compute_backoff_seconds
-from app.services.notifications.ses_email_client import LOG_ONLY_PREFIX, SESEmailClient
+from app.services.notifications.ses_email_client import LOG_ONLY_PREFIX, SESEmailClient, SMTPNotSent
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +66,14 @@ def _not_sent(error: Exception) -> bool:
     """
     True when the failed send certainly did not deliver the email, so trying again cannot send it twice:
     SES answered with an error, it was never reached, or the client was refused (no credentials, or
-    EMAIL_DELIVERY/sender not configured - SESEmailClient's ValueError). Anything else (a timeout after
-    the request went out, a dropped connection) may have delivered it.
+    EMAIL_DELIVERY/sender not configured - SESEmailClient's ValueError), or the local Mailpit refused it
+    before accepting it (SMTPNotSent). Anything else (a timeout after the request went out, a dropped
+    connection) may have delivered it.
     """
     original = error
     while isinstance(original, EmailDeliveryException):    # the refusal arrives wrapped twice
         original = original.original
-    return isinstance(original, (ClientError, EndpointConnectionError, NoCredentialsError, ValueError))
+    return isinstance(original, (ClientError, EndpointConnectionError, NoCredentialsError, ValueError, SMTPNotSent))
 
 
 def _html_escape_context(context: dict) -> dict:

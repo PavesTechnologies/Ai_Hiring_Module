@@ -49,11 +49,11 @@ def test_email_delivery_is_trimmed_and_lower_cased(value, mode):
     assert Settings(email_delivery=value, ses_from_email="hr@example.invalid").email_delivery == mode
 
 
-@pytest.mark.parametrize("value", ["logs", "LOG_ONLY", "smtp", "true"])
+@pytest.mark.parametrize("value", ["logs", "LOG_ONLY", "smtps", "mailpit", "true"])
 def test_a_misspelt_email_delivery_is_refused_at_startup(value):
     from pydantic import ValidationError
     from app.core.config import Settings
-    with pytest.raises(ValidationError, match="EMAIL_DELIVERY must be 'log' or 'ses'"):
+    with pytest.raises(ValidationError, match="EMAIL_DELIVERY must be 'log', 'smtp' or 'ses'"):
         Settings(email_delivery=value)
 
 

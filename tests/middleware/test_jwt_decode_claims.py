@@ -78,7 +78,9 @@ def test_production_refuses_to_start_without_jwt_issuer(app_env):
     from app.core.config import Settings
     with pytest.raises(ValidationError, match="needs JWT_ISSUER"):
         Settings(app_env=app_env, jwt_issuer=" ")
-    assert Settings(app_env=app_env, jwt_issuer=ISSUER).jwt_issuer == ISSUER
+    # production also sends only through SES (config.py), so the valid case says so
+    assert Settings(app_env=app_env, jwt_issuer=ISSUER, email_delivery="ses",
+                    ses_from_email="hr@example.invalid").jwt_issuer == ISSUER
 
 
 def test_development_starts_without_jwt_issuer():
