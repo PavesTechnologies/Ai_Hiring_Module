@@ -122,7 +122,7 @@ Each merge is reported with:
   scoring versions   6/6  checks passed
   golden estimate    4/4  checks passed
   emails Mailpit received: 0
-  mailpit            3/3  checks passed
+  mailpit            6/6  checks passed
   ```
 
 - **Migrations:** any applied, with their ids.

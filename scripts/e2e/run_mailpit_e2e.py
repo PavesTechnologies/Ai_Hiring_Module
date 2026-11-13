@@ -11,6 +11,13 @@ queues it and sent by the stack's own worker over SMTP to the stack's Mailpit - 
   M2  the notification is SENT (not LOGGED) with the SMTP Message-ID Mailpit holds
   M3  no SES client is created; Mailpit is cleared afterwards
 
+Then the checks before every email (email plan phase 2) through the real API, as the e2e HR admin:
+
+  M4  the bulk rejection check lists who will receive it (a REJECTED candidate, listed twice, counted once)
+      and who won't (a candidate who isn't rejected: WRONG_STAGE); nothing is queued, Mailpit stays empty
+  M5  the rejection email for the REJECTED candidate is queued and the worker sends it: exactly one message
+  M6  a second send is refused (409, already sent) and Mailpit still holds exactly one message
+
 Report: /data/storage/e2e_mailpit_report.json
 """
 import json
@@ -36,7 +43,8 @@ def main() -> None:
             raise EmailAttempted("an SES client was created")
         return real_client(service, *args, **kwargs)
 
-    with patch("boto3.client", guarded):
+    from scripts.e2e.run_reparse_e2e import _token_payload
+    with patch("boto3.client", guarded), patch("app.middleware.jwt_middleware.decode_token", _token_payload):
         run()
 
 
@@ -93,12 +101,78 @@ def run() -> None:
 
     mailpit.clear()
     report.check(3, "no SES client created in this process; Mailpit cleared", mailpit.count() == 0)
+    _outcome_email_checks(db, report, steps)
+    mailpit.clear()
     REPORT.write_text(json.dumps({"checks": report.rows, "steps": steps}, indent=1, default=str), "utf-8")
     print(f"{sum(r['result'] == 'PASS' for r in report.rows)}/{len(report.rows)} Mailpit checks passed. "
           f"Report: {REPORT}")
     db.close()
     if any(r["result"] == "FAIL" for r in report.rows):
         raise SystemExit(1)
+
+
+def _outcome_email_checks(db, report, steps) -> None:
+    import time
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+    from app.enums.constants import API_PREFIX
+    from app.main import app as api
+    from app.models.email import EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+    from app.models.pipeline import CampaignCandidate, PipelineStage
+
+    client = TestClient(api, base_url=f"http://e2e.local{API_PREFIX}", client=("127.0.0.1", 50000))
+    hr = {"Authorization": "Bearer e2e:e2e-hr-admin"}
+    db.expire_all()
+    rejected = db.execute(select(CampaignCandidate).where(CampaignCandidate.pipeline_stage == PipelineStage.REJECTED)
+                          .order_by(CampaignCandidate.created_at)).scalars().first()
+    other = db.execute(select(CampaignCandidate).where(CampaignCandidate.pipeline_stage != PipelineStage.REJECTED)
+                       .order_by(CampaignCandidate.created_at)).scalars().first()
+    base = "/campaign-candidates"
+
+    # M4 - the bulk check
+    ids = [str(rejected.id), str(rejected.id), str(other.id)] if rejected and other else []
+    check = client.post(f"{base}/bulk-rejection-email/check", headers=hr, json={"campaign_candidate_ids": ids})
+    data = check.json().get("data") or {}
+    wont_codes = [p["code"] for e in data.get("wont_receive", []) for p in e.get("problems", [])]
+    steps["M4"] = {"http": check.status_code, "will": [e["campaign_candidate_id"] for e in data.get("will_receive", [])],
+                   "wont_codes": wont_codes, "repeated": data.get("repeated"), "mailpit": mailpit.count()}
+    report.check(4, "the bulk check lists who will and won't receive it, once each, and queues nothing",
+                 check.status_code == 200 and steps["M4"]["will"] == [str(rejected.id)] and "WRONG_STAGE" in wont_codes
+                 and data.get("repeated") == 1 and mailpit.count() == 0,
+                 json.dumps(steps["M4"]))
+
+    # M5 - the send
+    sent = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
+
+    def delivered():
+        db.expire_all()
+        row = db.execute(select(EmailNotification).where(
+            EmailNotification.campaign_candidate_id == rejected.id,
+            EmailNotification.trigger_event == EmailTriggerEvent.CANDIDATE_REJECTED)).scalars().first()
+        return row if row is not None and row.status not in (EmailNotificationStatus.QUEUED,
+                                                             EmailNotificationStatus.SENDING) else None
+
+    try:
+        row = wait_for(delivered, "the worker to send the rejection email", timeout=120)
+        wait_for(lambda: mailpit.count() or None, "Mailpit to receive it", timeout=30)
+    except TimeoutError:
+        row = None
+    steps["M5"] = {"http": sent.status_code if sent is not None else None, "status": row and row.status.value,
+                   "error": row and row.error_reason, "mailpit": mailpit.count()}
+    report.check(5, "the rejection email is sent by the worker: exactly one message in Mailpit",
+                 sent is not None and sent.status_code == 200 and row is not None
+                 and row.status == EmailNotificationStatus.SENT and mailpit.count() == 1,
+                 json.dumps(steps["M5"]))
+
+    # M6 - never twice
+    again = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
+    time.sleep(5)                                       # time for any (wrong) second send to arrive
+    codes = [p["code"] for p in ((again.json().get("data") or {}).get("problems") or [])] if again is not None else []
+    steps["M6"] = {"http": again.status_code if again is not None else None, "codes": codes, "mailpit": mailpit.count()}
+    report.check(6, "a second send is refused (409, already sent); still exactly one message in Mailpit",
+                 again is not None and again.status_code == 409 and bool({"ALREADY_SENT", "DUPLICATE"} & set(codes))
+                 and mailpit.count() == 1,
+                 json.dumps(steps["M6"]))
 
 
 if __name__ == "__main__":

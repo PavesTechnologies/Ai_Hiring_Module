@@ -121,6 +121,10 @@ e2e HR admin, sent by the worker over SMTP to the stack's Mailpit.
 M1. Mailpit holds exactly one message, to `hr.admin@e2e.invalid`, with the rendered subject
 M2. the notification is SENT (not LOGGED) with the SMTP Message-ID Mailpit holds
 M3. no SES client was created; Mailpit is cleared afterwards
+M4. the bulk rejection check, through the API: who will receive it (a REJECTED candidate listed twice,
+    counted once) and who won't (a candidate who isn't rejected: `WRONG_STAGE`); nothing queued
+M5. the rejection email for that candidate: sent by the worker, exactly one message in Mailpit
+M6. a second send is refused (409, already sent); still exactly one message
 
 Report: `/data/storage/e2e_mailpit_report.json`.
 
