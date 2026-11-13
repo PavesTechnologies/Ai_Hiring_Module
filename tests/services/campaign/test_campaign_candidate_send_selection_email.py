@@ -64,7 +64,7 @@ def test_send_selection_email_happy_path_queues():
         result = service.send_selection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
     assert result.status == "queued"
-    mock_queue.assert_called_once_with(campaign_candidate_repo.db, campaign_candidate, allow_resend=True)
+    mock_queue.assert_called_once_with(campaign_candidate_repo.db, campaign_candidate)
 
 
 def test_send_selection_email_rejects_a_candidate_not_in_selected_stage():
@@ -112,15 +112,31 @@ def test_send_selection_email_allows_hr_admin_regardless_of_ownership():
     assert result.status == "queued"
 
 
-def test_send_selection_email_allows_resend():
-    """The manual endpoint always passes allow_resend=True - queue_candidate_selected_email's own tests cover the bypass mechanics; this confirms the wiring."""
+def test_send_selection_email_never_bypasses_the_dedup():
+    """Never twice (email plan, 2026-11-13): the manual send no longer passes allow_resend."""
     service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
     template_patcher, mock_template_repo = _patched_template_repo()
 
     with template_patcher, patch(f"{MODULE}.queue_candidate_selected_email") as mock_queue:
         service.send_selection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert mock_queue.call_args.kwargs["allow_resend"] is True
+    assert "allow_resend" not in mock_queue.call_args.kwargs
+
+
+def test_send_selection_email_reports_the_checks_refusal_and_queues_nothing():
+    from app.services.notifications import send_policy
+    service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
+    template_patcher, mock_template_repo = _patched_template_repo()
+    rejected = send_policy.Problem("OTHER_OUTCOME_SENT", "A rejection email was already sent on 12 Nov 2026.")
+
+    with template_patcher, patch(f"{MODULE}.queue_candidate_selected_email") as mock_queue, \
+            patch.object(send_policy, "problems", return_value=[rejected]):
+        with pytest.raises(CampaignException) as exc_info:
+            service.send_selection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.data["problems"][0]["code"] == "OTHER_OUTCOME_SENT"
+    mock_queue.assert_not_called()
 
 
 def test_send_selection_email_raises_500_when_no_active_template():

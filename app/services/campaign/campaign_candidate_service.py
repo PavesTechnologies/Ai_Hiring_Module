@@ -19,7 +19,7 @@ from app.exceptions.pipeline_transition_exceptions import (
     PipelineTransitionReasonRequiredException,
 )
 from app.models.campaigns import CampaignStatus, HiringCampaign
-from app.models.email import EmailTriggerEvent
+from app.models.email import EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.models.candidates import Candidate, FileFormat, ParseStatus, Resume
 from app.models.pipeline import (
     AIEvaluationStatus,
@@ -93,6 +93,7 @@ from app.schemas.campaign.campaign_candidate_schema import (
     RankedCampaignCandidatesResponse,
     SemanticScoreBreakdownResponse,
     SemanticScoreSummary,
+    BulkRejectionEmailCheckResponse,
     BulkSendRejectionEmailResponse,
     ResubmissionInfoResponse,
     SendRejectionEmailResponse,
@@ -110,6 +111,8 @@ from app.services.campaign.layer_failure import (
 from app.services.campaign.outcome_override_report import campaign_override_rate
 from app.services.notifications.candidate_notification_emails import queue_candidate_selected_email
 from app.services.notifications.candidate_rejection_email_service import CandidateRejectionEmailService
+from app.services.notifications import send_policy
+from app.services.notifications.dedup import notification_dedup_key
 from app.services.campaign.pipeline_transition_service import PipelineTransitionService
 from app.services.campaign.stage_transition_service import Actor, StageTransitionService
 from app.services.celery_task_log_service import CeleryTaskLogService
@@ -2170,10 +2173,10 @@ class CampaignCandidateService:
         every other rejection email, so campaign_candidate.decision_reason
         is deliberately never surfaced here either.
 
-        allow_resend=True: unlike feedback (a one-time, locked decision),
-        re-sending a rejection notice (e.g. after fixing a template typo)
-        is a reasonable, low-risk action - not over-engineering a dedup
-        lock that doesn't serve a real purpose here.
+        Email plan phase 2: the checks before every email run first, with the sender
+        (send_policy) - a refusal lists every problem. Never sent twice and never after a
+        selection email (2026-11-13; one resend to a corrected address after a bounce comes
+        with the SES bounce handling).
         """
         campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if campaign_candidate is None:
@@ -2186,18 +2189,15 @@ class CampaignCandidateService:
             raise CampaignException("This candidate hasn't been rejected.", 400)
 
         db = self.campaign_candidate_repo.db
+        self._refuse_unless_sendable(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED, actor_id, actor_roles)
         email_service = CandidateRejectionEmailService(EmailTemplateRepository(db), EmailNotificationRepository(db))
         notification = email_service.queue_rejection_email(
             candidate_id=campaign_candidate.candidate_id,
             campaign_candidate_id=campaign_candidate.id,
-            allow_resend=True,
         )
         if notification is None:
-            # allow_resend=True already rules out the dedup branch - the
-            # only way queue_rejection_email still returns None is no
-            # active template configured, a real ops issue a human
-            # clicking this button deserves to see, not a silent no-op.
-            raise CampaignException("No active rejection email template is configured.", 500)
+            # The checks above passed, so another send won the race for this candidate.
+            raise CampaignException("A rejection email for this candidate is already queued.", 409)
 
         send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
         return SendRejectionEmailResponse(status="queued")
@@ -2235,12 +2235,35 @@ class CampaignCandidateService:
             raise CampaignException("This candidate hasn't been selected.", 400)
 
         db = self.campaign_candidate_repo.db
-        template = EmailTemplateRepository(db).get_active_by_trigger_event(EmailTriggerEvent.CANDIDATE_SELECTED)
-        if template is None:
-            raise CampaignException("No active selection email template is configured.", 500)
-
-        queue_candidate_selected_email(db, campaign_candidate, allow_resend=True)
+        # Email plan phase 2: the checks before every email, with the sender; never twice, never after a
+        # rejection email.
+        self._refuse_unless_sendable(campaign_candidate, EmailTriggerEvent.CANDIDATE_SELECTED, actor_id, actor_roles)
+        queue_candidate_selected_email(db, campaign_candidate)
         return SendSelectionEmailResponse(status="queued")
+
+    def _outcome_email_probe(self, campaign_candidate, trigger_event: EmailTriggerEvent) -> EmailNotification:
+        """The rejection/selection email as it would be queued (unsaved), for the checks."""
+        db = self.campaign_candidate_repo.db
+        word = "rejection" if trigger_event == EmailTriggerEvent.CANDIDATE_REJECTED else "selection"
+        template = EmailTemplateRepository(db).get_active_by_trigger_event(trigger_event)
+        if template is None:
+            raise CampaignException(f"No active {word} email template is configured.", 500)
+        return EmailNotification(
+            candidate_id=campaign_candidate.candidate_id, campaign_candidate_id=campaign_candidate.id,
+            recipient_type=EmailRecipientType.CANDIDATE, trigger_event=trigger_event, template_id=template.id,
+            status=EmailNotificationStatus.QUEUED,
+            dedup_key=notification_dedup_key(trigger_event, campaign_candidate_id=campaign_candidate.id))
+
+    def _refuse_unless_sendable(self, campaign_candidate, trigger_event, actor_id, actor_roles) -> None:
+        """Raises with every problem (send_policy) when this email must not be sent."""
+        db = self.campaign_candidate_repo.db
+        probe = self._outcome_email_probe(campaign_candidate, trigger_event)
+        found = send_policy.problems(db, probe, actor=acting_user(actor_id, actor_roles))
+        if found:
+            refused = send_policy.EmailRefused(found)
+            already = {"ALREADY_SENT", "DUPLICATE", "OTHER_OUTCOME_SENT"}
+            raise CampaignException(" ".join(p.message for p in found), 409 if already & set(refused.codes) else 422,
+                                    data=refused.as_data())
 
     def bulk_send_rejection_email(
         self,
@@ -2265,18 +2288,67 @@ class CampaignCandidateService:
         """
         queued: list[UUID] = []
         failed: list[dict] = []
-        for cc_id in campaign_candidate_ids:
+        # Email plan phase 2: a candidate listed twice gets one email.
+        unique = list(dict.fromkeys(campaign_candidate_ids))
+        repeated = len(campaign_candidate_ids) - len(unique)
+        for cc_id in unique:
             try:
                 self.send_rejection_email(cc_id, actor_id=actor_id, actor_roles=actor_roles)
                 queued.append(cc_id)
             except CampaignException as exc:
-                failed.append({"campaign_candidate_id": str(cc_id), "reason": exc.message})
+                entry = {"campaign_candidate_id": str(cc_id), "reason": exc.message}
+                data = getattr(exc, "data", None)
+                if isinstance(data, dict) and data.get("problems"):
+                    entry["codes"] = [p["code"] for p in data["problems"]]
+                failed.append(entry)
 
         return BulkSendRejectionEmailResponse(
             queued=queued,
             failed=failed,
-            detail=f"Queued {len(queued)} rejection email(s), {len(failed)} failed.",
+            repeated=repeated,
+            detail=(f"Queued {len(queued)} rejection email(s), {len(failed)} not sent"
+                    + (f", {repeated} repeated id(s) ignored" if repeated else "") + "."),
         )
+
+    def check_bulk_rejection_email(
+        self,
+        campaign_candidate_ids: list[UUID],
+        actor_id: str,
+        actor_roles: list[str],
+    ) -> BulkRejectionEmailCheckResponse:
+        """
+        Email plan phase 2: before a bulk rejection send, who will and won't receive it, and why - the
+        same checks as each send (send_policy), nothing queued. A candidate listed twice counts once.
+        """
+        unique = list(dict.fromkeys(campaign_candidate_ids))
+        will: list[dict] = []
+        wont: list[dict] = []
+        actor = acting_user(actor_id, actor_roles)
+        db = self.campaign_candidate_repo.db
+        for cc_id in unique:
+            campaign_candidate = self.campaign_candidate_repo.get_by_id(cc_id)
+            if campaign_candidate is None:
+                wont.append({"campaign_candidate_id": str(cc_id), "candidate_name": None,
+                             "problems": [{"code": "NOT_FOUND", "message": "Campaign candidate not found."}]})
+                continue
+            name = self._decrypt_candidate_name(self.candidate_repo.get_by_id(campaign_candidate.candidate_id)) \
+                if getattr(self, "candidate_repo", None) is not None else None
+            try:
+                if "HR_ADMIN" not in actor_roles:
+                    self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+                probe = self._outcome_email_probe(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED)
+                found = send_policy.problems(db, probe, actor=actor)
+            except CampaignException as exc:
+                found = [send_policy.Problem("NO_CAMPAIGN_ACCESS" if exc.status_code == 403 else "NOT_SENDABLE",
+                                             exc.message)]
+            entry = {"campaign_candidate_id": str(cc_id), "candidate_name": name}
+            if found:
+                wont.append({**entry, "problems": [{"code": p.code, "message": p.message} for p in found]})
+            else:
+                will.append(entry)
+        return BulkRejectionEmailCheckResponse(
+            will_receive=will, wont_receive=wont, repeated=len(campaign_candidate_ids) - len(unique),
+            detail=f"{len(will)} will receive it, {len(wont)} won't.")
 
     def _get_campaign_cached(
         self, campaign_id: UUID, campaign_cache: dict[UUID, HiringCampaign | None],

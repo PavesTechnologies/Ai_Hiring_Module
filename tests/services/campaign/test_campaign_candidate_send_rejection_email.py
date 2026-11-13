@@ -63,7 +63,7 @@ def test_send_rejection_email_happy_path_queues_and_dispatches():
 
     assert result.status == "queued"
     mock_email_service.queue_rejection_email.assert_called_once_with(
-        candidate_id=campaign_candidate.candidate_id, campaign_candidate_id=campaign_candidate.id, allow_resend=True,
+        candidate_id=campaign_candidate.candidate_id, campaign_candidate_id=campaign_candidate.id,
     )
     mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(notification.id)})
 
@@ -114,18 +114,51 @@ def test_send_rejection_email_allows_hr_admin_regardless_of_ownership():
     assert result.status == "queued"
 
 
-def test_send_rejection_email_allows_resend_of_an_already_sent_email():
-    """The manual endpoint always passes allow_resend=True - CandidateRejectionEmailService's own tests cover the bypass mechanics; this confirms the wiring."""
+def test_send_rejection_email_never_bypasses_the_dedup():
+    """Never twice (email plan, 2026-11-13): the manual send no longer passes allow_resend."""
     service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
     patcher, mock_email_service = _patched_email_service()
 
     with patcher, patch(f"{MODULE}.send_candidate_email_task"):
         service.send_rejection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert mock_email_service.queue_rejection_email.call_args.kwargs["allow_resend"] is True
+    assert "allow_resend" not in mock_email_service.queue_rejection_email.call_args.kwargs
+
+
+def test_send_rejection_email_reports_the_checks_refusal_and_queues_nothing():
+    """A refusal by the checks before every email comes back with every problem (409 when already sent)."""
+    from app.services.notifications import send_policy
+    service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
+    patcher, mock_email_service = _patched_email_service()
+
+    with patcher, patch(f"{MODULE}.send_candidate_email_task") as mock_task, \
+            patch.object(send_policy, "problems", return_value=[send_policy.Problem("ALREADY_SENT", "This email was already sent on 12 Nov 2026; it's never sent twice.")]):
+        with pytest.raises(CampaignException) as exc_info:
+            service.send_rejection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.data["problems"][0]["code"] == "ALREADY_SENT"
+    mock_email_service.queue_rejection_email.assert_not_called()
+    mock_task.apply_async.assert_not_called()
 
 
 def test_send_rejection_email_raises_500_when_no_active_template():
+    service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
+    patcher, mock_email_service = _patched_email_service()
+    template_repo = MagicMock()
+    template_repo.get_active_by_trigger_event.return_value = None
+
+    with patcher, patch(f"{MODULE}.send_candidate_email_task") as mock_task, \
+            patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo):
+        with pytest.raises(CampaignException) as exc_info:
+            service.send_rejection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
+
+    assert exc_info.value.status_code == 500
+    mock_email_service.queue_rejection_email.assert_not_called()
+    mock_task.apply_async.assert_not_called()
+
+
+def test_send_rejection_email_reports_a_lost_race_as_already_queued():
     service, campaign_candidate, campaign, campaign_candidate_repo = _make_service()
     patcher, mock_email_service = _patched_email_service()
     mock_email_service.queue_rejection_email.return_value = None
@@ -134,5 +167,5 @@ def test_send_rejection_email_raises_500_when_no_active_template():
         with pytest.raises(CampaignException) as exc_info:
             service.send_rejection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert exc_info.value.status_code == 500
+    assert exc_info.value.status_code == 409
     mock_task.apply_async.assert_not_called()

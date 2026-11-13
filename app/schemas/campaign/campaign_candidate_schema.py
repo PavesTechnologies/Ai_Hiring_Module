@@ -972,6 +972,19 @@ class BulkSendRejectionEmailResponse(BaseModel):
     """
     queued: list[UUID] = []
     failed: list[dict] = []
+    # Email plan phase 2: ids listed more than once (each candidate gets one email).
+    repeated: int = 0
+    detail: str
+
+
+class BulkRejectionEmailCheckResponse(BaseModel):
+    """
+    Email plan phase 2: before a bulk rejection send - who will receive it, and who won't with every
+    reason (code and message), from the same checks as the send. Nothing is queued.
+    """
+    will_receive: list[dict] = []
+    wont_receive: list[dict] = []
+    repeated: int = 0
     detail: str
 
 

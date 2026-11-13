@@ -14,6 +14,7 @@ from app.models.identity import UserRole
 from app.models.pipeline import AIEvaluationStatus, AIRecommendation, PipelineStage
 
 from app.schemas.campaign.campaign_candidate_schema import (
+    BulkRejectionEmailCheckResponse,
     BulkSendRejectionEmailRequest,
     BulkSendRejectionEmailResponse,
     CampaignBoardResponse,
@@ -486,6 +487,27 @@ def send_selection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
     return APIResponse.ok(data=result, message="Selection email queued.")
+
+
+@router.post(
+    "/bulk-rejection-email/check",
+    response_model=APIResponse[BulkRejectionEmailCheckResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Check a bulk rejection email before sending",
+    description=(
+        "Who will and won't receive a bulk rejection email, and why (code and message per problem), "
+        "from the same checks as the send. Nothing is queued. A candidate listed twice counts once."
+    ),
+)
+def check_bulk_rejection_email(
+    request: BulkSendRejectionEmailRequest,
+    service: CampaignCandidateService = Depends(get_campaign_candidate_service),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+):
+    result = service.check_bulk_rejection_email(
+        request.campaign_candidate_ids, actor_id=user.user_id, actor_roles=user.roles,
+    )
+    return APIResponse.ok(data=result, message=result.detail)
 
 
 @router.post(

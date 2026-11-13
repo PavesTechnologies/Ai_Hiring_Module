@@ -117,7 +117,7 @@ def test_bulk_send_rejection_email_hr_admin_processes_regardless_of_campaign_own
     assert mock_email_service.queue_rejection_email.call_count == 2
 
 
-def test_bulk_send_rejection_email_allows_resend_matching_single_endpoint():
+def test_bulk_send_rejection_email_never_bypasses_the_dedup_matching_single_endpoint():
     rejected = _make_campaign_candidate()
     campaign = _make_campaign(hiring_manager_id="hm-1", campaign_id=rejected.campaign_id)
     service = _make_service({rejected.id: rejected}, {campaign.id: campaign})
@@ -126,7 +126,40 @@ def test_bulk_send_rejection_email_allows_resend_matching_single_endpoint():
     with email_patcher, task_patcher:
         service.bulk_send_rejection_email([rejected.id], actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert mock_email_service.queue_rejection_email.call_args.kwargs["allow_resend"] is True
+    assert "allow_resend" not in mock_email_service.queue_rejection_email.call_args.kwargs
+
+
+def test_bulk_send_rejection_email_sends_once_to_a_repeated_candidate():
+    rejected = _make_campaign_candidate()
+    other = _make_campaign_candidate()
+    campaign = _make_campaign(hiring_manager_id="hm-1", campaign_id=rejected.campaign_id)
+    other_campaign = _make_campaign(hiring_manager_id="hm-1", campaign_id=other.campaign_id)
+    service = _make_service({rejected.id: rejected, other.id: other},
+                            {campaign.id: campaign, other_campaign.id: other_campaign})
+    email_patcher, task_patcher, mock_email_service = _patched_collaborators()
+
+    with email_patcher, task_patcher:
+        result = service.bulk_send_rejection_email([rejected.id, rejected.id, other.id], actor_id="hm-1",
+                                                   actor_roles=["HIRING_MANAGER"])
+
+    assert result.queued == [rejected.id, other.id] and result.repeated == 1
+    assert mock_email_service.queue_rejection_email.call_count == 2
+    assert "1 repeated" in result.detail
+
+
+def test_bulk_send_rejection_email_reports_the_problem_codes():
+    from app.services.notifications import send_policy
+    rejected = _make_campaign_candidate()
+    campaign = _make_campaign(hiring_manager_id="hm-1", campaign_id=rejected.campaign_id)
+    service = _make_service({rejected.id: rejected}, {campaign.id: campaign})
+    email_patcher, task_patcher, mock_email_service = _patched_collaborators()
+    erased = send_policy.Problem("CANDIDATE_ERASED", "The candidate's data has been erased.")
+
+    with email_patcher, task_patcher, patch.object(send_policy, "problems", return_value=[erased]):
+        result = service.bulk_send_rejection_email([rejected.id], actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
+
+    assert result.queued == [] and result.failed[0]["codes"] == ["CANDIDATE_ERASED"]
+    mock_email_service.queue_rejection_email.assert_not_called()
 
 
 def test_bulk_send_rejection_email_empty_list_is_a_clean_no_op():
