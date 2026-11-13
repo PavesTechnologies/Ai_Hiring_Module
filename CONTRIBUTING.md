@@ -52,6 +52,9 @@ python -m scripts.golden.run            # LLM only on a vote-cache miss
 python -m scripts.golden.run --no-llm
 ```
 
+The golden runner refuses to start unless `EMAIL_DELIVERY` is `log`. If `.env` uses `smtp` (Mailpit), set
+it for the command only, without editing `.env`: `EMAIL_DELIVERY=log python -m scripts.golden.run`.
+
 Review each report in `tests/golden/runs/`. If scoring code, a prompt, seed data or the golden set
 changed, the fingerprint gate (`tests/golden`) fails until a reviewed run is accepted in the same
 change:
