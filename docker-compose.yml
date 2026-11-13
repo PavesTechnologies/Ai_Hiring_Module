@@ -71,6 +71,28 @@ services:
       retries: 5
     networks: [airs]
 
+  # ── Mailpit: local email catcher (opt-in) ─────────────────────────────────
+  # Catches every email and relays nothing (no relay is configured). Opt in with
+  #     docker compose --profile mailpit up -d mailpit
+  # then run the app services with EMAIL_DELIVERY=smtp and SMTP_HOST=mailpit
+  # (inside this network) or SMTP_HOST=localhost (the app on the host, e.g.
+  # start-project.bat). The app refuses any SMTP host that isn't local, and
+  # production refuses smtp altogether. Web UI and API: http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    container_name: airs-mailpit
+    profiles: ["mailpit"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [airs]
+
   # ── FastAPI ───────────────────────────────────────────────────────────────
   api:
     image: airs:v1
@@ -83,7 +105,8 @@ services:
       # localhost is the container itself, so the app would find no broker.
       # `redis` is this compose file's service name.
       REDIS_HOST: redis
-      # Standing rule: a local stack never sends email - SES client never created.
+      # Standing rule: no email leaves this machine - SES client never created.
+      # Set EMAIL_DELIVERY=smtp + SMTP_HOST=mailpit to catch mail in the Mailpit service.
       EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       # DB_HOST in .env points at AWS RDS, which is reachable from here, so it
@@ -113,7 +136,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
-      # Standing rule: a local stack never sends email - SES client never created.
+      # Standing rule: no email leaves this machine - SES client never created.
+      # Set EMAIL_DELIVERY=smtp + SMTP_HOST=mailpit to catch mail in the Mailpit service.
       EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       OMP_NUM_THREADS: "1"
@@ -150,7 +174,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
-      # Standing rule: a local stack never sends email - SES client never created.
+      # Standing rule: no email leaves this machine - SES client never created.
+      # Set EMAIL_DELIVERY=smtp + SMTP_HOST=mailpit to catch mail in the Mailpit service.
       EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
       OMP_NUM_THREADS: "1"
@@ -187,7 +212,8 @@ services:
     env_file: [.env]
     environment:
       REDIS_HOST: redis
-      # Standing rule: a local stack never sends email - SES client never created.
+      # Standing rule: no email leaves this machine - SES client never created.
+      # Set EMAIL_DELIVERY=smtp + SMTP_HOST=mailpit to catch mail in the Mailpit service.
       EMAIL_DELIVERY: log
       REDIS_PORT: "6379"
     networks: [airs]

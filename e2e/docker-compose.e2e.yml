@@ -2,7 +2,7 @@
 # AIRS - ISOLATED end-to-end stack (scoring v2 / re-parse checks).
 #
 # Everything here is local: its own Postgres (pgvector) and Redis, local file
-# storage, and email that is only ever logged. It is configured ONLY from
+# storage, and email that goes only to its own Mailpit (nothing is relayed). It is configured ONLY from
 # e2e/.env.e2e (made by scripts/e2e/make_env.py) - the project's .env, which
 # points at the live database, is never read: the image excludes it
 # (.dockerignore) and no service mounts it.
@@ -26,8 +26,11 @@ x-app: &app
     DB_SSLMODE: disable          # the local e2e Postgres has no TLS
     REDIS_HOST: redis
     REDIS_PORT: "6379"
-    # Never send email: the SES client is never created (log-only sender).
-    EMAIL_DELIVERY: log
+    # Email goes only to this stack's Mailpit (SMTP, no relay): the SES client is never
+    # created, and config.py refuses any SMTP host that isn't local.
+    EMAIL_DELIVERY: smtp
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
     STORAGE_BACKEND: local
     LOCAL_STORAGE_DIR: /data/storage
     OMP_NUM_THREADS: "1"
@@ -44,6 +47,8 @@ x-app: &app
     postgres:
       condition: service_healthy
     redis:
+      condition: service_healthy
+    mailpit:
       condition: service_healthy
 
 services:
@@ -69,6 +74,19 @@ services:
     ports: ["127.0.0.1:46379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 30
+
+  # Catches every email the stack sends; relays nothing (no relay is configured). Its API
+  # (127.0.0.1:48025) is how e2e.ps1 and the drivers count messages. SMTP is not published
+  # to the host - only the stack's own services reach it.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    environment:
+      MP_MAX_MESSAGES: "5000"
+    ports: ["127.0.0.1:48025:8025"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 3s
       retries: 30
 

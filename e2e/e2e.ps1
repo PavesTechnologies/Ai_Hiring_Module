@@ -16,6 +16,11 @@ Set-Location $Root
 
 function Invoke-Compose { param([string[]]$Arguments) & docker @Compose @Arguments; if ($LASTEXITCODE -ne 0) { throw "docker compose $Arguments failed" } }
 
+# The stack's Mailpit (docker-compose.e2e.yml) - catches every email, relays nothing.
+$MailpitApi = "http://127.0.0.1:48025/api/v1"
+function Get-MailpitCount { (Invoke-RestMethod -Uri "$MailpitApi/messages?limit=1").total }
+function Clear-Mailpit { Invoke-RestMethod -Method Delete -Uri "$MailpitApi/messages" | Out-Null }
+
 function Ensure-Env {
     if (-not (Test-Path (Join-Path $PSScriptRoot ".env.e2e"))) {
         python -m scripts.e2e.make_env
@@ -26,7 +31,7 @@ function Ensure-Env {
 function Start-Stack {
     Ensure-Env
     if (-not (docker images -q airs:e2e)) { throw "image airs:e2e not found - run: pwsh e2e/e2e.ps1 build" }
-    Invoke-Compose @("up", "-d", "postgres", "redis")
+    Invoke-Compose @("up", "-d", "postgres", "redis", "mailpit")
     Invoke-Compose @("run", "--rm", "tools")          # migrate + seed + fixtures (scripts.e2e.setup_e2e)
     Invoke-Compose @("up", "-d", "worker")
     Write-Host "Waiting for the worker..."
@@ -43,14 +48,19 @@ switch ($Command) {
     "test"  {
         Invoke-Compose @("down", "-v")                 # every run starts from an empty database
         Start-Stack
+        Clear-Mailpit
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_reparse_e2e")
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_phase2_e2e")   # calibration / unknown skills
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_fallback_e2e") # retire v1: retries, fallback
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_scoring_versions_e2e") # retire v1 D: versions
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_golden_estimate_e2e")  # Settings: golden estimate via the worker
-        $sent = (& docker @Compose logs worker 2>&1 | Select-String "EMAIL NOT SENT").Count
-        Write-Host "Emails the worker would have sent (logged only, never sent): $sent"
-        if ($sent -ne 0) { throw "the worker tried to send $sent email(s)" }
+        # None of these drivers sends email: Mailpit must have received nothing, and nothing was logged instead.
+        $caught = Get-MailpitCount
+        $logged = (& docker @Compose logs worker 2>&1 | Select-String "EMAIL NOT SENT").Count
+        Write-Host "Emails Mailpit received (none expected): $caught; logged instead of sent: $logged"
+        if ($caught -ne 0 -or $logged -ne 0) { throw "the drivers sent $caught email(s) to Mailpit and logged $logged" }
+        # Then the one driver that sends: an HR alert over SMTP to Mailpit (it clears Mailpit after).
+        Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_mailpit_e2e")
     }
     "logs"  { Invoke-Compose @("logs", "-f", "worker") }
     "down"  { Invoke-Compose @("down", "-v") }

@@ -29,7 +29,8 @@ USERS = {
 CAMPAIGNS = {"A": "[E2E] AI transformation lead", "B": "[E2E] AI transformation lead - shared resume"}
 JD_TITLE_PREFIX = "[E2E] "
 SEEDS = ("seed_encryption_key", "seed_encryption_key_ai_provider", "seed_encryption_key_oauth_token",
-         "seed_platform_config", "seed_allowed_transitions", "seed_prompt_templates", "seed_system_organization")
+         "seed_platform_config", "seed_allowed_transitions", "seed_prompt_templates", "seed_system_organization",
+         "seed_email_templates")
 
 
 def assert_isolated() -> None:
@@ -38,8 +39,9 @@ def assert_isolated() -> None:
     problems = []
     if settings.db_host != "postgres":
         problems.append("database host is not the local e2e container")
-    if (settings.email_delivery or "").lower() != "log":
-        problems.append("EMAIL_DELIVERY is not log")
+    delivery = (settings.email_delivery or "").lower()
+    if delivery not in ("log", "smtp") or (delivery == "smtp" and (settings.smtp_host or "").strip() != "mailpit"):
+        problems.append("EMAIL_DELIVERY is not log or smtp to the stack's Mailpit")
     if (settings.storage_backend or "").lower() != "local":
         problems.append("STORAGE_BACKEND is not local")
     for name, value in settings.model_dump().items():
@@ -47,7 +49,7 @@ def assert_isolated() -> None:
             problems.append(f"setting {name} points at a live host")
     if problems:
         raise SystemExit("REFUSING TO RUN - not isolated: " + "; ".join(problems))
-    print("isolation check: OK (local database, log-only email, local storage, no live hosts)")
+    print("isolation check: OK (local database, email only to the stack's Mailpit, local storage, no live hosts)")
 
 
 def phase2_jd_title(fixture: dict) -> str:

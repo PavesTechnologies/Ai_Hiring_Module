@@ -3,8 +3,21 @@
 ## Merging a branch into RMe
 
 Nothing merges until every check below passes. Merges are fast-forwards, made only when the merge is
-asked for, and never pushed as part of the routine. No check may send email: keep `EMAIL_DELIVERY=log`
-in `.env`.
+asked for, and never pushed as part of the routine. No email may leave this machine: keep
+`EMAIL_DELIVERY=log` in `.env`, or `smtp` to a local Mailpit (below). Never `ses` outside production.
+
+### Local email: Mailpit
+
+To see the emails the app would send, run Mailpit and point the app at it. Mailpit catches every
+message and relays nothing.
+
+```
+docker compose --profile mailpit up -d mailpit        # SMTP 127.0.0.1:1025, web UI http://localhost:8025
+```
+
+Then set `EMAIL_DELIVERY=smtp`, `SMTP_HOST=localhost` (or `mailpit` for the compose services) and
+`SMTP_PORT=1025`. The app refuses an SMTP host that isn't local (`localhost`, `127.0.0.1`, `::1`,
+`mailpit`), and with `APP_ENV=production` it refuses everything except `ses`.
 
 ### Working in a git worktree: the `.env` file
 
@@ -78,10 +91,10 @@ From Git Bash:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File e2e/e2e.ps1 test
 ```
 
-The stack is isolated: its own Postgres, Redis and worker, a stub LLM, and email that is only ever
-logged (`e2e/README.md`). Each driver prints a `[PASS]` or `[FAIL]` line per check and ends with an
-`n/n ... checks passed` line. The run then counts the emails the worker would have sent, and it fails
-if that count isn't 0. A failing check blocks the merge like a failing test.
+The stack is isolated: its own Postgres, Redis and worker, a stub LLM, and its own Mailpit that
+catches every email (`e2e/README.md`). Each driver prints a `[PASS]` or `[FAIL]` line per check and
+ends with an `n/n ... checks passed` line. The run then counts the emails Mailpit received from the
+drivers that send none, and it fails if that count isn't 0. A failing check blocks the merge like a failing test.
 
 In a git worktree:
 
@@ -108,7 +121,8 @@ Each merge is reported with:
   fallback           8/8  checks passed
   scoring versions   6/6  checks passed
   golden estimate    4/4  checks passed
-  emails the worker would have sent: 0
+  emails Mailpit received: 0
+  mailpit            3/3  checks passed
   ```
 
 - **Migrations:** any applied, with their ids.

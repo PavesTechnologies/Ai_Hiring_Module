@@ -10,12 +10,13 @@ systems. Built for the scoring v2 re-parse / re-score check; reusable for other 
 | RDS database | Postgres 16 + pgvector in Docker (`airs-e2e-postgres`, 127.0.0.1:45432) | `DB_HOST=postgres` in the compose file; `.env` is never read (excluded from the image, never mounted) |
 | Redis / Celery | Its own Redis (127.0.0.1:46379) and its own worker | compose network |
 | Supabase storage | Local files in the `e2e_storage` volume | `STORAGE_BACKEND=local` - the Supabase client is never created |
-| AWS SES email | Nothing is sent - each email is only logged (`EMAIL NOT SENT ...`) | `EMAIL_DELIVERY=log` - the SES client is never created |
+| AWS SES email | The stack's own Mailpit catches every email and relays nothing (API and web UI on 127.0.0.1:48025) | `EMAIL_DELIVERY=smtp`, `SMTP_HOST=mailpit` - the SES client is never created, and the app refuses any SMTP host that isn't local |
 | Auth (UMS / JWKS) | Test identities inside the e2e driver process only | placeholders on the reserved `.invalid` domain, which never resolves |
 | LLM provider | Deterministic stub LLM in the worker (no network) | `scripts/e2e/worker.py`; set `E2E_LLM=real` + a key in `.env.e2e` to use a real model |
 
 Every e2e script starts with `assert_isolated()` and refuses to run if the database isn't the local
-container, email isn't log-only, storage isn't local, or any setting mentions a live host.
+container, email doesn't go only to the stack's Mailpit (or isn't log-only), storage isn't local, or any
+setting mentions a live host.
 
 ## First time
 
@@ -66,7 +67,7 @@ P4. candidate K gets provisional credit (0.8 of the tier weight) for the support
     provisional and outside every gate - v1 and v2 (shadow)
 P5. resolving the supporting skill marks K "score out of date" and saves a calibration version
 P6. scoring used the calibrated minimum experience; the JD's extraction is unchanged
-P7. no email (SES guard in the driver; `e2e.ps1 test` fails if the worker logged any)
+P7. no email (SES guard in the driver; `e2e.ps1 test` fails if Mailpit received any, or the worker logged any)
 
 Report: `/data/storage/e2e_phase2_report.json`.
 
@@ -112,6 +113,16 @@ G3. no LLM call (llm_call_log unchanged)
 G4. no email
 
 Report: `/data/storage/e2e_golden_estimate_report.json`.
+
+`e2e.ps1 test` then checks that Mailpit received nothing from the drivers above, and runs
+`scripts/e2e/run_mailpit_e2e.py`: one internal HR alert (the embedding health alert) to the synthetic
+e2e HR admin, sent by the worker over SMTP to the stack's Mailpit.
+
+M1. Mailpit holds exactly one message, to `hr.admin@e2e.invalid`, with the rendered subject
+M2. the notification is SENT (not LOGGED) with the SMTP Message-ID Mailpit holds
+M3. no SES client was created; Mailpit is cleared afterwards
+
+Report: `/data/storage/e2e_mailpit_report.json`.
 
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
