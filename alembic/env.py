@@ -11,7 +11,10 @@ from alembic import context
 # ── project root on sys.path ──────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-load_dotenv()
+from app.core.env_file import env_file_path  # noqa: E402 - needs the project root on sys.path
+
+# .env, or the file AIRS_ENV_FILE names (a git worktree using the main checkout's) - as the app reads it.
+load_dotenv(env_file_path())
 
 # ── Alembic config ────────────────────────────────────────────────────────────
 config = context.config
