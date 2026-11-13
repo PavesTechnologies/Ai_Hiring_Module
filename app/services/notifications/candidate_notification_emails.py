@@ -5,6 +5,7 @@ from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotifi
 from app.models.interview import InterviewPlatform
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications import send_policy
 from app.services.notifications.dedup import interview_event_id, notification_dedup_key
 from app.tasks.email_tasks import send_candidate_email_task
 
@@ -195,7 +196,7 @@ def _queue_and_dispatch(
             )
             return
 
-        notification = notification_repo.create_unless_duplicate(EmailNotification(
+        notification = EmailNotification(
             candidate_id=candidate_id,
             campaign_candidate_id=campaign_candidate_id,
             interview_schedule_id=interview_schedule_id,
@@ -204,7 +205,13 @@ def _queue_and_dispatch(
             status=EmailNotificationStatus.QUEUED,
             template_context=template_context,
             dedup_key=dedup_key,
-        ))
+        )
+        # Email plan phase 2: the checks before every email - refused ones are never queued.
+        blocked = send_policy.problems(db, notification)
+        if blocked:
+            logger.warning("%s email not queued | codes=%s campaign_candidate_id=%s interview_schedule_id=%s", trigger_event.value, ",".join(p.code for p in blocked), campaign_candidate_id, interview_schedule_id)
+            return 
+        notification = notification_repo.create_unless_duplicate(notification)
         if notification is None:
             logger.info(
                 "%s email already queued/sent (raced) - skipping duplicate | campaign_candidate_id=%s",

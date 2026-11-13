@@ -12,6 +12,7 @@ import logging
 from app.models.email import EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications import send_policy
 from app.services.notifications.user_notification_preferences import is_notification_enabled
 from app.tasks.email_tasks import send_candidate_email_task
 
@@ -36,7 +37,7 @@ def queue_internal_user_emails(db, users, trigger_event: EmailTriggerEvent, temp
             if not is_notification_enabled(db, user.id, trigger_event):
                 logger.info("%s skipped: user_id=%s opted out.", trigger_event.value, user.id)
                 continue
-            queued.append(notification_repo.create(EmailNotification(
+            notification = EmailNotification(
                 candidate_id=None,
                 campaign_candidate_id=None,
                 interview_interviewer_id=None,
@@ -49,7 +50,14 @@ def queue_internal_user_emails(db, users, trigger_event: EmailTriggerEvent, temp
                 status=EmailNotificationStatus.QUEUED,
                 template_context={"recipient_name": getattr(user, "full_name", None) or user.email,
                                   **template_context},
-            )))
+            )
+            # Email plan phase 2: the checks before every email (address, template) - refused ones aren't queued.
+            blocked = send_policy.problems(db, notification)
+            if blocked:
+                logger.warning("%s not queued for user_id=%s | codes=%s", trigger_event.value, user.id,
+                               ",".join(p.code for p in blocked))
+                continue
+            queued.append(notification_repo.create(notification))
         notification_repo.commit()
     except Exception:
         logger.exception("Failed to queue %s emails.", trigger_event.value)

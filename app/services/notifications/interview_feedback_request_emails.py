@@ -3,6 +3,7 @@ import logging
 from app.core.config import settings
 from app.core.feedback_token import sign_feedback_token
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
+from app.services.notifications import send_policy
 from app.services.notifications.dedup import notification_dedup_key
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
@@ -60,7 +61,7 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
         # own comment on this same [SEED] row.
         feedback_link = f"{settings.frontend_base_url}/interview-feedback/{token}"
 
-        notification = notification_repo.create_unless_duplicate(EmailNotification(
+        notification = EmailNotification(
             candidate_id=None,
             campaign_candidate_id=campaign_candidate.id,
             interview_schedule_id=schedule.id,
@@ -75,7 +76,13 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
             dedup_key=notification_dedup_key(
                 EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
                 interview_schedule_id=schedule.id, interviewer_id=interviewer.id),
-        ))
+        )
+        # Email plan phase 2: the checks before every email - refused ones are never queued.
+        blocked = send_policy.problems(db, notification)
+        if blocked:
+            logger.warning("INTERVIEW_FEEDBACK_REQUESTED email not queued | codes=%s interview_schedule_id=%s interviewer_id=%s", ",".join(p.code for p in blocked), schedule.id, interviewer.id)
+            return False
+        notification = notification_repo.create_unless_duplicate(notification)
         if notification is None:
             logger.info(
                 "INTERVIEW_FEEDBACK_REQUESTED email already queued/sent (raced) - skipping duplicate | "

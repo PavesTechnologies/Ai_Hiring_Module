@@ -2,6 +2,7 @@ import logging
 from uuid import UUID
 
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailTriggerEvent
+from app.services.notifications import send_policy
 from app.services.notifications.dedup import notification_dedup_key
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
@@ -73,7 +74,7 @@ class CandidateRejectionEmailService:
             )
             return None
 
-        notification = self.email_notification_repo.create_unless_duplicate(EmailNotification(
+        notification = EmailNotification(
             candidate_id=candidate_id,
             campaign_candidate_id=campaign_candidate_id,
             trigger_event=EmailTriggerEvent.CANDIDATE_REJECTED,
@@ -81,7 +82,15 @@ class CandidateRejectionEmailService:
             status=EmailNotificationStatus.QUEUED,
             dedup_key=None if allow_resend else notification_dedup_key(
                 EmailTriggerEvent.CANDIDATE_REJECTED, campaign_candidate_id=campaign_candidate_id),
-        ))
+        )
+        # Email plan phase 2: the checks before every email (the manual send runs them first, with the
+        # sender, and reports the problems; this guards every caller).
+        blocked = send_policy.problems(self.email_notification_repo.db, notification)
+        if blocked:
+            logger.warning("Rejection email not queued | codes=%s campaign_candidate_id=%s",
+                           ",".join(p.code for p in blocked), campaign_candidate_id)
+            return None
+        notification = self.email_notification_repo.create_unless_duplicate(notification)
         if notification is None:
             logger.info(
                 "Rejection email already queued/sent (raced) - skipping duplicate | "

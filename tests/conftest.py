@@ -47,6 +47,28 @@ def _llm_calls_are_not_logged_to_the_database():
     call_log.set_recorder(original)
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "send_policy: run the real checks before every email (send_policy) "
+                                       "in a test outside tests/db")
+
+
+@pytest.fixture(autouse=True)
+def _send_policy_needs_a_real_database(request, monkeypatch):
+    """
+    The checks before every email (app/services/notifications/send_policy.py) read the candidate, consent,
+    round, feedback and earlier emails from the database. Tests with a mocked database can't evaluate them,
+    so outside tests/db they pass - unless the test is marked send_policy. Against Postgres (tests/db) they
+    always run; tests/db/test_send_policy_db.py covers every rule and every send path.
+    """
+    path = str(request.node.fspath).replace("\\", "/")
+    if "/tests/db/" in path or request.node.get_closest_marker("send_policy"):
+        yield
+        return
+    from app.services.notifications import send_policy
+    monkeypatch.setattr(send_policy, "problems", lambda *args, **kwargs: [])
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _email_is_log_only():
     """Fails loudly if anything switched the test run back to real SES delivery."""

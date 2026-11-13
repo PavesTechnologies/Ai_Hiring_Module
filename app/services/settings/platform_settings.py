@@ -48,6 +48,10 @@ REGISTRY: tuple[Setting, ...] = (
             "Warn when a campaign has used this share of its candidate cap.", "float", 1, 100, 80, "%"),
     Setting("DEADLINE_WARNING_DAYS", ALERTS, "Deadline warning", "Warn this many days before a campaign closes.",
             "int", 1, 60, 3, "days"),
+    # Email plan phase 2: the checks before every email (app/services/notifications/send_policy.py).
+    Setting("FEEDBACK_REQUEST_MIN_INTERVAL_HOURS", ALERTS, "Feedback request interval",
+            "An interviewer isn't asked again for the same round's feedback within this many hours.",
+            "int", 1, 720, 24, "hours"),
     Setting("SCREENING_SLA_HOURS", ALERTS, "Screening SLA", "A candidate in Screening longer than this is stalled.",
             "float", 1, 720, 48, "hours"),
     Setting("HM_REVIEW_SLA_DAYS", ALERTS, "Hiring manager review SLA",

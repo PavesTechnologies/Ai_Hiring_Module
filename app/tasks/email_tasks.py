@@ -20,6 +20,7 @@ from app.repositories.config_repository import ConfigRepository
 from app.repositories.dead_letter_queue_repository import DeadLetterQueueRepository
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
+from app.services.notifications import send_policy
 from app.services.notifications.email_rendering import render
 from app.repositories.encryption_key_repository import EncryptionKeyRepository
 from app.repositories.jd_repository import JDRepository
@@ -74,6 +75,17 @@ def _not_sent(error: Exception) -> bool:
     while isinstance(original, EmailDeliveryException):    # the refusal arrives wrapped twice
         original = original.original
     return isinstance(original, (ClientError, EndpointConnectionError, NoCredentialsError, ValueError, SMTPNotSent))
+
+
+def _block(notification, notification_repo, task_log_service, task_log, blocked) -> None:
+    """Refused by the checks before every email: FAILED with the codes, never sent, never retried."""
+    codes = ",".join(p.code for p in blocked)
+    notification.status = EmailNotificationStatus.FAILED
+    notification.error_reason = f"BLOCKED: {codes}"[:1000]
+    notification_repo.update(notification)
+    notification_repo.commit()
+    logger.warning("EMAIL_SEND blocked | email_notification_id=%s codes=%s", notification.id, codes)
+    task_log_service.mark_success(task_log, summary=f"Not sent: blocked by the checks ({codes}).")
 
 
 def _html_escape_context(context: dict) -> dict:
@@ -173,6 +185,13 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
                 task_log, summary=f"Not sent: notification is {notification.status.value}.")
             return
 
+        # Email plan phase 2: the checks before every email, again just before sending - the state may
+        # have changed since it was queued. A refused email is never sent and never retried.
+        blocked = send_policy.problems(db, notification, at_send=True)
+        if blocked:
+            _block(notification, notification_repo, task_log_service, task_log, blocked)
+            return
+
         template = template_repo.get_by_id(notification.template_id)
         if template is None:
             raise ValueError(f"EmailTemplate '{notification.template_id}' not found.")
@@ -220,6 +239,10 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         # and index access in an edited template.
         subject = render(template.subject, context)
         body = render(template.body_template, _html_escape_context(context))
+        blocked = send_policy.empty_value_problems(template, context)
+        if blocked:
+            _block(notification, notification_repo, task_log_service, task_log, blocked)
+            return
 
         # Review item 7: claim the row before calling SES. Exactly one run wins; a redelivered or
         # concurrent run finds it SENDING (or already SENT) and leaves it alone.
