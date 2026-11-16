@@ -230,9 +230,10 @@ def discard(db, draft_id, *, actor, audit_service) -> EmailNotification:
 
 def _audit(db, audit_service, actor, row, action: str) -> None:
     from app.enums.constants import ActionType, EntityType
+    from app.middleware.rbac import authorising_role
     from app.models.pipeline import CampaignCandidate
-    roles = list(getattr(actor, "roles", ()) or ())
-    role = next((r for r in ("HR_ADMIN", "HIRING_MANAGER", "RECRUITER") if r in roles), roles[0] if roles else None)
+    # The role that authorised it (never an org label such as "General" that some tokens list first).
+    role = authorising_role(actor, ("HR_ADMIN", "HIRING_MANAGER", "RECRUITER"))
     cc = db.get(CampaignCandidate, row.campaign_candidate_id) if row.campaign_candidate_id else None
     campaign_id = getattr(cc, "campaign_id", None)
     audit_service.log(
