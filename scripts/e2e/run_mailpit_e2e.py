@@ -20,6 +20,13 @@ Then the checks before every email (email plan phase 2) through the real API, as
       one message, to the previewed recipient with the previewed subject, recorded as confirmed by the sender
   M7  a second Send of the same email and a new prepare are both refused (409); still exactly one message
 
+Then the stage lock (email plan phase 4) on that candidate:
+
+  M8  the sent rejection email locked the stage: a recruiter's stage move is refused (409 STAGE_LOCKED) and the
+      scorecard shows the lock
+  M9  an HR admin's unlock without a reason is refused (422); with one it succeeds (audited STAGE_UNLOCKED), and
+      a stage move is no longer refused for the lock
+
 Report: /data/storage/e2e_mailpit_report.json
 """
 import json
@@ -206,6 +213,38 @@ def _outcome_email_checks(db, report, steps) -> None:
                  and reprepare.status_code == 409 and bool({"ALREADY_SENT", "DUPLICATE"} & set(codes))
                  and mailpit.count() == 1,
                  json.dumps(steps["M7"]))
+
+    # M8 - the stage lock
+    from app.models.compliance import AuditLog
+    recruiter = {"Authorization": "Bearer e2e:e2e-recruiter"}
+    move_path = f"/candidate-actions/campaigns/{rejected.campaign_id}/candidates/{rejected.id}/stage-move"
+    move_body = {"target_stage": "SCREENING", "reason": "E2E: reconsider", "override_reason_code": "OTHER"}
+    move = client.post(move_path, headers=recruiter, json=move_body)
+    card = client.get(f"{base}/{rejected.id}", headers=hr)
+    cdata = (card.json().get("data") or {}) if card.status_code == 200 else {}
+    steps["M8"] = {"move": move.status_code, "code": ((move.json().get("data") or {}).get("code")),
+                   "scorecard_locked": cdata.get("stage_locked"), "lock_reason": cdata.get("stage_lock_reason")}
+    report.check(8, "the sent rejection email locked the stage: a move is refused (409) and the scorecard says so",
+                 move.status_code == 409 and steps["M8"]["code"] == "STAGE_LOCKED" and cdata.get("stage_locked") is True
+                 and cdata.get("stage_lock_reason") == "REJECTION_EMAIL_SENT",
+                 json.dumps(steps["M8"]))
+
+    # M9 - the HR admin unlock
+    no_reason = client.post(f"{base}/{rejected.id}/stage-unlock", headers=hr, json={})
+    unlocked = client.post(f"{base}/{rejected.id}/stage-unlock", headers=hr, json={"reason_code": "EMAIL_SENT_IN_ERROR"})
+    db.expire_all()
+    audited = db.execute(select(AuditLog).where(AuditLog.entity_id == rejected.id,
+                                                AuditLog.action_type == "STAGE_UNLOCKED")).scalars().all()
+    after = client.post(move_path, headers=recruiter, json=move_body)
+    after_code = ((after.json().get("data") or {}).get("code")) if after.headers.get("content-type", "").startswith(
+        "application/json") else None
+    steps["M9"] = {"no_reason": no_reason.status_code, "unlock": unlocked.status_code, "audited": len(audited),
+                   "audit_reason": audited[0].detail.get("reason_code") if audited else None,
+                   "move_after": after.status_code, "move_after_code": after_code}
+    report.check(9, "unlock needs a reason (422), then succeeds and is audited; the move is no longer refused for the lock",
+                 no_reason.status_code == 422 and unlocked.status_code == 200 and len(audited) == 1
+                 and steps["M9"]["audit_reason"] == "EMAIL_SENT_IN_ERROR" and after_code != "STAGE_LOCKED",
+                 json.dumps(steps["M9"]))
 
 
 if __name__ == "__main__":

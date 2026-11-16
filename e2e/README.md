@@ -127,6 +127,10 @@ M5. preparing the rejection email for that candidate makes a draft and sends not
 M6. Send with a stale preview is refused (409); with the previewed one the worker sends exactly one message, to
     the previewed recipient with the previewed subject
 M7. a second Send and a new prepare are refused (409); still exactly one message
+M8. the sent rejection email locked the stage: a recruiter's stage move is refused (409 `STAGE_LOCKED`) and the
+    scorecard shows the lock
+M9. an HR admin's unlock without a reason is refused (422); with one it succeeds and is audited, and the move is no
+    longer refused for the lock
 
 Report: `/data/storage/e2e_mailpit_report.json`.
 
