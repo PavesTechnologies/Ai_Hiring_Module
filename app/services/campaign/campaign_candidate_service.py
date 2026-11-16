@@ -2364,6 +2364,23 @@ class CampaignCandidateService:
                                   audit_service=audit_service or self.audit_service) is None:
             raise CampaignException("A rejection email for this candidate is already queued.", 409)
 
+    def preview_bulk_rejection_email(self, campaign_candidate_id: UUID, actor_id: str, actor_roles: list[str]) -> dict:
+        """
+        The bulk rejection email for one candidate, rendered exactly as it will be sent (recipient, subject,
+        body) with the checks' problems - nothing is created or queued. For the bulk screen's preview.
+        """
+        from app.services.notifications import drafts
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+        probe = self._outcome_email_probe(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED)
+        preview = drafts.preview(self.campaign_candidate_repo.db, probe, actor=acting_user(actor_id, actor_roles))
+        return {"campaign_candidate_id": str(campaign_candidate_id), "recipient_name": preview.recipient_name,
+                "recipient_address": preview.recipient_address, "subject": preview.subject, "body": preview.body,
+                "problems": [{"code": p.code, "message": p.message} for p in preview.problems]}
+
     def check_bulk_rejection_email(
         self,
         campaign_candidate_ids: list[UUID],

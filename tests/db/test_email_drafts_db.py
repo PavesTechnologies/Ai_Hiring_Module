@@ -183,3 +183,16 @@ def test_the_bulk_send_queues_exactly_the_checked_list(world, dispatch):
         EmailNotification.campaign_candidate_id == world.cc.id)).scalars().one()
     assert row.status == S.QUEUED and row.confirmed_by == "zz-hr"
     dispatch.assert_called_once()
+
+
+def test_the_bulk_preview_renders_one_candidates_email_and_creates_nothing(world, dispatch):
+    service = _service(world)
+    preview = service.preview_bulk_rejection_email(world.cc.id, actor_id="zz-hr", actor_roles=["HR_ADMIN"])
+    assert preview["subject"] and preview["body"] and "@" in (preview["recipient_address"] or "")
+    assert preview["problems"] == []
+    assert world.db.execute(select(EmailNotification).where(
+        EmailNotification.campaign_candidate_id == world.cc.id)).scalars().all() == []
+    with pytest.raises(CampaignException) as denied:
+        service.preview_bulk_rejection_email(world.cc.id, actor_id="zz-other-hm", actor_roles=["HIRING_MANAGER"])
+    assert denied.value.status_code == 403
+    dispatch.assert_not_called()

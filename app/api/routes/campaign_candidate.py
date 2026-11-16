@@ -1,9 +1,11 @@
 from app.services.campaign_access import CampaignAccess
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, Query, Security, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, Query, Security, UploadFile, status
 from fastapi.responses import StreamingResponse
 from uuid import UUID
+
+from app.exceptions.campaign_exceptions import CampaignException
 from app.dependencies.campaign_candidate import (
     get_campaign_candidate_service,
 )
@@ -487,6 +489,29 @@ def send_selection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
     return APIResponse.ok(data=result, message="Selection email prepared: preview it, then Send.")
+
+
+@router.post(
+    "/bulk-rejection-email/preview",
+    response_model=APIResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Preview the bulk rejection email for one candidate",
+    description=(
+        "The rejection email one candidate in a bulk send would get, rendered exactly as it will be sent "
+        "(recipient, subject, body), with the checks' problems. Nothing is created or queued."
+    ),
+)
+def preview_bulk_rejection_email(
+    payload: dict = Body(...),
+    service: CampaignCandidateService = Depends(get_campaign_candidate_service),
+    user: TokenUser = Security(require_roles(UserRole.HIRING_MANAGER, UserRole.HR_ADMIN)),
+):
+    try:
+        campaign_candidate_id = UUID(str((payload or {}).get("campaign_candidate_id")))
+    except (TypeError, ValueError):
+        raise CampaignException("Send {\"campaign_candidate_id\": \"<id>\"}.", 422)
+    result = service.preview_bulk_rejection_email(campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles)
+    return APIResponse.ok(data=result)
 
 
 @router.post(
