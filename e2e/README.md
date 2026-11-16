@@ -123,8 +123,10 @@ M2. the notification is SENT (not LOGGED) with the SMTP Message-ID Mailpit holds
 M3. no SES client was created; Mailpit is cleared afterwards
 M4. the bulk rejection check, through the API: who will receive it (a REJECTED candidate listed twice,
     counted once) and who won't (a candidate who isn't rejected: `WRONG_STAGE`); nothing queued
-M5. the rejection email for that candidate: sent by the worker, exactly one message in Mailpit
-M6. a second send is refused (409, already sent); still exactly one message
+M5. preparing the rejection email for that candidate makes a draft and sends nothing
+M6. Send with a stale preview is refused (409); with the previewed one the worker sends exactly one message, to
+    the previewed recipient with the previewed subject
+M7. a second Send and a new prepare are refused (409); still exactly one message
 
 Report: `/data/storage/e2e_mailpit_report.json`.
 

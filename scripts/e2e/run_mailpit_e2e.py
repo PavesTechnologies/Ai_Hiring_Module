@@ -15,8 +15,10 @@ Then the checks before every email (email plan phase 2) through the real API, as
 
   M4  the bulk rejection check lists who will receive it (a REJECTED candidate, listed twice, counted once)
       and who won't (a candidate who isn't rejected: WRONG_STAGE); nothing is queued, Mailpit stays empty
-  M5  the rejection email for the REJECTED candidate is queued and the worker sends it: exactly one message
-  M6  a second send is refused (409, already sent) and Mailpit still holds exactly one message
+  M5  preparing the rejection email for the REJECTED candidate makes a DRAFT and sends nothing (phase 3)
+  M6  Send with a stale preview is refused (409 PREVIEW_CHANGED); with the previewed one the worker sends exactly
+      one message, to the previewed recipient with the previewed subject, recorded as confirmed by the sender
+  M7  a second Send of the same email and a new prepare are both refused (409); still exactly one message
 
 Report: /data/storage/e2e_mailpit_report.json
 """
@@ -141,8 +143,24 @@ def _outcome_email_checks(db, report, steps) -> None:
                  and data.get("repeated") == 1 and mailpit.count() == 0,
                  json.dumps(steps["M4"]))
 
-    # M5 - the send
-    sent = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
+    # M5 - preparing makes a draft and sends nothing (email plan phase 3)
+    prepared = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
+    draft_id = ((prepared.json().get("data") or {}).get("draft_id")) if prepared is not None else None
+    time.sleep(5)                                       # time for any (wrong) automatic send to arrive
+    steps["M5"] = {"http": prepared.status_code if prepared is not None else None,
+                   "status": (prepared.json().get("data") or {}).get("status") if prepared is not None else None,
+                   "mailpit": mailpit.count()}
+    report.check(5, "preparing the rejection email makes a draft and sends nothing",
+                 prepared is not None and prepared.status_code == 200 and steps["M5"]["status"] == "draft"
+                 and bool(draft_id) and mailpit.count() == 0,
+                 json.dumps(steps["M5"]))
+
+    # M6 - Send needs the previewed email; then the worker sends exactly one
+    preview = client.post(f"/email-drafts/{draft_id}/preview", headers=hr) if draft_id else None
+    pdata = (preview.json().get("data") or {}) if preview is not None else {}
+    stale = client.post(f"/email-drafts/{draft_id}/send", headers=hr, json={"preview_hash": "0" * 64}) if draft_id else None
+    sent = client.post(f"/email-drafts/{draft_id}/send", headers=hr,
+                       json={"preview_hash": pdata.get("preview_hash")}) if draft_id else None
 
     def delivered():
         db.expire_all()
@@ -150,29 +168,44 @@ def _outcome_email_checks(db, report, steps) -> None:
             EmailNotification.campaign_candidate_id == rejected.id,
             EmailNotification.trigger_event == EmailTriggerEvent.CANDIDATE_REJECTED)).scalars().first()
         return row if row is not None and row.status not in (EmailNotificationStatus.QUEUED,
-                                                             EmailNotificationStatus.SENDING) else None
+                                                             EmailNotificationStatus.SENDING,
+                                                             EmailNotificationStatus.DRAFT) else None
 
     try:
         row = wait_for(delivered, "the worker to send the rejection email", timeout=120)
         wait_for(lambda: mailpit.count() or None, "Mailpit to receive it", timeout=30)
     except TimeoutError:
         row = None
-    steps["M5"] = {"http": sent.status_code if sent is not None else None, "status": row and row.status.value,
-                   "error": row and row.error_reason, "mailpit": mailpit.count()}
-    report.check(5, "the rejection email is sent by the worker: exactly one message in Mailpit",
-                 sent is not None and sent.status_code == 200 and row is not None
-                 and row.status == EmailNotificationStatus.SENT and mailpit.count() == 1,
-                 json.dumps(steps["M5"]))
-
-    # M6 - never twice
-    again = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
-    time.sleep(5)                                       # time for any (wrong) second send to arrive
-    codes = [p["code"] for p in ((again.json().get("data") or {}).get("problems") or [])] if again is not None else []
-    steps["M6"] = {"http": again.status_code if again is not None else None, "codes": codes, "mailpit": mailpit.count()}
-    report.check(6, "a second send is refused (409, already sent); still exactly one message in Mailpit",
-                 again is not None and again.status_code == 409 and bool({"ALREADY_SENT", "DUPLICATE"} & set(codes))
-                 and mailpit.count() == 1,
+    message = (mailpit.messages() or [{}])[0]
+    steps["M6"] = {"preview": preview.status_code if preview is not None else None, "can_send": pdata.get("can_send"),
+                   "stale_send": stale.status_code if stale is not None else None,
+                   "stale_code": ((stale.json().get("data") or {}).get("code")) if stale is not None else None,
+                   "send": sent.status_code if sent is not None else None, "status": row and row.status.value,
+                   "confirmed_by": row and row.confirmed_by, "mailpit": mailpit.count(),
+                   "to_matches_preview": mailpit.recipients(message) == [pdata.get("recipient_address")],
+                   "subject_matches_preview": message.get("Subject") == pdata.get("subject")}
+    report.check(6, "Send needs the previewed email (409 otherwise); then exactly one message, as previewed",
+                 preview is not None and preview.status_code == 200 and pdata.get("can_send") is True
+                 and stale is not None and stale.status_code == 409 and steps["M6"]["stale_code"] == "PREVIEW_CHANGED"
+                 and sent is not None and sent.status_code == 200 and row is not None
+                 and row.status == EmailNotificationStatus.SENT and row.confirmed_by == "e2e-hr-admin"
+                 and mailpit.count() == 1 and steps["M6"]["to_matches_preview"] and steps["M6"]["subject_matches_preview"],
                  json.dumps(steps["M6"]))
+
+    # M7 - never twice: a second Send of the same email, and preparing a new one, are both refused
+    again = client.post(f"/email-drafts/{draft_id}/send", headers=hr,
+                        json={"preview_hash": pdata.get("preview_hash")}) if draft_id else None
+    reprepare = client.post(f"{base}/{rejected.id}/send-rejection-email", headers=hr) if rejected else None
+    time.sleep(5)                                       # time for any (wrong) second send to arrive
+    codes = [p["code"] for p in ((reprepare.json().get("data") or {}).get("problems") or [])] if reprepare is not None else []
+    steps["M7"] = {"send_again": again.status_code if again is not None else None,
+                   "prepare_again": reprepare.status_code if reprepare is not None else None, "codes": codes,
+                   "mailpit": mailpit.count()}
+    report.check(7, "a second Send and a new prepare are refused (409); still exactly one message in Mailpit",
+                 again is not None and again.status_code == 409 and reprepare is not None
+                 and reprepare.status_code == 409 and bool({"ALREADY_SENT", "DUPLICATE"} & set(codes))
+                 and mailpit.count() == 1,
+                 json.dumps(steps["M7"]))
 
 
 if __name__ == "__main__":
