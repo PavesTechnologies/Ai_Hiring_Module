@@ -61,6 +61,9 @@ class OverrideReasonCode(Base):
     label: Mapped[str] = mapped_column(String(80), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    # OVERRIDE (a move against the system's outcome) or STAGE_UNLOCK (an HR admin unlocking a stage locked by a
+    # rejection or selection email - email plan phase 4, a9c1e3f5b7d0).
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="OVERRIDE", server_default=text("'OVERRIDE'"))
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

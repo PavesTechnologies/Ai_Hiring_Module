@@ -24,6 +24,16 @@ CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,39}$")
 LABEL_MAX = 80
 
 
+KINDS = ("OVERRIDE", "STAGE_UNLOCK")
+
+
+def _kind(value) -> str:
+    kind = str(value or "OVERRIDE").upper()
+    if kind not in KINDS:
+        raise CampaignException("kind must be OVERRIDE or STAGE_UNLOCK.", 422, data={"field": "kind"})
+    return kind
+
+
 def _label(value) -> str:
     label = (value or "").strip() if isinstance(value, str) else ""
     if not 2 <= len(label) <= LABEL_MAX:
@@ -43,10 +53,13 @@ class ReasonCodeSettingsService:
         self.db = db
         self.audit_service = audit_service
 
-    def list(self) -> list[dict]:
+    def list(self, kind: str = "OVERRIDE") -> list[dict]:
+        """kind: OVERRIDE (moves against the system's outcome) or STAGE_UNLOCK (stage unlocks, email plan phase 4)."""
+        kind = _kind(kind)
         used = dict(self.db.query(CandidateOutcomeOverride.reason_code, func.count())
                     .group_by(CandidateOutcomeOverride.reason_code).all())
         rows = (self.db.query(OverrideReasonCode)
+                .filter(OverrideReasonCode.kind == kind)
                 .order_by(OverrideReasonCode.sort_order, OverrideReasonCode.code).all())
         return [{"code": r.code, "label": r.label, "is_active": r.is_active, "sort_order": r.sort_order,
                  "locked": r.code == LOCKED_CODE, "times_used": int(used.get(r.code, 0))} for r in rows]
@@ -57,29 +70,31 @@ class ReasonCodeSettingsService:
             action_type=ActionType.PLATFORM_CONFIG_UPDATED.value, entity_type=EntityType.PLATFORM_CONFIG.value,
             entity_id=_AUDIT_ENTITY_ID, campaign_id=None, details=details)
 
-    def create(self, payload: dict, *, actor_id: str) -> list[dict]:
+    def create(self, payload: dict, *, actor_id: str, kind: str = "OVERRIDE") -> list[dict]:
+        kind = _kind(kind)
         code = (payload.get("code") or "").strip().upper() if isinstance(payload.get("code"), str) else ""
         if not CODE_PATTERN.match(code):
             raise CampaignException("A code is 3 to 40 capital letters, digits or underscores, starting with a "
                                     "letter (e.g. SALARY_EXPECTATION).", 422, data={"field": "code"})
         label = _label(payload.get("label"))
-        sort_order = _sort_order(payload.get("sort_order", self._next_order()))
+        sort_order = _sort_order(payload.get("sort_order", self._next_order(kind)))
         if self.db.get(OverrideReasonCode, code) is not None:
             raise CampaignException(f"{code} already exists. Restore it instead of adding it again.", 409,
                                     data={"field": "code"})
         try:
             self.db.add(OverrideReasonCode(code=code, label=label, is_active=True, sort_order=sort_order,
-                                           updated_by=actor_id, updated_at=datetime.now(timezone.utc)))
+                                           kind=kind, updated_by=actor_id, updated_at=datetime.now(timezone.utc)))
             self.db.flush()
-            self._audit(actor_id, {"title": "Override reason code added", "code": code, "sort_order": sort_order})
+            self._audit(actor_id, {"title": "Reason code added", "code": code, "kind": kind,
+                                   "sort_order": sort_order})
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise
-        return self.list()
+        return self.list(kind)
 
-    def _next_order(self) -> int:
-        top = self.db.query(func.max(OverrideReasonCode.sort_order)).scalar()
+    def _next_order(self, kind: str = "OVERRIDE") -> int:
+        top = self.db.query(func.max(OverrideReasonCode.sort_order)).filter(OverrideReasonCode.kind == kind).scalar()
         return min(int(top or 0) + 10, 10000)
 
     def update(self, code: str, payload: dict, *, actor_id: str) -> list[dict]:
@@ -105,7 +120,7 @@ class ReasonCodeSettingsService:
             after["sort_order"] = _sort_order(payload["sort_order"])
         changes = audited_changes(before, after, text_fields=("label",))
         if not changes:
-            return self.list()
+            return self.list(row.kind)
         try:
             row.label, row.is_active, row.sort_order = after["label"], after["is_active"], after["sort_order"]
             row.updated_by, row.updated_at = actor_id, datetime.now(timezone.utc)
@@ -115,4 +130,4 @@ class ReasonCodeSettingsService:
         except Exception:
             self.db.rollback()
             raise
-        return self.list()
+        return self.list(row.kind)

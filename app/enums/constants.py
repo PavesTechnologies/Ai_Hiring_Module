@@ -145,6 +145,8 @@ class ActionType(enum.Enum):
     # Email plan phase 3: a person sent or discarded a prepared email (details: ids and the trigger only).
     EMAIL_DRAFT_SENT = "EMAIL_DRAFT_SENT"
     EMAIL_DRAFT_DISCARDED = "EMAIL_DRAFT_DISCARDED"
+    # Email plan phase 4: an HR admin unlocked a stage locked by a rejection or selection email (reason code).
+    STAGE_UNLOCKED = "STAGE_UNLOCKED"
     # GDPR-style candidate hard delete — the DB-side audit_action_type_enum
     # does NOT yet contain this value (same caveat as the other entries
     # above); needs the paired migration

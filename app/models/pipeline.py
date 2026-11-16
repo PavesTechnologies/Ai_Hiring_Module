@@ -157,6 +157,13 @@ class CampaignCandidate(Base):
     decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Email plan phase 4 (a9c1e3f5b7d0): once a rejection or selection email is sent, the stage in this campaign is
+    # locked - no stage moves, and re-parse/re-score can't move it (app/services/campaign/stage_lock.py; a database
+    # trigger backs it up). An HR admin can unlock with a reason code (audited).
+    stage_locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage_lock_reason: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    stage_lock_notification_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("email_notifications.id"), nullable=True)
 
     ai_evaluation: Mapped[Optional["CampaignCandidateAIEvaluation"]] = relationship(
         back_populates="campaign_candidate", uselist=False, cascade="all, delete-orphan",

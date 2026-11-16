@@ -108,18 +108,19 @@ def get_reason_code_settings_service(db: Session = Depends(get_db)) -> ReasonCod
 
 
 @router.get("/reason-codes", response_model=APIResponse[list], status_code=status.HTTP_200_OK,
-            summary="Every override reason code, retired ones included, with how often each was used")
-def list_reason_codes(service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
+            summary="Every reason code of a kind (OVERRIDE or STAGE_UNLOCK), retired ones included, with use counts")
+def list_reason_codes(kind: str = "OVERRIDE",
+                      service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
                       user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
-    return APIResponse.ok(data=service.list())
+    return APIResponse.ok(data=service.list(kind))
 
 
 @router.post("/reason-codes", response_model=APIResponse[list], status_code=status.HTTP_201_CREATED,
-             summary="Add an override reason code (audited)")
-def add_reason_code(payload: dict = Body(...),
+             summary="Add a reason code of a kind (OVERRIDE or STAGE_UNLOCK; audited)")
+def add_reason_code(payload: dict = Body(...), kind: str = "OVERRIDE",
                     service: ReasonCodeSettingsService = Depends(get_reason_code_settings_service),
                     user: TokenUser = Security(require_roles(UserRole.HR_ADMIN))):
-    return APIResponse.ok(data=service.create(payload, actor_id=user.user_id), message="Reason code added.")
+    return APIResponse.ok(data=service.create(payload, actor_id=user.user_id, kind=kind), message="Reason code added.")
 
 
 @router.patch("/reason-codes/{code}", response_model=APIResponse[list], status_code=status.HTTP_200_OK,

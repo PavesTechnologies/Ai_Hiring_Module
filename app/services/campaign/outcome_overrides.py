@@ -79,6 +79,7 @@ def reason_codes(db, *, active_only: bool = True) -> dict[str, str]:
     if db is not None:
         try:
             rows = list(db.query(OverrideReasonCode)
+                        .filter(OverrideReasonCode.kind == "OVERRIDE")
                         .order_by(OverrideReasonCode.sort_order, OverrideReasonCode.code).all())
         except Exception:                                   # table not migrated yet: the built-in list
             rows = []
