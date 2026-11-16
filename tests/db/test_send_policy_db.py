@@ -51,6 +51,14 @@ def world(db):  # noqa: F811
                        erasure_requested_at=None, erasure_completed_at=None, consent_given=True)
     resume = _clone(db, source_resume, candidate_id=candidate.id, file_path=f"zz/send-policy/{tag}.docx",
                     file_hash=tag, bulk_upload_job_id=None)
+    # Synthetic people for the actors the tests use (prepared_by / confirmed_by reference users).
+    from app.models.identity import User, UserRole
+    for user_id, role in (("hr", "HR_ADMIN"), ("zz-hr", "HR_ADMIN"), ("zz-hm-owner", "HIRING_MANAGER"),
+                          ("zz-other-hm", "HIRING_MANAGER")):
+        if db.get(User, user_id) is None:
+            db.add(User(id=user_id, email=f"{user_id}-{tag[:8]}@example.invalid", role=UserRole[role],
+                        full_name=f"Test {user_id}", password_hash="EXTERNAL_AUTH", is_active=True))
+    db.flush()
     cc = CampaignCandidate(id=uuid4(), campaign_id=campaign.id, candidate_id=candidate.id, resume_id=resume.id,
                            idempotency_key=f"zz-send-policy-{tag}", pipeline_stage=PipelineStage.REJECTED,
                            is_fraud_flagged=False)
@@ -331,14 +339,19 @@ def _service(world):
                                     audit_service=MagicMock())
 
 
-def test_the_manual_rejection_is_sent_once_then_refused_with_409(world):
+def test_the_manual_rejection_prepares_one_draft_then_is_refused_once_sent(world):
     service = _service(world)
-    with patch("app.services.campaign.campaign_candidate_service.send_candidate_email_task") as task:
-        assert service.send_rejection_email(world.cc.id, actor_id="hr", actor_roles=["HR_ADMIN"]).status == "queued"
+    with patch("app.tasks.email_tasks.send_candidate_email_task.apply_async") as dispatch:
+        first = service.send_rejection_email(world.cc.id, actor_id="hr", actor_roles=["HR_ADMIN"])
+        again = service.send_rejection_email(world.cc.id, actor_id="hr", actor_roles=["HR_ADMIN"])
+        assert first.status == "draft" and again.draft_id == first.draft_id      # preparing again reopens it
+        draft = world.db.get(EmailNotification, first.draft_id)
+        draft.status = EmailNotificationStatus.SENT                              # as if previewed and sent
+        world.db.flush()
         with pytest.raises(CampaignException) as refused:
             service.send_rejection_email(world.cc.id, actor_id="hr", actor_roles=["HR_ADMIN"])
     assert refused.value.status_code == 409 and refused.value.data["problems"][0]["code"] in ("ALREADY_SENT", "DUPLICATE")
-    assert len(_rows(world, E.CANDIDATE_REJECTED)) == 1 and task.apply_async.call_count == 1
+    assert len(_rows(world, E.CANDIDATE_REJECTED)) == 1 and not dispatch.called
 
 
 def test_the_manual_selection_is_refused_after_a_rejection_email(world):
@@ -370,4 +383,4 @@ def test_the_send_task_blocks_an_email_whose_candidate_asked_for_erasure(world):
             patch("app.tasks.email_tasks.SESEmailClient", side_effect=AssertionError("the sender was called")):
         send_candidate_email_task.apply(kwargs={"email_notification_id": str(queued.id)})
     world.db.refresh(queued)
-    assert queued.status == EmailNotificationStatus.FAILED and queued.error_reason == "BLOCKED: ERASURE_REQUESTED"
+    assert queued.status == EmailNotificationStatus.BLOCKED and queued.block_code == "ERASURE_REQUESTED"

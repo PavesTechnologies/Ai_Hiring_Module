@@ -7,7 +7,7 @@ from app.repositories.email_notification_repository import EmailNotificationRepo
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.services.notifications import send_policy
 from app.services.notifications.dedup import interview_event_id, notification_dedup_key
-from app.tasks.email_tasks import send_candidate_email_task
+from app.services.notifications.drafts import as_draft
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +127,8 @@ def interview_email_blocked(schedule) -> bool:
 
 def _queue_and_dispatch(
     db, *, campaign_candidate, trigger_event: EmailTriggerEvent, schedule=None, interviewers=None,
-    allow_resend: bool = False,
-) -> None:
+    allow_resend: bool = False, prepared_by: str | None = None,
+) -> EmailNotification | None:
     """
     Every attribute read on campaign_candidate/schedule, every dedup
     query, the template lookup, the create+commit, and the Celery
@@ -202,10 +202,11 @@ def _queue_and_dispatch(
             interview_schedule_id=interview_schedule_id,
             trigger_event=trigger_event,
             template_id=template.id,
-            status=EmailNotificationStatus.QUEUED,
+            status=EmailNotificationStatus.DRAFT,
             template_context=template_context,
             dedup_key=dedup_key,
         )
+        as_draft(notification, prepared_by=prepared_by)
         # Email plan phase 2: the checks before every email - refused ones are never queued.
         blocked = send_policy.problems(db, notification)
         if blocked:
@@ -219,36 +220,37 @@ def _queue_and_dispatch(
             )
             return
 
-        send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
+        # Email plan phase 3: a DRAFT, sent only when a person previews it and clicks Send (drafts.py).
+        return notification
     except Exception:
         logger.exception(
             "Failed to queue %s email | campaign_candidate_id=%s", trigger_event.value, campaign_candidate_id,
         )
 
 
-def queue_interview_scheduled_email(db, campaign_candidate, schedule, interviewers: list) -> None:
-    _queue_and_dispatch(
-        db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_SCHEDULED,
+def queue_interview_scheduled_email(db, campaign_candidate, schedule, interviewers: list, prepared_by=None):
+    return _queue_and_dispatch(
+        db, prepared_by=prepared_by, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_SCHEDULED,
         schedule=schedule, interviewers=interviewers,
     )
 
 
-def queue_interview_rescheduled_email(db, campaign_candidate, schedule, interviewers: list) -> None:
-    _queue_and_dispatch(
-        db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_RESCHEDULED,
+def queue_interview_rescheduled_email(db, campaign_candidate, schedule, interviewers: list, prepared_by=None):
+    return _queue_and_dispatch(
+        db, prepared_by=prepared_by, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_RESCHEDULED,
         schedule=schedule, interviewers=interviewers,
     )
 
 
-def queue_interview_cancelled_email(db, campaign_candidate, schedule, interviewers: list) -> None:
-    _queue_and_dispatch(
-        db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_CANCELLED,
+def queue_interview_cancelled_email(db, campaign_candidate, schedule, interviewers: list, prepared_by=None):
+    return _queue_and_dispatch(
+        db, prepared_by=prepared_by, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.INTERVIEW_CANCELLED,
         schedule=schedule, interviewers=interviewers,
     )
 
 
-def queue_candidate_selected_email(db, campaign_candidate, allow_resend: bool = False) -> None:
-    _queue_and_dispatch(
-        db, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.CANDIDATE_SELECTED,
+def queue_candidate_selected_email(db, campaign_candidate, allow_resend: bool = False, prepared_by=None):
+    return _queue_and_dispatch(
+        db, prepared_by=prepared_by, campaign_candidate=campaign_candidate, trigger_event=EmailTriggerEvent.CANDIDATE_SELECTED,
         allow_resend=allow_resend,
     )

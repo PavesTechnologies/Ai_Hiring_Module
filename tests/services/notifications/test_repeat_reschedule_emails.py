@@ -51,7 +51,7 @@ def _queue_candidate_reschedule(schedule, event_id, existing):
     with patch.object(mod, "interview_event_id", return_value=event_id), \
             patch.object(mod, "EmailNotificationRepository", return_value=repo), \
             patch.object(mod, "EmailTemplateRepository", return_value=MagicMock()), \
-            patch.object(mod, "send_candidate_email_task") as task:
+            patch("app.tasks.email_tasks.send_candidate_email_task") as task:
         mod.queue_interview_rescheduled_email(MagicMock(), SimpleNamespace(id=uuid4(), candidate_id=uuid4()),
                                               schedule, [])
     return repo, task
@@ -63,7 +63,9 @@ def test_a_second_reschedule_is_emailed_to_the_candidate():
                                        event_id=first)
     sent = [SimpleNamespace(status=EmailNotificationStatus.SENT, dedup_key=first_key)]
     repo, task = _queue_candidate_reschedule(schedule, second, sent)
-    assert task.apply_async.called
+    # Email plan phase 3: prepared as a DRAFT, never dispatched on its own.
+    assert repo.create_unless_duplicate.call_args.args[0].status == EmailNotificationStatus.DRAFT
+    assert not task.apply_async.called
     assert repo.create_unless_duplicate.call_args.args[0].dedup_key.endswith(f"|event={second}")
 
 
@@ -95,7 +97,8 @@ def test_interviewers_hear_about_every_reschedule_and_cancellation(queue_name, t
     with patch.object(mod, "interview_event_id", return_value=latest), \
             patch.object(mod, "EmailNotificationRepository", return_value=repo), \
             patch.object(mod, "EmailTemplateRepository", return_value=MagicMock()), \
-            patch.object(mod, "send_candidate_email_task") as task:
+            patch("app.tasks.email_tasks.send_candidate_email_task") as task:
         assert getattr(mod, queue_name)(MagicMock(), SimpleNamespace(id=uuid4()), schedule, interviewer) is True
-    assert task.apply_async.called
+    assert repo.create_unless_duplicate.call_args.args[0].status == EmailNotificationStatus.DRAFT
+    assert not task.apply_async.called
     assert repo.create_unless_duplicate.call_args.args[0].dedup_key.endswith(f"|event={latest}")

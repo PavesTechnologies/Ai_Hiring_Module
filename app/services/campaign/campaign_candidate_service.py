@@ -2189,18 +2189,21 @@ class CampaignCandidateService:
             raise CampaignException("This candidate hasn't been rejected.", 400)
 
         db = self.campaign_candidate_repo.db
+        existing = self._open_outcome_draft(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED)
+        if existing is not None:
+            return SendRejectionEmailResponse(status="draft", draft_id=existing.id)
         self._refuse_unless_sendable(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED, actor_id, actor_roles)
         email_service = CandidateRejectionEmailService(EmailTemplateRepository(db), EmailNotificationRepository(db))
         notification = email_service.queue_rejection_email(
             candidate_id=campaign_candidate.candidate_id,
             campaign_candidate_id=campaign_candidate.id,
+            prepared_by=actor_id,
         )
         if notification is None:
-            # The checks above passed, so another send won the race for this candidate.
-            raise CampaignException("A rejection email for this candidate is already queued.", 409)
-
-        send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
-        return SendRejectionEmailResponse(status="queued")
+            # The checks above passed, so another person prepared it at the same moment.
+            raise CampaignException("A rejection email for this candidate is already prepared.", 409)
+        # Email plan phase 3: a DRAFT - sent only after a preview and Send (drafts.py).
+        return SendRejectionEmailResponse(status="draft", draft_id=notification.id)
 
     def send_selection_email(
         self,
@@ -2237,9 +2240,29 @@ class CampaignCandidateService:
         db = self.campaign_candidate_repo.db
         # Email plan phase 2: the checks before every email, with the sender; never twice, never after a
         # rejection email.
+        existing = self._open_outcome_draft(campaign_candidate, EmailTriggerEvent.CANDIDATE_SELECTED)
+        if existing is not None:
+            return SendSelectionEmailResponse(status="draft", draft_id=existing.id)
         self._refuse_unless_sendable(campaign_candidate, EmailTriggerEvent.CANDIDATE_SELECTED, actor_id, actor_roles)
-        queue_candidate_selected_email(db, campaign_candidate)
-        return SendSelectionEmailResponse(status="queued")
+        notification = queue_candidate_selected_email(db, campaign_candidate, prepared_by=actor_id)
+        if notification is None:
+            raise CampaignException("The selection email couldn't be prepared.", 409)
+        # Email plan phase 3: a DRAFT - sent only after a preview and Send (drafts.py).
+        draft_id = getattr(notification, "id", None)
+        return SendSelectionEmailResponse(status="draft", draft_id=draft_id if isinstance(draft_id, UUID) else None)
+
+    def _open_outcome_draft(self, campaign_candidate, trigger_event):
+        """The rejection/selection draft already waiting for Send, if any (preparing again reopens it)."""
+        db = self.campaign_candidate_repo.db
+        try:
+            row = (db.query(EmailNotification)
+                   .filter(EmailNotification.campaign_candidate_id == campaign_candidate.id,
+                           EmailNotification.trigger_event == trigger_event,
+                           EmailNotification.status == EmailNotificationStatus.DRAFT)
+                   .order_by(EmailNotification.created_at.desc()).first())
+        except Exception:
+            return None
+        return row if isinstance(row, EmailNotification) else None
 
     def _outcome_email_probe(self, campaign_candidate, trigger_event: EmailTriggerEvent) -> EmailNotification:
         """The rejection/selection email as it would be queued (unsaved), for the checks."""
@@ -2270,6 +2293,8 @@ class CampaignCandidateService:
         campaign_candidate_ids: list[UUID],
         actor_id: str,
         actor_roles: list[str],
+        check_hash: str | None = None,
+        audit_service=None,
     ) -> BulkSendRejectionEmailResponse:
         """
         Bulk follow-up to send_rejection_email - calls that exact method per
@@ -2286,6 +2311,12 @@ class CampaignCandidateService:
         one candidate's wrong stage or ownership failure never blocks the
         rest.
         """
+        # Email plan phase 3: the confirm step (the check) listed who will receive it; the send goes to exactly
+        # that list, or refuses so the person checks again.
+        check = self.check_bulk_rejection_email(campaign_candidate_ids, actor_id=actor_id, actor_roles=actor_roles)
+        if not check_hash or check_hash != check.check_hash:
+            raise CampaignException("Who will receive this email changed since the check - check again.", 409,
+                                    data={"code": "CHECK_CHANGED", "check": check.model_dump()})
         queued: list[UUID] = []
         failed: list[dict] = []
         # Email plan phase 2: a candidate listed twice gets one email.
@@ -2293,7 +2324,7 @@ class CampaignCandidateService:
         repeated = len(campaign_candidate_ids) - len(unique)
         for cc_id in unique:
             try:
-                self.send_rejection_email(cc_id, actor_id=actor_id, actor_roles=actor_roles)
+                self._queue_confirmed_rejection(cc_id, actor_id, actor_roles, audit_service)
                 queued.append(cc_id)
             except CampaignException as exc:
                 entry = {"campaign_candidate_id": str(cc_id), "reason": exc.message}
@@ -2309,6 +2340,29 @@ class CampaignCandidateService:
             detail=(f"Queued {len(queued)} rejection email(s), {len(failed)} not sent"
                     + (f", {repeated} repeated id(s) ignored" if repeated else "") + "."),
         )
+
+    def _queue_confirmed_rejection(self, campaign_candidate_id, actor_id, actor_roles, audit_service) -> None:
+        """One bulk rejection email, after the confirm step: checked again, then queued (not a draft)."""
+        from app.services.notifications import drafts
+        campaign_candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
+        if campaign_candidate is None:
+            raise CampaignException("Campaign candidate not found.", 404)
+        if "HR_ADMIN" not in actor_roles:
+            self._assert_hiring_manager_owns_campaign(campaign_candidate, actor_id)
+        if campaign_candidate.pipeline_stage != PipelineStage.REJECTED:
+            raise CampaignException("This candidate hasn't been rejected.", 400)
+        self._refuse_unless_sendable(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED, actor_id, actor_roles)
+        db = self.campaign_candidate_repo.db
+        # An open single-candidate draft for the same email is replaced by this confirmed send.
+        open_draft = self._open_outcome_draft(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED)
+        if open_draft is not None:
+            open_draft.status = EmailNotificationStatus.DISCARDED
+            open_draft.error_reason = "Replaced by a bulk send."
+            db.flush()
+        probe = self._outcome_email_probe(campaign_candidate, EmailTriggerEvent.CANDIDATE_REJECTED)
+        if drafts.queue_confirmed(db, probe, actor=acting_user(actor_id, actor_roles),
+                                  audit_service=audit_service or self.audit_service) is None:
+            raise CampaignException("A rejection email for this candidate is already queued.", 409)
 
     def check_bulk_rejection_email(
         self,
@@ -2346,9 +2400,11 @@ class CampaignCandidateService:
                 wont.append({**entry, "problems": [{"code": p.code, "message": p.message} for p in found]})
             else:
                 will.append(entry)
+        import hashlib
+        digest = hashlib.sha256(",".join(sorted(e["campaign_candidate_id"] for e in will)).encode()).hexdigest()
         return BulkRejectionEmailCheckResponse(
             will_receive=will, wont_receive=wont, repeated=len(campaign_candidate_ids) - len(unique),
-            detail=f"{len(will)} will receive it, {len(wont)} won't.")
+            check_hash=digest, detail=f"{len(will)} will receive it, {len(wont)} won't.")
 
     def _get_campaign_cached(
         self, campaign_id: UUID, campaign_cache: dict[UUID, HiringCampaign | None],

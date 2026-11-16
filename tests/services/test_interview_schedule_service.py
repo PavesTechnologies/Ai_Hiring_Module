@@ -665,8 +665,9 @@ def test_reschedule_interviewer_swap_on_a_quiet_edit_still_queues_invitation_and
             ),
         )
 
-    mock_invite.assert_called_once_with(cc_repo.db, campaign_candidate, schedule, new_interviewer)
-    mock_removed.assert_called_once_with(cc_repo.db, campaign_candidate, schedule, old_interviewer)
+    # Email plan phase 3: drafts, recording who prepared them (the removal only for someone told about the round).
+    mock_invite.assert_called_once_with(cc_repo.db, campaign_candidate, schedule, new_interviewer, prepared_by="hm-1")
+    mock_removed.assert_called_once_with(cc_repo.db, campaign_candidate, schedule, old_interviewer, prepared_by="hm-1")
 
 
 def test_reschedule_with_a_genuinely_different_time_still_fires_all_four_effects():
@@ -1848,6 +1849,7 @@ def test_request_feedback_queues_for_a_round_whose_interview_has_already_started
     assert result.queued_count == 2
     mock_queue.assert_called_once_with(
         cc_repo.db, campaign_candidate, schedule, [interviewer_a, interviewer_b], service.interview_feedback_repo,
+        prepared_by="hm-1", manual=True,      # email plan phase 3: drafts a person prepared
     )
 
 
@@ -2028,6 +2030,7 @@ def test_complete_flips_status_and_commits_before_queueing_feedback():
     assert result.feedback_queued_count == 2
     mock_queue.assert_called_once_with(
         cc_repo.db, campaign_candidate, schedule, [interviewer_a, interviewer_b], service.interview_feedback_repo,
+        prepared_by="hm-1", manual=True,      # email plan phase 3: drafts a person prepared
     )
 
 

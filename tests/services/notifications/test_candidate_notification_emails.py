@@ -165,11 +165,11 @@ def test_meeting_info_empty_when_platform_unset():
 # queue_interview_scheduled_email
 # ----------------------------------------------------------------------
 
-def test_queue_interview_scheduled_email_creates_and_dispatches():
+def test_queue_interview_scheduled_email_creates_a_draft():
     notification_repo, template_repo = _patched()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         cc = _campaign_candidate()
         schedule = _schedule()
 
@@ -184,7 +184,8 @@ def test_queue_interview_scheduled_email_creates_and_dispatches():
         assert created.trigger_event == EmailTriggerEvent.INTERVIEW_SCHEDULED
         assert created.template_context["interview_date"] == "August 28, 2026"
         notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
-        mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(created.id)})
+        mock_task.apply_async.assert_not_called()           # email plan phase 3: a draft, sent only on Send
+        assert created.status == EmailNotificationStatus.DRAFT
 
 
 def test_queue_interview_scheduled_email_dedups_per_round_not_per_candidate():
@@ -198,7 +199,7 @@ def test_queue_interview_scheduled_email_dedups_per_round_not_per_candidate():
     notification_repo, template_repo = _patched(dedup_rows=[existing])
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(MagicMock(), _campaign_candidate(), _schedule(), [])
 
         notification_repo.create_unless_duplicate.assert_not_called()
@@ -210,7 +211,7 @@ def test_queue_interview_scheduled_email_skips_when_no_active_template():
     template_repo.get_active_by_trigger_event.return_value = None
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(MagicMock(), _campaign_candidate(), _schedule(), [])
 
         notification_repo.create_unless_duplicate.assert_not_called()
@@ -223,7 +224,7 @@ def test_queue_interview_scheduled_email_swallows_exceptions():
     notification_repo.create_unless_duplicate.side_effect = RuntimeError("db exploded")
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(MagicMock(), _campaign_candidate(), _schedule(), [])
 
         mock_task.apply_async.assert_not_called()
@@ -243,7 +244,7 @@ def test_queue_interview_scheduled_email_swallows_exceptions_from_the_dedup_look
     """
     db = MagicMock()
     db.query.side_effect = RuntimeError("query blew up")
-    with patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+    with patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_interview_scheduled_email(db, _campaign_candidate(), _schedule(), [])
 
         mock_task.apply_async.assert_not_called()
@@ -259,7 +260,7 @@ def test_queue_interview_rescheduled_email_uses_the_rescheduled_trigger_event():
     notification_repo, template_repo = _patched()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task"):
+         patch("app.tasks.email_tasks.send_candidate_email_task"):
         schedule = _schedule()
         mod.queue_interview_rescheduled_email(MagicMock(), _campaign_candidate(), schedule, [])
 
@@ -282,7 +283,7 @@ def test_queue_interview_rescheduled_email_uses_the_current_meeting_link_not_a_s
     notification_repo, template_repo = _patched()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task"):
+         patch("app.tasks.email_tasks.send_candidate_email_task"):
         schedule = _schedule(meeting_link="https://teams.microsoft.com/l/meetup/NEW-post-reschedule-link")
         mod.queue_interview_rescheduled_email(MagicMock(), _campaign_candidate(), schedule, [])
 
@@ -297,7 +298,7 @@ def test_queue_interview_cancelled_email_uses_the_cancelled_trigger_event_and_pr
     notification_repo, template_repo = _patched()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task"):
+         patch("app.tasks.email_tasks.send_candidate_email_task"):
         schedule = _schedule()
         mod.queue_interview_cancelled_email(MagicMock(), _campaign_candidate(), schedule, [])
 
@@ -310,11 +311,11 @@ def test_queue_interview_cancelled_email_uses_the_cancelled_trigger_event_and_pr
 # queue_candidate_selected_email - terminal, deduped per campaign_candidate.
 # ----------------------------------------------------------------------
 
-def test_queue_candidate_selected_email_creates_and_dispatches():
+def test_queue_candidate_selected_email_creates_a_draft():
     notification_repo, template_repo = _patched()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         cc = _campaign_candidate()
 
         mod.queue_candidate_selected_email(MagicMock(), cc)
@@ -326,7 +327,7 @@ def test_queue_candidate_selected_email_creates_and_dispatches():
         notification_repo.get_by_campaign_candidate_id_and_trigger_event.assert_called_once_with(
             cc.id, EmailTriggerEvent.CANDIDATE_SELECTED,
         )
-        mock_task.apply_async.assert_called_once()
+        mock_task.apply_async.assert_not_called()           # email plan phase 3: a draft, sent only on Send
 
 
 def test_queue_candidate_selected_email_dedups_by_campaign_candidate_terminal_semantics():
@@ -334,7 +335,7 @@ def test_queue_candidate_selected_email_dedups_by_campaign_candidate_terminal_se
     notification_repo, template_repo = _patched(dedup_rows=[existing])
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_candidate_selected_email(MagicMock(), _campaign_candidate())
 
         notification_repo.create_unless_duplicate.assert_not_called()
@@ -351,11 +352,11 @@ def test_queue_candidate_selected_email_allow_resend_skips_the_dedup_check():
     notification_repo, template_repo = _patched(dedup_rows=[existing])
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         mod.queue_candidate_selected_email(MagicMock(), _campaign_candidate(), allow_resend=True)
 
         notification_repo.create_unless_duplicate.assert_called_once()
-        mock_task.apply_async.assert_called_once()
+        mock_task.apply_async.assert_not_called()           # email plan phase 3: a draft, sent only on Send
 
 
 # ----------------------------------------------------------------------
@@ -368,7 +369,7 @@ def test_queue_candidate_selected_email_allow_resend_skips_the_dedup_check():
                                    mod.queue_interview_cancelled_email])
 def test_an_interview_email_is_never_queued_for_a_round_without_a_start_time(queue):
     notification_repo, template_repo = _patched()
-    with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo),          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo),          patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+    with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo),          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo),          patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         queue(MagicMock(), _campaign_candidate(), _schedule(start_at=None, end_at=None), [_interviewer()])
     notification_repo.create_unless_duplicate.assert_not_called()
     mock_task.apply_async.assert_not_called()

@@ -942,13 +942,18 @@ class UpdateResumeResubmissionResponse(BaseModel):
 
 
 class SendRejectionEmailResponse(BaseModel):
-    """Manual "Send Rejection Email" action - human-driven rejections never auto-send, unlike the automated scoring paths."""
-    status: str = "queued"
+    """
+    Manual "Send Rejection Email" action. Email plan phase 3: it prepares a DRAFT (status "draft",
+    draft_id); the email is sent only after a preview and Send (/email-drafts/{id}/preview, /send).
+    """
+    status: str = "draft"
+    draft_id: UUID | None = None
 
 
 class SendSelectionEmailResponse(BaseModel):
-    """Manual "Send Selection Email" action - reaching SELECTED no longer auto-sends; a human explicitly triggers this once ready."""
-    status: str = "queued"
+    """Manual "Send Selection Email" action - prepares a DRAFT like the rejection email (email plan phase 3)."""
+    status: str = "draft"
+    draft_id: UUID | None = None
 
 
 class BulkSendRejectionEmailRequest(BaseModel):
@@ -961,6 +966,9 @@ class BulkSendRejectionEmailRequest(BaseModel):
     list is a valid no-op here, not a client error.
     """
     campaign_candidate_ids: list[UUID] = Field(..., max_length=200)
+    # Email plan phase 3: the check_hash from /bulk-rejection-email/check - the confirm step listed exactly
+    # who will receive it. The send refuses (409) when that list changed since the check.
+    check_hash: str | None = None
 
 
 class BulkSendRejectionEmailResponse(BaseModel):
@@ -985,6 +993,8 @@ class BulkRejectionEmailCheckResponse(BaseModel):
     will_receive: list[dict] = []
     wont_receive: list[dict] = []
     repeated: int = 0
+    # Send with this: it fingerprints exactly who will receive the email (email plan phase 3).
+    check_hash: str = ""
     detail: str
 
 

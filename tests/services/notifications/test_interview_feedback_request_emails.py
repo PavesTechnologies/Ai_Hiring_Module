@@ -42,12 +42,12 @@ def _patched(dedup_rows=None, template=_NO_TEMPLATE_OVERRIDE):
     return notification_repo, template_repo
 
 
-def test_queues_and_dispatches_with_a_real_signed_token_in_the_link():
+def test_prepares_a_draft_with_a_real_signed_token_in_the_link():
     notification_repo, template_repo = _patched()
     cc, schedule, interviewer = _campaign_candidate(), _schedule(), _interviewer()
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task, \
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task, \
          patch(f"{MODULE}.settings") as mock_settings:
         mock_settings.frontend_base_url = "https://app.example.com"
 
@@ -67,7 +67,8 @@ def test_queues_and_dispatches_with_a_real_signed_token_in_the_link():
     assert created.template_context["recipient_name"] == interviewer.name
     assert created.template_context["feedback_link"].startswith("https://app.example.com/interview-feedback/")
     notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
-    mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(created.id)})
+    mock_task.apply_async.assert_not_called()           # email plan phase 3: a draft, sent only on Send
+    assert created.status == EmailNotificationStatus.DRAFT
 
 
 def test_dedups_per_interviewer_not_per_round():
@@ -76,7 +77,7 @@ def test_dedups_per_interviewer_not_per_round():
     notification_repo, template_repo = _patched(dedup_rows=[existing])
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         result = mod.queue_interview_feedback_requested_email(MagicMock(), _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False
@@ -88,7 +89,7 @@ def test_skips_when_no_active_template():
     notification_repo, template_repo = _patched(template=None)
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         result = mod.queue_interview_feedback_requested_email(MagicMock(), _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False
@@ -101,7 +102,7 @@ def test_swallows_exceptions_and_returns_false():
     notification_repo.create_unless_duplicate.side_effect = RuntimeError("db exploded")
     with patch(f"{MODULE}.EmailNotificationRepository", return_value=notification_repo), \
          patch(f"{MODULE}.EmailTemplateRepository", return_value=template_repo), \
-         patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+         patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         result = mod.queue_interview_feedback_requested_email(MagicMock(), _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False
@@ -112,7 +113,7 @@ def test_swallows_exceptions_from_the_dedup_lookup_itself():
     """Same regression class as candidate_notification_emails.py - everything must be inside the try/except, including the dedup query."""
     db = MagicMock()
     db.query.side_effect = RuntimeError("query blew up")
-    with patch(f"{MODULE}.send_candidate_email_task") as mock_task:
+    with patch("app.tasks.email_tasks.send_candidate_email_task") as mock_task:
         result = mod.queue_interview_feedback_requested_email(db, _campaign_candidate(), _schedule(), _interviewer())
 
     assert result is False

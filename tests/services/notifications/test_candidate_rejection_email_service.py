@@ -32,7 +32,7 @@ def test_queue_rejection_email_creates_notification_when_template_active():
     assert notification.candidate_id == candidate_id
     assert notification.campaign_candidate_id == campaign_candidate_id
     assert notification.template_id == template.id
-    assert notification.status == EmailNotificationStatus.QUEUED
+    assert notification.status == EmailNotificationStatus.DRAFT     # email plan phase 3: sent only on Send
     assert notification.trigger_event == EmailTriggerEvent.CANDIDATE_REJECTED
     email_notification_repo.create_unless_duplicate.assert_called_once()   # inserts and commits
 

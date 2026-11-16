@@ -61,11 +61,12 @@ def test_send_rejection_email_happy_path_queues_and_dispatches():
     with patcher, patch(f"{MODULE}.send_candidate_email_task") as mock_task:
         result = service.send_rejection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert result.status == "queued"
+    # Email plan phase 3: a draft (sent only after a preview and Send), recording who prepared it.
+    assert result.status == "draft" and result.draft_id == notification.id
     mock_email_service.queue_rejection_email.assert_called_once_with(
-        candidate_id=campaign_candidate.candidate_id, campaign_candidate_id=campaign_candidate.id,
+        candidate_id=campaign_candidate.candidate_id, campaign_candidate_id=campaign_candidate.id, prepared_by="hm-1",
     )
-    mock_task.apply_async.assert_called_once_with(kwargs={"email_notification_id": str(notification.id)})
+    mock_task.apply_async.assert_not_called()
 
 
 def test_send_rejection_email_rejects_a_candidate_not_in_rejected_stage():
@@ -111,7 +112,7 @@ def test_send_rejection_email_allows_hr_admin_regardless_of_ownership():
     with patcher, patch(f"{MODULE}.send_candidate_email_task"):
         result = service.send_rejection_email(campaign_candidate.id, actor_id="anyone", actor_roles=["HR_ADMIN"])
 
-    assert result.status == "queued"
+    assert result.status == "draft"
 
 
 def test_send_rejection_email_never_bypasses_the_dedup():

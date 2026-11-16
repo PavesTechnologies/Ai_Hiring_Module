@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailRecipientType, EmailTriggerEvent
@@ -6,7 +7,6 @@ from app.repositories.email_notification_repository import EmailNotificationRepo
 from app.repositories.email_template_repository import EmailTemplateRepository
 from app.services.notifications import send_policy
 from app.services.notifications.dedup import interview_event_id, notification_dedup_key
-from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,8 @@ def _round_context(schedule, interviewer) -> dict:
     }
 
 
-def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trigger_event, extra_context) -> bool:
+def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trigger_event, extra_context,
+                             prepared_by=None) -> bool:
     try:
         notification_repo = EmailNotificationRepository(db)
         event_id = interview_event_id(db, schedule.id, trigger_event)
@@ -102,7 +103,9 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
             recipient_name=interviewer.name,
             trigger_event=trigger_event,
             template_id=template.id,
-            status=EmailNotificationStatus.QUEUED,
+            status=EmailNotificationStatus.DRAFT,
+            prepared_by=prepared_by,
+            prepared_at=datetime.now(timezone.utc),
             template_context={"recipient_name": interviewer.name, **extra_context},
             dedup_key=dedup_key,
         )
@@ -119,7 +122,7 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
             )
             return False
 
-        send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
+        # Email plan phase 3: a DRAFT, sent only when a person previews it and clicks Send (drafts.py).
         return True
     except Exception:
         logger.exception(
@@ -130,14 +133,15 @@ def _queue_interviewer_email(db, campaign_candidate, schedule, interviewer, trig
         return False
 
 
-def queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer) -> bool:
+def queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer, prepared_by=None) -> bool:
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_INVITATION,
         {**_round_context(schedule, interviewer), "notes_block": _notes_block(schedule)},
+        prepared_by=prepared_by,
     )
 
 
-def queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer) -> bool:
+def queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer, prepared_by=None) -> bool:
     """
     Reschedule-notification gap fix - sent to an interviewer who was
     already invited to this round and stays on it through a reschedule.
@@ -152,17 +156,20 @@ def queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedu
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_RESCHEDULED,
         _round_context(schedule, interviewer),
+        prepared_by=prepared_by,
     )
 
 
-def queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, interviewer) -> bool:
+def queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, interviewer, prepared_by=None) -> bool:
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_REMOVED, {},
+        prepared_by=prepared_by,
     )
 
 
-def queue_interview_interviewer_cancelled_email(db, campaign_candidate, schedule, interviewer, reason: str | None = None) -> bool:
+def queue_interview_interviewer_cancelled_email(db, campaign_candidate, schedule, interviewer, reason: str | None = None, prepared_by=None) -> bool:
     return _queue_interviewer_email(
         db, campaign_candidate, schedule, interviewer, EmailTriggerEvent.INTERVIEW_INTERVIEWER_CANCELLED,
         {**_round_context(schedule, interviewer), "reason_block": _reason_block(reason)},
+        prepared_by=prepared_by,
     )

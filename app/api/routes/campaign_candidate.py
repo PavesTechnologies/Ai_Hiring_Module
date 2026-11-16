@@ -459,7 +459,7 @@ def send_rejection_email(
     result = service.send_rejection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
-    return APIResponse.ok(data=result, message="Rejection email queued.")
+    return APIResponse.ok(data=result, message="Rejection email prepared: preview it, then Send.")
 
 
 @router.post(
@@ -486,7 +486,7 @@ def send_selection_email(
     result = service.send_selection_email(
         campaign_candidate_id, actor_id=user.user_id, actor_roles=user.roles,
     )
-    return APIResponse.ok(data=result, message="Selection email queued.")
+    return APIResponse.ok(data=result, message="Selection email prepared: preview it, then Send.")
 
 
 @router.post(
@@ -533,7 +533,7 @@ def bulk_send_rejection_email(
     # Per candidate: each goes through send_rejection_email's campaign access check, and one
     # candidate outside the caller's campaigns is reported without blocking the others.
     result = service.bulk_send_rejection_email(
-        request.campaign_candidate_ids, actor_id=user.user_id, actor_roles=user.roles,
+        request.campaign_candidate_ids, actor_id=user.user_id, actor_roles=user.roles, check_hash=request.check_hash,
     )
     return APIResponse.ok(data=result, message=result.detail)
 

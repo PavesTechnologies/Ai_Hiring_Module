@@ -35,6 +35,7 @@ from app.services.notifications.candidate_notification_emails import (
     queue_interview_scheduled_email,
 )
 from app.services.notifications.interview_feedback_request_emails import queue_pending_feedback_requests_for_round
+from app.services.notifications.drafts import CANDIDATE_ROUND_EVENTS, discard_round_drafts, told_about_round
 from app.services.notifications.interview_interviewer_lifecycle_emails import (
     queue_interview_interviewer_cancelled_email,
     queue_interview_interviewer_invitation_email,
@@ -336,36 +337,32 @@ class InterviewScheduleService:
 
     def _queue_interviewer_lifecycle_emails(
         self, campaign_candidate, schedule, active_interviewers, removed_interviewers, is_reschedule_event=False,
+        prepared_by=None,
     ) -> None:
         """
-        Interviewer lifecycle follow-up - called after schedule()/
-        reschedule() commit. Invitation is queued for every currently-
-        active interviewer (not just ones newly added this call) since
-        the per-(interview_schedule_id, interviewer_id) dedup inside
-        queue_interview_interviewer_invitation_email is what actually
-        decides "already invited" - this lets the caller pass the same
-        active list on every schedule()/reschedule() call without
-        tracking "who's genuinely new" itself, and a genuinely new
-        interviewer added on a later reschedule still gets their first
-        invitation correctly.
-
-        Reschedule-notification gap fix: is_reschedule_event is only ever
-        True from reschedule() (never schedule()). queue_interview_
-        interviewer_invitation_email's own return value (True = a fresh
-        invitation was actually queued, False = skipped as already
-        invited) is what distinguishes "genuinely new this call" from
-        "already on the round" - a brand-new interviewer gets the new time
-        via their first invitation and nothing else; an already-invited
-        one gets the dedicated RESCHEDULED notice instead, since their
-        invitation is (correctly) skipped as a duplicate.
+        Email plan phase 3: interviewer emails are drafts (drafts.py), sent only when a person clicks Send.
+        After schedule()/reschedule() commit:
+        - an interviewer on the round who was already told about it (an invitation or reschedule email queued or
+          sent) gets a RESCHEDULED draft when the time changed; one who wasn't gets an INVITATION draft - an
+          unsent older draft for them is replaced (discarded) first, so the draft always shows the current time;
+        - a removed interviewer's unsent drafts are discarded, and a REMOVED draft is prepared only if they were
+          told about the round.
         """
         db = self.campaign_candidate_repo.db
         for interviewer in active_interviewers:
-            newly_invited = queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer)
-            if is_reschedule_event and not newly_invited:
-                queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer)
+            if is_reschedule_event:
+                discard_round_drafts(db, schedule.id, interviewer_id=interviewer.id)
+            if is_reschedule_event and told_about_round(db, schedule.id, interviewer_id=interviewer.id):
+                queue_interview_interviewer_rescheduled_email(db, campaign_candidate, schedule, interviewer,
+                                                              prepared_by=prepared_by)
+            else:
+                queue_interview_interviewer_invitation_email(db, campaign_candidate, schedule, interviewer,
+                                                             prepared_by=prepared_by)
         for interviewer in removed_interviewers:
-            queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, interviewer)
+            discard_round_drafts(db, schedule.id, interviewer_id=interviewer.id)
+            if told_about_round(db, schedule.id, interviewer_id=interviewer.id):
+                queue_interview_interviewer_removed_email(db, campaign_candidate, schedule, interviewer,
+                                                          prepared_by=prepared_by)
 
     def _apply_schedule_request(
         self, schedule, request: ScheduleInterviewRequest, actor_id: str, actor_roles: list[str],
@@ -490,8 +487,11 @@ class InterviewScheduleService:
         )
 
         self.interview_schedule_repo.commit()
-        queue_interview_scheduled_email(self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers)
-        self._queue_interviewer_lifecycle_emails(campaign_candidate, schedule, interviewers, removed_interviewers)
+        # Email plan phase 3: drafts, sent only when a person previews them and clicks Send.
+        queue_interview_scheduled_email(self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers,
+                                        prepared_by=actor_id)
+        self._queue_interviewer_lifecycle_emails(campaign_candidate, schedule, interviewers, removed_interviewers,
+                                                 prepared_by=actor_id)
         history = self.interview_schedule_repo.get_history(schedule.id)
         return self._to_response(schedule, interviewers, history)
 
@@ -669,9 +669,18 @@ class InterviewScheduleService:
 
         self.interview_schedule_repo.commit()
         if is_reschedule_event:
-            queue_interview_rescheduled_email(self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers)
+            # Email plan phase 3: an unsent older draft about the round is replaced. A candidate who was told about
+            # the round gets a RESCHEDULED draft; one who wasn't (the scheduled email never sent) gets a SCHEDULED
+            # draft with the new time instead.
+            db = self.campaign_candidate_repo.db
+            discard_round_drafts(db, schedule.id, candidate=True, triggers=CANDIDATE_ROUND_EVENTS)
+            if told_about_round(db, schedule.id):
+                queue_interview_rescheduled_email(db, campaign_candidate, schedule, interviewers, prepared_by=actor_id)
+            else:
+                queue_interview_scheduled_email(db, campaign_candidate, schedule, interviewers, prepared_by=actor_id)
         self._queue_interviewer_lifecycle_emails(
             campaign_candidate, schedule, interviewers, removed_interviewers, is_reschedule_event=is_reschedule_event,
+            prepared_by=actor_id,
         )
         history = self.interview_schedule_repo.get_history(schedule.id)
         return self._to_response(schedule, interviewers, history)
@@ -752,16 +761,22 @@ class InterviewScheduleService:
 
         self.interview_schedule_repo.commit()
         interviewers = self.interview_schedule_repo.get_active_interviewers(schedule.id)
-        queue_interview_cancelled_email(self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers)
+        # Email plan phase 3: every unsent draft about the round is discarded; a cancellation draft is prepared
+        # only for someone who was told about the round.
+        db = self.campaign_candidate_repo.db
+        discard_round_drafts(db, schedule.id)
+        if told_about_round(db, schedule.id):
+            queue_interview_cancelled_email(db, campaign_candidate, schedule, interviewers, prepared_by=actor_id)
         # Interviewer lifecycle follow-up - cancel() previously notified
         # only the candidate. Every still-active interviewer on the round
         # gets their own distinct notice (tone/content differ from the
         # candidate-facing email) - a since-removed interviewer is not
         # involved anymore and correctly gets nothing here.
         for interviewer in interviewers:
-            queue_interview_interviewer_cancelled_email(
-                self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewer, request.reason,
-            )
+            if told_about_round(db, schedule.id, interviewer_id=interviewer.id):
+                queue_interview_interviewer_cancelled_email(
+                    db, campaign_candidate, schedule, interviewer, request.reason, prepared_by=actor_id,
+                )
         history = self.interview_schedule_repo.get_history(schedule.id)
         return self._to_response(schedule, interviewers, history)
 
@@ -809,6 +824,7 @@ class InterviewScheduleService:
         interviewers = self.interview_schedule_repo.get_active_interviewers(schedule.id)
         queued_count = queue_pending_feedback_requests_for_round(
             self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers, self.interview_feedback_repo,
+            prepared_by=actor_id, manual=True,
         )
         return RequestFeedbackResponse(queued_count=queued_count)
 
@@ -847,5 +863,6 @@ class InterviewScheduleService:
         interviewers = self.interview_schedule_repo.get_active_interviewers(schedule.id)
         feedback_queued_count = queue_pending_feedback_requests_for_round(
             self.campaign_candidate_repo.db, campaign_candidate, schedule, interviewers, self.interview_feedback_repo,
+            prepared_by=actor_id, manual=True,
         )
         return CompleteInterviewResponse(status=schedule.status.value, feedback_queued_count=feedback_queued_count)

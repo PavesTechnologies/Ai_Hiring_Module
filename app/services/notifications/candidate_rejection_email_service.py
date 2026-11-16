@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.models.email import QUEUED_OR_DELIVERED, EmailNotification, EmailNotificationStatus, EmailTriggerEvent
@@ -34,6 +35,7 @@ class CandidateRejectionEmailService:
         campaign_candidate_id: UUID,
         *,
         allow_resend: bool = False,
+        prepared_by: str | None = None,
     ) -> EmailNotification | None:
         """
         Creates and commits an email_notifications row (status=QUEUED) for
@@ -79,7 +81,9 @@ class CandidateRejectionEmailService:
             campaign_candidate_id=campaign_candidate_id,
             trigger_event=EmailTriggerEvent.CANDIDATE_REJECTED,
             template_id=template.id,
-            status=EmailNotificationStatus.QUEUED,
+            status=EmailNotificationStatus.DRAFT,
+            prepared_by=prepared_by,
+            prepared_at=datetime.now(timezone.utc),
             dedup_key=None if allow_resend else notification_dedup_key(
                 EmailTriggerEvent.CANDIDATE_REJECTED, campaign_candidate_id=campaign_candidate_id),
         )

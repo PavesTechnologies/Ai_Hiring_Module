@@ -78,9 +78,10 @@ def _not_sent(error: Exception) -> bool:
 
 
 def _block(notification, notification_repo, task_log_service, task_log, blocked) -> None:
-    """Refused by the checks before every email: FAILED with the codes, never sent, never retried."""
+    """Refused by the checks before every email: BLOCKED with the codes, never sent, never retried."""
     codes = ",".join(p.code for p in blocked)
-    notification.status = EmailNotificationStatus.FAILED
+    notification.status = EmailNotificationStatus.BLOCKED
+    notification.block_code = codes[:255]
     notification.error_reason = f"BLOCKED: {codes}"[:1000]
     notification_repo.update(notification)
     notification_repo.commit()

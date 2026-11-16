@@ -63,8 +63,8 @@ def test_send_selection_email_happy_path_queues():
     with template_patcher, patch(f"{MODULE}.queue_candidate_selected_email") as mock_queue:
         result = service.send_selection_email(campaign_candidate.id, actor_id="hm-1", actor_roles=["HIRING_MANAGER"])
 
-    assert result.status == "queued"
-    mock_queue.assert_called_once_with(campaign_candidate_repo.db, campaign_candidate)
+    assert result.status == "draft"          # email plan phase 3: sent only after a preview and Send
+    mock_queue.assert_called_once_with(campaign_candidate_repo.db, campaign_candidate, prepared_by="hm-1")
 
 
 def test_send_selection_email_rejects_a_candidate_not_in_selected_stage():
@@ -109,7 +109,7 @@ def test_send_selection_email_allows_hr_admin_regardless_of_ownership():
     with template_patcher, patch(f"{MODULE}.queue_candidate_selected_email"):
         result = service.send_selection_email(campaign_candidate.id, actor_id="anyone", actor_roles=["HR_ADMIN"])
 
-    assert result.status == "queued"
+    assert result.status == "draft"
 
 
 def test_send_selection_email_never_bypasses_the_dedup():

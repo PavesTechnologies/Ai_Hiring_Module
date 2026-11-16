@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.feedback_token import sign_feedback_token
@@ -7,7 +8,6 @@ from app.services.notifications import send_policy
 from app.services.notifications.dedup import notification_dedup_key
 from app.repositories.email_notification_repository import EmailNotificationRepository
 from app.repositories.email_template_repository import EmailTemplateRepository
-from app.tasks.email_tasks import send_candidate_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,17 @@ not how many candidates it considered.
 """
 
 
-def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, interviewer) -> bool:
+def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, interviewer, *,
+                                             prepared_by=None, manual=False) -> bool:
     try:
         notification_repo = EmailNotificationRepository(db)
         existing = notification_repo.get_by_interview_schedule_id_and_interviewer_id_and_trigger_event(
             schedule.id, interviewer.id, EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
         )
+        # Email plan phase 3: a person discarded this request - the hourly sweep doesn't prepare it again
+        # (Request feedback, a person's action, still can).
+        if not manual and any(n.status == EmailNotificationStatus.DISCARDED for n in existing):
+            return False
         if any(n.status in QUEUED_OR_DELIVERED for n in existing):
             logger.info(
                 "INTERVIEW_FEEDBACK_REQUESTED email already queued/sent - skipping duplicate | "
@@ -71,7 +76,9 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
             recipient_name=interviewer.name,
             trigger_event=EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
             template_id=template.id,
-            status=EmailNotificationStatus.QUEUED,
+            status=EmailNotificationStatus.DRAFT,
+            prepared_by=prepared_by,
+            prepared_at=datetime.now(timezone.utc),
             template_context={"feedback_link": feedback_link, "recipient_name": interviewer.name},
             dedup_key=notification_dedup_key(
                 EmailTriggerEvent.INTERVIEW_FEEDBACK_REQUESTED,
@@ -90,7 +97,7 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
             )
             return False
 
-        send_candidate_email_task.apply_async(kwargs={"email_notification_id": str(notification.id)})
+        # Email plan phase 3: a DRAFT, sent only when a person previews it and clicks Send (drafts.py).
         return True
     except Exception:
         logger.exception(
@@ -100,7 +107,8 @@ def queue_interview_feedback_requested_email(db, campaign_candidate, schedule, i
         return False
 
 
-def queue_pending_feedback_requests_for_round(db, campaign_candidate, schedule, interviewers, interview_feedback_repo) -> int:
+def queue_pending_feedback_requests_for_round(db, campaign_candidate, schedule, interviewers, interview_feedback_repo,
+                                              *, prepared_by=None, manual=False) -> int:
     """
     "Who still needs asking" (already gave feedback -> excluded) is real
     business logic, not just plumbing - shared by both
@@ -121,6 +129,7 @@ def queue_pending_feedback_requests_for_round(db, campaign_candidate, schedule, 
     for interviewer in interviewers:
         if interviewer.id in already_given:
             continue
-        if queue_interview_feedback_requested_email(db, campaign_candidate, schedule, interviewer):
+        if queue_interview_feedback_requested_email(db, campaign_candidate, schedule, interviewer,
+                                                    prepared_by=prepared_by, manual=manual):
             queued_count += 1
     return queued_count
