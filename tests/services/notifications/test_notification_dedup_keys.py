@@ -33,7 +33,7 @@ def test_a_claimed_row_counts_as_already_notified():
 def test_the_model_declares_the_partial_unique_index():
     index = next(i for i in EmailNotification.__table__.indexes if i.name == "uq_email_notifications_dedup_key")
     assert index.unique and [c.name for c in index.columns] == ["dedup_key"]
-    assert "status <> 'FAILED'" in str(index.dialect_options["postgresql"]["where"])
+    assert "status NOT IN ('FAILED', 'DISCARDED', 'BLOCKED')" in str(index.dialect_options["postgresql"]["where"])
 
 
 # -- each queuer: stamps the key; a duplicate (None from the insert) is never dispatched ------------
@@ -83,11 +83,12 @@ def test_each_queuer_stamps_its_key_and_drops_a_racing_duplicate(case, duplicate
     cc, schedule, interviewer = SimpleNamespace(id=uuid4(), candidate_id=uuid4()), _schedule(), _interviewer()
     with patch.object(mod, "EmailNotificationRepository", return_value=repo), \
             patch.object(mod, "EmailTemplateRepository", return_value=MagicMock()), \
-            patch.object(mod, "send_candidate_email_task") as task:
+            patch("app.tasks.email_tasks.send_candidate_email_task") as task:
         call(mod, cc, schedule, interviewer)
     created = repo.create_unless_duplicate.call_args.args[0]
     assert created.dedup_key == expected_key(cc, schedule, interviewer)
-    assert task.apply_async.called is (not duplicate)
+    # Email plan phase 3: a DRAFT, never dispatched - sent only when a person clicks Send.
+    assert created.status == EmailNotificationStatus.DRAFT and not task.apply_async.called
 
 
 def test_a_manual_resend_carries_no_key():
@@ -95,7 +96,7 @@ def test_a_manual_resend_carries_no_key():
     repo = _repo(False)
     with patch.object(mod, "EmailNotificationRepository", return_value=repo), \
             patch.object(mod, "EmailTemplateRepository", return_value=MagicMock()), \
-            patch.object(mod, "send_candidate_email_task"):
+            patch("app.tasks.email_tasks.send_candidate_email_task"):
         mod.queue_candidate_selected_email(MagicMock(), SimpleNamespace(id=uuid4(), candidate_id=uuid4()),
                                            allow_resend=True)
     assert repo.create_unless_duplicate.call_args.args[0].dedup_key is None

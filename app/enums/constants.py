@@ -142,6 +142,9 @@ class ActionType(enum.Enum):
     PLATFORM_ALERT_CLEARED = "PLATFORM_ALERT_CLEARED"
     # An HR admin resolved an email stuck in SENDING as sent or failed (after checking SES).
     EMAIL_SEND_RESOLVED = "EMAIL_SEND_RESOLVED"
+    # Email plan phase 3: a person sent or discarded a prepared email (details: ids and the trigger only).
+    EMAIL_DRAFT_SENT = "EMAIL_DRAFT_SENT"
+    EMAIL_DRAFT_DISCARDED = "EMAIL_DRAFT_DISCARDED"
     # GDPR-style candidate hard delete — the DB-side audit_action_type_enum
     # does NOT yet contain this value (same caveat as the other entries
     # above); needs the paired migration

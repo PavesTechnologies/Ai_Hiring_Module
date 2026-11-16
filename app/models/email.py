@@ -78,6 +78,13 @@ class EmailNotificationStatus(enum.Enum):
     # EMAIL_DELIVERY=log: the email was rendered and logged, never sent - recorded as such
     # rather than as SENT.
     LOGGED = "LOGGED"
+    # Email plan phase 3 (f8a0c2e4b6d9): a candidate or interviewer email prepared and waiting for a
+    # person's Send (after a preview and a confirm step naming the recipient) - never sent on its own.
+    DRAFT = "DRAFT"
+    # A draft a person discarded, or one replaced by a newer draft for the same round and recipient.
+    DISCARDED = "DISCARDED"
+    # Refused by the checks just before sending (block_code holds the codes); never sent, never retried.
+    BLOCKED = "BLOCKED"
 
 
 # A notification in one of these needs no second one for the same event and recipient.
@@ -160,7 +167,8 @@ class EmailNotification(Base):
         ),
         # One live notification per dedup key (review item 7; app/services/notifications/dedup.py).
         Index("uq_email_notifications_dedup_key", "dedup_key", unique=True,
-              postgresql_where=text("dedup_key IS NOT NULL AND status <> 'FAILED'")),
+              postgresql_where=text("dedup_key IS NOT NULL AND status NOT IN ('FAILED', 'DISCARDED', 'BLOCKED')")),
+        Index("ix_email_notifications_campaign_candidate_status", "campaign_candidate_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -217,6 +225,15 @@ class EmailNotification(Base):
     interview_schedule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("interview_schedules.id"), nullable=True,
     )
+    # Email plan phase 3 (f8a0c2e4b6d9): who prepared a draft and who clicked Send, and when. preview_hash is a
+    # hash of the rendered subject, body and recipient the sender previewed (the email itself isn't stored);
+    # Send refuses when the email would now render differently. block_code: the checks' codes when BLOCKED.
+    prepared_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    prepared_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_by: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey("users.id"), nullable=True)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    preview_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    block_code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class UserNotificationPreference(Base):
