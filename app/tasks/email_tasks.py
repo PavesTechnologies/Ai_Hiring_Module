@@ -261,6 +261,10 @@ def send_candidate_email_task(self, email_notification_id: str) -> None:
         notification.status = EmailNotificationStatus.LOGGED if logged_only else EmailNotificationStatus.SENT
         notification.sent_at = datetime.now(timezone.utc)
         notification.provider_message_id = str(message_id)[:255]
+        # Email plan phase 4: a rejection/selection email locks the candidate's stage in that campaign - in the
+        # same commit that records it as sent.
+        from app.services.campaign.stage_lock import lock_after_send
+        lock_after_send(db, notification)
         notification_repo.update(notification)
         notification_repo.commit()
 

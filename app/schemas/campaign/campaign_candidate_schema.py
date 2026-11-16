@@ -839,6 +839,13 @@ class CandidateScorecardResponse(CampaignCandidateResponse):
 
     processing_timeline: list[ProcessingTimelineEntry] = []
 
+    # Email plan phase 4: the stage is locked once a rejection or selection email is sent (or while one is being
+    # sent: lock_reason ends in _PENDING). stage_lock_message says why, for the scorecard.
+    stage_locked: bool = False
+    stage_lock_reason: str | None = None
+    stage_locked_at: datetime | None = None
+    stage_lock_message: str | None = None
+
 
 class CandidateRejectionHistoryEntryResponse(BaseModel):
  

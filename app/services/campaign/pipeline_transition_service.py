@@ -139,6 +139,10 @@ class PipelineTransitionService:
         derive from reason/changed_by/now) and folded into the
         stage-history scores_snapshot alongside the transition itself.
         """
+        # Email plan phase 4: a stage locked by a rejection or selection email doesn't move (409) - bulk moves
+        # and the re-parse move come through here too.
+        from app.services.campaign.stage_lock import refuse_if_locked
+        refuse_if_locked(self.campaign_candidate_repo.db, campaign_candidate)
         from_stage = campaign_candidate.pipeline_stage
         previous_stage = campaign_candidate.previous_stage
 

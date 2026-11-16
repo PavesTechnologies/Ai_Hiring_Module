@@ -1166,9 +1166,13 @@ class CampaignCandidateService:
             campaign_candidate, rejection_reason=banner.get("rejection_reason"),
         )
 
+        from app.services.campaign.stage_lock import lock_state
+        lock = lock_state(self.campaign_candidate_repo.db, campaign_candidate)
         return CandidateScorecardResponse(
             **base.model_dump(), **banner,
             deterministic_score_breakdown=deterministic_score_breakdown,
+            stage_locked=lock.locked, stage_lock_reason=lock.reason, stage_locked_at=lock.since,
+            stage_lock_message=lock.message or None,
         )
 
     # ------------------------------------------------------------------

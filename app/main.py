@@ -37,6 +37,7 @@ from app.api.routes.audit_log_routes import router as audit_log_router
 from app.api.routes.scoring_monitoring_routes import router as scoring_monitoring_router
 from app.api.routes.settings_routes import router as settings_router
 from app.api.routes.email_draft_routes import router as email_draft_router
+from app.api.routes.stage_lock_routes import router as stage_lock_router
 from app.api.routes.scoring_version_routes import router as scoring_version_router
 from app.api.routes.outcome_override_routes import router as outcome_override_router
 from app.api.routes.google_oauth_routes import router as google_oauth_router
@@ -223,6 +224,7 @@ app.include_router(router=websocket_router, prefix=f"{API_PREFIX}/ws", tags=["We
 app.include_router(router=export_routes.router, prefix=API_PREFIX, tags=["Exports"])
 app.include_router(router=settings_router, prefix=API_PREFIX, tags=["Settings"])
 app.include_router(router=email_draft_router, prefix=API_PREFIX, tags=["Email drafts"])
+app.include_router(router=stage_lock_router, prefix=API_PREFIX, tags=["Stage lock"])
 
 app.add_exception_handler(DuplicateJDException, duplicate_jd_exception_handler)
 app.add_exception_handler(CampaignException, campaign_exception_handler)

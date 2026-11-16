@@ -239,7 +239,9 @@ def test_interview_scheduled_needs_interviewers(world, setup, code):
 def test_interview_scheduled_needs_a_time_the_stage_an_active_campaign_and_no_outcome_email(world):
     schedule, _ = _round(world, start=None)
     world.campaign.status = CampaignStatus.PAUSED
-    _saved(world, _outcome(world, E.CANDIDATE_REJECTED))
+    sent = _saved(world, _outcome(world, E.CANDIDATE_REJECTED))
+    from app.services.campaign.stage_lock import lock_after_send       # as the send task does (phase 4)
+    lock_after_send(world.db, sent)
     world.db.flush()
     found = _codes(send_policy.problems(world.db, _interview_email(world, E.INTERVIEW_SCHEDULED, schedule)))
     assert {"NO_DATE_TIME", "NOT_IN_INTERVIEW_STAGE", "CAMPAIGN_NOT_ACTIVE", "CANDIDATE_LOCKED"} <= found

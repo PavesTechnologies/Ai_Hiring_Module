@@ -323,8 +323,9 @@ def _scheduled_problems(db, notification, ctx) -> list[Problem]:
         stage = getattr(ctx.campaign_candidate.pipeline_stage, "value", ctx.campaign_candidate.pipeline_stage)
         if stage != "INTERVIEW":
             found.append(Problem("NOT_IN_INTERVIEW_STAGE", "The candidate isn't in the Interview stage."))
-        if outcome_email_sent(db, ctx.campaign_candidate.id) is not None:
-            found.append(Problem("CANDIDATE_LOCKED", "A rejection or selection email was already sent to the candidate."))
+        from app.services.campaign.stage_lock import lock_state
+        if lock_state(db, ctx.campaign_candidate).locked:
+            found.append(Problem("CANDIDATE_LOCKED", "The candidate's stage is locked by a rejection or selection email."))
     if ctx.campaign is not None and getattr(ctx.campaign.status, "value", ctx.campaign.status) != "ACTIVE":
         found.append(Problem("CAMPAIGN_NOT_ACTIVE", "The campaign isn't active."))
     return found

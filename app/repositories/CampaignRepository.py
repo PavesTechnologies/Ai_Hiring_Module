@@ -1134,6 +1134,9 @@ class CampaignRepository:
         updates pipeline_stage AND records the campaign_candidate_stage_history
         row (previously only the initial UPLOADED insert ever wrote history).
         """
+        # Email plan phase 4: a stage locked by a rejection or selection email doesn't move (409).
+        from app.services.campaign.stage_lock import refuse_if_locked
+        refuse_if_locked(self.db, cc)
         from_stage = cc.pipeline_stage
         cc.pipeline_stage = to_stage
         if set_fraud_flag:

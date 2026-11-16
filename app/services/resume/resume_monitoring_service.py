@@ -616,7 +616,18 @@ class ResumeMonitoringService:
             failed_layers=list(get_layer_failures(self.dead_letter_queue_repository, campaign_candidate).values()),
             score_out_of_date_at=getattr(campaign_candidate, "score_out_of_date_at", None),
             score_out_of_date_reason=getattr(campaign_candidate, "score_out_of_date_reason", None),
+            **self._stage_lock_fields(campaign_candidate),
         )
+
+    def _stage_lock_fields(self, campaign_candidate) -> dict:
+        """Email plan phase 4: whether the stage is locked by a rejection or selection email, and why."""
+        from app.services.campaign.stage_lock import lock_state
+        db = getattr(self.campaign_candidate_repository, "db", None)
+        lock = lock_state(db, campaign_candidate) if db is not None else None
+        if lock is None or not lock.locked:
+            return {"stage_locked": False}
+        return {"stage_locked": True, "stage_lock_reason": lock.reason, "stage_locked_at": lock.since,
+                "stage_lock_message": lock.message}
 
     def _decrypt_candidate_field(self, candidate, encrypted_attr: str) -> str | None:
         if candidate is None or not getattr(candidate, encrypted_attr, None):

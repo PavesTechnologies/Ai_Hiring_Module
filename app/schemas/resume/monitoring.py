@@ -228,3 +228,9 @@ class ResumeParsedJsonResponse(BaseModel):
     # don't reflect its current skills until it is re-scored.
     score_out_of_date_at: datetime | None = None
     score_out_of_date_reason: str | None = None
+    # Email plan phase 4: the stage is locked once a rejection or selection email is sent (or while one is being
+    # sent: the reason ends in _PENDING); stage_lock_message says why.
+    stage_locked: bool = False
+    stage_lock_reason: str | None = None
+    stage_locked_at: datetime | None = None
+    stage_lock_message: str | None = None

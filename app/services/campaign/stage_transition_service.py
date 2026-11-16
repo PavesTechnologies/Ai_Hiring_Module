@@ -150,6 +150,13 @@ class StageTransitionService:
                 campaign_candidate.id, current_stage.value, to_stage.value,
             )
             return False
+        # Email plan phase 4: never a candidate whose stage is locked by a rejection or selection email.
+        from app.services.campaign.stage_lock import lock_state
+        state = lock_state(self.campaign_candidate_repo.db, campaign_candidate)
+        if state.locked:
+            logger.warning("Automated move refused - the stage is locked (%s) | campaign_candidate_id=%s to_stage=%s",
+                           state.reason, campaign_candidate.id, to_stage.value)
+            return False
         campaign_candidate.previous_stage = current_previous
         return True
 
@@ -396,6 +403,9 @@ class StageTransitionService:
         candidate = self.campaign_candidate_repo.get_by_id(campaign_candidate_id)
         if candidate is None:
             raise NotFoundError("Campaign candidate not found.")
+        # Email plan phase 4: a stage locked by a rejection or selection email doesn't move (409).
+        from app.services.campaign.stage_lock import refuse_if_locked
+        refuse_if_locked(self.campaign_candidate_repo.db, candidate)
 
         from_stage = candidate.pipeline_stage
         previous_stage = candidate.previous_stage

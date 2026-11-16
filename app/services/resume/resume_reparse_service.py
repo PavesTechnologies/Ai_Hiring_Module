@@ -210,6 +210,12 @@ class ResumeReparseService:
 
         reason = (reason or "").strip() or None
         rejected = cc.pipeline_stage == PipelineStage.REJECTED
+        # Email plan phase 4: a locked stage (a rejection/selection email was sent) isn't moved by a re-parse - the
+        # resume is re-parsed and re-scored, and the candidate stays where they are.
+        from app.services.campaign.stage_lock import lock_state
+        stage_locked = lock_state(self.db, cc).locked
+        if stage_locked:
+            rejected = False
         if actor_roles:
             screening_role = self._screening_role(cc, actor_roles) if rejected else None
             move_to_screening = screening_role is not None
@@ -258,7 +264,7 @@ class ResumeReparseService:
                               if other.campaign_id != campaign.id)
         return {
             "campaign_candidate_id": cc.id, "resume_id": resume.id, "task_id": new_task_id,
-            "version_no": version_no, "moves_to_screening": move_to_screening,
+            "version_no": version_no, "moves_to_screening": move_to_screening, "stage_locked": stage_locked,
             "stays_rejected": rejected and not move_to_screening,
             "other_campaigns_sharing_resume": other_campaigns,
         }
@@ -329,6 +335,10 @@ class ResumeReparseService:
     def _rescore(self, cc, campaign, reparse: dict) -> str:
         if cc is None or campaign is None:
             return "skipped: candidate no longer exists"
+        from app.services.campaign.stage_lock import lock_state
+        if reparse.get("move_to_screening") and lock_state(self.db, cc).locked:
+            logger.info("Re-parse: the stage is locked - re-scored only | campaign_candidate_id=%s", cc.id)
+            return request_rescore(self.db, cc)
         if reparse.get("move_to_screening") and cc.pipeline_stage == PipelineStage.REJECTED:
             from app.services.campaign.bulk_stage_move_service import BulkStageMoveService
             from app.services.campaign.pipeline_transition_service import PipelineTransitionService
