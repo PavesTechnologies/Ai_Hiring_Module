@@ -3,6 +3,10 @@ Override reason codes on the Settings page (settings phase 1). HR admins add cod
 and retire or restore codes. A code is never renamed or deleted (past overrides keep it) and OTHER can't be
 retired, so a person can always give a reason. The audit records the code and the flags/numbers that
 changed; a label is typed text, recorded only as changed.
+
+Stage-unlock reasons (kind STAGE_UNLOCK, email plan phase 4) are edited the same way. Their use count is the number
+of STAGE_UNLOCKED audits that gave the code, and the last active one can't be retired, so an HR admin can always
+unlock.
 """
 from __future__ import annotations
 
@@ -56,13 +60,21 @@ class ReasonCodeSettingsService:
     def list(self, kind: str = "OVERRIDE") -> list[dict]:
         """kind: OVERRIDE (moves against the system's outcome) or STAGE_UNLOCK (stage unlocks, email plan phase 4)."""
         kind = _kind(kind)
-        used = dict(self.db.query(CandidateOutcomeOverride.reason_code, func.count())
-                    .group_by(CandidateOutcomeOverride.reason_code).all())
+        used = self._times_used(kind)
         rows = (self.db.query(OverrideReasonCode)
                 .filter(OverrideReasonCode.kind == kind)
                 .order_by(OverrideReasonCode.sort_order, OverrideReasonCode.code).all())
         return [{"code": r.code, "label": r.label, "is_active": r.is_active, "sort_order": r.sort_order,
                  "locked": r.code == LOCKED_CODE, "times_used": int(used.get(r.code, 0))} for r in rows]
+
+    def _times_used(self, kind: str) -> dict:
+        if kind == "STAGE_UNLOCK":
+            from app.models.compliance import AuditLog
+            code = AuditLog.detail["reason_code"].astext
+            return dict(self.db.query(code, func.count())
+                        .filter(AuditLog.action_type == ActionType.STAGE_UNLOCKED.value).group_by(code).all())
+        return dict(self.db.query(CandidateOutcomeOverride.reason_code, func.count())
+                    .group_by(CandidateOutcomeOverride.reason_code).all())
 
     def _audit(self, actor_id: str, details: dict) -> None:
         self.audit_service.log(
@@ -115,6 +127,13 @@ class ReasonCodeSettingsService:
             if code == LOCKED_CODE and payload["is_active"] is False:
                 raise CampaignException("OTHER can't be retired: a person must always be able to give a reason.",
                                         422, data={"field": "is_active"})
+            if row.kind == "STAGE_UNLOCK" and row.is_active and payload["is_active"] is False:
+                others = (self.db.query(func.count()).select_from(OverrideReasonCode)
+                          .filter(OverrideReasonCode.kind == "STAGE_UNLOCK", OverrideReasonCode.is_active.is_(True),
+                                  OverrideReasonCode.code != code).scalar())
+                if not others:
+                    raise CampaignException("Keep at least one unlock reason: an HR admin must always be able to "
+                                            "unlock a stage.", 422, data={"field": "is_active"})
             after["is_active"] = payload["is_active"]
         if "sort_order" in payload:
             after["sort_order"] = _sort_order(payload["sort_order"])
@@ -125,7 +144,8 @@ class ReasonCodeSettingsService:
             row.label, row.is_active, row.sort_order = after["label"], after["is_active"], after["sort_order"]
             row.updated_by, row.updated_at = actor_id, datetime.now(timezone.utc)
             self.db.flush()
-            self._audit(actor_id, {"title": "Override reason code changed", "code": code, "changes": changes})
+            self._audit(actor_id, {"title": "Override reason code changed", "code": code, "kind": row.kind,
+                                   "changes": changes})
             self.db.commit()
         except Exception:
             self.db.rollback()

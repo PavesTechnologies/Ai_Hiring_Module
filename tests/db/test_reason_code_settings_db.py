@@ -76,3 +76,39 @@ def test_no_change_is_not_audited(db):  # noqa: F811
     service, audit = _service(db)
     service.update("ROLE_FIT", {"label": "Role fit"}, actor_id=None)
     assert not audit.log.called
+
+
+def test_unlock_reasons_are_listed_apart_and_counted_from_the_unlock_audits(db):  # noqa: F811
+    from uuid import uuid4
+    from app.models.compliance import AuditLog
+    service, _ = _service(db)
+    before = {r["code"]: r["times_used"] for r in service.list("STAGE_UNLOCK")}
+    assert set(before) >= {"EMAIL_SENT_IN_ERROR", "CANDIDATE_REENGAGED", "DATA_CORRECTION"}
+    assert not set(before) & set(outcome_overrides.DEFAULT_REASON_CODES)
+    db.add(AuditLog(action_type="STAGE_UNLOCKED", entity_type="CAMPAIGN_CANDIDATE", entity_id=uuid4(),
+                    detail={"reason_code": "DATA_CORRECTION"}))
+    db.flush()
+    after = {r["code"]: r["times_used"] for r in service.list("STAGE_UNLOCK")}
+    assert after["DATA_CORRECTION"] == before["DATA_CORRECTION"] + 1
+
+
+def test_an_added_unlock_reason_is_offered_for_unlocking_not_for_overrides(db):  # noqa: F811
+    from app.services.campaign import stage_lock
+    service, audit = _service(db)
+    rows = service.create({"code": "DUPLICATE_PROFILE", "label": "Duplicate profile"}, actor_id=None,
+                          kind="STAGE_UNLOCK")
+    assert "DUPLICATE_PROFILE" in {r["code"] for r in rows}
+    assert stage_lock.unlock_reason_codes(db)["DUPLICATE_PROFILE"] == "Duplicate profile"
+    assert "DUPLICATE_PROFILE" not in outcome_overrides.reason_codes(db, active_only=False)
+    assert audit.log.call_args.kwargs["details"]["kind"] == "STAGE_UNLOCK"
+
+
+def test_the_last_active_unlock_reason_cant_be_retired(db):  # noqa: F811
+    service, _ = _service(db)
+    active = [r["code"] for r in service.list("STAGE_UNLOCK") if r["is_active"]]
+    for code in active[:-1]:
+        service.update(code, {"is_active": False}, actor_id=None)
+    with pytest.raises(CampaignException) as refused:
+        service.update(active[-1], {"is_active": False}, actor_id=None)
+    assert refused.value.status_code == 422
+    service.update(active[0], {"is_active": True}, actor_id=None)           # restoring one is fine
