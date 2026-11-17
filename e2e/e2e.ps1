@@ -61,6 +61,8 @@ switch ($Command) {
         if ($caught -ne 0 -or $logged -ne 0) { throw "the drivers sent $caught email(s) to Mailpit and logged $logged" }
         # Then the one driver that sends: an HR alert over SMTP to Mailpit (it clears Mailpit after).
         Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_mailpit_e2e")
+        # Email plan phase 5: every way an email could go out twice - exactly one Mailpit message each.
+        Invoke-Compose @("run", "--rm", "tools", "-m", "scripts.e2e.run_duplicates_e2e")
     }
     "logs"  { Invoke-Compose @("logs", "-f", "worker") }
     "down"  { Invoke-Compose @("down", "-v") }

@@ -126,6 +126,7 @@ Each merge is reported with:
   golden estimate    4/4  checks passed
   emails Mailpit received: 0
   mailpit            9/9  checks passed
+  duplicates         9/9  checks passed
   ```
 
 - **Migrations:** any applied, with their ids.

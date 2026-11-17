@@ -33,6 +33,9 @@ x-app: &app
     SMTP_PORT: "1025"
     STORAGE_BACKEND: local
     LOCAL_STORAGE_DIR: /data/storage
+    # Signs the interviewer feedback links in feedback-request emails (the duplicates driver's sweep case).
+    # This stack only - a fixed placeholder, never a real key.
+    FEEDBACK_TOKEN_SIGNING_KEY: e2e-only-feedback-signing-placeholder
     OMP_NUM_THREADS: "1"
   volumes:
     # Current code, so a code change needs no image rebuild.

@@ -134,6 +134,25 @@ M9. an HR admin's unlock without a reason is refused (422); with one it succeeds
 
 Report: `/data/storage/e2e_mailpit_report.json`.
 
+Then `scripts/e2e/run_duplicates_e2e.py` (email plan phase 5): every way an email could go out twice, through the
+real API, the real send task and the stack's worker, over SMTP to Mailpit. Each case uses its own synthetic
+candidate or interviewer (`dup-...@e2e.invalid`) and expects exactly one message to that address, counted when
+it arrives and again after a settle time. Failures are injected in the driver's own process (the send task runs
+there for those cases); nothing is changed in the worker.
+
+D1. double-clicked Send: two Sends of the same previewed draft at once - one accepted, one refused (409)
+D2. broker redelivery: the confirmed email's task delivered again to the worker and run three more times at once
+D3. retry after a failure before acceptance: the first SMTP attempt is refused, the retry sends it once
+D4. retry after acceptance, outcome unknown: Mailpit takes it, the connection drops - stays SENDING, never retried
+D5. retry after acceptance, recording failed: Mailpit takes it, recording fails - stays SENDING, never re-sent
+D6. overlapping sweeps: the feedback-request sweep five times at once - one draft per interviewer, nothing
+    sent; that draft, sent (double-clicked), is one message
+D7. overlapping stuck-send checks (D4/D5's rows, made stuck): one alert per HR admin
+D8. two bulk sends of [C, C, D] at once: one message each to C and D
+D9. unconfirmed drafts, with their send task run anyway: still DRAFT, nothing sent
+
+Report: `/data/storage/e2e_duplicates_report.json`.
+
 Other commands: `pwsh e2e/e2e.ps1 up` (start and keep the stack), `logs` (follow the worker),
 `down` (stop and **delete** the e2e data).
 
